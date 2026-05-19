@@ -2,15 +2,14 @@
 
 General high-performance simulator for performative prediction (PP), with the Agent-to-Agent (A2A) protocol as the native communication substrate between simulated agents.
 
-**Status:** pre-implementation skeleton. No implementations yet. See [DESIGN.md](DESIGN.md) for the architecture, decisions, validation strategy, and phasing.
+**Status:** pre-implementation skeleton. No implementations yet. 
 
 ## Layout
 
 ```
 perfsim/         # the package; numerical core + A2A agent shell
 examples/        # end-to-end runnable scenarios
-tests/           # gating tests per DESIGN.md Section 15
-DESIGN.md        # full design document (19 sections)
+tests/           # gating tests 
 pyproject.toml   # build config and optional extras
 ```
 
@@ -32,5 +31,3 @@ Optional extras for v2 and later: `[hf]`, `[trl]`, `[vllm]`, `[agenttorch]`. See
 - **v1**: full architecture, supervised only; InProcessExecutor; faithful Perdomo replication via Kaggle GiveMeSomeCredit.
 - **v2**: A2A wire (`A2AExecutor` over `a2a-sdk`); RL Learners; LM-backed agents (TRL + vLLM); multi-step Coordinator.
 - **v3**: optional CUDA-fused Simulator; AgentTorch adapter; Mendler-Dunner RGD replication; performatively-optimal outer-RL stretch.
-
-See DESIGN.md Section 17 for the full phasing table.
