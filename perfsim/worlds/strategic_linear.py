@@ -26,6 +26,7 @@ from torch import Tensor
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 from perfsim.core.world import StatefulWorld
+from perfsim.worlds._common import apply_strategic_shift, validate_strat_features
 
 
 class StrategicLinearWorld(StatefulWorld):
@@ -51,23 +52,7 @@ class StrategicLinearWorld(StatefulWorld):
         self._epsilon = float(epsilon)
         self._dtype = dtype
         self._n, self._d = x0.shape
-        if strat_features is None:
-            self._strat_features: Tensor | None = None
-        else:
-            idx = torch.tensor(list(strat_features), dtype=torch.long)
-            if idx.numel() == 0:
-                raise ValueError("strat_features cannot be empty when set; pass None for all-features")
-            if int(idx.min().item()) < 0:
-                raise ValueError(
-                    f"strat_features must be non-negative; got min={int(idx.min().item())}"
-                )
-            if int(idx.max().item()) >= self._d:
-                raise ValueError(
-                    f"strat_features max index {int(idx.max().item())} >= d={self._d}"
-                )
-            if idx.unique().numel() != idx.numel():
-                raise ValueError(f"strat_features must be unique; got {idx.tolist()}")
-            self._strat_features = idx
+        self._strat_features = validate_strat_features(strat_features, dim=self._d)
 
     @property
     def produces_schema(self) -> DataSchema:
@@ -110,12 +95,12 @@ class StrategicLinearWorld(StatefulWorld):
             raise ValueError(
                 f"model weight has {w.numel()} elements but population dim is {self._d}"
             )
-        if self._strat_features is None:
-            x = self._x0 + self._epsilon * w
-        else:
-            shift = torch.zeros_like(self._x0)
-            shift[:, self._strat_features] = self._epsilon * w[self._strat_features]
-            x = self._x0 + shift
+        # Broadcast w (D,) against x0 (N, D); apply_strategic_shift treats it
+        # as a per-row direction by relying on broadcasting in `+`.
+        direction = w.expand_as(self._x0)
+        x = apply_strategic_shift(
+            self._x0, direction, epsilon=self._epsilon, strat_features=self._strat_features
+        )
         return {"x": x, "y": self._y}
 
     def step(self, model: Model) -> Data:
