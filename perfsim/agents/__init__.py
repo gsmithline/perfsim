@@ -1,4 +1,11 @@
-"""A2A-native agent shell. Wraps numerical core. Slow path only; fast paths bypass.
+"""Agent-shell layer: A2A-native wrappers around the numerical core.
 
-v0 skeleton stub. No implementation yet; see DESIGN.md for the plan.
+`PredictorAgent` and `PopulationAgent` wrap the (Model, Learner, Loss) and
+World types from the numerical core, exposing them as Agent instances that
+can be invoked through `InProcessExecutor` (v1) or `A2AExecutor` (v2).
 """
+
+from perfsim.agents.population import PopulationAgent
+from perfsim.agents.predictor import PredictorAgent
+
+__all__ = ["PopulationAgent", "PredictorAgent"]
