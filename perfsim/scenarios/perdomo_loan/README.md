@@ -15,7 +15,7 @@ Faithful replication of the strategic loan example from:
 ## Reproduction
 
 ```bash
-python reproduction.py
+python -m perfsim.scenarios.perdomo_loan --mu 100 --n-rounds 50 --learner erm
 ```
 
 Produces the headline convergence figure from the paper. Visual tolerance gate; v1 literature-replication target (DESIGN.md Section 15 test 9).
@@ -25,7 +25,7 @@ Produces the headline convergence figure from the paper. Visual tolerance gate; 
 Users without Kaggle credentials can run a synthetic-data config; it is not the replication claim, only a smoke test:
 
 ```bash
-python reproduction.py --synthetic
+python -m perfsim.scenarios.perdomo_loan --synthetic
 ```
 
 ## Status

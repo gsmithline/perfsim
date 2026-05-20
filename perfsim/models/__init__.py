@@ -1,4 +1,5 @@
-"""Concrete Model implementations.
+"""Concrete Model implementations."""
 
-v0 skeleton stub. No implementation yet; see DESIGN.md for the plan.
-"""
+from perfsim.models.linear import LinearModel, LogisticModel
+
+__all__ = ["LinearModel", "LogisticModel"]

@@ -1,4 +1,6 @@
-"""Concrete World implementations.
+"""Concrete World implementations."""
 
-v0 skeleton stub. No implementation yet; see DESIGN.md for the plan.
-"""
+from perfsim.worlds.gaussian_shift import GaussianShiftWorld
+from perfsim.worlds.strategic_linear import StrategicLinearWorld
+
+__all__ = ["GaussianShiftWorld", "StrategicLinearWorld"]

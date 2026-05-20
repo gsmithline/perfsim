@@ -53,6 +53,9 @@ artifacts/
 # Dataset cache (lives under ~/.cache/perfsim/ but ignore local copies too)
 .cache/
 
+# Matplotlib cache from examples
+examples/.mpl_cache/
+
 # Environment
 .env
 .envrc
