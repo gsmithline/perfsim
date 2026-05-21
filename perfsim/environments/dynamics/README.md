@@ -1,44 +1,46 @@
-# `perfsim.worlds`
+# `perfsim.environments.dynamics`
 
-Concrete `World` implementations: the performative map **D(θ)** that produces
+Concrete `Dynamics` environments: the performative map **D(θ)** that produces
 training data given a deployed predictor θ. The Simulator drives the
-`World ↔ Learner` loop; this directory holds the worlds themselves.
+`Environment ↔ Predictor` epoch loop; this directory holds the concrete
+dynamical-systems environments.
 
-A **World** answers two questions each round:
+A `Dynamics` environment answers two questions:
 
-1. *What data does the deployed predictor train on?* `world.step(model) -> {"x", "y"}`
-2. *What state, if any, persists into next round?* Handled internally by the World subclass.
+1. *What data does the deployed predictor train on?* `env.step(handle) -> {"x", "y"}`
+2. *What state, if any, persists into the next inner step?* Handled internally by the subclass.
 
-For the design rationale (stateless vs stateful, capability traits,
-modes 1/2/3 of ABM integration), see the project-level `DESIGN.md`.
+For per-epoch behavior, see the `Simulator` outer-epoch / inner-step loop:
+during one outer round, `env.step(handle)` is called `epoch_size` times under
+a frozen handle from `predictor.deploy()`. Only the final step's data is
+passed to `predictor.train(...)`. With `epoch_size = 1` this reduces to the
+classical lockstep PP loop.
 
 ## At a glance
 
-| World | State | Predictor's role | What it's for | Mode |
-|---|---|---|---|---|
-| `GaussianShiftWorld` | stateless | shifts the regression target via `Aθ + b` | RRM/RGD gating test against closed-form fixed point `(I − A)⁻¹ b` | 1a |
-| `StrategicLinearWorld` | fixed population (`x_0`, `y`) | linear strategic shift: `x_t = x_0 + ε·w` | Perdomo (2020) strategic classification with a linear predictor | 1a\* |
-| `StrategicGradientWorld` | fixed population (`x_0`, `y`) | gradient strategic shift: `x_t = x_0 + ε·∂f/∂x` | Same setup but with arbitrary differentiable predictors (MLPs, etc.) | 1a\* |
-| `AccumulatingShiftWorld` | drifting `x_0` | gradient strategic shift | Strategic classification with a population that internalizes manipulation over time | 1b |
-| `FJWorld` | per-agent opinions `x_i` | optional platform recommendation | Linear Friedkin-Johnsen opinion dynamics on a graph (free or platform-coupled) | 1b |
-| `ReplicatorWorld` | mixture `p ∈ Δ^K` | enters via the caller-supplied `fitness(p, model)` | Discrete Taylor-Jonker replicator on K strategies | 1b |
+| Environment | State | Predictor's role | What it's for |
+|---|---|---|---|
+| `GaussianShiftWorld` | stateless | shifts the regression target via `Aθ + b` | RRM/RGD gating test against closed-form fixed point `(I − A)⁻¹ b` |
+| `StrategicLinearWorld` | fixed population (`x_0`, `y`) | linear strategic shift: `x_t = x_0 + ε·w` | Perdomo (2020) strategic classification with a linear predictor |
+| `StrategicGradientWorld` | fixed population (`x_0`, `y`) | gradient strategic shift: `x_t = x_0 + ε·∂f/∂x` | Same setup but with arbitrary differentiable predictors (MLPs, etc.) |
+| `AccumulatingShiftWorld` | drifting `x_0` | gradient strategic shift | Strategic classification with a population that internalizes manipulation over time |
+| `FJWorld` | per-agent opinions `x_i` | optional platform recommendation | Linear Friedkin-Johnsen opinion dynamics on a graph (free or platform-coupled) |
+| `ReplicatorWorld` | mixture `p ∈ Δ^K` | enters via the caller-supplied `fitness(p, model)` | Discrete Taylor-Jonker replicator on K strategies |
 
-Modes 1a and 1a\* refer to the [mode taxonomy in DESIGN.md](../../DESIGN.md):
-1a = stateless rollout; 1a\* = stateful population (fixed) where the
-per-agent strategic response is closed-form (collapsible to a single
-algebraic step); 1b = stateful rollout with persistent dynamics; 2 = with
-calibrated φ; 3 = with inner population adaptation. perfsim currently
-implements 1a, 1a\*, and 1b.
+`StrategicLinearWorld` and `StrategicGradientWorld` are inherently one-shot
+best-response and declare `max_meaningful_epoch_size = 1`; the Simulator
+rejects `epoch_size > 1` against them. All other environments accept
+arbitrary `epoch_size`.
 
 ## The base classes
 
-`World` (abstract) lives in `perfsim/core/world.py`. Subclasses pick one of
-two skeletons:
+The `Environment` ABC and its sibling intermediates live in
+`perfsim/core/environment.py`. Concrete dynamics environments extend one of:
 
-**`StatelessWorld`**: D(θ) is history-independent. Each call samples iid from
-D(θ_t). Base provides a forked-generator pattern so `sample` (peek) does not
-advance the RNG that `step` uses, which keeps off-policy evaluation
-(decoupled performative risk) hermetic.
+**`StatelessDynamics`**: D(θ) is history-independent. Each call samples iid
+from D(θ_t). The base provides a forked-generator pattern so `sample`
+(peek) does not advance the RNG that `step` uses, which keeps off-policy
+evaluation (decoupled performative risk) hermetic.
 
 **`StatefulPopulationWorld`**: persistent per-agent state. Subclasses
 implement `_step(model) -> (data, next_state)`; the base handles `reset()`,
@@ -46,26 +48,27 @@ implement `_step(model) -> (data, next_state)`; the base handles `reset()`,
 next_state). State is a `dict[str, Tensor]` with subclass-defined keys.
 
 There are also **capability traits** (runtime-checkable Protocols in
-`perfsim/core/world.py`) that a World can opt into:
+`perfsim/core/environment.py`) that an environment can opt into:
 
-- `DifferentiableWorld`: exposes `grad_sample(model)` whose output is
+- `Differentiable`: exposes `grad_sample(model)` whose output is
   autograd-traceable wrt θ. Required by derivative-aware Learners (Izzo).
-- `FullyDifferentiableWorld`: additionally exposes a `grad_step` that is
-  autograd-traceable across multiple rounds.
-- `RewardingWorld`: fills a `reward` field in the data dict. Required by
-  RL-family Learners.
-- `TrajectoryWorld`: produces trajectory tensors with a leading time axis.
+- `FullyDifferentiable`: additionally exposes a `grad_step` that is
+  autograd-traceable across multiple inner steps.
+- `Rewarding`: fills a `reward` field in the data dict. Required by
+  RL-family Learners (v2).
+- `Trajectory`: produces multi-step trajectory tensors with a leading
+  time axis (v2).
 - `ClosedFormFixedPoint`: has a `closed_form_fp()` returning the analytic
   RRM fixed point. Used in gating tests.
 
-`GaussianShiftWorld` implements `DifferentiableWorld` and
-`ClosedFormFixedPoint`. The rest do not opt into capability traits yet.
+`GaussianShiftWorld` implements `Differentiable` and `ClosedFormFixedPoint`.
+The rest do not opt into capability traits yet.
 
 ---
 
 ## `GaussianShiftWorld`
 
-**File:** `gaussian_shift.py`. **Base:** `StatelessWorld`.
+**File:** `gaussian_shift.py`. **Base:** `StatelessDynamics`.
 
 Stateless location-shift regression world.
 
@@ -85,7 +88,11 @@ risk minimizer at deployed θ is `Aθ + b`, so RRM iterates
 Used as the canonical gating test: any RRM-style Learner must converge to
 `θ*` (within sample noise σ) on a contractive choice of `A` (`‖A‖_2 < 1`).
 Exposes `closed_form_fp()` and `grad_sample(model)`. This is the only
-currently differentiable World.
+currently differentiable environment.
+
+Stateless, so `epoch_size > 1` is wasted compute under final-state-only
+training: the final step is one iid sample from D(θ), no different from
+a single step. Run with `epoch_size = 1`.
 
 **Use when:** verifying a Learner's convergence behavior on a problem with
 known mathematics; running gating tests that need an analytic anchor.
@@ -94,7 +101,7 @@ known mathematics; running gating tests that need an analytic anchor.
 
 ## `StrategicLinearWorld`
 
-**File:** `strategic_linear.py`. **Base:** `StatefulWorld` (custom; population
+**File:** `strategic_linear.py`. **Base:** `StatefulDynamics` (custom; population
 state is fixed, not evolving).
 
 Perdomo et al. (ICML 2020) Section 5.1 strategic classification. Each agent
@@ -116,6 +123,11 @@ Requires the predictor to expose a `.linear.weight` attribute (so
 `LinearModel`, `LogisticModel` work; `MLPModel` does not). Use
 `StrategicGradientWorld` for arbitrary predictors.
 
+Declares `max_meaningful_epoch_size = 1`: the strategic best-response is
+one-shot, so N inner steps under fixed θ either repeat the same shift or
+collapse algebraically into a single step. The Simulator rejects requests
+with `epoch_size > 1`.
+
 **Use when:** reproducing Perdomo's strategic-loan figure; closed-form
 strategic-classification analysis.
 
@@ -123,7 +135,7 @@ strategic-classification analysis.
 
 ## `StrategicGradientWorld`
 
-**File:** `strategic_gradient.py`. **Base:** `StatefulWorld`.
+**File:** `strategic_gradient.py`. **Base:** `StatefulDynamics`.
 
 Generalization of `StrategicLinearWorld` to arbitrary differentiable
 predictors. The strategic shift is the gradient of the predictor's scalar
@@ -141,6 +153,9 @@ location-dependent strategic response.
 The world wraps its autograd in `torch.enable_grad()` so it works correctly
 even when callers (such as `performative_risk`) are inside a
 `torch.no_grad()` block.
+
+Same one-shot constraint as `StrategicLinearWorld`:
+`max_meaningful_epoch_size = 1`.
 
 **Use when:** strategic classification with non-linear predictors; testing
 that perfsim's PP loop handles MLP predictors against strategic populations.
@@ -205,6 +220,11 @@ way as the source script.
 at the given anchor. Useful as a gating anchor and for diagnostic comparison
 across runs.
 
+This is the canonical environment for `epoch_size > 1`: under fixed θ, the
+inner opinion-mixing converges toward `fj_equilibrium`, so a sufficiently
+large `epoch_size` lets the predictor train on the settled distribution
+rather than a transient.
+
 **Use when:** running the user's opinion-dynamics-post-training experiments
 inside perfsim; FJ baseline against which platform / LM coupling effects are
 compared.
@@ -237,11 +257,11 @@ studying how a deployed predictor reshapes the strategy mixture; replicating
 
 ---
 
-## `StatefulPopulationWorld` (base class for stateful worlds)
+## `StatefulPopulationWorld` (base class for stateful population envs)
 
-**File:** `stateful_population.py`. **Base:** `StatefulWorld` (from `core/world.py`).
+**File:** `stateful_population.py`. **Base:** `StatefulDynamics` (from `core/environment.py`).
 
-ABC for worlds with persistent per-agent state. Subclasses implement
+ABC for environments with persistent per-agent state. Subclasses implement
 `_step(model) -> (data, next_state)`; the base handles bookkeeping. Used by
 `AccumulatingShiftWorld`, `FJWorld`, `ReplicatorWorld`.
 
@@ -255,20 +275,20 @@ State is a `dict[str, Tensor]` with subclass-defined keys (`"x0"`,
 | `latent` | `(N, L)` | hidden agent state (opinions, history, etc.) |
 | `agent_type` | `(N,)` | integer type label for heterogeneous populations |
 
-Not every world uses every key; the base does not enforce field presence.
+Not every environment uses every key; the base does not enforce field presence.
 
 **Determinism:** `_step` should be a pure function of `(self._state, model)`.
 Stochastic subclasses must manage their own seeded RNG; the forked-generator
-pattern from `StatelessWorld` is the recommended way to keep
+pattern from `StatelessDynamics` is the recommended way to keep
 `sample == step` for the same state.
 
 ---
 
 ## Helpers (internal)
 
-**`perfsim/worlds/_common.py`**: utilities shared across multiple world
-implementations. Internal (underscore prefix); promote to a public location
-if external callers need them.
+**`perfsim/environments/dynamics/_common.py`**: utilities shared across
+multiple dynamics environments. Internal (underscore prefix); promote to a
+public location if external callers need them.
 
 - `validate_strat_features(strat_features, dim)`: canonicalizes the
   `strat_features` argument (None, or a unique LongTensor of in-range
@@ -279,6 +299,7 @@ if external callers need them.
 - `apply_strategic_shift(x0, direction, epsilon, strat_features)`: the
   `ε · direction` shift, optionally restricted to a feature subset.
 
-**`perfsim/worlds/fj.normalize_adjacency(adj)`**: column-normalize a raw
-adjacency, zeroing isolated rows. Exported from `perfsim.worlds.fj` since
-it is specifically the convention `run_free_fj.py` uses.
+**`perfsim/environments/dynamics/fj.normalize_adjacency(adj)`**:
+column-normalize a raw adjacency, zeroing isolated rows. Exported from
+`perfsim.environments.dynamics.fj` since it is specifically the convention
+`run_free_fj.py` uses.
