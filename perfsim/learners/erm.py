@@ -44,7 +44,7 @@ class ERMLearner(Learner):
         self.history_size = history_size
         self._initial_params = self.model.get_params().clone()
 
-    def step(self, data: Data) -> None:
+    def train(self, data: Data) -> None:
         opt = torch.optim.LBFGS(
             list(self.model.parameters()), #LFBGS method works in practice
             lr=1.0,

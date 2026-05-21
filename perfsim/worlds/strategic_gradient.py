@@ -25,7 +25,7 @@ gradient (matches the behavior of `model(x).sum().backward()`).
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import ClassVar, Iterable
 
 import torch
 from torch import Tensor
@@ -41,7 +41,13 @@ from perfsim.worlds._common import (
 
 
 class StrategicGradientWorld(StatefulWorld):
-    """Strategic best-response via the predictor's input gradient."""
+    """Strategic best-response via the predictor's input gradient.
+
+    One-shot best-response to a deployed classifier; N>1 inner steps either
+    repeat or compound trivially. Forces `epoch_size = 1` (DESIGN.md §8).
+    """
+
+    max_meaningful_epoch_size: ClassVar[int] = 1
 
     def __init__(
         self,

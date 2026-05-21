@@ -37,8 +37,21 @@ class Learner(ABC):
         self.loss = loss
 
     @abstractmethod
+    def train(self, data: Data) -> None:
+        """Run one update; mutates `self.model` in place.
+
+        Called once per epoch by the Simulator (DESIGN.md §8). For epoch_size=1
+        this is the classical per-round PP update; for epoch_size>1 the `data`
+        argument is the final state of the environment's inner N-step run.
+        """
+
     def step(self, data: Data) -> None:
-        """Run one update; mutates `self.model` in place."""
+        """Legacy alias for `train`. Prefer `train` in new code.
+
+        Retained so existing callsites and tests continue to work during the
+        v0 transition (DESIGN.md §17).
+        """
+        self.train(data)
 
     @abstractmethod
     def reset(self) -> None:

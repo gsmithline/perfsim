@@ -18,7 +18,7 @@ beyond the strategic shift.
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import ClassVar, Iterable
 
 import torch
 from torch import Tensor
@@ -30,7 +30,14 @@ from perfsim.worlds._common import apply_strategic_shift, validate_strat_feature
 
 
 class StrategicLinearWorld(StatefulWorld):
-    """Perdomo-style linear strategic best-response."""
+    """Perdomo-style linear strategic best-response.
+
+    Strategic best-response is a one-shot response to a deployed classifier;
+    N inner steps under fixed theta either repeat or compound trivially.
+    Forces `epoch_size = 1` (DESIGN.md §8).
+    """
+
+    max_meaningful_epoch_size: ClassVar[int] = 1
 
     def __init__(
         self,

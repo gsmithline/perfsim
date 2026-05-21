@@ -17,7 +17,7 @@ Metrics use them at binding time to declare optional requirements.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 import torch
 from torch import Tensor
@@ -33,7 +33,14 @@ class World(ABC):
 
     Subclasses implement `sample` (peek; no state mutation) and `step`
     (advance state + return data) plus `reset(seed)`.
+
+    Class attribute `max_meaningful_epoch_size` declares the largest
+    `epoch_size` the Simulator may request (DESIGN.md §6 #10). Default is
+    unbounded; strategic-classification worlds where the inner step is a
+    one-shot best-response override to 1.
     """
+
+    max_meaningful_epoch_size: ClassVar[int | float] = float("inf")
 
     @property
     @abstractmethod

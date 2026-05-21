@@ -103,7 +103,7 @@ class PredictorAgent:
         return PredictResponse(y=y)
 
     def update(self, req: UpdateRequest) -> UpdateResponse:
-        self._learner.step(req.data)
+        self._learner.train(req.data)
         return UpdateResponse(status="ok")
 
     def get_params(self, req: GetParamsRequest) -> GetParamsResponse:

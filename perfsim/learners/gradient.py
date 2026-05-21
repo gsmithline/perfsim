@@ -60,7 +60,7 @@ class GradientLearner(Learner):
             f"unknown optimizer {self.optimizer_name!r}; expected 'sgd' or 'adam'"
         )
 
-    def step(self, data: Data) -> None:
+    def train(self, data: Data) -> None:
         for _ in range(self.steps_per_round):
             self._opt.zero_grad()
             value = self.loss(self.model, data, reduction="mean")

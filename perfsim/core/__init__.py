@@ -27,7 +27,19 @@ from perfsim.core.messages import (
     UpdateRequest,
     UpdateResponse,
 )
+from perfsim.core.environment import (
+    AgentBasedEnvironment,
+    Differentiable,
+    DynamicsEnvironment,
+    Environment,
+    FullyDifferentiable,
+    Rewarding,
+    StatefulDynamics,
+    StatelessDynamics,
+    Trajectory,
+)
 from perfsim.core.model import Model
+from perfsim.core.predictor import Predictor
 from perfsim.core.types import (
     SUPERVISED_SCHEMA,
     TRAJECTORY_SCHEMA,
@@ -52,8 +64,18 @@ __all__ = [
     "SUPERVISED_SCHEMA",
     "TRAJECTORY_SCHEMA",
     "Agent",
+    "AgentBasedEnvironment",
     "AgentHandle",
     "AgentSpec",
+    "Differentiable",
+    "DynamicsEnvironment",
+    "Environment",
+    "FullyDifferentiable",
+    "Predictor",
+    "Rewarding",
+    "StatefulDynamics",
+    "StatelessDynamics",
+    "Trajectory",
     "BestRespondRequest",
     "BestRespondResponse",
     "ClosedFormFixedPoint",
