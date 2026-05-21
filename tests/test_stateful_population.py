@@ -7,7 +7,7 @@ import torch
 
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 from perfsim.models import LinearModel, MLPModel
-from perfsim.worlds import (
+from perfsim.environments.dynamics import (
     AccumulatingShiftWorld,
     StatefulPopulationWorld,
     StrategicGradientWorld,

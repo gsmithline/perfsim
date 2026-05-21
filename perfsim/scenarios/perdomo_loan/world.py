@@ -18,7 +18,7 @@ from typing import Iterable
 import torch
 
 from perfsim.core.dataset import Dataset
-from perfsim.worlds.strategic_linear import StrategicLinearWorld
+from perfsim.environments.dynamics.strategic_linear import StrategicLinearWorld
 
 
 def build_world(

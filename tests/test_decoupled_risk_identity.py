@@ -11,7 +11,7 @@ import torch
 from perfsim.losses import BCEWithLogitsLoss, MSELoss
 from perfsim.metrics import decoupled_risk, performative_risk
 from perfsim.models import LinearModel
-from perfsim.worlds import GaussianShiftWorld
+from perfsim.environments.dynamics import GaussianShiftWorld
 
 
 def _make_world(d: int = 3, sigma: float = 0.01, batch: int = 256, seed: int = 0):

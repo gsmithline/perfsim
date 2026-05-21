@@ -17,11 +17,11 @@ from perfsim.core import (
     AgentHandle,
     ConfigBase,
     DataSchema,
-    DifferentiableWorld,
-    FullyDifferentiableWorld,
-    RewardingWorld,
+    Differentiable,
+    FullyDifferentiable,
+    Rewarding,
     SchemaError,
-    TrajectoryWorld,
+    Trajectory,
 )
 
 
@@ -120,14 +120,14 @@ class TestCapabilityTraits:
             def grad_sample(self, model):
                 return {}
 
-        assert isinstance(_W(), DifferentiableWorld)
+        assert isinstance(_W(), Differentiable)
 
     def test_non_differentiable_world_rejected(self) -> None:
         class _W:
             def sample(self, model):
                 return {}
 
-        assert not isinstance(_W(), DifferentiableWorld)
+        assert not isinstance(_W(), Differentiable)
 
     def test_fully_differentiable_requires_both_methods(self) -> None:
         class _Partial:
@@ -141,8 +141,8 @@ class TestCapabilityTraits:
             def grad_step(self, model):
                 return {}
 
-        assert not isinstance(_Partial(), FullyDifferentiableWorld)
-        assert isinstance(_Full(), FullyDifferentiableWorld)
+        assert not isinstance(_Partial(), FullyDifferentiable)
+        assert isinstance(_Full(), FullyDifferentiable)
 
     def test_rewarding_world_protocol(self) -> None:
         class _W:
@@ -150,7 +150,7 @@ class TestCapabilityTraits:
             def produces_reward(self) -> bool:
                 return True
 
-        assert isinstance(_W(), RewardingWorld)
+        assert isinstance(_W(), Rewarding)
 
     def test_trajectory_world_protocol(self) -> None:
         class _W:
@@ -158,4 +158,4 @@ class TestCapabilityTraits:
             def trajectory_length(self) -> int:
                 return 8
 
-        assert isinstance(_W(), TrajectoryWorld)
+        assert isinstance(_W(), Trajectory)

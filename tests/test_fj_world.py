@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from perfsim.models import LinearModel
-from perfsim.worlds import FJWorld, normalize_adjacency
+from perfsim.environments.dynamics import FJWorld, normalize_adjacency
 
 
 def _random_graph(n: int, seed: int = 0) -> torch.Tensor:

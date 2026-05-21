@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from perfsim.worlds import ReplicatorWorld
+from perfsim.environments.dynamics import ReplicatorWorld
 
 
 def _constant_fitness(f_vec: torch.Tensor):

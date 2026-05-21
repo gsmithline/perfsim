@@ -33,7 +33,7 @@ from perfsim.losses import BCEWithLogitsLoss, L2RegularizedLoss
 from perfsim.metrics import performative_risk
 from perfsim.models import MLPModel
 from perfsim.simulator import Simulator
-from perfsim.worlds.strategic_gradient import StrategicGradientWorld
+from perfsim.environments.dynamics.strategic_gradient import StrategicGradientWorld
 
 
 def _make_population(n: int, seed: int) -> tuple[torch.Tensor, torch.Tensor]:

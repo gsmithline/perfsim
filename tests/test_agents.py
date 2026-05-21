@@ -25,8 +25,8 @@ from perfsim.core import (
 from perfsim.learners import ERMLearner, GradientLearner
 from perfsim.losses import MSELoss
 from perfsim.models import LinearModel
-from perfsim.worlds import GaussianShiftWorld
-from perfsim.worlds.strategic_linear import StrategicLinearWorld
+from perfsim.environments.dynamics import GaussianShiftWorld
+from perfsim.environments.dynamics.strategic_linear import StrategicLinearWorld
 
 
 def _make_predictor(d: int = 3, agent_id: str = "predictor") -> PredictorAgent:

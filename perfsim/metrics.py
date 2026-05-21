@@ -19,7 +19,7 @@ from torch import Tensor
 
 from perfsim.core.loss import Loss
 from perfsim.core.model import Model
-from perfsim.core.world import World
+from perfsim.core.environment import Environment as World
 
 
 def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
@@ -98,7 +98,7 @@ def sensitivity_paired(world: World, model_a: Model, model_b: Model) -> Tensor:
     twice from `world.sample` (peek, no state mutation). For deterministic
     worlds whose i-th draw depends on a fixed shared latent, this equals the
     exact Wasserstein-1; for stochastic worlds it is an upper bound that
-    converges to W_1 only under matched RNG (StatelessWorld's forked-generator
+    converges to W_1 only under matched RNG (StatelessDynamics' forked-generator
     peek does provide this).
 
     Raises ValueError if θ_a == θ_b.

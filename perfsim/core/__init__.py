@@ -1,12 +1,31 @@
 """Core abstractions: types, schemas, and capability traits.
 
-Concrete ABCs (Model, Loss, Learner, World ABCs) and concrete implementations
-land in subsequent tasks. This module re-exports the public types and trait
-protocols.
+Re-exports the canonical public API (DESIGN.md §4-5):
+
+- `Predictor` facade over (Model, Loss, Learner).
+- `Environment` ABC with `Dynamics` and `AgentBased` siblings.
+- Capability Protocols: `Differentiable`, `FullyDifferentiable`, `Rewarding`,
+  `Trajectory`, `ClosedFormFixedPoint`.
+
+The agent-shell layer (`Executor`, `AgentSpec`, message Pydantic models) is
+preserved scaffolding for the eventual A2A wire-up (DESIGN.md §18); it is
+not on the active simulation hot path.
 """
 
 from perfsim.core.agent_spec import Agent, AgentSpec, SkillSpec
 from perfsim.core.dataset import Dataset, SubsetDataset
+from perfsim.core.environment import (
+    AgentBased,
+    ClosedFormFixedPoint,
+    Differentiable,
+    Dynamics,
+    Environment,
+    FullyDifferentiable,
+    Rewarding,
+    StatefulDynamics,
+    StatelessDynamics,
+    Trajectory,
+)
 from perfsim.core.executor import Executor, InProcessExecutor
 from perfsim.core.learner import Learner
 from perfsim.core.loss import Loss
@@ -27,17 +46,6 @@ from perfsim.core.messages import (
     UpdateRequest,
     UpdateResponse,
 )
-from perfsim.core.environment import (
-    AgentBasedEnvironment,
-    Differentiable,
-    DynamicsEnvironment,
-    Environment,
-    FullyDifferentiable,
-    Rewarding,
-    StatefulDynamics,
-    StatelessDynamics,
-    Trajectory,
-)
 from perfsim.core.model import Model
 from perfsim.core.predictor import Predictor
 from perfsim.core.types import (
@@ -49,33 +57,14 @@ from perfsim.core.types import (
     DataSchema,
     SchemaError,
 )
-from perfsim.core.world import (
-    ClosedFormFixedPoint,
-    DifferentiableWorld,
-    FullyDifferentiableWorld,
-    RewardingWorld,
-    StatefulWorld,
-    StatelessWorld,
-    TrajectoryWorld,
-    World,
-)
 
 __all__ = [
     "SUPERVISED_SCHEMA",
     "TRAJECTORY_SCHEMA",
     "Agent",
-    "AgentBasedEnvironment",
+    "AgentBased",
     "AgentHandle",
     "AgentSpec",
-    "Differentiable",
-    "DynamicsEnvironment",
-    "Environment",
-    "FullyDifferentiable",
-    "Predictor",
-    "Rewarding",
-    "StatefulDynamics",
-    "StatelessDynamics",
-    "Trajectory",
     "BestRespondRequest",
     "BestRespondResponse",
     "ClosedFormFixedPoint",
@@ -85,11 +74,13 @@ __all__ = [
     "Data",
     "DataSchema",
     "Dataset",
-    "DifferentiableWorld",
+    "Differentiable",
+    "Dynamics",
+    "Environment",
     "EvalLossRequest",
     "EvalLossResponse",
     "Executor",
-    "FullyDifferentiableWorld",
+    "FullyDifferentiable",
     "GetParamsRequest",
     "GetParamsResponse",
     "InProcessExecutor",
@@ -99,16 +90,16 @@ __all__ = [
     "PerfsimMessage",
     "PredictRequest",
     "PredictResponse",
-    "RewardingWorld",
+    "Predictor",
+    "Rewarding",
     "SchemaError",
     "SetParamsRequest",
     "SetParamsResponse",
     "SkillSpec",
-    "StatefulWorld",
-    "StatelessWorld",
+    "StatefulDynamics",
+    "StatelessDynamics",
     "SubsetDataset",
-    "TrajectoryWorld",
+    "Trajectory",
     "UpdateRequest",
     "UpdateResponse",
-    "World",
 ]

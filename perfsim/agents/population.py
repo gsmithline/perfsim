@@ -23,7 +23,7 @@ from perfsim.core.messages import (
     GetParamsResponse,
 )
 from perfsim.core.model import Model
-from perfsim.core.world import World
+from perfsim.core.environment import Environment as World
 
 
 class PopulationAgent:

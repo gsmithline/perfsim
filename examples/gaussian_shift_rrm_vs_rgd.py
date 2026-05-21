@@ -29,7 +29,7 @@ from perfsim.learners import ERMLearner, GradientLearner
 from perfsim.losses import MSELoss
 from perfsim.models import LinearModel
 from perfsim.simulator import Simulator
-from perfsim.worlds.gaussian_shift import GaussianShiftWorld
+from perfsim.environments.dynamics.gaussian_shift import GaussianShiftWorld
 
 
 def _make_world(d: int, contraction: float, seed: int) -> GaussianShiftWorld:

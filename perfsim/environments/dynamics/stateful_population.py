@@ -18,7 +18,7 @@ restores whatever dict the subclass passes in.
 
 Determinism: `_step` should be a pure function of `(self._state, model)`.
 Stochastic subclasses must manage their own seeded RNG; a forked-generator
-pattern (as in `StatelessWorld`) is the recommended way to make
+pattern (as in `StatelessDynamics`) is the recommended way to make
 `sample(peek) == step(advance)` for the same world state.
 """
 
@@ -31,12 +31,12 @@ from torch import Tensor
 
 from perfsim.core.model import Model
 from perfsim.core.types import Data
-from perfsim.core.world import StatefulWorld
+from perfsim.core.environment import StatefulDynamics
 
 State = dict[str, Tensor]
 
 
-class StatefulPopulationWorld(StatefulWorld):
+class StatefulPopulationWorld(StatefulDynamics):
     """Base for worlds with per-agent persistent state.
 
     Subclasses implement `_step(model) -> (data, next_state)`. The base

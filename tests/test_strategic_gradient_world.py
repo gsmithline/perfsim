@@ -6,8 +6,8 @@ import pytest
 import torch
 
 from perfsim.models import LinearModel, MLPModel
-from perfsim.worlds.strategic_gradient import StrategicGradientWorld
-from perfsim.worlds.strategic_linear import StrategicLinearWorld
+from perfsim.environments.dynamics.strategic_gradient import StrategicGradientWorld
+from perfsim.environments.dynamics.strategic_linear import StrategicLinearWorld
 
 
 def _fixed_population(n: int, d: int, seed: int = 0):

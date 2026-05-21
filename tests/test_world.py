@@ -12,13 +12,13 @@ import torch
 from perfsim.core import (
     SUPERVISED_SCHEMA,
     ClosedFormFixedPoint,
-    DifferentiableWorld,
-    StatefulWorld,
-    StatelessWorld,
-    World,
+    Differentiable,
+    Environment,
+    StatefulDynamics,
+    StatelessDynamics,
 )
 from perfsim.models import LinearModel
-from perfsim.worlds import GaussianShiftWorld, StrategicLinearWorld
+from perfsim.environments.dynamics import GaussianShiftWorld, StrategicLinearWorld
 
 
 def _make_gauss(
@@ -37,17 +37,17 @@ def _make_model(d: int = 3) -> LinearModel:
 
 
 class TestWorldABCs:
-    def test_cannot_instantiate_World(self) -> None:
+    def test_cannot_instantiate_Environment(self) -> None:
         with pytest.raises(TypeError):
-            World()  # type: ignore[abstract]
+            Environment()  # type: ignore[abstract]
 
     def test_cannot_instantiate_StatelessWorld(self) -> None:
         with pytest.raises(TypeError):
-            StatelessWorld()  # type: ignore[abstract]
+            StatelessDynamics()  # type: ignore[abstract]
 
     def test_cannot_instantiate_StatefulWorld(self) -> None:
         with pytest.raises(TypeError):
-            StatefulWorld()  # type: ignore[abstract]
+            StatefulDynamics()  # type: ignore[abstract]
 
 
 class TestGaussianShiftWorld:
@@ -80,7 +80,7 @@ class TestGaussianShiftWorld:
 
     def test_implements_DifferentiableWorld(self) -> None:
         w, _ = _make_gauss()
-        assert isinstance(w, DifferentiableWorld)
+        assert isinstance(w, Differentiable)
 
     def test_implements_ClosedFormFixedPoint(self) -> None:
         w, _ = _make_gauss()
@@ -211,7 +211,7 @@ class TestStrategicLinearWorld:
         # Expected shift only at columns 0 and 2.
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)
-        from perfsim.worlds import StrategicLinearWorld
+        from perfsim.environments.dynamics import StrategicLinearWorld
 
         world = StrategicLinearWorld(x0=x0, y=y, epsilon=1.0, strat_features=(0, 2))
         m = LinearModel(in_features=4, out_features=1, bias=False)
@@ -223,7 +223,7 @@ class TestStrategicLinearWorld:
         assert torch.allclose(data["x"], expected)
 
     def test_strat_features_property(self) -> None:
-        from perfsim.worlds import StrategicLinearWorld
+        from perfsim.environments.dynamics import StrategicLinearWorld
 
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)
@@ -233,7 +233,7 @@ class TestStrategicLinearWorld:
         assert w_sub.strat_features == (0, 2)
 
     def test_strat_features_validation(self) -> None:
-        from perfsim.worlds import StrategicLinearWorld
+        from perfsim.environments.dynamics import StrategicLinearWorld
 
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)

@@ -17,15 +17,15 @@ import pytest
 import torch
 
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.core.world import StatefulWorld
+from perfsim.core.environment import StatefulDynamics
 from perfsim.learners import GradientLearner
 from perfsim.losses import MSELoss
 from perfsim.models import LinearModel
 from perfsim.simulator import Simulator
-from perfsim.worlds import GaussianShiftWorld, StrategicLinearWorld
+from perfsim.environments.dynamics import GaussianShiftWorld, StrategicLinearWorld
 
 
-class _RecordingStatefulWorld(StatefulWorld):
+class _RecordingStatefulWorld(StatefulDynamics):
     """Stateful test world that records the model params seen at each step.
 
     Each `step` appends the model's current flat params to `theta_history`

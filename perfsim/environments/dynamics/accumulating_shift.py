@@ -31,12 +31,12 @@ from torch import Tensor
 
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.worlds._common import (
+from perfsim.environments.dynamics._common import (
     apply_strategic_shift,
     input_gradient,
     validate_strat_features,
 )
-from perfsim.worlds.stateful_population import State, StatefulPopulationWorld
+from perfsim.environments.dynamics.stateful_population import State, StatefulPopulationWorld
 
 
 class AccumulatingShiftWorld(StatefulPopulationWorld):

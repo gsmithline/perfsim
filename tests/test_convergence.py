@@ -14,7 +14,7 @@ import torch
 from perfsim.learners import ERMLearner, GradientLearner
 from perfsim.losses import MSELoss
 from perfsim.models import LinearModel
-from perfsim.worlds import GaussianShiftWorld
+from perfsim.environments.dynamics import GaussianShiftWorld
 
 
 def _make_world_and_model(

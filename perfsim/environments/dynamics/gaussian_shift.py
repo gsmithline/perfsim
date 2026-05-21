@@ -10,7 +10,7 @@ For a linear regressor model(x) = x . theta_model with MSE, the population
 risk minimizer is `A theta_deployed + b`. RRM iterates theta_{t+1} =
 A theta_t + b; the closed-form fixed point is `theta* = (I - A)^-1 b`.
 
-Implements the `DifferentiableWorld` trait via `grad_sample`, exposing
+Implements the `Differentiable` trait via `grad_sample`, exposing
 partial-D / partial-theta through a reparameterized sample (noise drawn
 without grad, theta path autograd-traceable).
 """
@@ -22,10 +22,10 @@ from torch import Tensor
 
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.core.world import StatelessWorld
+from perfsim.core.environment import StatelessDynamics
 
 
-class GaussianShiftWorld(StatelessWorld):
+class GaussianShiftWorld(StatelessDynamics):
     """Stateless D(theta) = N(A theta + b, Sigma) over regression targets.
 
     The deployed theta is read from the model as a flat parameter vector

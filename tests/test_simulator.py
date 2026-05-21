@@ -17,14 +17,14 @@ import torch
 from perfsim.core import SchemaError
 from perfsim.core.dataset import Dataset
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.core.world import StatelessWorld
+from perfsim.core.environment import StatelessDynamics
 from perfsim.datasets import TensorDataset
 from perfsim.learners import ERMLearner, GradientLearner
 from perfsim.losses import MSELoss
 from perfsim.metrics import performative_risk
 from perfsim.models import LinearModel
 from perfsim.simulator import Simulator
-from perfsim.worlds import GaussianShiftWorld
+from perfsim.environments.dynamics import GaussianShiftWorld
 
 
 def _make_sim(

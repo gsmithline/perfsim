@@ -15,8 +15,8 @@ from perfsim.metrics import (
     stability_gap,
 )
 from perfsim.models import LinearModel
-from perfsim.worlds import GaussianShiftWorld
-from perfsim.worlds.strategic_linear import StrategicLinearWorld
+from perfsim.environments.dynamics import GaussianShiftWorld
+from perfsim.environments.dynamics.strategic_linear import StrategicLinearWorld
 
 
 def _make_world(d: int = 3, sigma: float = 0.01, batch: int = 256, seed: int = 0):

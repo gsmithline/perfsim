@@ -40,7 +40,7 @@ from torch import Tensor
 
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.worlds.stateful_population import State, StatefulPopulationWorld
+from perfsim.environments.dynamics.stateful_population import State, StatefulPopulationWorld
 
 
 def normalize_adjacency(adj: Tensor) -> Tensor:

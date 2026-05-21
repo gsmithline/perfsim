@@ -32,15 +32,15 @@ from torch import Tensor
 
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
-from perfsim.core.world import StatefulWorld
-from perfsim.worlds._common import (
+from perfsim.core.environment import StatefulDynamics
+from perfsim.environments.dynamics._common import (
     apply_strategic_shift,
     input_gradient,
     validate_strat_features,
 )
 
 
-class StrategicGradientWorld(StatefulWorld):
+class StrategicGradientWorld(StatefulDynamics):
     """Strategic best-response via the predictor's input gradient.
 
     One-shot best-response to a deployed classifier; N>1 inner steps either
