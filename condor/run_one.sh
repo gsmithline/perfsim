@@ -15,7 +15,7 @@ KL_BETA="$3"
 # ---- machine-specific paths (edit before submitting) ----
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
-ENV_NAME="${ENV_NAME:-perfsim}"
+ENV_NAME="${ENV_NAME:-opdyn}"
 WANDB_KEY_FILE="${WANDB_KEY_FILE:-/home/gsmithline/.wandb_key}"
 
 # ---- run knobs (overridable) ----
