@@ -79,6 +79,9 @@ def main() -> int:
     max_steps = _env_int("SFT_MAX_STEPS", 50)
     gen_batch_size = _env_int("GEN_BATCH_SIZE", 64)
     max_new_tokens = _env_int("MAX_NEW_TOKENS", 8)
+    sft_batch_size = _env_int("SFT_BATCH_SIZE", 32)
+    sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
+    target_kind = os.environ.get("TARGET_KIND", "exposed_binary")  # or "disease_stage"
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -92,8 +95,11 @@ def main() -> int:
         "seed": seed,
         "device": device,
         "max_steps": max_steps,
+        "sft_batch_size": sft_batch_size,
+        "sft_full_epoch": sft_full_epoch,
         "gen_batch_size": gen_batch_size,
         "max_new_tokens": max_new_tokens,
+        "target_kind": target_kind,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -128,16 +134,31 @@ def main() -> int:
     print(f"[run] env ready: {n_agents} agents, {n_seeded} initially infected, "
           f"in {time.time() - t0:.1f}s", flush=True)
 
+    # Build per-agent profile with the two features the bundled covid substep
+    # actually uses for transmission: age bucket (SFSusceptibility multiplier)
+    # and mean_interactions (per-agent contacts/day).
     ages = env.runner.state["agents"]["citizens"]["age"].squeeze().long().tolist()
-    profiles = pd.DataFrame({"age": ages, "agent_id": list(range(n_agents))})
+    mean_int = env.runner.state["environment"]["mean_interactions"].squeeze().tolist()
+    AGE_LABELS = ["under 18", "18-29", "30-44", "45-59", "60-74", "75+"]
+    profiles = pd.DataFrame({
+        "age_bucket": ages,
+        "age_label": [AGE_LABELS[min(int(a), len(AGE_LABELS) - 1)] for a in ages],
+        "mean_interactions": mean_int,
+        "agent_id": list(range(n_agents)),
+    })
+    print(f"[run] profile features: age_buckets={sorted(set(ages))} "
+          f"interactions={sorted(set(mean_int))}", flush=True)
 
     def prompt_builder(profile_row, tokenizer):  # noqa: ARG001
         return (
-            f"You are a {int(profile_row['age'])}-year-old resident of New York City "
-            f"during an active infectious disease outbreak. Public health officials "
-            f"have recommended isolation. On a scale from 0 to 1, what is the "
-            f"probability you will choose to isolate today? Reply with only a "
-            f"number between 0 and 1.\nAnswer: "
+            f"You are an adult in the {profile_row['age_label']} age group "
+            f"living in New York City. On a typical day you have close contact "
+            f"with about {profile_row['mean_interactions']:.0f} other people. "
+            f"An infectious respiratory disease is currently spreading. "
+            f"Public health officials have recommended that residents isolate. "
+            f"On a scale from 0 to 1, what is the probability you will choose "
+            f"to isolate today? Reply with only a number between 0 and 1.\n"
+            f"Answer: "
         )
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
@@ -155,22 +176,53 @@ def main() -> int:
     )
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
 
-    loss = MSELoss()
-    if training_style == "sft":
-        learner = SFTLearner(
-            model=model,
-            loss=loss,
-            max_steps=max_steps,
-            output_dir=str(out_dir / "trl"),
+    # Resolve max_steps. If SFT_FULL_EPOCH=1, override to one full epoch
+    # over the 37k examples at the chosen batch size.
+    if sft_full_epoch:
+        effective_max_steps = -(-n_agents // sft_batch_size)  # ceil div
+        print(
+            f"[run] SFT_FULL_EPOCH=1: max_steps={effective_max_steps} "
+            f"(= ceil({n_agents}/{sft_batch_size}))",
+            flush=True,
         )
+    else:
+        effective_max_steps = max_steps
+
+    # Override the default state_extractor if the user asked for the
+    # binary-exposed target instead of disease_stage.
+    if target_kind == "exposed_binary":
+        def custom_state_extractor(runner):
+            citizens = runner.state["agents"]["citizens"]
+            age = citizens["age"].float().detach()
+            exposed = (citizens["disease_stage"].squeeze() > 0).float().detach().reshape(-1, 1)
+            return {
+                "x": age,
+                "y": exposed,
+                "agent_idx": torch.arange(age.shape[0]),
+            }
+        # Hot-swap the extractor on the existing env.
+        env._state_extractor = custom_state_extractor  # noqa: SLF001
+        print("[run] target = (disease_stage > 0).float() (binary exposed)", flush=True)
+    elif target_kind == "disease_stage":
+        print("[run] target = disease_stage (float 0-4)", flush=True)
+    else:
+        raise ValueError(f"unknown TARGET_KIND: {target_kind!r}")
+
+    loss = MSELoss()
+    learner_kwargs = dict(
+        model=model,
+        loss=loss,
+        max_steps=effective_max_steps,
+        per_device_batch_size=sft_batch_size,
+        output_dir=str(out_dir / "trl"),
+    )
+    if training_style == "sft":
+        learner = SFTLearner(**learner_kwargs)
     elif training_style == "sft_kl":
         learner = KLSFTLearner(
-            model=model,
-            loss=loss,
+            **learner_kwargs,
             ref_model_name=base_model,
             kl_beta=kl_beta,
-            max_steps=max_steps,
-            output_dir=str(out_dir / "trl"),
         )
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
