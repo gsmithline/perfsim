@@ -151,14 +151,16 @@ def main() -> int:
 
     def prompt_builder(profile_row, tokenizer):  # noqa: ARG001
         return (
-            f"You are an adult in the {profile_row['age_label']} age group "
-            f"living in New York City. On a typical day you have close contact "
-            f"with about {profile_row['mean_interactions']:.0f} other people. "
-            f"An infectious respiratory disease is currently spreading. "
-            f"Public health officials have recommended that residents isolate. "
-            f"On a scale from 0 to 1, what is the probability you will choose "
-            f"to isolate today? Reply with only a number between 0 and 1.\n"
-            f"Answer: "
+            f"You are a public health official issuing personalized isolation "
+            f"recommendations during an active infectious respiratory disease "
+            f"outbreak in New York City. Your goal is to minimize transmission. "
+            f"\n\n"
+            f"For an adult in the {profile_row['age_label']} age group who has "
+            f"about {profile_row['mean_interactions']:.0f} close contacts per "
+            f"day, what level of isolation do you recommend today? Reply with "
+            f"only a number between 0 (no isolation needed) and 1 (full "
+            f"isolation).\n"
+            f"Recommendation: "
         )
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
