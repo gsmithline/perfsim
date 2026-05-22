@@ -110,15 +110,21 @@ def main() -> int:
     from perfsim.learners.lm.sft import SFTLearner
     from perfsim.learners.lm.kl_sft import KLSFTLearner
     from perfsim.losses import MSELoss
-    from perfsim.scenarios.at_covid import make_covid_env, seed_initial_infections
+    from perfsim.scenarios.at_covid import make_covid_env
     from perfsim.simulator import Simulator
 
     torch.manual_seed(seed)
     print("[run] building covid env (~5s init for 37,518 agents)", flush=True)
     t0 = time.time()
-    env = make_covid_env(init_seed=seed)
+    # Seed initial infections via the factory so Simulator.run's env.reset
+    # does not wipe them between sim.run() calls. Without this, the
+    # population stays effectively all-Susceptible and the LM's isolation
+    # decisions have nothing to gate (daily_infected stays at the baseline
+    # exposed count across all rounds and betas).
+    env = make_covid_env(init_seed=seed, initial_infections_fraction=seed_frac)
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
-    n_seeded = seed_initial_infections(env, fraction=seed_frac, seed=seed)
+    citizens = env.runner.state["agents"]["citizens"]
+    n_seeded = int((citizens["disease_stage"].squeeze() == 2.0).sum().item())
     print(f"[run] env ready: {n_agents} agents, {n_seeded} initially infected, "
           f"in {time.time() - t0:.1f}s", flush=True)
 

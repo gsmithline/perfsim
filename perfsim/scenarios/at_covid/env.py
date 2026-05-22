@@ -213,15 +213,35 @@ def make_covid_env(
     state_extractor: Optional[Callable[[Runner], dict[str, Tensor]]] = None,
     keep_trajectory: bool = False,
     strict_signal: bool = True,
+    initial_infections_fraction: float | None = None,
 ) -> AgentTorchEnvironment:
     """Construct an `AgentTorchEnvironment` driving the bundled covid sim.
 
     All four callables have sensible covid-flavored defaults; override any
     of them to change the feature space, the signal-injection format, or
     the supervised target shape.
+
+    initial_infections_fraction: if not None, the runner_factory will seed
+        this fraction of agents as INFECTED (disease_stage=2) immediately
+        after `runner.init()`. This survives `Simulator.run`'s `env.reset`
+        (which rebuilds the runner via the factory), unlike calling
+        `seed_initial_infections(env, ...)` after `make_covid_env`.
+        Without seeded infections the population stays effectively
+        all-Susceptible across the rollout and the LM's isolation policy
+        has nothing to gate transmission against.
     """
+    if initial_infections_fraction is not None:
+        frac = float(initial_infections_fraction)
+
+        def _factory(seed: int) -> Runner:
+            runner = build_covid_runner(seed)
+            seed_initial_infections(runner, fraction=frac, seed=seed)
+            return runner
+    else:
+        _factory = build_covid_runner
+
     return AgentTorchEnvironment(
-        runner_factory=build_covid_runner,
+        runner_factory=_factory,
         feature_provider=feature_provider or default_feature_provider,
         signal_writer=signal_writer or default_signal_writer,
         state_extractor=state_extractor or default_state_extractor,
