@@ -1,80 +1,94 @@
-"""End-to-end demo: Perdomo strategic-loan scenario, single μ, in-process.
+"""End-to-end demo: Perdomo strategic-loan scenario, single mu, in-process.
 
 Drives the full Perdomo loan scenario through `Simulator.run` without any
 agent-shell / Executor indirection. Prints per-round PR and stability gap.
 
-Defaults to GiveMeSomeCredit via Kaggle (cached locally). Pass `--synthetic`
-to use the in-process synthetic fallback (no Kaggle creds required, not the
-replication claim).
-
-Run:
-    python examples/perdomo_strategic_inproc.py
-    python examples/perdomo_strategic_inproc.py --mu 100 --n-rounds 25
-    python examples/perdomo_strategic_inproc.py --synthetic
+Defaults to GiveMeSomeCredit via Kaggle (cached locally). Set
+`USE_SYNTHETIC = True` in `config` cell to use the in-process synthetic
+fallback (no Kaggle creds required; not the replication claim).
 """
 
-from __future__ import annotations
+import marimo
 
-import argparse
-
-import torch
-
-from perfsim.scenarios.perdomo_loan.config import PerdomoLoanConfig
-from perfsim.scenarios.perdomo_loan.reproduction import run
+__generated_with = "0.23.7"
+app = marimo.App()
 
 
-def _build_argparser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--mu", type=float, default=1.0)
-    p.add_argument("--n-rounds", type=int, default=15)
-    p.add_argument("--learner", choices=("erm", "gradient"), default="erm")
-    p.add_argument("--learner-lr", type=float, default=0.01)
-    p.add_argument("--learner-steps", type=int, default=1)
-    p.add_argument("--weight-decay", type=float, default=5e-5)
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--synthetic", action="store_true")
-    return p
+@app.cell
+def imports():
+    import torch
+
+    from perfsim.scenarios.perdomo_loan.config import PerdomoLoanConfig
+    from perfsim.scenarios.perdomo_loan.reproduction import run
+    return PerdomoLoanConfig, run, torch
 
 
-def main() -> None:
-    args = _build_argparser().parse_args()
-    config = PerdomoLoanConfig(
-        mu=args.mu,
-        n_rounds=args.n_rounds,
-        learner=args.learner,
-        learner_lr=args.learner_lr,
-        learner_steps=args.learner_steps,
-        weight_decay=args.weight_decay,
-        seed=args.seed,
-        use_synthetic_fallback=args.synthetic,
+@app.cell
+def _intro():
+    import marimo as mo
+    mo.md(
+        """
+        # Perdomo strategic loan (in-process)
+
+        Replicates Perdomo et al. 2020 strategic-classification setup against
+        GiveMeSomeCredit data. Each round, the lender deploys a logistic
+        classifier; loan applicants shift their features along the gradient
+        of their predicted default probability; the lender retrains; repeat.
+        """
     )
+    return (mo,)
 
+
+@app.cell
+def config(PerdomoLoanConfig):
+    cfg = PerdomoLoanConfig(
+        mu=1.0,
+        n_rounds=15,
+        learner="erm",
+        learner_lr=0.01,
+        learner_steps=1,
+        weight_decay=5e-5,
+        seed=0,
+        use_synthetic_fallback=False,
+    )
     print(
-        f"# Perdomo strategic-loan (in-proc): mu={config.mu} "
-        f"learner={config.learner} rounds={config.n_rounds} "
-        f"weight_decay={config.weight_decay} synthetic={config.use_synthetic_fallback}"
+        f"# mu={cfg.mu} learner={cfg.learner} rounds={cfg.n_rounds} "
+        f"weight_decay={cfg.weight_decay} synthetic={cfg.use_synthetic_fallback}"
     )
-    print(f"# config hash: {config.content_hash()}")
-    print(f"# strat_features: {list(config.strat_features)}")
+    print(f"# config hash: {cfg.content_hash()}")
+    print(f"# strat_features: {list(cfg.strat_features)}")
+    return (cfg,)
 
-    history = run(config)
 
-    print(f"# {'round':>5}  {'PR':>12}  {'||Δθ||':>12}")
-    for r in history.records:
-        pr = r.get("PR")
-        gap = r.get("stability_gap")
-        pr_s = f"{pr.item():12.6f}" if isinstance(pr, torch.Tensor) else f"{'n/a':>12}"
-        gap_s = (
-            f"{gap.item():12.3e}"
-            if isinstance(gap, torch.Tensor)
-            else f"{'(init)':>12}"
+@app.cell
+def execute(cfg, run):
+    history = run(cfg)
+    return (history,)
+
+
+@app.cell
+def per_round_table(history, torch):
+    print(f"# {'round':>5}  {'PR':>12}  {'||delta theta||':>16}")
+    for _r in history.records:
+        _pr = _r.get("PR")
+        _gap = _r.get("stability_gap")
+        _pr_s = f"{_pr.item():12.6f}" if isinstance(_pr, torch.Tensor) else f"{'n/a':>12}"
+        _gap_s = (
+            f"{_gap.item():16.3e}"
+            if isinstance(_gap, torch.Tensor)
+            else f"{'(init)':>16}"
         )
-        print(f"  {r['round']:>5d}  {pr_s}  {gap_s}")
+        print(f"  {_r['round']:>5d}  {_pr_s}  {_gap_s}")
+    return
 
-    final_theta = history.records[-1]["theta"]
-    print(f"# final ||θ||_2 = {final_theta.norm().item():.6f}")
-    print(f"# final theta first 4 entries: {final_theta.flatten()[:4].tolist()}")
+
+@app.cell
+def final_theta(history):
+    final = history.records[-1]["theta"]
+    print(f"# final ||theta||_2 = {final.norm().item():.6f}")
+    print(f"# final theta first 4 entries: {final.flatten()[:4].tolist()}")
+    return (final,)
 
 
 if __name__ == "__main__":
-    main()
+    app.run()

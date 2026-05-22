@@ -47,19 +47,19 @@ class HFCausalLMModel(Model):
 
     Args:
         base_model_name: HuggingFace model ID (e.g. ``"Qwen/Qwen2.5-0.5B-Instruct"``).
-        profiles:        Row-aligned per-agent metadata, typically a
+        profiles: Row-aligned per-agent metadata, typically a
                          ``pandas.DataFrame`` of length N. The `i`-th row
                          is the profile for agent `i`.
-        prompt_builder:  Callable taking profile_row, tokenizer and
+        prompt_builder: Callable taking profile_row, tokenizer and
                          returning the full prompt string for generation.
-        use_lora:        Whether to wrap the base model with a LoRA adapter
+        use_lora: Whether to wrap the base model with a LoRA adapter
                          via PEFT. Default True.
-        lora_r:          LoRA rank.
-        lora_alpha:      LoRA scaling factor.
+        lora_r: LoRA rank.
+        lora_alpha: LoRA scaling factor.
         lora_target_modules: Module name patterns LoRA targets.
-        device:          torch device for the model. CPU by default; pass
+        device: torch device for the model. CPU by default; pass
                          cuda or mps if available.
-        dtype:           Model dtype. Defaults to float32 on CPU (bf16 on CPU is slow) 
+        dtype: Model dtype. Defaults to float32 on CPU (bf16 on CPU is slow) 
                             use bf16 on GPU.
         max_new_tokens:  Generation budget per query.
         gen_batch_size:  Batched generation chunk size.

@@ -5,51 +5,93 @@ agents) through perfsim's Simulator. The deployed LinearModel emits a
 per-agent isolation score from age; that score becomes the per-agent
 isolation probability used by AT's transmission substep.
 
-All covid-specific glue (langchain shim, YAML path patch, substep registry,
-zero-initialized platform_signal, default callables) lives in
-`perfsim.scenarios.at_covid`. This script is the caller.
-
-Run: `python examples/at_covid_smoke.py`. Requires `pip install
-'perfsim[agenttorch]'`. ~12s wall clock on CPU.
+Requires `pip install 'perfsim[agenttorch]'`. ~12s wall clock on CPU.
 """
 
-from __future__ import annotations
+import marimo
 
-import time
-
-import torch
-
-from perfsim.learners.erm import ERMLearner
-from perfsim.losses import MSELoss
-from perfsim.models.linear import LinearModel
-from perfsim.scenarios.at_covid import make_covid_env
-from perfsim.simulator import Simulator
+__generated_with = "0.23.7"
+app = marimo.App()
 
 
-def main():
+@app.cell
+def imports():
+    import time
+
+    import torch
+
+    from perfsim.learners.erm import ERMLearner
+    from perfsim.losses import MSELoss
+    from perfsim.models.linear import LinearModel
+    from perfsim.scenarios.at_covid import make_covid_env
+    from perfsim.simulator import Simulator
+    return (
+        ERMLearner,
+        LinearModel,
+        MSELoss,
+        Simulator,
+        make_covid_env,
+        time,
+        torch,
+    )
+
+
+@app.cell
+def _intro():
+    import marimo as mo
+    mo.md(
+        """
+        # AT covid smoke test
+
+        Drives the bundled covid sim through perfsim's epoch loop. Each round
+        the deployed LinearModel(age -> score) sets per-agent isolation
+        probability via `PerfsimIsolationDecision`. AT advances K substeps,
+        perfsim extracts `(age, disease_stage)` and retrains the predictor.
+
+        Validates the adapter wiring end-to-end against real AT machinery on
+        real bundled astoria data.
+        """
+    )
+    return (mo,)
+
+
+@app.cell
+def build_env(make_covid_env):
     env = make_covid_env(init_seed=0)
+    return (env,)
 
+
+@app.cell
+def build_sim(ERMLearner, LinearModel, MSELoss, Simulator, env):
     model = LinearModel(in_features=1, out_features=1)
     loss = MSELoss()
     learner = ERMLearner(model=model, loss=loss, max_iter=20)
-
     sim = Simulator(env=env, learner=learner, loss=loss)
+    return learner, loss, model, sim
 
+
+@app.cell
+def run_loop(sim, time):
     print(":: running 2 rounds, epoch_size=3")
-    t0 = time.time()
+    _t0 = time.time()
     hist = sim.run(n_rounds=2, epoch_size=3, seed=0)
-    print(f":: wall time = {time.time() - t0:.1f}s")
+    print(f":: wall time = {time.time() - _t0:.1f}s")
+    return (hist,)
 
-    for i, record in enumerate(hist):
+
+@app.cell
+def report(env, hist, torch):
+    for _i, _record in enumerate(hist):
         print(
-            f"  round {i}: theta = {record['theta'].tolist()}, "
-            f"stability_gap = {record.get('stability_gap', 'NA')}"
+            f"  round {_i}: theta = {_record['theta'].tolist()}, "
+            f"stability_gap = {_record.get('stability_gap', 'NA')}"
         )
 
-    citizens = env.runner.state["agents"]["citizens"]
-    counts = torch.bincount(citizens["disease_stage"].squeeze().long(), minlength=6)
-    print(f":: final SEIRM histogram: {counts.tolist()}")
+    _citizens = env.runner.state["agents"]["citizens"]
+    _counts = torch.bincount(_citizens["disease_stage"].squeeze().long(), minlength=6)
+    print(f":: final SEIRM histogram: {_counts.tolist()}")
+    return
 
 
 if __name__ == "__main__":
-    main()
+    app.run()

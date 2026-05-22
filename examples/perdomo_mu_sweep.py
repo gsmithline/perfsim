@@ -1,250 +1,245 @@
-"""
-Perdomo Figure 2 reproduction: μ-sweep on the strategic-loan scenario.
+"""Perdomo Figure 2 reproduction: mu-sweep on the strategic-loan scenario.
 
-Runs the Perdomo loan scenario across mus = [0.01, 1, 100, 1000] (Perdomo
-notebook's canonical eps_list) for each requested learner kind (RRM via
-ERMLearner and/or RGD via GradientLearner with a single SGD step/round) and
-saves a (len(learners) × 3) panel grid:
+Sweeps mus across [0.01, 1, 100, 1000] (Perdomo notebook's canonical
+eps_list) for each learner kind (RRM via ERMLearner, RGD via GradientLearner
+with one SGD step/round). Plots gap, performative risk, and ||theta|| in a
+(n_learners x 3) panel grid.
 
-per row: one learner kind
-columns: gap (log y) | PR (symlog y) | ||θ|| (log y)
+Saturation handling: when ||theta_t|| > SATURATION_THRESHOLD (1e8) the gap
+curve drops out -- at that magnitude LBFGS finds a numerical stationary
+point and reports gap=0, which is not meaningful convergence. The
+theta-norm panel still shows the divergence.
 
-After ||θ_t|| > SATURATION_THRESHOLD (default 1e8) the gap curve is dropped
-from the stability-gap panel: at that magnitude LBFGS (for RRM) finds a
-numerical stationary point and reports gap=0, which is not convergence to
-a meaningful fixed point. The θ-norm panel still shows the saturated value
-so the divergence is visible. RGD with one SGD step/round does not exhibit
-this overshoot; it diverges gracefully (linear growth in ||θ||) at large μ.
-
-Defaults to the real GiveMeSomeCredit data via KaggleDataset, passes
-``--synthetic`` to force the synthetic fallback (smoke test only, not the
-replication claim).
-
-Run:
-    python -m examples.perdomo_mu_sweep
-    python examples/perdomo_mu_sweep.py --synthetic --n-rounds 15
-    python examples/perdomo_mu_sweep.py --learners erm
-    python examples/perdomo_mu_sweep.py --learners erm gradient --rgd-lr 0.01
+Defaults to GiveMeSomeCredit via Kaggle; set USE_SYNTHETIC=True in the
+config cell to force the synthetic fallback.
 """
 
-from __future__ import annotations
+import marimo
 
-import argparse
-from pathlib import Path
-
-
-import matplotlib.pyplot as plt
-import torch
-
-from perfsim.history import History
-from perfsim.scenarios.perdomo_loan.config import PerdomoLoanConfig
-from perfsim.scenarios.perdomo_loan.reproduction import run
-
-DEFAULT_MUS = (0.01, 1.0, 100.0, 1000.0)
-DEFAULT_LEARNERS = ("erm", "gradient")
-LEARNER_TITLES = {
-    "erm": "RRM (ERMLearner; LBFGS to convergence)",
-    "gradient": "RGD (GradientLearner; one SGD step / round)",
-}
+__generated_with = "0.23.7"
+app = marimo.App()
 
 
-def run_sweep(
-    mus: tuple[float, ...],
-    learners: tuple[str, ...],
-    *,
-    n_rounds: int = 25,
-    weight_decay: float = 5e-5,
-    rgd_lr: float = 0.01,
-    rgd_steps: int = 1,
-    seed: int = 0,
-    use_synthetic_fallback: bool = False,
-) -> dict[str, dict[float, History]]:
-    """Run the Perdomo scenario for each (learner, μ) pair.
+@app.cell
+def imports():
+    from pathlib import Path
 
-    Returns ``{learner_name: {mu: History}}``.
-    """
-    out: dict[str, dict[float, History]] = {ln: {} for ln in learners}
-    for learner in learners:
-        for mu in mus:
-            config = PerdomoLoanConfig(
-                mu=mu,
-                n_rounds=n_rounds,
-                learner=learner,
-                learner_lr=rgd_lr,
-                learner_steps=rgd_steps,
-                weight_decay=weight_decay,
-                seed=seed,
-                use_synthetic_fallback=use_synthetic_fallback,
+    import matplotlib.pyplot as plt
+    import torch
+
+    from perfsim.history import History
+    from perfsim.scenarios.perdomo_loan.config import PerdomoLoanConfig
+    from perfsim.scenarios.perdomo_loan.reproduction import run
+    return History, Path, PerdomoLoanConfig, plt, run, torch
+
+
+@app.cell
+def _intro():
+    import marimo as mo
+    mo.md(
+        """
+        # Perdomo mu sweep
+
+        Sweeps mu over orders of magnitude and tracks: stability gap,
+        performative risk, predictor norm. RRM (LBFGS to convergence) and
+        RGD (one SGD step/round) compared side by side.
+
+        At large mu RRM saturates numerically (LBFGS settles at a point with
+        ||theta|| ~ 1e10+ and reported gap=0). We mask the gap curve past
+        that threshold and keep the norm panel as the witness of divergence.
+        """
+    )
+    return (mo,)
+
+
+@app.cell
+def constants():
+    DEFAULT_MUS = (0.01, 1.0, 100.0, 1000.0)
+    DEFAULT_LEARNERS = ("erm", "gradient")
+    LEARNER_TITLES = {
+        "erm": "RRM (ERMLearner; LBFGS to convergence)",
+        "gradient": "RGD (GradientLearner; one SGD step / round)",
+    }
+    GAP_FLOOR = 1e-12
+    SATURATION_THRESHOLD = 1e8
+    return (
+        DEFAULT_LEARNERS,
+        DEFAULT_MUS,
+        GAP_FLOOR,
+        LEARNER_TITLES,
+        SATURATION_THRESHOLD,
+    )
+
+
+@app.cell
+def config():
+    MUS = (0.01, 1.0, 100.0, 1000.0)
+    LEARNERS = ("erm", "gradient")
+    N_ROUNDS = 25
+    WEIGHT_DECAY = 5e-5
+    RGD_LR = 0.1
+    RGD_STEPS = 1
+    SEED = 0
+    USE_SYNTHETIC = False
+    return (
+        LEARNERS,
+        MUS,
+        N_ROUNDS,
+        RGD_LR,
+        RGD_STEPS,
+        SEED,
+        USE_SYNTHETIC,
+        WEIGHT_DECAY,
+    )
+
+
+@app.cell
+def run_sweep_fn(History, PerdomoLoanConfig, run):
+    def run_sweep(
+        mus, learners,
+        *, n_rounds, weight_decay, rgd_lr, rgd_steps, seed, use_synthetic_fallback,
+    ):
+        out = {ln: {} for ln in learners}
+        for ln in learners:
+            for mu in mus:
+                cfg = PerdomoLoanConfig(
+                    mu=mu,
+                    n_rounds=n_rounds,
+                    learner=ln,
+                    learner_lr=rgd_lr,
+                    learner_steps=rgd_steps,
+                    weight_decay=weight_decay,
+                    seed=seed,
+                    use_synthetic_fallback=use_synthetic_fallback,
+                )
+                print(f"  learner={ln:>8s}  mu={mu:>8g}  hash={cfg.content_hash()}  running...")
+                out[ln][mu] = run(cfg)
+        return out
+    return (run_sweep,)
+
+
+@app.cell
+def extract_fn(torch):
+    def extract_series_inner(history):
+        rounds, prs, gaps, theta_norms = [], [], [], []
+        for r in history.records:
+            rounds.append(int(r["round"]))
+            pr = r.get("PR")
+            prs.append(float(pr.item()) if isinstance(pr, torch.Tensor) else float("nan"))
+            gap = r.get("stability_gap")
+            gaps.append(float(gap.item()) if isinstance(gap, torch.Tensor) else None)
+            theta = r.get("theta")
+            theta_norms.append(
+                float(theta.norm().item()) if isinstance(theta, torch.Tensor) else float("nan")
             )
-            print(f"  learner={learner:>8s}  μ={mu:>8g}  "
-                  f"config_hash={config.content_hash()}  running...")
-            history = run(config)
-            out[learner][mu] = history
-    return out
+        return rounds, prs, gaps, theta_norms
+    extract_series = extract_series_inner
+    return (extract_series,)
 
 
-def _extract_series(
-    history: History,
-) -> tuple[list[int], list[float], list[float | None], list[float]]:
-    rounds: list[int] = []
-    prs: list[float] = []
-    gaps: list[float | None] = []
-    theta_norms: list[float] = []
-    for r in history.records:
-        rounds.append(int(r["round"]))
-        pr = r.get("PR")
-        prs.append(float(pr.item()) if isinstance(pr, torch.Tensor) else float("nan"))
-        gap = r.get("stability_gap")
-        if isinstance(gap, torch.Tensor):
-            gaps.append(float(gap.item()))
-        else:
-            gaps.append(None)
-        theta = r.get("theta")
-        if isinstance(theta, torch.Tensor):
-            theta_norms.append(float(theta.norm().item()))
-        else:
-            theta_norms.append(float("nan"))
-    return rounds, prs, gaps, theta_norms
-
-
-GAP_FLOOR = 1e-12
-SATURATION_THRESHOLD = 1e8
-
-
-def _plot_row(
-    axes,
-    results_for_learner: dict[float, History],
-    learner_name: str,
-    *,
-    is_top_row: bool,
-) -> None:
-    ax_gap, ax_pr, ax_norm = axes
-    for mu, history in sorted(results_for_learner.items()):
-        rounds, prs, gaps, theta_norms = _extract_series(history)
-        label = f"μ={mu:g}"
-
-        gap_x: list[int] = []
-        gap_y: list[float] = []
-        for t, g, tn in zip(rounds, gaps, theta_norms):
-            if g is None:
-                continue
-            if tn > SATURATION_THRESHOLD:
-                break
-            gap_x.append(t)
-            gap_y.append(max(g, GAP_FLOOR))
-        if gap_y:
-            ax_gap.plot(gap_x, gap_y, marker="o", markersize=3, label=label)
-        else:
-            ax_gap.plot([], [], marker="o", markersize=3,
-                        label=f"{label} (saturated)")
-        ax_pr.plot(rounds, prs, marker="o", markersize=3, label=label)
-        ax_norm.plot(rounds, theta_norms, marker="o", markersize=3, label=label)
-
-    ax_gap.set_yscale("log")
-    ax_gap.axhline(GAP_FLOOR, color="grey", linewidth=0.5, linestyle="--", alpha=0.5)
-    ax_gap.set_ylabel(
-        rf"{LEARNER_TITLES[learner_name]}" + "\n" +
-        r"$\|\theta_t - \theta_{t-1}\|_2$ (clamped $10^{-12}$)"
+@app.cell
+def execute(
+    LEARNERS,
+    MUS,
+    N_ROUNDS,
+    RGD_LR,
+    RGD_STEPS,
+    SEED,
+    USE_SYNTHETIC,
+    WEIGHT_DECAY,
+    run_sweep,
+):
+    results = run_sweep(
+        MUS, LEARNERS,
+        n_rounds=N_ROUNDS,
+        weight_decay=WEIGHT_DECAY,
+        rgd_lr=RGD_LR,
+        rgd_steps=RGD_STEPS,
+        seed=SEED,
+        use_synthetic_fallback=USE_SYNTHETIC,
     )
-    if is_top_row:
-        ax_gap.set_title(rf"Stability gap (masked at $\|\theta\|>{SATURATION_THRESHOLD:g}$)")
-    ax_gap.legend(fontsize=8)
-    ax_gap.grid(True, which="both", alpha=0.3)
-
-    ax_pr.set_yscale("symlog", linthresh=1.0)
-    ax_pr.set_ylabel("performative risk (symlog)")
-    if is_top_row:
-        ax_pr.set_title("PR per round")
-    ax_pr.legend(fontsize=8)
-    ax_pr.grid(True, which="both", alpha=0.3)
-
-    ax_norm.set_yscale("log")
-    ax_norm.axhline(
-        SATURATION_THRESHOLD, color="red", linewidth=0.7, linestyle="--",
-        alpha=0.6, label="saturation",
-    )
-    ax_norm.set_ylabel(r"$\|\theta_t\|_2$ (log y)")
-    if is_top_row:
-        ax_norm.set_title("Predictor norm")
-    ax_norm.legend(fontsize=8)
-    ax_norm.grid(True, which="both", alpha=0.3)
-
-    for ax in (ax_gap, ax_pr, ax_norm):
-        ax.set_xlabel("round t")
+    return (results,)
 
 
-def plot_sweep(
-    results: dict[str, dict[float, History]],
-    out_path: Path,
-) -> None:
+@app.cell
+def summary(SATURATION_THRESHOLD, extract_series, results):
+    for _ln, _per_mu in results.items():
+        print(f"# learner={_ln}")
+        for _mu, _hist in sorted(_per_mu.items()):
+            _, _prs, _gaps, _tnorms = extract_series(_hist)
+            _final_pr = _prs[-1] if _prs else float("nan")
+            _final_gap = next((g for g in reversed(_gaps) if g is not None), None)
+            _gap_s = f"{_final_gap:.3e}" if _final_gap is not None else "n/a"
+            _final_norm = _tnorms[-1] if _tnorms else float("nan")
+            _sat = " [SATURATED]" if _final_norm > SATURATION_THRESHOLD else ""
+            print(f"  mu={_mu:>8g}  PR={_final_pr:.6f}  gap={_gap_s}  ||theta||={_final_norm:.3e}{_sat}")
+    return
+
+
+@app.cell
+def plot_row_fn(GAP_FLOOR, LEARNER_TITLES, SATURATION_THRESHOLD, extract_series):
+    def plot_row_inner(axes, results_for_learner, learner_name, *, is_top_row):
+        ax_gap, ax_pr, ax_norm = axes
+        for mu, history in sorted(results_for_learner.items()):
+            rounds, prs, gaps, theta_norms = extract_series(history)
+            label = f"mu={mu:g}"
+
+            gap_x, gap_y = [], []
+            for t, g, tn in zip(rounds, gaps, theta_norms):
+                if g is None:
+                    continue
+                if tn > SATURATION_THRESHOLD:
+                    break
+                gap_x.append(t)
+                gap_y.append(max(g, GAP_FLOOR))
+            if gap_y:
+                ax_gap.plot(gap_x, gap_y, marker="o", markersize=3, label=label)
+            else:
+                ax_gap.plot([], [], marker="o", markersize=3, label=f"{label} (saturated)")
+            ax_pr.plot(rounds, prs, marker="o", markersize=3, label=label)
+            ax_norm.plot(rounds, theta_norms, marker="o", markersize=3, label=label)
+
+        ax_gap.set_yscale("log")
+        ax_gap.axhline(GAP_FLOOR, color="grey", linewidth=0.5, linestyle="--", alpha=0.5)
+        ax_gap.set_ylabel(f"{LEARNER_TITLES[learner_name]}\n||theta_t - theta_{{t-1}}||")
+        if is_top_row:
+            ax_gap.set_title(f"Stability gap (mask at ||theta||>{SATURATION_THRESHOLD:g})")
+        ax_gap.legend(fontsize=8)
+        ax_gap.grid(True, which="both", alpha=0.3)
+
+        ax_pr.set_yscale("symlog", linthresh=1.0)
+        ax_pr.set_ylabel("PR (symlog)")
+        if is_top_row:
+            ax_pr.set_title("PR per round")
+        ax_pr.legend(fontsize=8)
+        ax_pr.grid(True, which="both", alpha=0.3)
+
+        ax_norm.set_yscale("log")
+        ax_norm.axhline(SATURATION_THRESHOLD, color="red", linewidth=0.7, linestyle="--",
+                       alpha=0.6, label="saturation")
+        ax_norm.set_ylabel("||theta_t|| (log y)")
+        if is_top_row:
+            ax_norm.set_title("Predictor norm")
+        ax_norm.legend(fontsize=8)
+        ax_norm.grid(True, which="both", alpha=0.3)
+        for ax in (ax_gap, ax_pr, ax_norm):
+            ax.set_xlabel("round")
+    plot_row = plot_row_inner
+    return (plot_row,)
+
+
+@app.cell
+def plot(DEFAULT_LEARNERS, plot_row, plt, results):
     learner_order = [ln for ln in DEFAULT_LEARNERS if ln in results]
     n_rows = len(learner_order)
     fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4.5 * n_rows), squeeze=False)
     for i, ln in enumerate(learner_order):
-        _plot_row(axes[i], results[ln], ln, is_top_row=(i == 0))
+        plot_row(axes[i], results[ln], ln, is_top_row=(i == 0))
     fig.suptitle("Perdomo strategic-loan sweep (perfsim)")
     fig.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150)
-    print(f"  saved figure -> {out_path}")
-
-
-def _build_argparser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    p.add_argument("--mus", type=float, nargs="+", default=list(DEFAULT_MUS))
-    p.add_argument("--n-rounds", type=int, default=25)
-    p.add_argument(
-        "--learners",
-        nargs="+",
-        choices=("erm", "gradient"),
-        default=list(DEFAULT_LEARNERS),
-    )
-    p.add_argument(
-        "--rgd-lr",
-        type=float,
-        default=0.1,
-        help="RGD step size. 0.1 converges at μ≲100 in float32 GMSC; larger μ NaN's.",
-    )
-    p.add_argument("--rgd-steps", type=int, default=1)
-    p.add_argument("--weight-decay", type=float, default=5e-5)
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--synthetic", action="store_true")
-    p.add_argument(
-        "--out",
-        type=Path,
-        default=Path(__file__).resolve().parent / "figures" / "perdomo_mu_sweep.png",
-    )
-    return p
-
-
-def main() -> None:
-    args = _build_argparser().parse_args()
-    print(f"# Perdomo μ-sweep: mus={args.mus} learners={args.learners} "
-          f"n_rounds={args.n_rounds} rgd_lr={args.rgd_lr} "
-          f"rgd_steps={args.rgd_steps} synthetic={args.synthetic}")
-    results = run_sweep(
-        tuple(args.mus),
-        tuple(args.learners),
-        n_rounds=args.n_rounds,
-        weight_decay=args.weight_decay,
-        rgd_lr=args.rgd_lr,
-        rgd_steps=args.rgd_steps,
-        seed=args.seed,
-        use_synthetic_fallback=args.synthetic,
-    )
-    for learner_name, per_mu in results.items():
-        print(f"# learner={learner_name}")
-        for mu, history in sorted(per_mu.items()):
-            _, prs, gaps, theta_norms = _extract_series(history)
-            final_pr = prs[-1] if prs else float("nan")
-            final_gap = next((g for g in reversed(gaps) if g is not None), None)
-            gap_str = f"{final_gap:.3e}" if final_gap is not None else "n/a"
-            final_norm = theta_norms[-1] if theta_norms else float("nan")
-            sat_flag = " [SATURATED]" if final_norm > SATURATION_THRESHOLD else ""
-            print(f"  μ={mu:>8g}  final PR={final_pr:.6f}  final gap={gap_str}  "
-                  f"||theta||={final_norm:.3e}{sat_flag}")
-    plot_sweep(results, args.out)
+    fig
+    return (axes, fig, learner_order)
 
 
 if __name__ == "__main__":
-    main()
+    app.run()
