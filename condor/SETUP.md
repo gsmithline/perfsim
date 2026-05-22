@@ -69,6 +69,11 @@ WANDB_KEY_FILE=/home/gsmithline/.wandb_key                    # your key path
 
 Also fix the `notify_user` email if you want completion emails.
 
+The `condor/logs/` directory is tracked via `.gitkeep`. If you ever delete
+it or use a fresh clone where the directory is missing, jobs will land in
+held immediately with "Failed to open ... standard output: No such file or
+directory". Fix: `mkdir -p condor/logs && condor_release <jobid>`.
+
 ## 4. Sanity submit (one beta, short)
 
 Before the full sweep, run a single config to make sure the LM stack works

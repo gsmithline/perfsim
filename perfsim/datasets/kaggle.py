@@ -21,8 +21,14 @@ import torch
 
 from perfsim.core.types import SUPERVISED_SCHEMA, DataSchema
 from perfsim.datasets.tabular import TabularDataset
-from kaggle.api.kaggle_api_extended import KaggleApi
 import zipfile
+
+# kaggle import is intentionally deferred to call-site (see _download).
+# Importing it at module load triggers the kaggle CLI's auto-auth check,
+# which fails on machines without ~/.kaggle/kaggle.json even when
+# KaggleDataset is never instantiated. Transitive importers (any code that
+# touches perfsim.datasets via the perfsim.scenarios __init__) would
+# otherwise fail at import on cluster nodes without Kaggle credentials.
 
 
 def default_cache_dir() -> Path:
@@ -95,6 +101,14 @@ class KaggleDataset(TabularDataset):
 
     def _download(self) -> None:
         """Download competition files into `self._comp_dir` and unzip any archives."""
+
+        try:
+            from kaggle.api.kaggle_api_extended import KaggleApi
+        except ImportError as exc:
+            raise ImportError(
+                "KaggleDataset requires the 'kaggle' extra. "
+                "Install with: pip install 'perfsim[kaggle]'"
+            ) from exc
 
         api = KaggleApi()
         api.authenticate()
