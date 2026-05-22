@@ -151,16 +151,17 @@ def main() -> int:
 
     def prompt_builder(profile_row, tokenizer):  # noqa: ARG001
         return (
-            f"You are a public health official issuing personalized isolation "
-            f"recommendations during an active infectious respiratory disease "
-            f"outbreak in New York City. Your goal is to minimize transmission. "
-            f"\n\n"
-            f"For an adult in the {profile_row['age_label']} age group who has "
-            f"about {profile_row['mean_interactions']:.0f} close contacts per "
-            f"day, what level of isolation do you recommend today? Reply with "
-            f"only a number between 0 (no isolation needed) and 1 (full "
-            f"isolation).\n"
-            f"Recommendation: "
+            f"You are a public health official assigning personalized "
+            f"isolation recommendations during an active respiratory disease "
+            f"outbreak. Your goal is to minimize new transmissions.\n\n"
+            f"Pick EXACTLY ONE recommendation from this list and reply with "
+            f"only that number:\n"
+            f"0.1, 0.3, 0.5, 0.7, 0.9\n\n"
+            f"Where 0.1 = almost no isolation needed, 0.9 = nearly full "
+            f"isolation.\n\n"
+            f"Person: age group {profile_row['age_label']}, has about "
+            f"{profile_row['mean_interactions']:.0f} close contacts per day.\n"
+            f"Recommendation: 0."
         )
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
@@ -177,6 +178,23 @@ def main() -> int:
         load_now=True,
     )
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
+
+    # Diagnostic: dump (prompt, raw LM text, parsed value) for 20 random
+    # agents BEFORE any SFT, so we see what the base model is actually
+    # emitting and what the parser is doing with it. Crucial for debugging
+    # the "LM signal collapses to 0 in env" issue.
+    import random as _random
+    _rng = _random.Random(seed)
+    _sample_idx = _rng.sample(range(n_agents), min(20, n_agents))
+    _sample_prompts = [model.build_prompt(model.profile_at(i)) for i in _sample_idx]
+    print("[diag] sample LM outputs (pre-SFT):", flush=True)
+    _sample_texts = model._generate(_sample_prompts)
+    _sample_log = []
+    for _idx, _prompt, _txt in zip(_sample_idx, _sample_prompts, _sample_texts):
+        _parsed = model._parse(_txt)
+        _sample_log.append({"agent_idx": int(_idx), "raw_text": _txt, "parsed": float(_parsed)})
+        print(f"  agent {_idx}: text={_txt!r}  parsed={_parsed:.3f}", flush=True)
+    (out_dir / "diagnostic_pre_sft.json").write_text(json.dumps(_sample_log, indent=2))
 
     # Resolve max_steps. If SFT_FULL_EPOCH=1, override to one full epoch
     # over the 37k examples at the chosen batch size.
@@ -236,6 +254,68 @@ def main() -> int:
     print(f"[run] loop done in {time.time() - t_loop:.1f}s", flush=True)
 
     torch.save([dict(r) for r in hist.records], out_dir / "history.pt")
+
+    # ---- LM output diagnostic (POST-SFT) -----------------------------------
+    # Force one more forward pass through the LM on the same population to
+    # capture the final per-agent parsed recommendation. Group by profile_type
+    # (age_bucket, mean_interactions) and report mean/stdev/min/max so we can
+    # compare across betas and see if the LM's per-profile outputs actually
+    # differ between sweeps.
+    print("[run] dumping final per-profile LM recommendations...", flush=True)
+    t0 = time.time()
+    final_features = env.runner.state["agents"]["citizens"]["age"].float()
+    with torch.no_grad():
+        final_preds = model(final_features).squeeze().detach().cpu()
+    print(f"[run] final-pass forward in {time.time() - t0:.1f}s", flush=True)
+
+    # Stats on final_preds (what platform_signal would be set to).
+    print(
+        f"[diag] final preds stats: min={float(final_preds.min()):.4f} "
+        f"max={float(final_preds.max()):.4f} mean={float(final_preds.mean()):.4f} "
+        f"std={float(final_preds.std()):.4f}",
+        flush=True,
+    )
+    # And what will_isolate would actually be after PerfsimIsolationDecision's sigmoid.
+    _wi = torch.sigmoid(final_preds)
+    print(
+        f"[diag] sigmoid(final preds) (= will_isolate): min={float(_wi.min()):.4f} "
+        f"max={float(_wi.max()):.4f} mean={float(_wi.mean()):.4f}",
+        flush=True,
+    )
+
+    # Also dump 20 random (prompt, raw text, parsed) samples POST-SFT to
+    # compare against pre-SFT.
+    _sample_texts_post = model._generate([model.build_prompt(model.profile_at(i)) for i in _sample_idx])
+    _sample_log_post = []
+    print("[diag] sample LM outputs (post-SFT):", flush=True)
+    for _idx, _txt in zip(_sample_idx, _sample_texts_post):
+        _parsed = model._parse(_txt)
+        _sample_log_post.append({"agent_idx": int(_idx), "raw_text": _txt, "parsed": float(_parsed)})
+        print(f"  agent {_idx}: text={_txt!r}  parsed={_parsed:.3f}", flush=True)
+    (out_dir / "diagnostic_post_sft.json").write_text(json.dumps(_sample_log_post, indent=2))
+
+    # Group by (age_bucket, mean_interactions). Use a Python dict so we can
+    # save as JSON cleanly.
+    grp = {}
+    age_t = profiles["age_bucket"].tolist()
+    mi_t = profiles["mean_interactions"].tolist()
+    for i in range(n_agents):
+        key = f"age={int(age_t[i])}_mi={float(mi_t[i]):.1f}"
+        grp.setdefault(key, []).append(float(final_preds[i].item()))
+
+    profile_summary = []
+    for key in sorted(grp):
+        vals = torch.tensor(grp[key])
+        profile_summary.append({
+            "profile_type": key,
+            "n_agents": int(vals.shape[0]),
+            "rec_mean": float(vals.mean()),
+            "rec_std": float(vals.std()) if vals.shape[0] > 1 else 0.0,
+            "rec_min": float(vals.min()),
+            "rec_max": float(vals.max()),
+        })
+    (out_dir / "recommendations.json").write_text(json.dumps(profile_summary, indent=2))
+    print(f"[run] {len(profile_summary)} profile types saved -> recommendations.json", flush=True)
 
     trajectory = []
     for r in hist.records:
