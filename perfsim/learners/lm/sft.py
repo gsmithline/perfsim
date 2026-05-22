@@ -124,6 +124,8 @@ class SFTLearner(Learner):
     # ---- Train ----------------------------------------------------------
 
     def train(self, data: Data) -> None:
+        import inspect
+
         from trl import SFTConfig, SFTTrainer
 
         ds = self._build_dataset(data)
@@ -133,11 +135,19 @@ class SFTLearner(Learner):
             max_steps=self._max_steps,
             per_device_train_batch_size=self._per_device_batch_size,
             learning_rate=self._learning_rate,
-            max_seq_length=self._max_seq_length,
             report_to="none",
             save_strategy="no",
             logging_strategy="no",
         )
+        # TRL renamed `max_seq_length` -> `max_length` between releases.
+        # Older versions accept max_seq_length; newer versions reject it
+        # and want max_length. Detect which one this SFTConfig supports.
+        _sig = inspect.signature(SFTConfig.__init__).parameters
+        if "max_seq_length" in _sig:
+            cfg_kwargs["max_seq_length"] = self._max_seq_length
+        elif "max_length" in _sig:
+            cfg_kwargs["max_length"] = self._max_seq_length
+        # else: neither name accepted -> rely on TRL defaults; do nothing.
         cfg_kwargs.update(self._trainer_kwargs)
         cfg = SFTConfig(**cfg_kwargs)
 
