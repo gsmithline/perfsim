@@ -119,6 +119,19 @@ def main() -> int:
     from perfsim.scenarios.at_covid import make_covid_env
     from perfsim.simulator import Simulator
 
+    # Logit signal_writer: PerfsimIsolationDecision applies sigmoid() to
+    # platform_signal. If we want `will_isolate` to equal the LM's emitted
+    # value `p`, we must write logit(p) so sigmoid(logit(p)) = p. Without
+    # this, an LM that emits {0.1, 0.9} only spans will_isolate=[0.525,
+    # 0.711] after the substep's sigmoid; with it, will_isolate spans the
+    # full [0.1, 0.9] and the env actually responds.
+    def logit_signal_writer(runner, preds):
+        if preds.ndim == 2 and preds.shape[-1] == 1:
+            preds = preds.squeeze(-1)
+        p = preds.clamp(min=0.01, max=0.99)
+        logit_p = torch.log(p / (1.0 - p))
+        runner.state["agents"]["citizens"]["platform_signal"] = logit_p.detach().clone()
+
     torch.manual_seed(seed)
     print("[run] building covid env (~5s init for 37,518 agents)", flush=True)
     t0 = time.time()
@@ -127,7 +140,11 @@ def main() -> int:
     # population stays effectively all-Susceptible and the LM's isolation
     # decisions have nothing to gate (daily_infected stays at the baseline
     # exposed count across all rounds and betas).
-    env = make_covid_env(init_seed=seed, initial_infections_fraction=seed_frac)
+    env = make_covid_env(
+        init_seed=seed,
+        initial_infections_fraction=seed_frac,
+        signal_writer=logit_signal_writer,
+    )
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
     citizens = env.runner.state["agents"]["citizens"]
     n_seeded = int((citizens["disease_stage"].squeeze() == 2.0).sum().item())
@@ -154,14 +171,11 @@ def main() -> int:
             f"You are a public health official assigning personalized "
             f"isolation recommendations during an active respiratory disease "
             f"outbreak. Your goal is to minimize new transmissions.\n\n"
-            f"Pick EXACTLY ONE recommendation from this list and reply with "
-            f"only that number:\n"
-            f"0.1, 0.3, 0.5, 0.7, 0.9\n\n"
-            f"Where 0.1 = almost no isolation needed, 0.9 = nearly full "
-            f"isolation.\n\n"
+            f"For each person, output a single number between 0 and 1, where "
+            f"0.0 means no isolation needed and 1.0 means full isolation.\n\n"
             f"Person: age group {profile_row['age_label']}, has about "
             f"{profile_row['mean_interactions']:.0f} close contacts per day.\n"
-            f"Recommendation: 0."
+            f"Recommendation: "
         )
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
