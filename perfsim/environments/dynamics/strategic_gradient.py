@@ -70,6 +70,8 @@ class StrategicGradientWorld(StatefulDynamics):
         self._dtype = dtype
         self._n, self._d = x0.shape
         self._strat_features = validate_strat_features(strat_features, dim=self._d)
+        # Per-agent index for LM-Learner profile lookup after train_mask filtering.
+        self._agent_idx = torch.arange(self._n)
 
     @property
     def produces_schema(self) -> DataSchema:
@@ -101,7 +103,7 @@ class StrategicGradientWorld(StatefulDynamics):
             epsilon=self._epsilon,
             strat_features=self._strat_features,
         )
-        return {"x": x, "y": self._y}
+        return {"x": x, "y": self._y, "agent_idx": self._agent_idx.clone()}
 
     def step(self, model: Model) -> Data:
         return self.sample(model)

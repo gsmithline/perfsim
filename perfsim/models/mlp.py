@@ -89,7 +89,7 @@ class MLPModel(Model):
                         fan_in, fan_out = nn.init._calculate_fan_in_and_fan_out(
                             module.weight
                         )
-                        bound = (6.0 / (fan_in + fan_out)) ** 0.5
+                        bound = (6.0 / (fan_in + fan_out)) ** 0.5 
                         module.weight.uniform_(-bound, bound, generator=generator)
                     if module.bias is not None:
                         module.bias.zero_()

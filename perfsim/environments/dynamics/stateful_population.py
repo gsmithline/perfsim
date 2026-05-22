@@ -51,6 +51,8 @@ class StatefulPopulationWorld(StatefulDynamics):
             raise TypeError(
                 f"initial_state must be a dict[str, Tensor]; got {type(initial_state).__name__}"
             )
+        if not initial_state:
+            raise ValueError("initial_state must contain at least one Tensor")
         for k, v in initial_state.items():
             if not isinstance(v, Tensor):
                 raise TypeError(
@@ -63,6 +65,13 @@ class StatefulPopulationWorld(StatefulDynamics):
         self._state: State = {
             k: v.detach().clone() for k, v in initial_state.items()
         }
+        # Per-agent index used by LM-based Learners to look up profile rows
+        # in mask-filtered training batches. Derived from the leading dim of
+        # the first state entry, which by convention is the per-agent axis
+        # (N for FJ, K for replicator, etc.).
+        first = next(iter(initial_state.values()))
+        self._n = int(first.shape[0])
+        self._agent_idx = torch.arange(self._n)
 
     @property
     def state(self) -> State:
@@ -94,7 +103,7 @@ class StatefulPopulationWorld(StatefulDynamics):
 
     def sample(self, model: Model) -> Data:
         data, _ = self._step(model)
-        return data
+        return self._with_agent_idx(data)
 
     def step(self, model: Model) -> Data:
         data, next_state = self._step(model)
@@ -104,4 +113,17 @@ class StatefulPopulationWorld(StatefulDynamics):
                     f"next_state[{k!r}] must be a Tensor; got {type(v).__name__}"
                 )
         self._state = {k: v for k, v in next_state.items()}
-        return data
+        return self._with_agent_idx(data)
+
+    def _with_agent_idx(self, data: Data) -> Data:
+        """Inject `agent_idx` into the data dict if the subclass did not.
+
+        Subclasses that emit their own `agent_idx` (e.g., for a filtered
+        view) are respected; the base only fills in when the field is
+        absent. This is what lets LM-based Learners look up profile rows
+        for the labeled training subset after `Simulator.train_mask`
+        filtering.
+        """
+        if "agent_idx" in data:
+            return data
+        return {**data, "agent_idx": self._agent_idx.clone()}

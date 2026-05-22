@@ -8,13 +8,39 @@ Binding (at __init__): checks Learner.accepted_schemas against
 Environment.produces_schema and raises SchemaError on mismatch
 (DESIGN.md §6 #7).
 
-Epoch semantics (DESIGN.md §8):
+Epoch semantics (DESIGN.md §8; Algorithm 1 of arxiv 2603.12137):
+    prev = filter(initial_data, train_mask)        # may be None
     for t in range(n_rounds):
+        if prev is not None:
+            predictor.train(prev)                  # train on last round's data
         handle = predictor.deploy()                # snapshot of theta_t
-        for _ in range(epoch_size):                # inner loop, theta frozen
-            final_data = env.step(handle)
-        predictor.train(final_data)                # one update at epoch end
-        record(t)
+        final = env.run(handle, epoch_size)        # env queries handle once
+        record(t)                                  # records theta that produced final
+        prev = filter(final, train_mask)
+
+Train / test split: an optional `train_mask` (boolean tensor of shape
+(N,) over the env's leading population axis) restricts which rows of the
+env-produced data are used for predictor training. The env still
+produces and persists the full population each round; only the rows
+selected by `train_mask` go through `predictor.train`. The unmasked rows
+("test") still participate in env dynamics and are still recorded in
+state, they just are not used as training labels. This matches the
+pokec labeled/unlabeled split.
+
+`env.run` is the canonical entry point: it encodes "query model once,
+evolve for n_steps internally." The base `Environment.run` defaults to
+looping `step`, which is correct for stateless / one-shot envs.
+Stateful-dynamics envs (FJ, replicator, ...) override `run` to amortize
+the K-agent model query across the inner loop, matching Algorithm 1 of
+arxiv 2603.12137 (Wu, Abebe, Mendler-Dünner).
+
+Training order: the Simulator trains at the **start** of each round on
+the previous round's evolved data, then deploys, then evolves. This
+matches the pokec opinion-dynamics simulator and Algorithm 1: each
+round's deployed theta is the result of training on the prior round's
+data, so the recorded theta is the one that produced this round's
+final_data. With `initial_data=None`, the very first round skips
+training (predictor uses its constructor-initialized theta_0).
 
 With `epoch_size=1` the loop reduces to classical lockstep PP and matches
 the prior round-loop semantics tensor-for-tensor.
@@ -140,29 +166,97 @@ class Simulator:
         *,
         epoch_size: int = 1,
         seed: int = 0,
+        initial_data: dict[str, Tensor] | None = None,
+        train_mask: Tensor | None = None,
     ) -> History:
         """Run the PP loop for `n_rounds` epochs of `epoch_size` env steps each.
 
-        With `epoch_size=1` (default), each round is one env.step + one
-        predictor.train, matching the prior lockstep semantics tensor-for-tensor.
-        With `epoch_size>1`, env.step is invoked N times under the frozen
-        deployed handle; only the final step's data is passed to predictor.train
-        (DESIGN.md §8, final-state-only training).
+        Per-round shape (Algorithm 1):
+
+            prev = filter(initial_data, train_mask)
+            for t in 0..n_rounds-1:
+                if prev is not None: predictor.train(prev)
+                handle = predictor.deploy()
+                final_data = env.run(handle, epoch_size)
+                record(t)         # records theta deployed at round t
+                prev = filter(final_data, train_mask)
+
+        With `initial_data=None`, round 0 skips training; the predictor's
+        initial theta_0 (from construction) drives the first env run. From
+        round 1 onward, each round trains on the previous round's
+        final_data. With `initial_data` supplied (e.g., a seed labeled
+        opinion vector), round 0 also trains.
+
+        With `epoch_size=1`, each env.run is one inner update (lockstep
+        PP). With `epoch_size>1`, env.run amortizes a single K-agent
+        model query across the inner loop (per-env override; see FJWorld).
+
+        `train_mask`: optional boolean tensor of shape `(N,)` selecting
+        which rows of env-produced data are used for training. Rows with
+        mask=False are still computed and persisted by the env (they
+        participate in dynamics, e.g., FJ peer-averaging) but are not
+        passed to `predictor.train`. Use this to model labeled/unlabeled
+        splits where only labeled-agent opinions serve as training
+        targets.
         """
         self._validate_epoch_size(epoch_size)
+        if train_mask is not None:
+            self._validate_train_mask(train_mask)
         self.env.reset(seed=seed)
         self._prev_theta = None
         self._current_round = -1
+        prev_data: dict[str, Tensor] | None = self._mask_data(initial_data, train_mask)
         for t in range(n_rounds):
             self._current_round = t
+            if prev_data is not None:
+                self.predictor.train(prev_data)
             handle = self.predictor.deploy()
-            final_data: dict[str, Tensor] | None = None
-            for _ in range(epoch_size):
-                final_data = self.env.step(handle)
-            assert final_data is not None  # epoch_size >= 1 ensures this
-            self.predictor.train(final_data)
+            final_data = self.env.run(handle, n_steps=epoch_size)
             self._record_round(t)
+            prev_data = self._mask_data(final_data, train_mask)
         return self.history
+
+    @staticmethod
+    def _validate_train_mask(mask: Tensor) -> None:
+        if not isinstance(mask, Tensor):
+            raise TypeError(
+                f"train_mask must be a torch.Tensor; got {type(mask).__name__}"
+            )
+        if mask.dtype != torch.bool:
+            raise TypeError(
+                f"train_mask must be a bool tensor; got dtype {mask.dtype}"
+            )
+        if mask.ndim != 1:
+            raise ValueError(
+                f"train_mask must be 1-D; got shape {tuple(mask.shape)}"
+            )
+        if not bool(mask.any()):
+            raise ValueError(
+                "train_mask selects zero rows; predictor would have no "
+                "training data"
+            )
+
+    @staticmethod
+    def _mask_data(
+        data: dict[str, Tensor] | None,
+        mask: Tensor | None,
+    ) -> dict[str, Tensor] | None:
+        """Filter a data dict by `mask` along the leading axis.
+
+        Tensors whose leading dim matches `mask.shape[0]` are sliced;
+        tensors with a different leading dim (or zero-dim scalars) are
+        passed through unchanged. None data or None mask is a no-op.
+        """
+        if data is None or mask is None:
+            return data
+        n = mask.shape[0]
+        out: dict[str, Tensor] = {}
+        for k, v in data.items():
+            if v.ndim > 0 and v.shape[0] == n:
+                out[k] = v[mask]
+            else:
+                out[k] = v
+        return out
 
     def _record_round(self, t: int) -> None:
         theta = self.predictor.model.get_params().detach().cpu()

@@ -1,0 +1,160 @@
+"""SFTLearner: supervised fine-tuning via TRL's SFTTrainer.
+
+Consumes data dicts of the form ``{"x": ..., "y": (k, 1), "agent_idx": (k,)}``
+produced by `FJWorld` (after `Simulator.train_mask` filters to the labeled
+subset). Looks up each training row's profile from the wrapped
+`HFCausalLMModel.profiles`, builds the SFT example as
+``prompt + formatted_target``, and runs ``SFTTrainer.train()`` once per
+``learner.train(data)`` call.
+
+TRL and the HF datasets package are imported lazily so the rest of perfsim
+stays usable without the `[lm]` extra installed.
+
+KL-regularized SFT lives in a sibling file (`kl_sft.py`) and subclasses
+this one.
+"""
+
+from __future__ import annotations
+
+import tempfile
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
+
+import torch
+
+from perfsim.core.learner import Learner
+from perfsim.core.loss import Loss
+from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
+from perfsim.models.hf_causal_lm import HFCausalLMModel
+
+if TYPE_CHECKING:
+    from datasets import Dataset as HFDataset
+
+
+def _default_target_formatter(value: float) -> str:
+    """Format an opinion in [0, 1] as a 2-decimal string, e.g. 0.42 -> '0.42'."""
+    return f"{float(value):.2f}"
+
+
+class SFTLearner(Learner):
+    """SFT over an HFCausalLMModel via TRL's SFTTrainer.
+
+    Args:
+        model:               The HFCausalLMModel being trained.
+        loss:                A perfsim Loss instance. Not used by SFTTrainer
+                             directly (the LM's own CE loss is the SFT
+                             objective), but the field is kept on Learner for
+                             API consistency and for metric reuse.
+        target_formatter:    Callable mapping a per-agent opinion (float) to
+                             the target text string. Default: 2-decimal
+                             representation.
+        max_steps:           SFTTrainer.max_steps for each train() call.
+        learning_rate:       SFTTrainer learning rate.
+        per_device_batch_size: TRL batch size knob.
+        max_seq_length:      SFTConfig max_seq_length.
+        output_dir:          Where TRL writes its checkpoints. Default: a
+                             fresh temp dir per learner (kept across calls).
+        trainer_kwargs:      Extra kwargs forwarded to SFTConfig.
+    """
+
+    accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
+
+    def __init__(
+        self,
+        model: HFCausalLMModel,
+        loss: Loss,
+        *,
+        target_formatter: Callable[[float], str] = _default_target_formatter,
+        max_steps: int = 50,
+        learning_rate: float = 5e-5,
+        per_device_batch_size: int = 4,
+        max_seq_length: int = 512,
+        output_dir: str | None = None,
+        trainer_kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        if not isinstance(model, HFCausalLMModel):
+            raise TypeError(
+                f"SFTLearner expects an HFCausalLMModel; got {type(model).__name__}"
+            )
+        super().__init__(model, loss)
+        self._target_formatter = target_formatter
+        self._max_steps = int(max_steps)
+        self._learning_rate = float(learning_rate)
+        self._per_device_batch_size = int(per_device_batch_size)
+        self._max_seq_length = int(max_seq_length)
+        self._output_dir = output_dir or tempfile.mkdtemp(prefix="perfsim-sft-")
+        self._trainer_kwargs = trainer_kwargs or {}
+
+    @property
+    def model(self) -> HFCausalLMModel:  # type: ignore[override]
+        return self._model  # type: ignore[return-value]
+
+    @model.setter
+    def model(self, value: HFCausalLMModel) -> None:
+        self._model = value
+
+    # ---- Build SFT dataset from one round's filtered data ----------------
+
+    def _build_dataset(self, data: Data) -> "HFDataset":
+        from datasets import Dataset as HFDataset
+
+        if "agent_idx" not in data:
+            raise KeyError(
+                "SFTLearner.train requires data['agent_idx']; the env (e.g. FJWorld) "
+                "must emit per-agent indices alongside x and y. Did you wire "
+                "the new FJWorld API?"
+            )
+        y = data["y"]
+        if y.ndim > 1:
+            y = y.squeeze(-1)
+        idx = data["agent_idx"]
+        if idx.shape[0] != y.shape[0]:
+            raise ValueError(
+                f"agent_idx length {idx.shape[0]} does not match y length {y.shape[0]}"
+            )
+
+        self.model.ensure_loaded()
+        examples: list[dict[str, str]] = []
+        for i in range(idx.shape[0]):
+            profile = self.model.profile_at(int(idx[i].item()))
+            prompt = self.model.build_prompt(profile)
+            target = self._target_formatter(float(y[i].item()))
+            examples.append({"text": prompt + target})
+        return HFDataset.from_list(examples)
+
+    # ---- Train ----------------------------------------------------------
+
+    def train(self, data: Data) -> None:
+        from trl import SFTConfig, SFTTrainer
+
+        ds = self._build_dataset(data)
+
+        cfg_kwargs: dict[str, Any] = dict(
+            output_dir=self._output_dir,
+            max_steps=self._max_steps,
+            per_device_train_batch_size=self._per_device_batch_size,
+            learning_rate=self._learning_rate,
+            max_seq_length=self._max_seq_length,
+            report_to="none",
+            save_strategy="no",
+            logging_strategy="no",
+        )
+        cfg_kwargs.update(self._trainer_kwargs)
+        cfg = SFTConfig(**cfg_kwargs)
+
+        trainer = self._build_trainer(cfg=cfg, ds=ds)
+        trainer.train()
+
+    def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
+        """Construct the underlying SFTTrainer. Subclassed by KLSFTLearner."""
+        from trl import SFTTrainer
+
+        return SFTTrainer(
+            model=self.model.inner_model,
+            args=cfg,
+            train_dataset=ds,
+            tokenizer=self.model.tokenizer,
+        )
+
+    def reset(self) -> None:
+        """No-op: LM training state persists across rounds by design."""
+        return None

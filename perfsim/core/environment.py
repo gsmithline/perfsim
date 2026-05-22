@@ -45,6 +45,19 @@ class Environment(ABC):
 
     Subclasses implement `sample` (peek; no state mutation) and `step`
     (advance state + return data) plus `reset(seed)`.
+
+    The canonical Simulator entry point is `run(model, n_steps)`, which
+    encodes the §8 publishing contract: the model is queried once (the
+    "deployed handle" produces predictions / initial conditions for all
+    agents at the start), and the env then evolves internally for n_steps
+    without re-querying the model. This matches Algorithm 1 of
+    arxiv 2603.12137 (Wu, Abebe, Mendler-Dünner, 2026).
+
+    The default `run` falls back to looping `step`, which is correct for
+    stateless / one-shot envs but inefficient when each `step` re-queries
+    the model. Stateful-dynamics envs (FJ, replicator, accumulating shift,
+    ...) override `run` to amortize the K-agent query across the inner
+    n_steps iterations.
     """
 
     max_meaningful_epoch_size: ClassVar[int | float] = float("inf")
@@ -66,7 +79,36 @@ class Environment(ABC):
 
     @abstractmethod
     def step(self, model: "Model") -> Data:
-        """Sample from D(theta) and advance state."""
+        """One internal update under the deployed model.
+
+        Default callers should use `run(model, n_steps)`. `step` is the
+        unit of internal evolution and may re-query the model on each
+        call; envs that override `run` typically do not call `step`
+        internally from the inner loop.
+        """
+
+    def run(self, model: "Model", n_steps: int) -> Data:
+        """Run one epoch: query the model once, evolve for n_steps,
+        return the final state's data dict.
+
+        Default implementation loops `step(model)` n_steps times. This is
+        correct but wasteful for envs whose `step` re-queries the model:
+        with theta frozen across the inner loop, the predictions do not
+        change, so the redundant queries are pure cost. Envs that benefit
+        from amortizing model queries (FJ, replicator, ABM) override `run`
+        to query once and evolve internally.
+
+        Subclasses overriding `run` are responsible for state mutation:
+        the final state of the n_steps inner loop must be installed before
+        returning.
+        """
+        if not isinstance(n_steps, int) or n_steps < 1:
+            raise ValueError(f"n_steps must be a positive int; got {n_steps!r}")
+        final: Data | None = None
+        for _ in range(n_steps):
+            final = self.step(model)
+        assert final is not None
+        return final
 
 
 class Dynamics(Environment):

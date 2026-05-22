@@ -35,6 +35,15 @@ hf = ["datasets>=2.18", "transformers>=4.40"]
 trl = ["trl>=0.9", "transformers>=4.40", "accelerate>=0.30"]
 vllm = ["vllm>=0.5"]
 agenttorch = ["agent-torch>=0.1"]
+# LM-as-predictor stack: HF causal LMs, LoRA via PEFT, TRL trainers.
+# Brings pandas because LM scenarios consume a profile DataFrame.
+lm = [
+    "transformers>=4.40",
+    "peft>=0.10",
+    "trl>=0.9",
+    "accelerate>=0.30",
+    "pandas>=2.2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
@@ -42,7 +51,7 @@ dev = [
     "mypy>=1.10",
 ]
 all = [
-    "perfsim[tabular,kaggle,a2a,hf,trl,vllm,agenttorch,dev]",
+    "perfsim[tabular,kaggle,a2a,hf,lm,trl,vllm,agenttorch,dev]",
 ]
 
 [project.urls]

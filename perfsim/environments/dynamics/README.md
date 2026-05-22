@@ -199,29 +199,35 @@ the inner loop from
 
 Each agent has a fixed innate opinion `s_i`, a (possibly heterogeneous)
 peer susceptibility `α_i ∈ [0, 1]`, and a current opinion `x_i` that
-persists across PP rounds. Each round:
+persists across env steps. One `env.step(model)` performs one FJ update:
 
 ```
 predictions = model(features)
 x_zero      = (1 − σ) · s + σ · predictions       # σ = platform_sus
-for _ in range(n_ticks):
-    x = α · x_zero + (1 − α) · (W · x)
+x_new       = α · x_zero + (1 − α) · (W · x_state)
+state["opinion"] = x_new
 ```
+
+To drive multiple FJ iterations under a fixed deployed model, use the
+Simulator's `epoch_size` (or loop `world.step(model)` manually). The
+opinion vector persists continuously across both the inner `epoch_size`
+loop and the outer round loop.
 
 The graph `W` is typically a (column-normalized) social-network adjacency.
 `normalize_adjacency` is provided to convert a raw adjacency in the same
 way as the source script.
 
-- `platform_sus = 0`: platform-free FJ. `x_zero = s` every round. Converges
-  to `(I − diag(1 − α) W)⁻¹ diag(α) s` per `fj_equilibrium`.
+- `platform_sus = 0`: platform-free FJ. `x_zero = s` every step. Iterating
+  to convergence yields `(I − diag(1 − α) W)⁻¹ diag(α) s` per
+  `fj_equilibrium`.
 - `platform_sus > 0`: predicted-opinion-anchored FJ. Matches `run_cf_fj.py`.
 
-`fj_equilibrium(x_zero)` returns the analytic fixed point of the inner loop
-at the given anchor. Useful as a gating anchor and for diagnostic comparison
-across runs.
+`fj_equilibrium(x_zero)` returns the analytic fixed point of the FJ inner
+update at the given anchor. Useful as a gating anchor and for diagnostic
+comparison across runs.
 
 This is the canonical environment for `epoch_size > 1`: under fixed θ, the
-inner opinion-mixing converges toward `fj_equilibrium`, so a sufficiently
+opinion-mixing converges toward `fj_equilibrium`, so a sufficiently
 large `epoch_size` lets the predictor train on the settled distribution
 rather than a transient.
 
