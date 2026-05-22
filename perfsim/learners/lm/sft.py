@@ -156,13 +156,25 @@ class SFTLearner(Learner):
 
     def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
         """Construct the underlying SFTTrainer. Subclassed by KLSFTLearner."""
+        import inspect
+
         from trl import SFTTrainer
+
+        # TRL renamed `tokenizer` -> `processing_class` in newer releases.
+        # Detect which one this SFTTrainer accepts.
+        _sig = inspect.signature(SFTTrainer.__init__).parameters
+        tok_kwarg: dict[str, Any] = {}
+        if "processing_class" in _sig:
+            tok_kwarg["processing_class"] = self.model.tokenizer
+        elif "tokenizer" in _sig:
+            tok_kwarg["tokenizer"] = self.model.tokenizer
+        # else: TRL accepts neither -> rely on its inference from the model.
 
         return SFTTrainer(
             model=self.model.inner_model,
             args=cfg,
             train_dataset=ds,
-            tokenizer=self.model.tokenizer,
+            **tok_kwarg,
         )
 
     def reset(self) -> None:

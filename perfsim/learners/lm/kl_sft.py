@@ -92,6 +92,8 @@ class KLSFTLearner(SFTLearner):
         return self._ref_model
 
     def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
+        import inspect
+
         from trl import SFTTrainer
 
         ref_model = self._ensure_ref() if self._kl_beta > 0 else None
@@ -128,9 +130,17 @@ class KLSFTLearner(SFTLearner):
                 total = ce + kl_beta * kl
                 return (total, outputs) if return_outputs else total
 
+        # TRL renamed `tokenizer` -> `processing_class` in newer releases.
+        _sig = inspect.signature(SFTTrainer.__init__).parameters
+        tok_kwarg: dict[str, Any] = {}
+        if "processing_class" in _sig:
+            tok_kwarg["processing_class"] = self.model.tokenizer
+        elif "tokenizer" in _sig:
+            tok_kwarg["tokenizer"] = self.model.tokenizer
+
         return _KLSFTTrainer(
             model=self.model.inner_model,
             args=cfg,
             train_dataset=ds,
-            tokenizer=self.model.tokenizer,
+            **tok_kwarg,
         )
