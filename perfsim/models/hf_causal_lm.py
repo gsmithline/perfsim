@@ -148,9 +148,8 @@ class HFCausalLMModel(Model):
     def profile_at(self, idx: int) -> object:
         """Return the profile row for agent index `idx`.
 
-        Works for pandas DataFrames (`.iloc[idx]`), lists / tuples
-        (`profiles[idx]`), or any object exposing `__getitem__` /
-        `iloc`.
+        Works for pandas DataFrames, 
+        lists/tuples, or any object exposing __getitem__.
         """
         if hasattr(self._profiles, "iloc"):
             return self._profiles.iloc[int(idx)]
@@ -166,9 +165,8 @@ class HFCausalLMModel(Model):
 
     def forward(self, x: Tensor) -> Tensor:
         """Generate per-agent opinion predictions.
-
-        `x` is the feature tensor the env passes; its content is ignored
-        because LM prompts are built from `self._profiles`. The shape's
+        x is the feature tensor the env passes its content is ignored
+        because LM prompts are built from self._profiles. The shape's
         leading dim must equal N (the env's population size) so the
         returned tensor's shape is consistent with downstream expectations.
         """
@@ -226,15 +224,14 @@ class HFCausalLMModel(Model):
             return default
         return max(0.0, min(1.0, v))
 
-    # ---- perfsim Model API overrides -------------------------------------
-
+ 
     def get_params(self) -> Tensor:
         """Return a 1-element tensor: L2 norm of trainable parameters.
 
         The flat-tensor view of an LM is not meaningful (billions of
-        params, and they live across HF / PEFT / nn.Linear layers in a
+        params, and they live across HF/PEFT/nn.Linear layers in a
         non-canonical order). The Simulator only uses get_params for
-        history bookkeeping and stability_gap; a scalar diagnostic is the
+        history bookkeeping and stability_gap a scalar diagnostic is the
         honest substitute.
         """
         if self.inner_model is None:

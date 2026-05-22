@@ -23,8 +23,8 @@ from perfsim.core.environment import Environment as World
 
 
 def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
-    """Single-batch PR estimate.
-
+    """
+    Single-batch PR estimate.
     Samples one batch from D(theta) via `world.sample(model)`.
     """
     with torch.no_grad():
@@ -38,7 +38,8 @@ def decoupled_risk(
     model_eval: Model,
     loss: Loss,
 ) -> Tensor:
-    """Single-batch DPR estimate: E_{Z ~ D(theta_deploy)} loss(model_eval, Z).
+    """
+    Single-batch DPR estimate: E_{Z ~ D(theta_deploy)} loss(model_eval, Z).
 
     Identity: when model_deploy == model_eval (same object), DPR == PR.
     """

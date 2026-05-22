@@ -34,7 +34,7 @@ a2a = ["a2a-sdk>=0.1"]
 hf = ["datasets>=2.18", "transformers>=4.40"]
 trl = ["trl>=0.9", "transformers>=4.40", "accelerate>=0.30"]
 vllm = ["vllm>=0.5"]
-agenttorch = ["agent-torch>=0.1"]
+agenttorch = ["agent-torch>=0.6,<0.7"]
 # LM-as-predictor stack: HF causal LMs, LoRA via PEFT, TRL trainers.
 # Brings pandas because LM scenarios consume a profile DataFrame.
 lm = [
@@ -67,6 +67,9 @@ include = ["perfsim", "tests", "examples", "DESIGN.md", "README.md"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers"
+markers = [
+    "slow: tests that take more than a couple seconds; run with `-m slow`",
+]
 
 [tool.ruff]
 line-length = 100

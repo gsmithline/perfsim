@@ -29,7 +29,9 @@ _ACTIVATIONS: dict[str, type[nn.Module]] = {
 
 
 class MLPModel(Model):
-    """Feedforward MLP: f(x) = W_L σ( ... σ(W_1 x + b_1) ... ) + b_L."""
+    """Feedforward MLP: 
+    f(x) = WL σ(σ(W_1 x + b_1)) + bL. etc. 
+    """
 
     def __init__(
         self,
@@ -47,7 +49,7 @@ class MLPModel(Model):
         super().__init__()
         if activation not in _ACTIVATIONS:
             raise ValueError(
-                f"unknown activation {activation!r}; "
+                f"unknown activation {activation!r}"
                 f"expected one of {sorted(_ACTIVATIONS)}"
             )
         if final_activation is not None and final_activation not in _ACTIVATIONS:
@@ -85,7 +87,7 @@ class MLPModel(Model):
                     if generator is None:
                         nn.init.xavier_uniform_(module.weight)
                     else:
-                        # Manual Xavier-uniform with seeded generator.
+                        
                         fan_in, fan_out = nn.init._calculate_fan_in_and_fan_out(
                             module.weight
                         )

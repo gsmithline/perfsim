@@ -37,7 +37,7 @@ perfsim/
   scenarios/
     perdomo_loan/               # v1 literature-replication target
   adapters/
-    agenttorch.py               # v3 optional adapter
+    agenttorch.py               # optional adapter; see adapters/README.md
   simulator.py                  # outer epoch loop, inner step loop
   history.py / metrics.py / losses.py
 examples/                       # end-to-end runnable scripts
@@ -54,6 +54,11 @@ pip install -e ".[dev]"      # pytest, ruff, mypy
 ```
 
 Optional extras for later phases: `[hf]`, `[trl]`, `[vllm]`, `[agenttorch]`, `[a2a]`. See `pyproject.toml`.
+
+The `[agenttorch]` extra wires perfsim to an `agent_torch.Runner` as a
+concrete `AgentBased` environment. See `perfsim/adapters/README.md` for the
+Algorithm 1 contract, the three required user callables, and the A1 / A2 / B
+signal-mutation pattern check. Install with `pip install -e ".[agenttorch]"`.
 
 ## Minimal example
 
