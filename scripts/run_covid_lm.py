@@ -174,16 +174,34 @@ def main() -> int:
     print(f"[run] profile features: age_buckets={sorted(set(ages))} "
           f"interactions={sorted(set(mean_int))}", flush=True)
 
-    def prompt_builder(profile_row, tokenizer):  # noqa: ARG001
-        return (
-            f"You are a public health official assigning personalized "
-            f"isolation recommendations during an active respiratory disease "
-            f"outbreak. Your goal is to minimize new transmissions.\n\n"
-            f"For each person, output a single number between 0 and 1, where "
-            f"0.0 means no isolation needed and 1.0 means full isolation.\n\n"
-            f"Person: age group {profile_row['age_label']}, has about "
-            f"{profile_row['mean_interactions']:.0f} close contacts per day.\n"
-            f"Recommendation: "
+    # Qwen2.5-Instruct was trained with chat templates. Running it on raw
+    # completion text is off-distribution and triggers LoRA-SFT collapse.
+    # We route ALL prompts through `tokenizer.apply_chat_template` so the
+    # SFT-time prompt and the generation-time prompt are byte-identical
+    # (avoids the train/gen format-mismatch trap we hit in opinion-dyn).
+    SYSTEM_MSG = (
+        "You are a public health official assigning personalized "
+        "isolation recommendations during an active respiratory disease "
+        "outbreak. Your goal is to minimize new transmissions."
+    )
+
+    def prompt_builder(profile_row, tokenizer):
+        messages = [
+            {"role": "system", "content": SYSTEM_MSG},
+            {
+                "role": "user",
+                "content": (
+                    f"Person: age group {profile_row['age_label']}, has about "
+                    f"{profile_row['mean_interactions']:.0f} close contacts per "
+                    f"day.\n\nOutput a single number between 0 and 1 (e.g. 0.50) "
+                    f"where 0 means no isolation and 1 means full isolation."
+                ),
+            },
+        ]
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
         )
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
@@ -340,17 +358,19 @@ def main() -> int:
         raise ValueError(f"unknown TARGET_KIND: {target_kind!r}")
 
     loss = MSELoss()
-    # Completion-only loss anchor: only train on tokens AFTER "Recommendation: "
-    # in the prompt + target string. Without this, the full-text SFT loss
-    # overfits the prompt prefix and destabilizes the LM head (we saw garbage
-    # tokens + collapse to "0" outputs after 100 steps on Qwen-0.5B).
+    # Mirror opinion-dynamics-post-training/llm_predictor.py:sft_on_round,
+    # which is the working setup for Qwen2.5-Instruct + LoRA + KL-SFT.
+    # Plain "0.42" target (no EOS): TRL with `completion_only_loss=True`
+    # handles EOS appending internally; manually appending double-stacks it.
+    # Response_template matches Qwen2.5-Instruct chat template's assistant
+    # opener (model-specific; change if switching model families).
     learner_kwargs = dict(
         model=model,
         loss=loss,
         max_steps=effective_max_steps,
         per_device_batch_size=sft_batch_size,
         output_dir=str(out_dir / "trl"),
-        response_template="Recommendation: ",
+        response_template="<|im_start|>assistant\n",
     )
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)
@@ -363,7 +383,24 @@ def main() -> int:
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
-    sim = Simulator(env=env, learner=learner, loss=loss)
+    # Register per-round metrics. The Simulator calls these at the END of
+    # each round (after env.run + state extraction), so they capture the
+    # actual per-round env state. Without this, the post-sim trajectory
+    # dump reads `env.runner.state` long after the rollout finished and
+    # returns the *final* state every time, masquerading as per-round data.
+    def _di_metric(sim_obj) -> float:
+        di = sim_obj.env.runner.state["environment"]["daily_infected"]
+        return float(di.sum().item())
+
+    def _fnS_metric(sim_obj) -> float:
+        ds = sim_obj.env.runner.state["agents"]["citizens"]["disease_stage"]
+        return float((ds > 0).float().mean().item())
+
+    sim_metrics = {
+        "daily_infected_sum": _di_metric,
+        "fraction_non_S": _fnS_metric,
+    }
+    sim = Simulator(env=env, learner=learner, loss=loss, metrics=sim_metrics)
     print(f"[run] starting outer loop: n_rounds={n_rounds} K={k_steps}", flush=True)
     t_loop = time.time()
     hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed)
@@ -436,13 +473,11 @@ def main() -> int:
     trajectory = []
     for r in hist.records:
         theta = r.get("theta")
-        di = env.runner.state["environment"]["daily_infected"]
-        ds = env.runner.state["agents"]["citizens"]["disease_stage"]
         row = {
             "round": int(r["round"]),
             "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
-            "daily_infected_sum": float(di.sum().item()),
-            "fraction_non_S": float((ds > 0).float().mean().item()),
+            "daily_infected_sum": float(r["daily_infected_sum"]),
+            "fraction_non_S": float(r["fraction_non_S"]),
         }
         gap = r.get("stability_gap")
         if hasattr(gap, "item"):
