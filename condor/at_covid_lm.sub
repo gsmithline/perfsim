@@ -11,18 +11,18 @@ arguments         = $(tag) $(style) $(beta)
 
 # ---- resources ----
 request_cpus      = 4
-request_memory    = 48G
+request_memory    = 64G
 request_disk      = 40G
 request_gpus      = 1
-# Optional: require a GPU with at least 24 GiB (A100/A6000-class) so the
-# LM + AT covid graph fits comfortably. Uncomment and tune for your pool.
-# requirements    = (TARGET.CUDAGlobalMemoryMb >= 24000)
+# Qwen-7B-Instruct + KL reference model + LoRA + activations needs ~30 GB
+# VRAM. A100 40GB-class is fine; smaller GPUs will OOM.
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 # ---- env / io ----
 # We do NOT inherit the submit-host env. run_one.sh activates conda + reads
 # the wandb key file itself.
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-covid-lm N_ROUNDS=5 K_STEPS=3 SEED_FRAC=0.20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_MAX_STEPS=20 SFT_FULL_EPOCH=0 SFT_BATCH_SIZE=32 GEN_BATCH_SIZE=64 TARGET_KIND=exposure_aware SFT_SANITY=1 LORA_R=32 USE_LORA=0 SFT_LR=1e-6 WANDB_RUN_SUFFIX=_fullft_lr1e6"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-covid-lm N_ROUNDS=5 K_STEPS=3 SEED_FRAC=0.20 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_MAX_STEPS=20 SFT_FULL_EPOCH=0 SFT_BATCH_SIZE=16 GEN_BATCH_SIZE=32 TARGET_KIND=exposure_aware SFT_SANITY=1 LORA_R=32 USE_LORA=1 SFT_LR=1e-5 WANDB_RUN_SUFFIX=_qwen7b_lora32"
 
 output            = /home/gsmithline/perfsim/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/condor/logs/$(tag).err
