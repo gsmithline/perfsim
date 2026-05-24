@@ -51,10 +51,11 @@ class KLSFTLearner(SFTLearner):
         kl_beta: float = 1.0,
         target_formatter: Callable[[float], str] = _default_target_formatter,
         max_steps: int = 50,
-        learning_rate: float = 5e-5,
+        learning_rate: float = 1e-5,
         per_device_batch_size: int = 4,
         max_seq_length: int = 512,
         output_dir: str | None = None,
+        response_template: str | None = None,
         trainer_kwargs: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
@@ -66,6 +67,7 @@ class KLSFTLearner(SFTLearner):
             per_device_batch_size=per_device_batch_size,
             max_seq_length=max_seq_length,
             output_dir=output_dir,
+            response_template=response_template,
             trainer_kwargs=trainer_kwargs,
         )
         self._ref_model_name = ref_model_name
