@@ -87,6 +87,11 @@ def main() -> int:
     # token-bias collapse (LM emits "0" repeatedly regardless of position).
     # r=32 quadruples adapter capacity; matches the working opinion-dyn setup.
     lora_r = _env_int("LORA_R", 32)
+    # Full fine-tuning vs LoRA. Qwen-0.5B fits trivially on a 24GB+ GPU
+    # for full FT (~10GB for model + Adam state + activations). Set
+    # USE_LORA=0 to test full FT, which gives direct gradient updates to
+    # every parameter and bypasses any LoRA-capacity bottleneck.
+    use_lora = _env_int("USE_LORA", 1) == 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -215,7 +220,7 @@ def main() -> int:
         base_model_name=base_model,
         profiles=profiles,
         prompt_builder=prompt_builder,
-        use_lora=True,
+        use_lora=use_lora,
         lora_r=lora_r,
         lora_alpha=2 * lora_r,
         device=device,
@@ -223,6 +228,10 @@ def main() -> int:
         max_new_tokens=max_new_tokens,
         gen_batch_size=gen_batch_size,
         load_now=True,
+    )
+    print(
+        f"[run] LM training mode: {'LoRA r=' + str(lora_r) if use_lora else 'FULL fine-tuning'}",
+        flush=True,
     )
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
 

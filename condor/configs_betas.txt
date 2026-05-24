@@ -1,5 +1,5 @@
-at_covid_sft           sft        0.0
-at_covid_sftkl_b0p3    sft_kl     0.3
-at_covid_sftkl_b1      sft_kl     1.0
-at_covid_sftkl_b3      sft_kl     3.0
-at_covid_sftkl_b10     sft_kl     10.0
+at_covid_sft_full           sft        0.0
+at_covid_sftkl_b0p3_full    sft_kl     0.3
+at_covid_sftkl_b1_full      sft_kl     1.0
+at_covid_sftkl_b3_full      sft_kl     3.0
+at_covid_sftkl_b10_full     sft_kl     10.0

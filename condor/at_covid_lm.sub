@@ -22,7 +22,7 @@ request_gpus      = 1
 # We do NOT inherit the submit-host env. run_one.sh activates conda + reads
 # the wandb key file itself.
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-covid-lm N_ROUNDS=5 K_STEPS=3 SEED_FRAC=0.20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_MAX_STEPS=20 SFT_FULL_EPOCH=0 SFT_BATCH_SIZE=32 GEN_BATCH_SIZE=64 TARGET_KIND=exposure_aware SFT_SANITY=1 LORA_R=32"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-covid-lm N_ROUNDS=5 K_STEPS=3 SEED_FRAC=0.20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_MAX_STEPS=20 SFT_FULL_EPOCH=0 SFT_BATCH_SIZE=32 GEN_BATCH_SIZE=64 TARGET_KIND=exposure_aware SFT_SANITY=1 LORA_R=32 USE_LORA=0"
 
 output            = /home/gsmithline/perfsim/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/condor/logs/$(tag).err
