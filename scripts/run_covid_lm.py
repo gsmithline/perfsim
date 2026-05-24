@@ -413,6 +413,27 @@ def main() -> int:
             ref_model_name=base_model,
             kl_beta=kl_beta,
         )
+    elif training_style == "frozen":
+        # Reference baseline ("beta=infinity" equivalent): deploy base LM,
+        # NEVER fine-tune. Used to measure the population trajectory under
+        # the pretrained prior alone, which is the attractor that KL
+        # anchoring is pulling other policies toward.
+        from perfsim.core.learner import Learner
+        from perfsim.core.types import SUPERVISED_SCHEMA
+
+        class _FrozenLearner(Learner):
+            accepted_schemas = (SUPERVISED_SCHEMA,)
+
+            def __init__(self, model, loss):
+                super().__init__(model, loss)
+
+            def train(self, data):
+                print("[FrozenLearner] skipping SFT (frozen baseline)", flush=True)
+
+            def reset(self):
+                pass
+
+        learner = _FrozenLearner(model=model, loss=loss)
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
