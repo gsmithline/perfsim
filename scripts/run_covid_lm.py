@@ -82,6 +82,11 @@ def main() -> int:
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 32)
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
     target_kind = os.environ.get("TARGET_KIND", "exposed_binary")  # or "disease_stage"
+    # LoRA rank. perfsim default is r=8 (Hu et al. minimal); opinion-dyn
+    # uses r=32. With r=8 + (q,v) on Qwen-0.5B we observed unconditional
+    # token-bias collapse (LM emits "0" repeatedly regardless of position).
+    # r=32 quadruples adapter capacity; matches the working opinion-dyn setup.
+    lora_r = _env_int("LORA_R", 32)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -211,6 +216,8 @@ def main() -> int:
         profiles=profiles,
         prompt_builder=prompt_builder,
         use_lora=True,
+        lora_r=lora_r,
+        lora_alpha=2 * lora_r,
         device=device,
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
         max_new_tokens=max_new_tokens,
@@ -428,11 +435,13 @@ def main() -> int:
         f"std={float(final_preds.std()):.4f}",
         flush=True,
     )
-    # And what will_isolate would actually be after PerfsimIsolationDecision's sigmoid.
-    _wi = torch.sigmoid(final_preds)
+    # With logit_signal_writer the env path is: preds -> logit -> sigmoid
+    # so will_isolate ~= preds (within the clamp(0.01, 0.99) range applied
+    # by the writer). Reporting preds directly instead of double-sigmoiding.
+    _p = final_preds.clamp(min=0.01, max=0.99)
     print(
-        f"[diag] sigmoid(final preds) (= will_isolate): min={float(_wi.min()):.4f} "
-        f"max={float(_wi.max()):.4f} mean={float(_wi.mean()):.4f}",
+        f"[diag] will_isolate (= preds clamped): min={float(_p.min()):.4f} "
+        f"max={float(_p.max()):.4f} mean={float(_p.mean()):.4f}",
         flush=True,
     )
 
