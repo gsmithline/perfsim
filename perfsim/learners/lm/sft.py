@@ -116,11 +116,19 @@ class SFTLearner(Learner):
 
         self.model.ensure_loaded()
         examples: list[dict[str, str]] = []
+        # If response_template is set, emit `{prompt, completion}` columns.
+        # Modern TRL (>=0.11) auto-masks the prompt in this format so the
+        # SFT loss is only on the completion tokens, regardless of whether
+        # DataCollatorForCompletionOnlyLM is importable.
+        use_prompt_completion = self._response_template is not None
         for i in range(idx.shape[0]):
             profile = self.model.profile_at(int(idx[i].item()))
             prompt = self.model.build_prompt(profile)
             target = self._target_formatter(float(y[i].item()))
-            examples.append({"text": prompt + target})
+            if use_prompt_completion:
+                examples.append({"prompt": prompt, "completion": target})
+            else:
+                examples.append({"text": prompt + target})
         return HFDataset.from_list(examples)
 
     # ---- Train ----------------------------------------------------------
@@ -142,14 +150,20 @@ class SFTLearner(Learner):
             logging_strategy="no",
         )
         # TRL renamed `max_seq_length` -> `max_length` between releases.
-        # Older versions accept max_seq_length; newer versions reject it
-        # and want max_length. Detect which one this SFTConfig supports.
         _sig = inspect.signature(SFTConfig.__init__).parameters
         if "max_seq_length" in _sig:
             cfg_kwargs["max_seq_length"] = self._max_seq_length
         elif "max_length" in _sig:
             cfg_kwargs["max_length"] = self._max_seq_length
-        # else: neither name accepted -> rely on TRL defaults; do nothing.
+        # If response_template is set and SFTConfig exposes the flag,
+        # explicitly enable completion-only loss. Defense in depth on top
+        # of the {prompt, completion} dataset format.
+        if self._response_template is not None and "completion_only_loss" in _sig:
+            cfg_kwargs.setdefault("completion_only_loss", True)
+            print(
+                "[SFTLearner] enabled SFTConfig(completion_only_loss=True)",
+                flush=True,
+            )
         cfg_kwargs.update(self._trainer_kwargs)
         cfg = SFTConfig(**cfg_kwargs)
 
@@ -157,28 +171,42 @@ class SFTLearner(Learner):
         trainer.train()
 
     def _completion_only_collator(self) -> Any | None:
-        """Return a DataCollatorForCompletionOnlyLM if `response_template` is
-        set and TRL provides the class; else None.
+        """Return a DataCollatorForCompletionOnlyLM if available; else None.
 
-        Completion-only loss masks the prompt tokens to -100 so the LM is
-        only trained to predict the post-template completion. Without this,
-        SFTTrainer trains on the full `prompt + target` string and the model
-        overfits the prompt prefix, especially with small base models (0.5B)
-        + LoRA.
+        Belt-and-suspenders backup for prompt masking. The primary mechanism
+        is the `{prompt, completion}` dataset format (handled in
+        `_build_dataset`). This collator is used in addition when the TRL
+        version exposes it, to be defensive about TRL versions whose
+        prompt-completion handling is incomplete.
+
+        Tries multiple import paths because newer TRL releases moved the
+        class out of the top-level namespace.
         """
         if self._response_template is None:
             return None
-        try:
-            from trl import DataCollatorForCompletionOnlyLM
-        except ImportError:
+        cls = None
+        for path in (
+            "trl",
+            "trl.trainer",
+            "trl.trainer.utils",
+            "trl.trainer.sft_trainer",
+        ):
+            try:
+                mod = __import__(path, fromlist=["DataCollatorForCompletionOnlyLM"])
+                cand = getattr(mod, "DataCollatorForCompletionOnlyLM", None)
+                if cand is not None:
+                    cls = cand
+                    break
+            except ImportError:
+                continue
+        if cls is None:
             print(
-                "[SFTLearner] response_template set but "
-                "trl.DataCollatorForCompletionOnlyLM unavailable; "
-                "training on full text",
+                "[SFTLearner] DataCollatorForCompletionOnlyLM not found in TRL; "
+                "relying on {prompt, completion} dataset format for masking",
                 flush=True,
             )
             return None
-        return DataCollatorForCompletionOnlyLM(
+        return cls(
             response_template=self._response_template,
             tokenizer=self.model.tokenizer,
         )
