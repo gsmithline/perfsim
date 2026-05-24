@@ -126,7 +126,13 @@ def main() -> int:
         import wandb as _wandb
 
         wandb = _wandb
-        wandb.init(project=wandb_project, name=run_tag, config=config)
+        # WANDB_RUN_SUFFIX lets parallel sweeps (e.g. full-FT vs LoRA) share
+        # the same `configs_betas.txt` tags without colliding in wandb. The
+        # condor `output=` paths separate the .out files; this separates
+        # the wandb runs.
+        wandb_suffix = os.environ.get("WANDB_RUN_SUFFIX", "")
+        wandb_name = f"{run_tag}{wandb_suffix}" if wandb_suffix else run_tag
+        wandb.init(project=wandb_project, name=wandb_name, config=config)
 
     from perfsim.models.hf_causal_lm import HFCausalLMModel
     from perfsim.learners.lm.sft import SFTLearner
