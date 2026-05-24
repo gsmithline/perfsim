@@ -65,10 +65,11 @@ class SFTLearner(Learner):
         *,
         target_formatter: Callable[[float], str] = _default_target_formatter,
         max_steps: int = 50,
-        learning_rate: float = 5e-5,
+        learning_rate: float = 1e-5,
         per_device_batch_size: int = 4,
         max_seq_length: int = 512,
         output_dir: str | None = None,
+        response_template: str | None = None,
         trainer_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(model, HFCausalLMModel):
@@ -82,6 +83,7 @@ class SFTLearner(Learner):
         self._per_device_batch_size = int(per_device_batch_size)
         self._max_seq_length = int(max_seq_length)
         self._output_dir = output_dir or tempfile.mkdtemp(prefix="perfsim-sft-")
+        self._response_template = response_template
         self._trainer_kwargs = trainer_kwargs or {}
 
     @property
@@ -154,21 +156,49 @@ class SFTLearner(Learner):
         trainer = self._build_trainer(cfg=cfg, ds=ds)
         trainer.train()
 
+    def _completion_only_collator(self) -> Any | None:
+        """Return a DataCollatorForCompletionOnlyLM if `response_template` is
+        set and TRL provides the class; else None.
+
+        Completion-only loss masks the prompt tokens to -100 so the LM is
+        only trained to predict the post-template completion. Without this,
+        SFTTrainer trains on the full `prompt + target` string and the model
+        overfits the prompt prefix, especially with small base models (0.5B)
+        + LoRA.
+        """
+        if self._response_template is None:
+            return None
+        try:
+            from trl import DataCollatorForCompletionOnlyLM
+        except ImportError:
+            print(
+                "[SFTLearner] response_template set but "
+                "trl.DataCollatorForCompletionOnlyLM unavailable; "
+                "training on full text",
+                flush=True,
+            )
+            return None
+        return DataCollatorForCompletionOnlyLM(
+            response_template=self._response_template,
+            tokenizer=self.model.tokenizer,
+        )
+
     def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
         """Construct the underlying SFTTrainer. Subclassed by KLSFTLearner."""
         import inspect
 
         from trl import SFTTrainer
 
-        # TRL renamed `tokenizer` -> `processing_class` in newer releases.
-        # Detect which one this SFTTrainer accepts.
         _sig = inspect.signature(SFTTrainer.__init__).parameters
         tok_kwarg: dict[str, Any] = {}
         if "processing_class" in _sig:
             tok_kwarg["processing_class"] = self.model.tokenizer
         elif "tokenizer" in _sig:
             tok_kwarg["tokenizer"] = self.model.tokenizer
-        # else: TRL accepts neither -> rely on its inference from the model.
+
+        collator = self._completion_only_collator()
+        if collator is not None and "data_collator" in _sig:
+            tok_kwarg["data_collator"] = collator
 
         return SFTTrainer(
             model=self.model.inner_model,

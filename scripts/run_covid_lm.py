@@ -332,12 +332,17 @@ def main() -> int:
         raise ValueError(f"unknown TARGET_KIND: {target_kind!r}")
 
     loss = MSELoss()
+    # Completion-only loss anchor: only train on tokens AFTER "Recommendation: "
+    # in the prompt + target string. Without this, the full-text SFT loss
+    # overfits the prompt prefix and destabilizes the LM head (we saw garbage
+    # tokens + collapse to "0" outputs after 100 steps on Qwen-0.5B).
     learner_kwargs = dict(
         model=model,
         loss=loss,
         max_steps=effective_max_steps,
         per_device_batch_size=sft_batch_size,
         output_dir=str(out_dir / "trl"),
+        response_template="Recommendation: ",
     )
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)

@@ -130,13 +130,16 @@ class KLSFTLearner(SFTLearner):
                 total = ce + kl_beta * kl
                 return (total, outputs) if return_outputs else total
 
-        # TRL renamed `tokenizer` -> `processing_class` in newer releases.
         _sig = inspect.signature(SFTTrainer.__init__).parameters
         tok_kwarg: dict[str, Any] = {}
         if "processing_class" in _sig:
             tok_kwarg["processing_class"] = self.model.tokenizer
         elif "tokenizer" in _sig:
             tok_kwarg["tokenizer"] = self.model.tokenizer
+
+        collator = self._completion_only_collator()
+        if collator is not None and "data_collator" in _sig:
+            tok_kwarg["data_collator"] = collator
 
         return _KLSFTTrainer(
             model=self.model.inner_model,
