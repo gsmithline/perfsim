@@ -188,28 +188,52 @@ class HFCausalLMModel(Model):
         return values
 
     def _generate(self, prompts: list[str]) -> list[str]:
-        """Batched greedy generation."""
+        """Batched greedy generation.
+
+        Toggles gradient checkpointing off and re-enables KV cache for the
+        duration of generation. HF refuses to populate the KV cache when
+        gradient checkpointing is active (the recompute-on-backward logic
+        would invalidate cached keys/values), so leaving it on means every
+        decode step re-runs the full prefix forward pass. Toggling around
+        generation gets the ~5-10x KV-cache speedup back without affecting
+        the training path. Original state is restored in `finally` so SFT
+        steps after generation continue to use grad checkpointing for the
+        memory savings.
+        """
         assert self.inner_model is not None
         assert self.tokenizer is not None
-        out: list[str] = []
-        for i in range(0, len(prompts), self._gen_batch_size):
-            batch = prompts[i : i + self._gen_batch_size]
-            inputs = self.tokenizer(
-                batch,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-            ).to(self._target_device)
-            with torch.no_grad():
-                gen = self.inner_model.generate(
-                    **inputs,
-                    max_new_tokens=self._max_new_tokens,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            new_tokens = gen[:, inputs["input_ids"].shape[1] :]
-            decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
-            out.extend(decoded)
+
+        was_grad_ckpt = bool(getattr(self.inner_model, "is_gradient_checkpointing", False))
+        was_use_cache = bool(getattr(self.inner_model.config, "use_cache", False))
+        if was_grad_ckpt:
+            self.inner_model.gradient_checkpointing_disable()
+        self.inner_model.config.use_cache = True
+
+        try:
+            out: list[str] = []
+            for i in range(0, len(prompts), self._gen_batch_size):
+                batch = prompts[i : i + self._gen_batch_size]
+                inputs = self.tokenizer(
+                    batch,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                ).to(self._target_device)
+                with torch.no_grad():
+                    gen = self.inner_model.generate(
+                        **inputs,
+                        max_new_tokens=self._max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                    )
+                new_tokens = gen[:, inputs["input_ids"].shape[1] :]
+                decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+                out.extend(decoded)
+        finally:
+            if was_grad_ckpt:
+                self.inner_model.gradient_checkpointing_enable()
+            self.inner_model.config.use_cache = was_use_cache
+
         return out
 
     @staticmethod
