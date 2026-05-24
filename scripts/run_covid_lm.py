@@ -140,10 +140,18 @@ def main() -> int:
     # population stays effectively all-Susceptible and the LM's isolation
     # decisions have nothing to gate (daily_infected stays at the baseline
     # exposed count across all rounds and betas).
+    # keep_trajectory=True: AT runner state PERSISTS across env.run() calls.
+    # Without this, env.run resets state to the initial seeded state every
+    # round (only LM weights carry across rounds), so the "performative" loop
+    # is degenerate: every round is an independent K-step rollout. With this
+    # flag, the AT sim evolves continuously and round t starts from the end
+    # state of round t-1, so the LM's earlier policy choices have cumulative
+    # downstream effect (the actual performative-prediction semantics).
     env = make_covid_env(
         init_seed=seed,
         initial_infections_fraction=seed_frac,
         signal_writer=logit_signal_writer,
+        keep_trajectory=True,
     )
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
     citizens = env.runner.state["agents"]["citizens"]
