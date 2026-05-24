@@ -234,9 +234,98 @@ def main() -> int:
                 "y": exposed,
                 "agent_idx": torch.arange(age.shape[0]),
             }
-        # Hot-swap the extractor on the existing env.
         env._state_extractor = custom_state_extractor  # noqa: SLF001
         print("[run] target = (disease_stage > 0).float() (binary exposed)", flush=True)
+    elif target_kind == "risk_recommendation":
+        # Recommend isolation level from per-agent risk features (age x
+        # mean_interactions). Static across rounds; the SFT target is a real
+        # policy the LM is being supervised on, not a prediction of outcome.
+        # Three tiers: high (elderly OR high-contact) -> 0.9,
+        # medium (middle-aged, not high-contact) -> 0.5,
+        # low (young AND low-contact) -> 0.2.
+        # KL beta now controls how strongly each fine-tune anchors back to
+        # base Qwen vs commits to this policy.
+        def custom_state_extractor(runner):
+            citizens = runner.state["agents"]["citizens"]
+            env_state = runner.state["environment"]
+            age_long = citizens["age"].squeeze().long()
+            mi = env_state["mean_interactions"].squeeze().float()
+            high_risk = (age_long >= 4) | (mi >= 3.5)
+            medium_risk = (age_long >= 2) & ~high_risk
+            target = torch.where(
+                high_risk,
+                torch.tensor(0.9),
+                torch.where(medium_risk, torch.tensor(0.5), torch.tensor(0.2)),
+            ).float().reshape(-1, 1)
+            return {
+                "x": citizens["age"].float().detach(),
+                "y": target.detach(),
+                "agent_idx": torch.arange(target.shape[0]),
+            }
+        env._state_extractor = custom_state_extractor  # noqa: SLF001
+        # Pre-compute label histogram so we know the class balance.
+        _cit = env.runner.state["agents"]["citizens"]
+        _envs = env.runner.state["environment"]
+        _age = _cit["age"].squeeze().long()
+        _mi = _envs["mean_interactions"].squeeze().float()
+        _hr = ((_age >= 4) | (_mi >= 3.5)).sum().item()
+        _mr = ((_age >= 2) & ~((_age >= 4) | (_mi >= 3.5))).sum().item()
+        _lr = n_agents - _hr - _mr
+        print(
+            f"[run] target = risk_recommendation: high(0.9)={_hr} "
+            f"medium(0.5)={_mr} low(0.2)={_lr}",
+            flush=True,
+        )
+    elif target_kind == "exposure_aware":
+        # Performative target: per-agent recommendation depends on the
+        # CURRENT local exposure pressure in the agent's demographic slice.
+        #
+        # Bundled AT covid has no explicit contact graph; we proxy "neighbors
+        # of i" by bucketing on (age_bucket, round(mean_interactions)) and
+        # using the fraction of that bucket currently in E or I state.
+        #
+        # target_i = clamp( base_risk(age_i, mi_i) + local_rate_i, 0.05, 0.95 )
+        #
+        # base_risk gives a static prior (high-risk slice -> baseline higher
+        # isolation even when no one is infected). local_rate lifts the
+        # target as cases mount in the slice. True performative loop: LM
+        # policy this round -> who gets exposed -> next round's local_rate.
+        _cit_init = env.runner.state["agents"]["citizens"]
+        _envs_init = env.runner.state["environment"]
+        _age_long_init = _cit_init["age"].squeeze().long()
+        _mi_init = _envs_init["mean_interactions"].squeeze().float()
+        _keys = _age_long_init * 100 + _mi_init.round().long()
+        _unique_keys, _inverse = torch.unique(_keys, return_inverse=True)
+        _n_buckets = int(_unique_keys.shape[0])
+        _ones = torch.ones(_age_long_init.shape[0])
+        _bucket_n = torch.zeros(_n_buckets).scatter_add_(0, _inverse, _ones)
+        _high = (_age_long_init >= 4) | (_mi_init >= 3.5)
+        _med = (_age_long_init >= 2) & ~_high
+        _base = torch.where(
+            _high, torch.tensor(0.5),
+            torch.where(_med, torch.tensor(0.3), torch.tensor(0.15)),
+        ).float()
+
+        def custom_state_extractor(runner):
+            citizens = runner.state["agents"]["citizens"]
+            ds = citizens["disease_stage"].squeeze()
+            infected = ((ds == 1) | (ds == 2)).float()
+            bucket_inf = torch.zeros(_n_buckets).scatter_add_(0, _inverse, infected)
+            local_rate = (bucket_inf / _bucket_n.clamp(min=1.0))[_inverse]
+            target = (_base + local_rate).clamp(0.05, 0.95)
+            return {
+                "x": citizens["age"].float().detach(),
+                "y": target.detach().reshape(-1, 1),
+                "agent_idx": torch.arange(target.shape[0]),
+            }
+        env._state_extractor = custom_state_extractor  # noqa: SLF001
+        _y0 = custom_state_extractor(env.runner)["y"].squeeze()
+        print(
+            f"[run] target = exposure_aware: n_buckets={_n_buckets} "
+            f"init y min={float(_y0.min()):.3f} max={float(_y0.max()):.3f} "
+            f"mean={float(_y0.mean()):.3f} std={float(_y0.std()):.3f}",
+            flush=True,
+        )
     elif target_kind == "disease_stage":
         print("[run] target = disease_stage (float 0-4)", flush=True)
     else:
