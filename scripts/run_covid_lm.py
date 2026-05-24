@@ -92,6 +92,12 @@ def main() -> int:
     # USE_LORA=0 to test full FT, which gives direct gradient updates to
     # every parameter and bypasses any LoRA-capacity bottleneck.
     use_lora = _env_int("USE_LORA", 1) == 1
+    # SFT learning rate. LoRA tolerates ~1e-5 to 5e-5; full FT typically
+    # needs 10-100x smaller because LoRA's low-rank projection naturally
+    # bounds per-parameter updates while full FT applies the LR to every
+    # parameter directly. With LR=1e-5 we observed full FT collapse on
+    # Qwen-0.5B after just 20 steps; 1e-6 is the gentler retry.
+    sft_lr = _env_float("SFT_LR", 1e-5)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -387,6 +393,11 @@ def main() -> int:
         per_device_batch_size=sft_batch_size,
         output_dir=str(out_dir / "trl"),
         response_template="<|im_start|>assistant\n",
+        learning_rate=sft_lr,
+    )
+    print(
+        f"[run] SFT learning_rate={sft_lr} max_steps={effective_max_steps}",
+        flush=True,
     )
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)
