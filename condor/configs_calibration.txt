@@ -1,0 +1,44 @@
+# Season 1: Quiet (May-Jun 2021, weeks 40-45, ~3-9 cases/wk)
+quiet_f0001, 0.001, 40
+quiet_f0005, 0.005, 40
+quiet_f001, 0.01, 40
+quiet_f002, 0.02, 40
+quiet_f003, 0.03, 40
+quiet_f005, 0.05, 40
+quiet_f008, 0.08, 40
+quiet_f010, 0.10, 40
+quiet_f015, 0.15, 40
+quiet_f020, 0.20, 40
+# Season 2: Alpha surge (Dec 2020-Jan 2021, weeks 17-22, ~100-200 cases/wk)
+alpha_f0001, 0.001, 17
+alpha_f0005, 0.005, 17
+alpha_f001, 0.01, 17
+alpha_f002, 0.02, 17
+alpha_f003, 0.03, 17
+alpha_f005, 0.05, 17
+alpha_f008, 0.08, 17
+alpha_f010, 0.10, 17
+alpha_f015, 0.15, 17
+alpha_f020, 0.20, 17
+# Season 3: Delta (Aug-Sep 2021, weeks 52-58, ~50-70 cases/wk)
+delta_f0001, 0.001, 52
+delta_f0005, 0.005, 52
+delta_f001, 0.01, 52
+delta_f002, 0.02, 52
+delta_f003, 0.03, 52
+delta_f005, 0.05, 52
+delta_f008, 0.08, 52
+delta_f010, 0.10, 52
+delta_f015, 0.15, 52
+delta_f020, 0.20, 52
+# Season 4: Omicron (Dec 2021-Jan 2022, weeks 71-75, ~600-1500 cases/wk)
+omicron_f0001, 0.001, 71
+omicron_f0005, 0.005, 71
+omicron_f001, 0.01, 71
+omicron_f002, 0.02, 71
+omicron_f003, 0.03, 71
+omicron_f005, 0.05, 71
+omicron_f008, 0.08, 71
+omicron_f010, 0.10, 71
+omicron_f015, 0.15, 71
+omicron_f020, 0.20, 71

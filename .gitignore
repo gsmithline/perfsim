@@ -64,3 +64,6 @@ examples/.mpl_cache/
 *.log
 
 DESIGN.md
+ARCHITECTURE.md
+.claude
+CLAUDE.md
