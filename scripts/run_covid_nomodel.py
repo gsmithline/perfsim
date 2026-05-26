@@ -94,7 +94,9 @@ def main() -> int:
 
     if calibrated_r2:
         r2_val = float(calibrated_r2)
-        env.runner.state["disease_stages"]["R2"] = torch.tensor([r2_val])
+        transmission = env.runner.initializer.transition_function["0"].new_transmission
+        with torch.no_grad():
+            transmission.calibrate_R2.fill_(r2_val)
         print(f"[run] set R2 = {r2_val}", flush=True)
 
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
