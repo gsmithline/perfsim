@@ -1,0 +1,4 @@
+omicron_nomodel_iso0,   0.0,  0.05, 1.35
+omicron_nomodel_iso50,  0.5,  0.05, 1.35
+alpha_nomodel_iso0,     0.0,  0.005, 0.60
+alpha_nomodel_iso50,    0.5,  0.005, 0.60
