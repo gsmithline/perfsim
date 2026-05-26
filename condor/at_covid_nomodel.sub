@@ -9,7 +9,7 @@ error  = condor/logs/$(tag).err
 log    = condor/logs/$(tag).log
 
 request_cpus = 2
-request_memory = 8G
+request_memory = 16G
 request_disk = 5G
 
 requirements = (OpSys == "LINUX")
