@@ -3,7 +3,7 @@ executable = /home/gsmithline/perfsim/condor/run_one.sh
 arguments = $(tag) $(style) $(beta)
 
 # Pass calibrated params via environment
-environment = "SEED_FRAC=$(frac) CALIBRATED_R2=$(r2) K_STEPS=21 WANDB_PROJECT=perfsim-covid-calibrated"
+environment = "SEED_FRAC=$(frac) CALIBRATED_R2=$(r2) K_STEPS=21 N_ROUNDS=10 WANDB_PROJECT=perfsim-covid-calibrated"
 
 output = condor/logs/$(tag).out
 error  = condor/logs/$(tag).err
