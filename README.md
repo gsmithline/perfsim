@@ -4,6 +4,69 @@ General high-performance simulator for performative prediction (PP). Built aroun
 
 **Status:** v0 in progress. `Predictor` facade, epoch loop, dynamics environments, and supervised learners are in place. Concrete agent-based environments are deferred to v2.
 
+## Research direction
+
+**Thesis:** Deploying an LM into a population creates a feedback loop: the model's outputs shape the population's behavior, which becomes the model's next training data. KL regularization — standard in post-training — anchors the model to its pretrained worldview, controlling how much it can adapt. We study how this anchor shapes the population's long-run equilibrium using differentiable agent-based simulators calibrated to real-world data.
+
+**Core question:** When the performative loop converges, where does the population end up? Specifically: does the equilibrium population state reflect the population's own dynamics, or the pretrained model's beliefs about it? And how does the KL coefficient control this?
+
+**What we measure — population equilibria as a function of beta:**
+
+In FJ opinion dynamics, this was directly visible: the population's opinion vector settles at a fixed point that shifts as beta (KL strength) changes. Low beta: opinions settle where the peer dynamics and fine-tuning signal push them. High beta: opinions settle near where the pretrained model's predictions would push them. The frozen (unretrained) model defines one attractor; the fully adapted model (beta=0) defines another. The KL coefficient interpolates between them.
+
+In the ABM settings (covid, macro), we study the same phenomenon in richer dynamics:
+
+- **COVID (Astoria, 37k agents):** The LM recommends per-agent isolation levels. The ABM simulates SEIRM disease transmission. At equilibrium, the population's disease state distribution (per-subgroup infection rates, recovery rates) is a function of beta. We measure:
+  - Per-subgroup disease burden at convergence (burden_age0..5)
+  - Per-subgroup model recommendations at convergence (pred_age0..5)
+  - The gap between what the model recommends and what the epidemic data says is needed — this gap persists at high beta (model anchored to pretrained prior) and closes at low beta (model adapts)
+  - Total infections at equilibrium across betas
+
+- **Macro economics (Queens County, 2.7M agents):** The LM advises work/consumption decisions. The ABM simulates earning, consumption, labor markets, and inflation. At equilibrium, the population's economic state (unemployment rate, asset distribution, per-subgroup income) is a function of beta.
+
+**Three reference lines for the paper's main figure:**
+1. The equilibrium under the optimal performative policy (found via gradient descent through the differentiable ABM)
+2. The equilibrium under the frozen pretrained model (the reference prior's implied trajectory)
+3. The equilibrium under KL-regularized retraining at each beta (the actual performative loop)
+
+Line 3 should approach line 1 as beta→0 (model adapts) and approach line 2 as beta→∞ (model locked to prior). The shape of this curve — and how it differs across subgroups — is the main result.
+
+**Methodological contribution:** Because AgentTorch is differentiable, we can compute exact performative gradients through the ABM (validated: autograd/FD ratio ~1.0, CV ~0.02). This enables gradient-based calibration to real data, performative gradient computation without PerfGrad's assumptions, and potentially gradient-based equilibrium finding.
+
+**Calibrated ABM parameters (COVID):**
+
+| Season | Dates | Real cases (3wk) | Seed frac | R2 | Fit ratio |
+|--------|-------|-----------------|-----------|-----|-----------|
+| Alpha | Dec 2020 | 353 | 0.005 | 0.60 | 1.000 |
+| Delta | Aug 2021 | 184 | 0.001 | 1.13 | 0.995 |
+| Omicron | Dec 2021 | 3,317 | 0.05 | 1.35 | 1.001 |
+
+**Calibrated ABM parameters (Macro):** UAC fit to Queens County monthly unemployment, 2019-2023. Full 2.7M agent population. Converged across all 4 economic periods.
+
+**Key prior results:**
+- 7B LM shifts the population in AT covid (demonstrated empirically)
+- FJ experiments show KL coefficient affects where population equilibrates
+- AT autodiff produces accurate performative gradients (ratio ~1.0, CV ~0.02)
+- 0.5B model does not produce usable results; 7B required
+
+**Equilibrium concept — performative stability, not population steady state:**
+
+The COVID ABM is transient (SEIRM with no reinfection — the epidemic ends). Unlike FJ, there is no population-state equilibrium. The right concept is **performative stability** (Perdomo et al. 2020): LM parameters θ* such that deploying θ* into the ABM and retraining on the resulting data returns θ*. When `stability_gap → 0`, the model has found a performative stable point. Different betas produce different stable points with different population outcomes.
+
+**Learned surrogate as an analytical tool (future work):**
+
+The ABM's performative map — policy → population response — can be learned as a differentiable surrogate: 6 per-subgroup isolation recommendations → 6 per-subgroup infection rates. This surrogate is an analyzable object:
+- **Jacobian:** ∂(infections_group_i) / ∂(isolation_group_j) reveals cross-group coupling from the contact network
+- **Fixed points:** Newton's method on the 6→6 surrogate instead of running the full ABM loop
+- **Stability:** eigenvalues at fixed points determine convergence of the performative loop
+- **Beta sensitivity:** trace how the stable point moves continuously as KL strength changes
+
+The pretrained LM has its own implicit mapping (beliefs about demographics and risk from pretraining). The surrogate learns the actual mapping. The discrepancy between these two objects is what the KL anchor preserves — measurable as the gap between pretrained predictions and surrogate-optimal policy.
+
+**Dreamer-style performative optimization (future work):**
+
+With the surrogate, you can dream the full performative loop: deploy policy → surrogate predicts outcome → simulate KL-SFT retraining → get next policy → repeat — all inside the learned model. Optimizing through this dreamed loop finds the performatively optimal policy at each beta, showing exactly what the KL anchor costs in population outcomes. The key: you're optimizing inside a learned world model while being regularized toward a pretrained world model — two competing models of the world.
+
 ## Core loop
 
 Each outer round is one **epoch**:

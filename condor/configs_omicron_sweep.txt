@@ -1,0 +1,2 @@
+omicron_sft_b0,     sft,     0.0,  0.05, 1.35
+omicron_frozen,     frozen,  0.0,  0.05, 1.35
