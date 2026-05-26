@@ -10,7 +10,7 @@ error  = condor/logs/$(tag).err
 log    = condor/logs/$(tag).log
 
 request_cpus = 4
-request_memory = 64G
+request_memory = 96G
 request_disk = 10G
 request_gpus = 1
 
