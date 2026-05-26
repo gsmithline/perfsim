@@ -28,9 +28,10 @@ SFT_MAX_STEPS="${SFT_MAX_STEPS:-50}"
 GEN_BATCH_SIZE="${GEN_BATCH_SIZE:-64}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8}"
 WANDB_PROJECT="${WANDB_PROJECT:-perfsim-at-covid-lm}"
+CALIBRATED_R2="${CALIBRATED_R2:-}"
 
 echo "[run_one] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
-echo "[run_one] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA n_rounds=$N_ROUNDS K=$K_STEPS model=$BASE_MODEL"
+echo "[run_one] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA n_rounds=$N_ROUNDS K=$K_STEPS model=$BASE_MODEL R2=$CALIBRATED_R2 frac=$SEED_FRAC"
 
 # shellcheck disable=SC1090
 source "$CONDA_SH"
@@ -58,5 +59,6 @@ env \
     GEN_BATCH_SIZE="$GEN_BATCH_SIZE" \
     MAX_NEW_TOKENS="$MAX_NEW_TOKENS" \
     WANDB_PROJECT="$WANDB_PROJECT" \
+    CALIBRATED_R2="$CALIBRATED_R2" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_covid_lm/$RUN_TAG}" \
     python scripts/run_covid_lm.py

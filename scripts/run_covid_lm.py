@@ -177,6 +177,18 @@ def main() -> int:
     )
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
     citizens = env.runner.state["agents"]["citizens"]
+
+    # Apply calibrated R2 if provided. Overrides AT's default transmission rate
+    # with the value found by scripts/calibrate_covid_single.py. Without this,
+    # the ABM uses AT's bundled R2=4.75 which may not match the target epidemic
+    # regime.
+    calibrated_r2 = os.environ.get("CALIBRATED_R2")
+    if calibrated_r2 is not None:
+        r2_val = float(calibrated_r2)
+        transmission = env.runner.initializer.transition_function["0"].new_transmission
+        with torch.no_grad():
+            transmission.calibrate_R2.fill_(r2_val)
+        print(f"[run] calibrated R2 set to {r2_val}", flush=True)
     n_seeded = int((citizens["disease_stage"].squeeze() == 2.0).sum().item())
     print(f"[run] env ready: {n_agents} agents, {n_seeded} initially infected, "
           f"in {time.time() - t0:.1f}s", flush=True)
@@ -439,9 +451,7 @@ def main() -> int:
 
     # Register per-round metrics. The Simulator calls these at the END of
     # each round (after env.run + state extraction), so they capture the
-    # actual per-round env state. Without this, the post-sim trajectory
-    # dump reads `env.runner.state` long after the rollout finished and
-    # returns the *final* state every time, masquerading as per-round data.
+    # actual per-round env state.
     def _di_metric(sim_obj) -> float:
         di = sim_obj.env.runner.state["environment"]["daily_infected"]
         return float(di.sum().item())
@@ -450,9 +460,72 @@ def main() -> int:
         ds = sim_obj.env.runner.state["agents"]["citizens"]["disease_stage"]
         return float((ds > 0).float().mean().item())
 
+    # Per-disease-stage counts
+    def _stage_counts(sim_obj) -> dict:
+        ds = sim_obj.env.runner.state["agents"]["citizens"]["disease_stage"].squeeze()
+        return {
+            "n_susceptible": int((ds == 0).sum().item()),
+            "n_exposed": int((ds == 1).sum().item()),
+            "n_infected": int((ds == 2).sum().item()),
+            "n_recovered": int((ds == 3).sum().item()),
+            "n_dead": int((ds == 4).sum().item()),
+        }
+
+    # LM prediction distribution — what the model is recommending this round
+    def _pred_stats(sim_obj) -> dict:
+        features = sim_obj.env.runner.state["agents"]["citizens"]["age"].float()
+        with torch.no_grad():
+            preds = sim_obj.predictor.model(features).squeeze().detach().cpu()
+        return {
+            "pred_mean": float(preds.mean()),
+            "pred_std": float(preds.std()),
+            "pred_min": float(preds.min()),
+            "pred_max": float(preds.max()),
+        }
+
+    # Per-age-group disease burden — who is getting sick
+    def _subgroup_burden(sim_obj) -> dict:
+        citizens = sim_obj.env.runner.state["agents"]["citizens"]
+        ds = citizens["disease_stage"].squeeze()
+        age = citizens["age"].squeeze().long()
+        sick = (ds >= 1).float()  # E, I, R, or M
+        out = {}
+        for bucket in range(6):
+            mask = age == bucket
+            n = mask.sum().item()
+            if n > 0:
+                out[f"burden_age{bucket}"] = float(sick[mask].mean().item())
+        return out
+
+    # Per-age-group prediction mean — what the model recommends per subgroup
+    def _subgroup_preds(sim_obj) -> dict:
+        citizens = sim_obj.env.runner.state["agents"]["citizens"]
+        age = citizens["age"].squeeze().long()
+        features = citizens["age"].float()
+        with torch.no_grad():
+            preds = sim_obj.predictor.model(features).squeeze().detach().cpu()
+        out = {}
+        for bucket in range(6):
+            mask = age == bucket
+            n = mask.sum().item()
+            if n > 0:
+                out[f"pred_age{bucket}"] = float(preds[mask].mean().item())
+        return out
+
+    # Training loss on the current round's data (performative risk proxy)
+    def _train_loss(sim_obj) -> float:
+        data = sim_obj.env._state_extractor(sim_obj.env.runner)
+        with torch.no_grad():
+            return float(loss(sim_obj.predictor.model, data, reduction="mean").item())
+
     sim_metrics = {
         "daily_infected_sum": _di_metric,
         "fraction_non_S": _fnS_metric,
+        "stage_counts": _stage_counts,
+        "pred_stats": _pred_stats,
+        "subgroup_burden": _subgroup_burden,
+        "subgroup_preds": _subgroup_preds,
+        "train_loss": _train_loss,
     }
     sim = Simulator(env=env, learner=learner, loss=loss, metrics=sim_metrics)
     print(f"[run] starting outer loop: n_rounds={n_rounds} K={k_steps}", flush=True)
@@ -534,14 +607,23 @@ def main() -> int:
             "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
             "daily_infected_sum": float(r["daily_infected_sum"]),
             "fraction_non_S": float(r["fraction_non_S"]),
+            "train_loss": float(r.get("train_loss", 0)),
         }
         gap = r.get("stability_gap")
         if hasattr(gap, "item"):
             row["stability_gap"] = float(gap.item())
+        # Flatten nested metric dicts into the row
+        for key in ("stage_counts", "pred_stats", "subgroup_burden", "subgroup_preds"):
+            val = r.get(key)
+            if isinstance(val, dict):
+                row.update(val)
         trajectory.append(row)
         if wandb is not None:
             wandb.log(row)
-        print(f"[round {row['round']}] {row}", flush=True)
+        print(f"[round {row['round']}] di={row['daily_infected_sum']:.0f} "
+              f"frac_nonS={row['fraction_non_S']:.4f} "
+              f"train_loss={row['train_loss']:.4f} "
+              f"pred_mean={row.get('pred_mean', 0):.3f}", flush=True)
 
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
     print(f"[run] outputs in {out_dir}", flush=True)
