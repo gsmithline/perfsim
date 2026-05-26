@@ -1,0 +1,20 @@
+# Pre-COVID baseline (Jan-Sep 2019, months 0-8, unemp 2.9-4.2%)
+baseline_lr0p01, 0, 0.01
+baseline_lr0p05, 0, 0.05
+baseline_lr0p1, 0, 0.1
+baseline_lr0p5, 0, 0.5
+# COVID shock (Apr-Dec 2020, months 15-23, unemp 13.5-11.5%)
+covid_lr0p01, 15, 0.01
+covid_lr0p05, 15, 0.05
+covid_lr0p1, 15, 0.1
+covid_lr0p5, 15, 0.5
+# Recovery (Jan-Sep 2021, months 24-32, unemp 12.5-8.3%)
+recovery_lr0p01, 24, 0.01
+recovery_lr0p05, 24, 0.05
+recovery_lr0p1, 24, 0.1
+recovery_lr0p5, 24, 0.5
+# Post-recovery (Jan-Sep 2022, months 36-44, unemp 7.4-4.1%)
+post_lr0p01, 36, 0.01
+post_lr0p05, 36, 0.05
+post_lr0p1, 36, 0.1
+post_lr0p5, 36, 0.5
