@@ -331,10 +331,12 @@ def build_macro_runner(
 
     torch.manual_seed(int(seed))
     src_yaml = bundled_macro_yaml(name=yaml_name)
-    if population_dir is None:
-        pop_dir = subsample_population_dir(n_agents=n_agents)
-    else:
+    if population_dir is not None:
         pop_dir = pathlib.Path(population_dir)
+    elif yaml_name == "config.yaml":
+        pop_dir = bundled_nyc_dir()
+    else:
+        pop_dir = subsample_population_dir(n_agents=n_agents)
     yaml_path = patched_macro_yaml(src_yaml=src_yaml, population_dir=pop_dir)
     config = read_config(yaml_path, register_resolvers=should_register_resolvers())
     reg = _build_registry()

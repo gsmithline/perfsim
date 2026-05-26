@@ -15,6 +15,8 @@ N_ITERS="${N_ITERS:-50}"
 N_STEPS="${N_STEPS:-9}"
 LR="${LR:-0.1}"
 SEED="${SEED:-0}"
+N_AGENTS="${N_AGENTS:-100}"
+MACRO_YAML="${MACRO_YAML:-config_100_agents.yaml}"
 WANDB_PROJECT="${WANDB_PROJECT:-perfsim-macro-calibration}"
 
 echo "[run_calibration_macro] host=$(hostname) tag=$RUN_TAG start=$START_MONTH iters=$N_ITERS lr=$LR"
@@ -37,6 +39,8 @@ env \
     N_ITERS="$N_ITERS" \
     LR="$LR" \
     SEED="$SEED" \
+    N_AGENTS="$N_AGENTS" \
+    MACRO_YAML="$MACRO_YAML" \
     WANDB_PROJECT="$WANDB_PROJECT" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/calibration_macro/$RUN_TAG}" \
     python scripts/calibrate_macro_single.py

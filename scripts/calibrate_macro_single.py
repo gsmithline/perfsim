@@ -135,10 +135,16 @@ def main() -> int:
     }, indent=2))
 
     # Build macro env
+    n_agents_cfg = int(_env("N_AGENTS", "100"))
+    macro_yaml = _env("MACRO_YAML", "config_100_agents.yaml")
     from perfsim.scenarios.at_macro import make_macro_env
-    env = make_macro_env(init_seed=seed)
+    env = make_macro_env(
+        init_seed=seed,
+        yaml_name=macro_yaml,
+        n_agents=n_agents_cfg,
+    )
     n_agents = env.runner.state["agents"]["consumers"]["age"].shape[0]
-    print(f"[calibrate_macro] {n_agents} agents", flush=True)
+    print(f"[calibrate_macro] {n_agents} agents (config={macro_yaml})", flush=True)
 
     # Find UAC parameter
     uac_param = None
