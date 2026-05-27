@@ -351,7 +351,11 @@ def main() -> int:
         if u is None:
             return 0.0
         try:
-            return float(u[-1][-1].item())
+            row = u[-1]
+            nonzero = row.nonzero(as_tuple=True)[0]
+            if len(nonzero) == 0:
+                return 0.0
+            return float(row[nonzero[-1]].item())
         except Exception:
             return 0.0
 
