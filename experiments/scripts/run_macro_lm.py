@@ -166,15 +166,43 @@ def main() -> int:
     )
 
     
-    #chat formatted prompt
-    SYSTEM_MSG = ( 
-        "You are a financial recommendor providing personalized consumption"
+    SYSTEM_MSG = (
+        "You are a financial advisor providing personalized consumption "
         "recommendations during ongoing economic uncertainty. Your goal "
         "is to help each household balance current spending with future "
         "financial security."
     )
 
+    def _get_econ_state():
+        env_state = env.runner.state["environment"]
+        inflation = 0.0
+        pi = env_state.get("P_i")
+        if pi is not None:
+            try:
+                inflation = float(pi[-1][-1].item())
+            except Exception:
+                pass
+        unemployment = 0.0
+        u = env_state.get("U")
+        if u is not None:
+            try:
+                row = u[-1]
+                nz = row.nonzero(as_tuple=True)[0]
+                if len(nz):
+                    unemployment = float(row[nz[-1]].item())
+            except Exception:
+                pass
+        price = 0.0
+        p = env_state.get("P")
+        if p is not None:
+            try:
+                price = float(p[-1][-1].item())
+            except Exception:
+                pass
+        return inflation, unemployment, price
+
     def prompt_builder(profile_row, tokenizer):
+        inflation, unemployment, price = _get_econ_state()
         messages = [
             {"role": "system", "content": SYSTEM_MSG},
             {
@@ -182,6 +210,10 @@ def main() -> int:
                 "content": (
                     f"Household profile: age group {profile_row['age_label']}, "
                     f"{profile_row['gender']}, {profile_row['ethnicity']}.\n\n"
+                    f"Current economic conditions: "
+                    f"inflation rate {inflation:.1%}, "
+                    f"unemployment rate {unemployment:.1%}, "
+                    f"price of goods {price:.2f}.\n\n"
                     f"Output a single number between 0 and 1 (e.g. 0.50) "
                     f"where 0 means save all income and 1 means spend all "
                     f"available assets this month."
@@ -216,10 +248,11 @@ def main() -> int:
     print(f"[run] SFT learning_rate={sft_lr} max_steps={max_steps}", flush=True)
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
 
-    # Pre-SFT diagnostic.
     _rng = _random.Random(seed)
     _sample_idx = _rng.sample(range(n_agents), min(20, n_agents))
     _sample_prompts = [model.build_prompt(model.profile_at(i)) for i in _sample_idx]
+    print("[diag] sample prompt (agent 0):", flush=True)
+    print(_sample_prompts[0], flush=True)
     print("[diag] sample LM outputs (pre-SFT):", flush=True)
     _sample_texts = model._generate(_sample_prompts)
     _sample_log = []
