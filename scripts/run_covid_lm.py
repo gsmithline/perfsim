@@ -81,7 +81,7 @@ def main() -> int:
     max_new_tokens = _env_int("MAX_NEW_TOKENS", 8)
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 32)
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
-    target_kind = os.environ.get("TARGET_KIND", "exposed_binary")  # or "disease_stage"
+    target_kind = os.environ.get("TARGET_KIND", "exposed_binary")
     # LoRA rank. perfsim default is r=8 (Hu et al. minimal); opinion-dyn
     # uses r=32. With r=8 + (q,v) on Qwen-0.5B we observed unconditional
     # token-bias collapse (LM emits "0" repeatedly regardless of position).
