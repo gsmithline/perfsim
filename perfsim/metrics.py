@@ -77,7 +77,7 @@ def sensitivity_paired(world: World, model_a: Model, model_b: Model) -> Tensor:
         denom = _theta_diff_norm(model_a, model_b)
         if denom.item() == 0.0:
             raise ValueError(
-                "sensitivity is undefined when θ_a == θ_b (zero denominator)"
+                "sensitivity is undefined when theta_a == theta_b (zero denominator)"
             )
         x_a = world.sample(model_a)["x"]
         x_b = world.sample(model_b)["x"]
@@ -103,7 +103,7 @@ def sensitivity_sliced(
         denom = _theta_diff_norm(model_a, model_b)
         if denom.item() == 0.0:
             raise ValueError(
-                "sensitivity is undefined when θ_a == θ_b (zero denominator)"
+                "sensitivity is undefined when theta_a == theta_b (zero denominator)"
             )
         x_a = world.sample(model_a)["x"]
         x_b = world.sample(model_b)["x"]

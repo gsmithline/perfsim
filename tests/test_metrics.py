@@ -156,7 +156,7 @@ class TestSensitivityPaired:
 
 class TestSensitivitySliced:
     def test_strategic_linear_lipschitz_constant(self) -> None:
-        # Sliced W1 / ||Δθ|| should be ~constant across (a, b) pairs in a
+        # Sliced W1 / ||Δtheta|| should be ~constant across (a, b) pairs in a
         # linear shift world. Absolute value is a dimension constant times eps.
         n, d, eps = 200, 6, 1.0
         x0 = torch.randn(n, d)
@@ -173,7 +173,7 @@ class TestSensitivitySliced:
         s_small = _sens(0.1)
         s_large = _sens(10.0)
         # Slicing introduces a small finite-projection error but the ratio
-        # should still be O(1) across two orders of magnitude in ||Δθ||.
+        # should still be O(1) across two orders of magnitude in ||Δtheta||.
         assert abs(s_small - s_large) / s_large < 0.05
 
     def test_raises_on_equal_thetas(self) -> None:

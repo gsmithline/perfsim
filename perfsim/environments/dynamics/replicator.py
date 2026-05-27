@@ -15,8 +15,8 @@ per-agent decision rule. K is the number of strategies / groups.
 
 PP coupling: each PP round runs `n_ticks` of the replicator update where
 the fitness function depends on both the current mixture *and* the
-deployed predictor θ_t. The fitness function is supplied by the caller
-(typically per-strategy accuracy or utility of θ_t on strategy-k data).
+deployed predictor theta_t. The fitness function is supplied by the caller
+(typically per-strategy accuracy or utility of theta_t on strategy-k data).
 The world emits per-strategy fitness as the training signal and persists
 the resulting mixture.
 """

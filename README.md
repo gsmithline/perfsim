@@ -2,13 +2,13 @@
 
 General high-performance simulator for performative prediction (PP). A deployed model's outputs shape the population's behavior, which becomes the model's next training data. perfsim provides the loop, the environments, and the measurement tools.
 
-## Research direction
+## Research direction (Under Development and not fully up to date)
 
-Deploying an LM into a population creates a feedback loop. KL regularization -- standard in post-training -- anchors the model to its pretrained worldview, controlling how much it can adapt. We study how this anchor shapes the population's long-run equilibrium using differentiable agent-based simulators calibrated to real-world data.
+Deploying an LM into a population creates a feedback loop. KL regularization, standard in post-training, anchors the model to its pretrained worldview, controlling how much it can adapt. We study how this anchor shapes the population's long-run equilibrium using differentiable agent-based simulators calibrated to real-world data.
 
-**Core question:** When the performative loop converges, where does the population end up -- reflecting the population's own dynamics, or the pretrained model's beliefs? How does the KL coefficient control this?
+**Core question:** When the performative loop converges, where does the population end up, reflecting the population's own dynamics, or the pretrained model's beliefs? How does the KL coefficient control this? 
 
-**What we measure -- population equilibria as a function of beta:**
+**What we measure, population impact as a function of beta:**
 
 - **COVID (Astoria, 37k agents):** LM recommends per-agent isolation levels. ABM simulates SEIRM disease transmission. We measure per-subgroup disease burden, model recommendations, and the gap between what the model recommends and what the data says is needed at each beta.
 
@@ -19,7 +19,7 @@ Deploying an LM into a population creates a feedback loop. KL regularization -- 
 2. Equilibrium under the frozen pretrained model (the reference prior's implied trajectory)
 3. Equilibrium under KL-regularized retraining at each beta (the actual performative loop)
 
-Line 3 approaches line 1 as beta approaches 0 (model adapts) and approaches line 2 as beta grows (model locked to prior). The shape of this curve -- and how it differs across subgroups -- is the main result.
+Line 3 approaches line 1 as beta approaches 0 (model adapts) and approaches line 2 as beta grows (model locked to prior). The shape of this curve, and how it differs across subgroups, is the main result.
 
 ## Core loop
 

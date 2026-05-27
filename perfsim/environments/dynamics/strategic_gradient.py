@@ -5,7 +5,7 @@ Each agent has fixed initial features `x_0` and a fixed label `y`. On each
 round, agents shift their features along the gradient of the predictor's
 scalar output wrt the input:
 
-    x_t = x_0 + epsilon * ∂f(x_0; θ) / ∂x
+    x_t = x_0 + epsilon * ∂f(x_0; theta) / ∂x
 
 For a linear predictor f(x) = w·x (e.g. `LinearModel(out_features=1)`)
 this gradient is just `w`, so `StrategicGradientWorld` reduces exactly to

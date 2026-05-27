@@ -7,7 +7,7 @@ deployed predictor. This world relaxes that: at the end of each round,
 x_0 partially drifts toward the strategic position x_t, modeling agents
 who gradually internalize their past manipulations:
 
-    grad         = ∂ f(x_0^t; θ_t) / ∂x
+    grad         = ∂ f(x_0^t; theta_t) / ∂x
     x_strategic  = x_0^t + epsilon * grad                  (this round's data)
     x_0^{t+1}    = (1 - eta) * x_0^t + eta * x_strategic   (drift)
 

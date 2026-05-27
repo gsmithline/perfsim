@@ -1,7 +1,7 @@
 # `perfsim.environments.dynamics`
 
-Concrete `Dynamics` environments: the performative map **D(θ)** that produces
-training data given a deployed predictor θ. The Simulator drives the
+Concrete `Dynamics` environments: the performative map **D(theta)** that produces
+training data given a deployed predictor theta. The Simulator drives the
 `Environment ↔ Predictor` epoch loop; this directory holds the concrete
 dynamical-systems environments.
 
@@ -25,7 +25,7 @@ classical lockstep PP loop.
 
 | Environment | State | Predictor's role | What it's for |
 |---|---|---|---|
-| `GaussianShiftWorld` | stateless | shifts the regression target via `Aθ + b` | RRM/RGD gating test against closed-form fixed point `(I − A)⁻¹ b` |
+| `GaussianShiftWorld` | stateless | shifts the regression target via `Atheta + b` | RRM/RGD gating test against closed-form fixed point `(I − A)⁻¹ b` |
 | `StrategicLinearWorld` | fixed population (`x_0`, `y`) | linear strategic shift: `x_t = x_0 + ε·w` | Perdomo (2020) strategic classification with a linear predictor |
 | `StrategicGradientWorld` | fixed population (`x_0`, `y`) | gradient strategic shift: `x_t = x_0 + ε·∂f/∂x` | Same setup but with arbitrary differentiable predictors (MLPs, etc.) |
 | `AccumulatingShiftWorld` | drifting `x_0` | gradient strategic shift | Strategic classification with a population that internalizes manipulation over time |
@@ -42,8 +42,8 @@ arbitrary `epoch_size`.
 The `Environment` ABC and its sibling intermediates live in
 `perfsim/core/environment.py`. Concrete dynamics environments extend one of:
 
-**`StatelessDynamics`**: D(θ) is history-independent. Each call samples iid
-from D(θ_t). The base provides a forked-generator pattern so `sample`
+**`StatelessDynamics`**: D(theta) is history-independent. Each call samples iid
+from D(theta_t). The base provides a forked-generator pattern so `sample`
 (peek) does not advance the RNG that `step` uses, which keeps off-policy
 evaluation (decoupled performative risk) hermetic.
 
@@ -56,7 +56,7 @@ There are also **capability traits** (runtime-checkable Protocols in
 `perfsim/core/environment.py`) that an environment can opt into:
 
 - `Differentiable`: exposes `grad_sample(model)` whose output is
-  autograd-traceable wrt θ. Required by derivative-aware Learners (Izzo).
+  autograd-traceable wrt theta. Required by derivative-aware Learners (Izzo).
 - `FullyDifferentiable`: additionally exposes a `grad_step` that is
   autograd-traceable across multiple inner steps.
 - `Rewarding`: fills a `reward` field in the data dict. Required by
@@ -79,24 +79,24 @@ Stateless location-shift regression world.
 
 ```
 x ~ N(0, I_d)
-y = x · (A θ + b) + σ · N(0, 1)
+y = x · (A theta + b) + σ · N(0, 1)
 ```
 
 For a `LinearModel(d, 1, bias=False)` trained with `MSELoss`, the population
-risk minimizer at deployed θ is `Aθ + b`, so RRM iterates
-`θ_{t+1} = Aθ_t + b` and the closed-form fixed point is
+risk minimizer at deployed theta is `Atheta + b`, so RRM iterates
+`theta_{t+1} = Atheta_t + b` and the closed-form fixed point is
 
 ```
-θ* = (I − A)⁻¹ b
+theta* = (I − A)⁻¹ b
 ```
 
 Used as the canonical gating test: any RRM-style Learner must converge to
-`θ*` (within sample noise σ) on a contractive choice of `A` (`‖A‖_2 < 1`).
+`theta*` (within sample noise σ) on a contractive choice of `A` (`‖A‖_2 < 1`).
 Exposes `closed_form_fp()` and `grad_sample(model)`. This is the only
 currently differentiable environment.
 
 Stateless, so `epoch_size > 1` is wasted compute under final-state-only
-training: the final step is one iid sample from D(θ), no different from
+training: the final step is one iid sample from D(theta), no different from
 a single step. Run with `epoch_size = 1`.
 
 **Use when:** verifying a Learner's convergence behavior on a problem with
@@ -129,7 +129,7 @@ Requires the predictor to expose a `.linear.weight` attribute (so
 `StrategicGradientWorld` for arbitrary predictors.
 
 Declares `max_meaningful_epoch_size = 1`: the strategic best-response is
-one-shot, so N inner steps under fixed θ either repeat the same shift or
+one-shot, so N inner steps under fixed theta either repeat the same shift or
 collapse algebraically into a single step. The Simulator rejects requests
 with `epoch_size > 1`.
 
@@ -147,7 +147,7 @@ predictors. The strategic shift is the gradient of the predictor's scalar
 output wrt the input:
 
 ```
-x_t = x_0 + ε · ∂f(x_0; θ) / ∂x
+x_t = x_0 + ε · ∂f(x_0; theta) / ∂x
 ```
 
 For a linear predictor `f(x) = w · x` the gradient is exactly `w`, so this
@@ -175,7 +175,7 @@ Variant of `StrategicGradientWorld` where the population's natural feature
 position `x_0` itself drifts over time toward the strategic position:
 
 ```
-grad         = ∂f(x_0^t; θ_t) / ∂x
+grad         = ∂f(x_0^t; theta_t) / ∂x
 x_strategic  = x_0^t + ε · grad                  # this round's training data
 x_0^{t+1}    = (1 − η) · x_0^t + η · x_strategic # drift
 ```
@@ -231,7 +231,7 @@ way as the source script.
 update at the given anchor. Useful as a gating anchor and for diagnostic
 comparison across runs.
 
-This is the canonical environment for `epoch_size > 1`: under fixed θ, the
+This is the canonical environment for `epoch_size > 1`: under fixed theta, the
 opinion-mixing converges toward `fj_equilibrium`, so a sufficiently
 large `epoch_size` lets the predictor train on the settled distribution
 rather than a transient.
@@ -251,12 +251,12 @@ of `evolutionary-prediction-games/evoml/dynamics.py::discrete_replicator`
 (Taylor-Jonker 1978 eq. 3):
 
 ```
-p_{t+1} = p_t · (1 + f(p_t, θ_t)) / ⟨p_t, 1 + f(p_t, θ_t)⟩
+p_{t+1} = p_t · (1 + f(p_t, theta_t)) / ⟨p_t, 1 + f(p_t, theta_t)⟩
 ```
 
 State is the mixture `p ∈ Δ^K`. Per PP round the world runs `n_ticks`
 replicator updates; the caller supplies a `fitness(p, model) -> (K,)`
-function, typically per-strategy accuracy or utility of θ_t on
+function, typically per-strategy accuracy or utility of theta_t on
 strategy-k data. Emitted training data is `(one-hot strategy id, fitness)`.
 
 The simplex constraint is preserved exactly by the update; verified in

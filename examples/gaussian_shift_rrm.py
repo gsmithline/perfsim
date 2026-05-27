@@ -9,9 +9,9 @@ def _():
     """
     RRM vs RGD convergence demo on GaussianShiftWorld.
 
-    Both Learners chase the same closed-form fixed point θ* = (I - A)^-1 b, on a stateless, MSE-regression world. 
+    Both Learners chase the same closed-form fixed point theta* = (I - A)^-1 b, on a stateless, MSE-regression world. 
     ERMLearner solves to convergence each round (RRM), GradientLearner takes ``k`` SGD steps per round (RGD). 
-    Prints the distance to θ* per round and saves a log-scale convergence plot.
+    Prints the distance to theta* per round and saves a log-scale convergence plot.
 
     Run:
         python examples/gaussian_shift_rrm_vs_rgd.py
