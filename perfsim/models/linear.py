@@ -43,8 +43,6 @@ class LinearModel(Model):
 class LogisticModel(LinearModel):
     """Logistic predictor: f(x) = sigmoid(x W^T + b). Outputs in (0, 1).
 
-    Pair with `BCELoss`. For numerical stability prefer `LinearModel` +
-    `BCEWithLogitsLoss` instead.
     """
 
     def forward(self, x: Tensor) -> Tensor:
