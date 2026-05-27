@@ -179,7 +179,9 @@ def main() -> int:
         pi = env_state.get("P_i")
         if pi is not None:
             try:
-                inflation = float(pi[-1][-1].item())
+                val = float(pi[-1][-1].item())
+                if abs(val) < 1.0:
+                    inflation = val
             except Exception:
                 pass
         unemployment = 0.0
@@ -211,9 +213,9 @@ def main() -> int:
                     f"Household profile: age group {profile_row['age_label']}, "
                     f"{profile_row['gender']}, {profile_row['ethnicity']}.\n\n"
                     f"Current economic conditions: "
-                    f"inflation rate {inflation:.1%}, "
-                    f"unemployment rate {unemployment:.1%}, "
-                    f"price of goods {price:.2f}.\n\n"
+                    f"inflation {inflation * 100:.1f}%, "
+                    f"unemployment {unemployment:.1f}%, "
+                    f"price index {price:.1f}.\n\n"
                     f"Output a single number between 0 and 1 (e.g. 0.50) "
                     f"where 0 means save all income and 1 means spend all "
                     f"available assets this month."
