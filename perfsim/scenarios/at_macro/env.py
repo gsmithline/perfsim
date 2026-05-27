@@ -252,7 +252,7 @@ def build_macro_runner(
         pop_dir = bundled_nyc_dir()
     else:
         pop_dir = subsample_population_dir(n_agents=n_agents)
-    yaml_path = patched_macro_yaml(src_yaml=src_yaml, population_dir=pop_dir)
+    yaml_path = patched_macro_yaml(src_yaml=src_yaml, population_dir=pop_dir, n_agents=n_agents)
     config = read_config(yaml_path, register_resolvers=should_register_resolvers())
     reg = _build_registry()
     runner = Runner(config, reg)

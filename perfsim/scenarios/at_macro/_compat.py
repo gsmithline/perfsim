@@ -95,6 +95,7 @@ def bundled_macro_yaml(name: str = "config_100_agents.yaml") -> Path:
 def patched_macro_yaml(
     src_yaml: Path | None = None,
     population_dir: Path | None = None,
+    n_agents: int | None = None,
 ) -> str:
     """Rewrite the bundled macro YAML so hardcoded paths resolve correctly."""
     if src_yaml is None:
@@ -111,7 +112,9 @@ def patched_macro_yaml(
         "/Users/shashankkumar/Documents/GitHub/MacroEcon/populations/NYC",
         str(population_dir),
     )
-    # Inject calibration: false if missing (required by AT's SubstepAction.__init__).
+    if n_agents is not None:
+        import re
+        text = re.sub(r"(num_agents:\s*)\d+", rf"\g<1>{n_agents}", text)
     if "\n  calibration:" not in text and "calibration:" not in text.split("state:")[0]:
         text = text.replace(
             "simulation_metadata:\n",

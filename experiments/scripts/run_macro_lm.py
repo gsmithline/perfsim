@@ -324,9 +324,6 @@ def main() -> int:
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
-    # Per-round metrics: capture macro state and mean consumption signal.
-    # TODO: add inflation, unemployment, price_of_goods once you confirm
-    # the AT macro field names match what we read here.
     def _mean_assets(sim_obj) -> float:
         a = sim_obj.env.runner.state["agents"]["consumers"]["assets"]
         return float(a.float().mean().item())
