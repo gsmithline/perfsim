@@ -105,12 +105,12 @@ Optional protocols an Environment may declare:
 - `Trajectory`: produces multi-step trajectory tensors with a leading time axis.
 - `ClosedFormFixedPoint`: provides an analytic fixed point for validation.
 
-## TODO
+## Implementation TODOs
 
-- [ ] vLLM integration for faster LM inference during generation sweeps
+- [ ] vLLM integration for faster LM inference during generation sweeps (this should provide a large speed up when doing inference)
 - [ ] A2A protocol wire-up for multi-agent communication
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
 - [ ] Macro ABM cluster validation (beta sweep)
 - [ ] Multi-step Coordinator for complex agent orchestration
-- [ ] Fix examples they do not fully load with marimo
+- [ ] Fix examples they do not fully load with marimo 
