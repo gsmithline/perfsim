@@ -113,3 +113,4 @@ Optional protocols an Environment may declare:
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
 - [ ] Macro ABM cluster validation (beta sweep)
 - [ ] Multi-step Coordinator for complex agent orchestration
+- [ ] Fix examples they do not fully load with marimo
