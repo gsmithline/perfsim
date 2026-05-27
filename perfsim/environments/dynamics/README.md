@@ -6,7 +6,7 @@ training data given a deployed predictor θ. The Simulator drives the
 dynamical-systems environments.
 
 For `AgentBased` environments (per-agent stateful agent objects with
-per-agent decision rules), see `perfsim/adapters/` — the first concrete
+per-agent decision rules), see `perfsim/adapters/` -- the first concrete
 `AgentBased` env in v1 is the `agent_torch.Runner` adapter, not anything
 under `environments/agent_based/` (which remains an empty package).
 
