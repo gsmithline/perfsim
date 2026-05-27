@@ -30,6 +30,13 @@ GEN_BATCH_SIZE="${GEN_BATCH_SIZE:-64}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8}"
 WANDB_PROJECT="${WANDB_PROJECT:-perfsim-at-covid-lm}"
 CALIBRATED_R2="${CALIBRATED_R2:-}"
+TARGET_KIND="${TARGET_KIND:-exposed_binary}"
+LORA_R="${LORA_R:-32}"
+USE_LORA="${USE_LORA:-1}"
+SFT_LR="${SFT_LR:-1e-5}"
+SFT_SANITY="${SFT_SANITY:-0}"
+SFT_FULL_EPOCH="${SFT_FULL_EPOCH:-0}"
+WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
 echo "[run_one] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA n_rounds=$N_ROUNDS K=$K_STEPS model=$BASE_MODEL R2=$CALIBRATED_R2 frac=$SEED_FRAC"
@@ -62,5 +69,12 @@ env \
     MAX_NEW_TOKENS="$MAX_NEW_TOKENS" \
     WANDB_PROJECT="$WANDB_PROJECT" \
     CALIBRATED_R2="$CALIBRATED_R2" \
+    TARGET_KIND="$TARGET_KIND" \
+    LORA_R="$LORA_R" \
+    USE_LORA="$USE_LORA" \
+    SFT_LR="$SFT_LR" \
+    SFT_SANITY="$SFT_SANITY" \
+    SFT_FULL_EPOCH="$SFT_FULL_EPOCH" \
+    WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_covid_lm/$RUN_TAG}" \
     python scripts/run_covid_lm.py

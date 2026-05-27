@@ -13,7 +13,7 @@ request_memory = 64G
 request_disk = 10G
 request_gpus = 1
 
-requirements = (OpSys == "LINUX")
+requirements = (OpSys == "LINUX") && (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 should_transfer_files = NO
 
