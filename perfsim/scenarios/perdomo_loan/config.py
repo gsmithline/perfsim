@@ -21,7 +21,8 @@ import torch
 
 from perfsim.core.dataset import Dataset
 from perfsim.core.types import ConfigBase
-from perfsim.datasets import InMemoryDataset, KaggleDataset
+from perfsim.datasets import InMemoryDataset
+from perfsim.datasets.kaggle import KaggleDataset
 
 PERDOMO_FEATURE_COLS: tuple[str, ...] = (
     "RevolvingUtilizationOfUnsecuredLines",

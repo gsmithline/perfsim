@@ -22,10 +22,10 @@ class HFCausalLMModel(Model):
     """HuggingFace causal LM wrapped as a perfsim Model.
 
     Args:
-        base_model_name: HuggingFace model ID (e.g. ``"Qwen/Qwen2.5-0.5B-Instruct"``).
+        base_model_name: HuggingFace model ID (e.g."Qwen/Qwen2.5-0.5B-Instruct").
         profiles: Row-aligned per-agent metadata, typically a
-                         ``pandas.DataFrame`` of length N. The `i`-th row
-                         is the profile for agent `i`.
+                         pandas.DataFrame of length N. The i-th row
+                         is the profile for agent i.
         prompt_builder: Callable taking profile_row, tokenizer and
                          returning the full prompt string for generation.
         use_lora: Whether to wrap the base model with a LoRA adapter
@@ -33,7 +33,7 @@ class HFCausalLMModel(Model):
         lora_r: LoRA rank.
         lora_alpha: LoRA scaling factor.
         lora_target_modules: Module name patterns LoRA targets.
-        device: torch device for the model. CPU by default; pass
+        device: torch device for the model. CPU by defaulnpass
                          cuda or mps if available.
         dtype: Model dtype. Defaults to float32 on CPU (bf16 on CPU is slow) 
                             use bf16 on GPU.
