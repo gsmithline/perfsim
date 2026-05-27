@@ -107,8 +107,9 @@ Optional protocols an Environment may declare:
 
 ## Implementation TODOs
 
-- [ ] vLLM integration for faster LM inference during generation sweeps (this should provide a large speed up when doing inference)
+- [ ] AT LLM archetype agents as strategic population layer frozen API models (GPT-4, Claude, Llama) make per-agent decisions via AT arch-type prompting with current state context, while the outer perfsim model (HFCausalLM) is SFT/KL fine-tuned each round as usual. Different archetypes respond differently to the same recommendation, producing different outcomes per beta.
+- [ ] vLLM integration for faster LM inference during generation sweeps
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
 - [ ] Macro ABM cluster validation (beta sweep)
-- [ ] Fix examples they do not fully load with marimo 
+- [ ] Fix examples, they do not fully load with marimo
