@@ -72,5 +72,6 @@ env \
     USE_LORA="$USE_LORA" \
     SFT_LR="$SFT_LR" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
+    CALIBRATED_UAC="${CALIBRATED_UAC:-}" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_macro_lm/$RUN_TAG}" \
     python experiments/scripts/run_macro_lm.py

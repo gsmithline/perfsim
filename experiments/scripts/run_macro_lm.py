@@ -65,6 +65,7 @@ def main() -> int:
     lora_r = _env_int("LORA_R", 32)
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 1e-5)
+    calibrated_uac_path = os.environ.get("CALIBRATED_UAC", "")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -120,6 +121,17 @@ def main() -> int:
     )
     n_agents = env.runner.state["agents"]["consumers"]["age"].shape[0]
     print(f"[run] env ready: {n_agents} agents in {time.time() - t0:.1f}s", flush=True)
+
+    if calibrated_uac_path:
+        uac_data = torch.load(calibrated_uac_path, weights_only=False)
+        for tf_key in env.runner.initializer.transition_function:
+            tf = env.runner.initializer.transition_function[tf_key]
+            for _, module in tf.named_modules():
+                if hasattr(module, "external_UAC"):
+                    with torch.no_grad():
+                        module.external_UAC.copy_(uac_data)
+                    print(f"[run] loaded calibrated UAC from {calibrated_uac_path}", flush=True)
+                    break
 
     # Per-agent profile DataFrame for prompt construction. Pulls features
     # from the AT runner state; the categorical labels come from
