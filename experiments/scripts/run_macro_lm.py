@@ -58,7 +58,7 @@ def main() -> int:
     wandb_project = os.environ.get("WANDB_PROJECT")
     max_steps = _env_int("SFT_MAX_STEPS", 20)
     gen_batch_size = _env_int("GEN_BATCH_SIZE", 32)
-    max_new_tokens = _env_int("MAX_NEW_TOKENS", 8)
+    max_new_tokens = _env_int("MAX_NEW_TOKENS", 16)
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 16)
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
     yaml_name = os.environ.get("MACRO_YAML", "config_100_agents.yaml")
@@ -216,9 +216,9 @@ def main() -> int:
                     f"inflation {inflation * 100:.1f}%, "
                     f"unemployment {unemployment:.1f}%, "
                     f"price index {price:.1f}.\n\n"
-                    f"Output a single number between 0 and 1 (e.g. 0.50) "
-                    f"where 0 means save all income and 1 means spend all "
-                    f"available assets this month."
+                    f"Respond with ONLY a single number between 0.00 and 1.00. "
+                    f"0 means save everything, 1 means spend everything. "
+                    f"No explanation."
                 ),
             },
         ]
