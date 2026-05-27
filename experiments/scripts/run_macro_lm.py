@@ -62,6 +62,7 @@ def main() -> int:
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 16)
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
     yaml_name = os.environ.get("MACRO_YAML", "config_100_agents.yaml")
+    n_agents_cfg = _env_int("N_AGENTS", 100)
     lora_r = _env_int("LORA_R", 32)
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 1e-5)
@@ -116,6 +117,7 @@ def main() -> int:
     env = make_macro_env(
         init_seed=seed,
         yaml_name=yaml_name,
+        n_agents=n_agents_cfg,
         signal_writer=logit_signal_writer,
         keep_trajectory=True,
     )
