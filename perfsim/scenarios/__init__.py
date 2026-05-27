@@ -1,11 +1,5 @@
-"""Scenario bundles (World + Model + Loss + Learner + Dataset + reproduction).
+"""Scenario bundles: environment + config + reproduction scripts."""
 
-Currently shipped:
-    perfsim.scenarios.perdomo_loan : Perdomo et al. ICML 2020 strategic loan
-        example, with GiveMeSomeCredit via Kaggle (real-data) and a
-        synthetic fallback for CI.
-"""
+from perfsim.scenarios import at_covid, at_macro, perdomo_loan
 
-from perfsim.scenarios import perdomo_loan
-
-__all__ = ["perdomo_loan"]
+__all__ = ["at_covid", "at_macro", "perdomo_loan"]

@@ -1,4 +1,4 @@
-"""Shared types: Data, schemas, ConfigBase, AgentHandle."""
+"""Shared types: Data, schemas, ConfigBase."""
 
 from __future__ import annotations
 
@@ -77,12 +77,3 @@ def _json_default(obj: Any) -> Any:
     if isinstance(obj, (frozenset, set)):
         return sorted(obj)
     return str(obj)
-
-
-@dataclass(frozen=True)
-class AgentHandle:
-    """Reference to an agent. Used by Executors to dispatch skill calls."""
-
-    id: str
-    role: str
-    endpoint: str | None = None

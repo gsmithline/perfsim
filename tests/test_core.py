@@ -1,8 +1,4 @@
-"""Unit tests for core abstractions: schemas, ConfigBase, AgentHandle, traits.
-
-The numbered validation gating tests live in their dedicated files. These are
-component-level unit tests for the Task #15 scaffold.
-"""
+"""Unit tests for core abstractions: schemas, ConfigBase, traits."""
 
 from __future__ import annotations
 
@@ -14,7 +10,6 @@ import torch
 from perfsim.core import (
     SUPERVISED_SCHEMA,
     TRAJECTORY_SCHEMA,
-    AgentHandle,
     ConfigBase,
     DataSchema,
     Differentiable,
@@ -96,22 +91,6 @@ class TestConfigBase:
         cfg_a = _ToyConfig(lr=0.01)
         cfg_b = _ToyConfig(lr=0.02)
         assert cfg_a.content_hash() != cfg_b.content_hash()
-
-
-class TestAgentHandle:
-    def test_hashable(self) -> None:
-        h = AgentHandle(id="p1", role="predictor")
-        d = {h: "value"}
-        assert d[h] == "value"
-
-    def test_equality(self) -> None:
-        a = AgentHandle(id="p1", role="predictor")
-        b = AgentHandle(id="p1", role="predictor")
-        assert a == b
-
-    def test_endpoint_default_none(self) -> None:
-        h = AgentHandle(id="p1", role="predictor")
-        assert h.endpoint is None
 
 
 class TestCapabilityTraits:

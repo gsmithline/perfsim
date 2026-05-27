@@ -71,7 +71,7 @@ pip install -e ".[agenttorch]"  # + agent_torch for ABM scenarios
 pip install -e ".[dev]"         # + pytest, ruff, mypy
 ```
 
-See `pyproject.toml` for all extras: `[tabular]`, `[kaggle]`, `[hf]`, `[trl]`, `[vllm]`, `[a2a]`.
+See `pyproject.toml` for all extras: `[tabular]`, `[kaggle]`, `[hf]`, `[trl]`, `[vllm]`.
 
 ## Minimal example
 
@@ -108,9 +108,7 @@ Optional protocols an Environment may declare:
 ## Implementation TODOs
 
 - [ ] vLLM integration for faster LM inference during generation sweeps (this should provide a large speed up when doing inference)
-- [ ] A2A protocol wire-up for multi-agent communication
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
 - [ ] Macro ABM cluster validation (beta sweep)
-- [ ] Multi-step Coordinator for complex agent orchestration
 - [ ] Fix examples they do not fully load with marimo 

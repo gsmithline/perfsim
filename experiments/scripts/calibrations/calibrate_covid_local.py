@@ -20,10 +20,8 @@ except ImportError:
     plt = None
     _HAS_MPL = False
 
-try:
-    import agent_torch
-except ImportError:
-    agent_torch = None
+
+import agent_torch
 
 from perfsim.scenarios.at_covid import build_covid_runner
 
@@ -63,7 +61,7 @@ def load_astoria_cases():
 
 
 def seed_infections_differentiable(runner, fraction: float, seed: int = 0):
-    """Seed a fraction of agents as INFECTED (disease_stage=2).
+    """Seed a fraction of agents as infected (disease_stage=2).
 
     Non-differentiable but deterministic. Called before each forward pass
     with the current fraction value.
@@ -73,7 +71,7 @@ def seed_infections_differentiable(runner, fraction: float, seed: int = 0):
     gen = torch.Generator().manual_seed(seed)
     mask = torch.rand(n, 1, generator=gen) < fraction
     ds = citizens["disease_stage"].clone()
-    ds[mask] = 2.0  # INFECTED
+    ds[mask] = 2.0  
     citizens["disease_stage"] = ds
     if "infected_time" in citizens:
         it = citizens["infected_time"].clone()
@@ -116,7 +114,7 @@ def main():
 
     runner.state["agents"]["citizens"]["platform_signal"] = torch.zeros(n_agents)
 
-    # Locate R2
+    # r2 param which giverns transmission 
     transmission = runner.initializer.transition_function["0"].new_transmission
     r2_param = transmission.calibrate_R2
     r2_default = float(r2_param.detach().flatten()[0])

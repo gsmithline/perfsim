@@ -63,21 +63,9 @@ def main() -> int:
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 32)
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
     target_kind = os.environ.get("TARGET_KIND", "exposed_binary")
-    # LoRA rank. perfsim default is r=8 (Hu et al. minimal); opinion-dyn
-    # uses r=32. With r=8 + (q,v) on Qwen-0.5B we observed unconditional
-    # token-bias collapse (LM emits "0" repeatedly regardless of position).
-    # r=32 quadruples adapter capacity; matches the working opinion-dyn setup.
     lora_r = _env_int("LORA_R", 32)
-    # Full fine-tuning vs LoRA. Qwen-0.5B fits trivially on a 24GB+ GPU
-    # for full FT (~10GB for model + Adam state + activations). Set
-    # USE_LORA=0 to test full FT, which gives direct gradient updates to
     # every parameter and bypasses any LoRA-capacity bottleneck.
     use_lora = _env_int("USE_LORA", 1) == 1
-    # SFT learning rate. LoRA tolerates ~1e-5 to 5e-5; full FT typically
-    # needs 10-100x smaller because LoRA's low-rank projection naturally
-    # bounds per-parameter updates while full FT applies the LR to every
-    # parameter directly. With LR=1e-5 we observed full FT collapse on
-    # Qwen-0.5B after just 20 steps; 1e-6 is the gentler retry.
     sft_lr = _env_float("SFT_LR", 1e-5)
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -109,12 +97,6 @@ def main() -> int:
         wandb_name = f"{run_tag}{wandb_suffix}" if wandb_suffix else run_tag
         wandb.init(project=wandb_project, name=wandb_name, config=config)
 
-    # Logit signal_writer: PerfsimIsolationDecision applies sigmoid() to
-    # platform_signal. If we want `will_isolate` to equal the LM's emitted
-    # value `p`, we must write logit(p) so sigmoid(logit(p)) = p. Without
-    # this, an LM that emits {0.1, 0.9} only spans will_isolate=[0.525,
-    # 0.711] after the substep's sigmoid; with it, will_isolate spans the
-    # full [0.1, 0.9] and the env actually responds.
     def logit_signal_writer(runner, preds):
         if preds.ndim == 2 and preds.shape[-1] == 1:
             preds = preds.squeeze(-1)
@@ -123,8 +105,10 @@ def main() -> int:
         runner.state["agents"]["citizens"]["platform_signal"] = logit_p.detach().clone()
 
     torch.manual_seed(seed)
-    print("[run] building covid env (~5s init for 37,518 agents)", flush=True)
+    print("[run] building covid env", flush=True)
     t0 = time.time()
+    '''
+    '''
     # Seed initial infections via the factory so Simulator.run's env.reset
     # does not wipe them between sim.run() calls. Without this, the
     # population stays effectively all-Susceptible and the LM's isolation

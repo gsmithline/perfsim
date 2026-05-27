@@ -145,12 +145,10 @@ def main() -> int:
         flush=True,
     )
 
-    # Chat-formatted prompt (mirroring covid's structure, swapped for the
-    # macro-recommender framing). Single source of truth for both
-    # generation and SFT, so train/gen format match (avoiding the
-    # mismatch trap we hit on covid).
-    SYSTEM_MSG = (
-        "You are a financial advisor providing personalized consumption "
+    
+    #chat formatted prompt
+    SYSTEM_MSG = ( 
+        "You are a financial recommendor providing personalized consumption"
         "recommendations during ongoing economic uncertainty. Your goal "
         "is to help each household balance current spending with future "
         "financial security."

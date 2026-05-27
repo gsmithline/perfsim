@@ -1,28 +1,4 @@
-"""HFCausalLMModel: HuggingFace causal LM wrapped as a perfsim Model.
-
-This is the v0 LM-as-predictor wrapper. It satisfies perfsim's `Model`
-interface in spirit (it is an nn.Module with a forward), but two of the
-base methods do not have meaningful semantics for billion-parameter
-models and are overridden accordingly:
-
-- `get_params()` returns a one-element tensor: the L2 norm of trainable
-  parameters. Used by the Simulator's history for stability_gap tracking;
-  the full flat-tensor view of an LM is not meaningful.
-- `set_params(theta)` and `clone()` raise `NotImplementedError`. LM
-  state restoration goes through HF checkpointing, not flat parameter
-  vectors.
-
-Inputs / outputs are tensor-shaped to fit perfsim's existing env-to-model
-contract:
-
-- `forward(x)` accepts the (N, F) feature tensor that `FJWorld` passes,
-  but its content is ignored. The model generates predictions for the
-  full population using its internally-held `profiles` DataFrame and
-  `prompt_builder` callable. Returns an `(N, 1)` opinion tensor.
-
-The TRL / PEFT / HF transformers imports are deferred so the rest of
-perfsim continues to import without the `[lm]` extra installed.
-"""
+"""HFCausalLMModel: HuggingFace causal LM wrapped as a perfsim Model."""
 
 from __future__ import annotations
 
@@ -79,6 +55,7 @@ class HFCausalLMModel(Model):
         lora_r: int = 8,
         lora_alpha: int = 16,
         lora_target_modules: Sequence[str] = ("q_proj", "v_proj"),
+        lora_dropout: float = 0.05,
         device: str = "cpu",
         dtype: torch.dtype = torch.float32,
         max_new_tokens: int = 8,
@@ -92,6 +69,7 @@ class HFCausalLMModel(Model):
         self._use_lora = use_lora
         self._lora_r = lora_r
         self._lora_alpha = lora_alpha
+        self._lora_dropout = lora_dropout
         self._lora_target_modules = tuple(lora_target_modules)
         self._target_device = torch.device(device)
         self._target_dtype = dtype
@@ -132,7 +110,7 @@ class HFCausalLMModel(Model):
                 r=self._lora_r,
                 lora_alpha=self._lora_alpha,
                 target_modules=list(self._lora_target_modules),
-                lora_dropout=0.05, #TODO remove hardcode
+                lora_dropout=self._lora_dropout,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
