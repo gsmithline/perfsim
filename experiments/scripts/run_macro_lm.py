@@ -128,9 +128,15 @@ def main() -> int:
             tf = env.runner.initializer.transition_function[tf_key]
             for _, module in tf.named_modules():
                 if hasattr(module, "external_UAC"):
+                    n_steps_local = module.external_UAC.shape[0]
+                    uac_to_load = uac_data[:n_steps_local]
                     with torch.no_grad():
-                        module.external_UAC.copy_(uac_data)
-                    print(f"[run] loaded calibrated UAC from {calibrated_uac_path}", flush=True)
+                        module.external_UAC.copy_(uac_to_load)
+                    print(
+                        f"[run] loaded calibrated UAC from {calibrated_uac_path} "
+                        f"(sliced {tuple(uac_data.shape)} -> {tuple(uac_to_load.shape)})",
+                        flush=True,
+                    )
                     break
 
     # Per-agent profile DataFrame for prompt construction. Pulls features
