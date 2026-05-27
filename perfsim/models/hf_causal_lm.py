@@ -60,6 +60,7 @@ class HFCausalLMModel(Model):
         dtype: torch.dtype = torch.float32,
         max_new_tokens: int = 8,
         gen_batch_size: int = 16,
+        group_prompting: bool = False,
         load_now: bool = True,
     ) -> None:
         super().__init__()
@@ -75,6 +76,7 @@ class HFCausalLMModel(Model):
         self._target_dtype = dtype
         self._max_new_tokens = max_new_tokens
         self._gen_batch_size = gen_batch_size
+        self._group_prompting = group_prompting
 
         length = getattr(profiles, "__len__", lambda: -1)()
         if length == -1:
@@ -142,28 +144,50 @@ class HFCausalLMModel(Model):
     # ---- Forward (predict for all N agents) ------------------------------
 
     def forward(self, x: Tensor) -> Tensor:
-        """Generate per-agent opinion predictions.
-        x is the feature tensor the env passes its content is ignored
-        because LM prompts are built from self._profiles. The shape's
-        leading dim must equal N (the env's population size) so the
-        returned tensor's shape is consistent with downstream expectations.
-        """
+        """Generate per-agent predictions. Returns (N, 1) tensor in [0, 1]."""
         if x.shape[0] != self._n:
             raise ValueError(
                 f"HFCausalLMModel.forward: x leading dim {x.shape[0]} does "
                 f"not match profiles N={self._n}"
             )
         self.ensure_loaded()
-        prompts = [
-            self.build_prompt(self.profile_at(i)) for i in range(self._n)
-        ]
-        outputs = self._generate(prompts)
+        prompts = [self.build_prompt(self.profile_at(i)) for i in range(self._n)]
+
+        if self._group_prompting:
+            unique_prompts, inverse = self._deduplicate_prompts(prompts)
+            print(
+                f"[group_prompting] {len(prompts)} agents -> "
+                f"{len(unique_prompts)} unique prompts",
+                flush=True,
+            )
+            unique_outputs = self._generate(unique_prompts)
+            outputs = [unique_outputs[idx] for idx in inverse]
+        else:
+            outputs = self._generate(prompts)
+
         values = torch.tensor(
             [self._parse(o) for o in outputs],
             dtype=torch.float32,
             device=x.device,
         ).unsqueeze(-1)
         return values
+
+    @staticmethod
+    def _deduplicate_prompts(prompts: list[str]) -> tuple[list[str], list[int]]:
+        """Deduplicate prompts by exact string equality.
+
+        Returns (unique_prompts, inverse_indices) where
+        inverse_indices[i] is the index into unique_prompts for agent i.
+        """
+        seen: dict[str, int] = {}
+        unique: list[str] = []
+        inverse: list[int] = []
+        for p in prompts:
+            if p not in seen:
+                seen[p] = len(unique)
+                unique.append(p)
+            inverse.append(seen[p])
+        return unique, inverse
 
     def _generate(self, prompts: list[str]) -> list[str]:
         """Batched greedy generation.

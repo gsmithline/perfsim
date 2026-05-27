@@ -66,6 +66,7 @@ def main() -> int:
     lora_r = _env_int("LORA_R", 32)
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 1e-5)
+    group_prompting = os.environ.get("GROUP_PROMPTING", "0").lower() in ("1", "true", "yes")
     calibrated_uac_path = os.environ.get("CALIBRATED_UAC", "")
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -241,6 +242,7 @@ def main() -> int:
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
         max_new_tokens=max_new_tokens,
         gen_batch_size=gen_batch_size,
+        group_prompting=group_prompting,
         load_now=True,
     )
     print(

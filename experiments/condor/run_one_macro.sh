@@ -35,6 +35,7 @@ SFT_SANITY="${SFT_SANITY:-0}"
 LORA_R="${LORA_R:-32}"
 USE_LORA="${USE_LORA:-1}"
 SFT_LR="${SFT_LR:-1e-5}"
+GROUP_PROMPTING="${GROUP_PROMPTING:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_macro] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
@@ -73,6 +74,7 @@ env \
     LORA_R="$LORA_R" \
     USE_LORA="$USE_LORA" \
     SFT_LR="$SFT_LR" \
+    GROUP_PROMPTING="$GROUP_PROMPTING" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     CALIBRATED_UAC="${CALIBRATED_UAC:-}" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_macro_lm/$RUN_TAG}" \

@@ -36,6 +36,7 @@ USE_LORA="${USE_LORA:-1}"
 SFT_LR="${SFT_LR:-1e-5}"
 SFT_SANITY="${SFT_SANITY:-0}"
 SFT_FULL_EPOCH="${SFT_FULL_EPOCH:-0}"
+GROUP_PROMPTING="${GROUP_PROMPTING:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
@@ -75,6 +76,7 @@ env \
     SFT_LR="$SFT_LR" \
     SFT_SANITY="$SFT_SANITY" \
     SFT_FULL_EPOCH="$SFT_FULL_EPOCH" \
+    GROUP_PROMPTING="$GROUP_PROMPTING" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_covid_lm/$RUN_TAG}" \
     python experiments/scripts/run_covid_lm.py
