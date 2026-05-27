@@ -14,7 +14,7 @@ from perfsim.datasets.tabular import TabularDataset
 try:
     from kaggle.api.kaggle_api_extended import KaggleApi
     _HAS_KAGGLE = True
-except ImportError:
+except Exception:
     KaggleApi = None  # type: ignore[assignment,misc]
     _HAS_KAGGLE = False
 

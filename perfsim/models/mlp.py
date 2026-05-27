@@ -4,10 +4,10 @@ Outputs logits (no final activation by default). Pair with
 `BCEWithLogitsLoss` for binary classification or with `MSELoss` for
 regression. For probability outputs use `final_activation="sigmoid"`.
 
-Initialization uses Xavier-uniform on weights and zero on biases. Zero
-init (the convention for `LinearModel` in this codebase) is *not*
+Initialization uses uniform on weights and zero on biases. Zero
+init (the convention for LinearModel in this codebase) is not
 appropriate for MLPs: every hidden unit would compute the same function
-and stay symmetric for the entire training run.
+and stay symmetric for the entire training run. 
 """
 
 from __future__ import annotations

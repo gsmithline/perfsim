@@ -1,7 +1,7 @@
 # `perfsim.adapters`
 
 Optional adapters that bridge perfsim's `Environment` contract to external
-ABM frameworks. v1 ships one adapter:
+ABM frameworks
 
 - `agenttorch.AgentTorchEnvironment`: wraps an `agent_torch.Runner` as a
   perfsim `AgentBased` environment.
