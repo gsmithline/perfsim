@@ -6,12 +6,15 @@ import pytest
 import torch
 
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
+from perfsim.learners import ERMLearner
+from perfsim.losses import MSELoss
 from perfsim.models import LinearModel, MLPModel
 from perfsim.environments.dynamics import (
     AccumulatingShiftWorld,
     StatefulPopulationWorld,
     StrategicGradientWorld,
 )
+from perfsim.simulator import Simulator
 
 
 # ----- Minimal concrete subclass for ABC unit tests. -----
@@ -189,10 +192,6 @@ class TestAccumulatingShiftValidation:
 
 class TestAccumulatingShiftIntegration:
     def test_runs_through_simulator(self) -> None:
-        from perfsim.learners import ERMLearner
-        from perfsim.losses import MSELoss
-        from perfsim.simulator import Simulator
-
         n, d = 30, 3
         x0, y = _fixed_population(n, d)
         world = AccumulatingShiftWorld(

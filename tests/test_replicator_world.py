@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from perfsim.environments.dynamics import ReplicatorWorld
+from perfsim.models import LinearModel
 
 
 def _constant_fitness(f_vec: torch.Tensor):
@@ -134,8 +135,6 @@ class TestPPCoupling:
         def fit(p, model):
             captured.append(model)
             return torch.tensor([0.1, -0.1]) * (model.linear.weight.norm() + 0.5)
-
-        from perfsim.models import LinearModel
 
         model = LinearModel(in_features=1, out_features=1, bias=False)
         model.set_params(torch.tensor([2.0]))

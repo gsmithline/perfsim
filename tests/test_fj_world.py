@@ -5,8 +5,12 @@ from __future__ import annotations
 import pytest
 import torch
 
+from perfsim.core.learner import Learner
+from perfsim.learners import ERMLearner, GradientLearner
+from perfsim.losses import MSELoss
 from perfsim.models import LinearModel
 from perfsim.environments.dynamics import FJWorld, normalize_adjacency
+from perfsim.simulator import Simulator
 
 
 def _random_graph(n: int, seed: int = 0) -> torch.Tensor:
@@ -140,11 +144,6 @@ class TestSimulatorInitialData:
     """initial_data lets the predictor train at round 0 (Algorithm 1)."""
 
     def test_initial_data_trains_at_round_zero(self) -> None:
-        from perfsim.learners import GradientLearner
-        from perfsim.losses import MSELoss
-        from perfsim.models import LinearModel
-        from perfsim.simulator import Simulator
-
         n = 8
         torch.manual_seed(13)
         innate = torch.rand(n)
@@ -167,11 +166,6 @@ class TestSimulatorInitialData:
 
     def test_initial_data_none_skips_round_zero_training(self) -> None:
         """Without initial_data, the first round leaves theta at its init."""
-        from perfsim.learners import GradientLearner
-        from perfsim.losses import MSELoss
-        from perfsim.models import LinearModel
-        from perfsim.simulator import Simulator
-
         n = 6
         torch.manual_seed(14)
         innate = torch.rand(n)
@@ -193,11 +187,6 @@ class TestSimulatorTrainMask:
     """Optional train_mask restricts predictor training to labeled rows."""
 
     def _setup(self, n: int = 20):
-        from perfsim.learners import GradientLearner
-        from perfsim.losses import MSELoss
-        from perfsim.models import LinearModel
-        from perfsim.simulator import Simulator
-
         torch.manual_seed(20)
         innate = torch.rand(n)
         W = _random_graph(n, seed=20)
@@ -211,8 +200,6 @@ class TestSimulatorTrainMask:
 
     def test_train_mask_filters_rows_seen_by_learner(self) -> None:
         """The learner sees exactly mask.sum() rows when training."""
-        from perfsim.core.learner import Learner
-
         sim, world, innate = self._setup(n=20)
 
         # Wrap the learner so we can spy on what train() sees.
@@ -408,10 +395,6 @@ class TestModelContract:
 
 class TestSimulatorIntegration:
     def test_runs_through_simulator(self) -> None:
-        from perfsim.learners import ERMLearner
-        from perfsim.losses import MSELoss
-        from perfsim.simulator import Simulator
-
         n = 10
         torch.manual_seed(7)
         innate = torch.rand(n) * 2 - 1

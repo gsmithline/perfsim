@@ -3,10 +3,10 @@
 `Executor` is the abstract interface; agents register and are invoked by
 handle. Two implementations are planned:
 
-- `InProcessExecutor` (v1, this file): direct method dispatch on registered
+- InProcessExecutor (this file): direct method dispatch on registered
   Agent objects. No serialization. Same Python process. The fast path used
   by ordinary local simulation; never serializes messages.
-- `A2AExecutor` (v2, not yet implemented): wire dispatch via the A2A
+- A2AExecutor (not yet implemented): wire dispatch via the A2A
   protocol over HTTP / JSON-RPC. Same agent interface, different transport.
 
 Both expose synchronous `invoke` and asynchronous `ainvoke`. The async

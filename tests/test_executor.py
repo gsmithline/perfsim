@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from perfsim.core import (
+    AgentHandle,
     AgentSpec,
     Executor,
     InProcessExecutor,
@@ -119,8 +120,6 @@ class TestInvokeSync:
 
     def test_invoke_unknown_handle_raises(self) -> None:
         ex = InProcessExecutor()
-        from perfsim.core import AgentHandle
-
         with pytest.raises(KeyError, match="no agent registered"):
             ex.invoke(
                 AgentHandle(id="ghost", role="predictor"),

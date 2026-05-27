@@ -1,8 +1,4 @@
-"""Shared types: Data, schemas, ConfigBase, AgentHandle.
-
-The supervised schema (`x`, `y`) is exercised in v1; the trajectory schema is a
-v2 placeholder, designed alongside the first concrete RL Learner.
-"""
+"""Shared types: Data, schemas, ConfigBase, AgentHandle."""
 
 from __future__ import annotations
 
@@ -22,11 +18,7 @@ class SchemaError(Exception):
 
 @dataclass(frozen=True)
 class DataSchema:
-    """Declares the field names a Learner expects or a World produces.
-
-    Field names are checked at binding time. Tensor shapes and dtypes are not
-    enforced here; those are component-internal concerns.
-    """
+    """Declares the field names a Learner expects or a World produces."""
 
     name: str
     required: frozenset[str] = field(default_factory=frozenset)
@@ -41,13 +33,7 @@ class DataSchema:
             )
 
     def covers(self, other: "DataSchema") -> bool:
-        """True if this schema (produced by a World) satisfies what `other`
-        (required by a Learner) needs.
-
-        Used by Simulator.bind(): a World's produces_schema must cover the
-        Learner's accepted_schema. `other.required` must be a subset of
-        `self.required | self.optional`.
-        """
+        """True if this schema's fields satisfy what `other` requires."""
         return other.required <= (self.required | self.optional)
 
 
@@ -56,14 +42,11 @@ SUPERVISED_SCHEMA: DataSchema = DataSchema(
     required=frozenset({"x", "y"}),
 )
 
-TRAJECTORY_SCHEMA: DataSchema = DataSchema( #FOR RL ROLLOUTS WHEN WE GET THERE 
+TRAJECTORY_SCHEMA: DataSchema = DataSchema(
     name="trajectory",
     required=frozenset(),
     optional=frozenset(),
 )
-"""v2 placeholder. Marked empty so any Learner declaring it as accepted today
-fails binding loudly until v2 designs the concrete fields alongside the first
-concrete RL Learner."""
 
 
 @dataclass(frozen=True)

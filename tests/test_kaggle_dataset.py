@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from perfsim.datasets import KaggleDataset, default_cache_dir
+from perfsim.datasets import KaggleDataset, TabularDataset, default_cache_dir
 
 pd = pytest.importorskip("pandas")
 
@@ -168,8 +168,6 @@ class TestHashStable:
         """KaggleDataset.hash should be content-based (same as TabularDataset
         on the same file).
         """
-        from perfsim.datasets import TabularDataset
-
         _write_competition_file(tmp_path, "TestComp", "data.csv")
 
         def no_download(self) -> None:

@@ -1,21 +1,9 @@
-"""SFTLearner: supervised fine-tuning via TRL's SFTTrainer.
-
-Consumes data dicts of the form ``{"x": ..., "y": (k, 1), "agent_idx": (k,)}``
-produced by `FJWorld` (after `Simulator.train_mask` filters to the labeled
-subset). Looks up each training row's profile from the wrapped
-`HFCausalLMModel.profiles`, builds the SFT example as
-``prompt + formatted_target``, and runs ``SFTTrainer.train()`` once per
-``learner.train(data)`` call.
-
-TRL and the HF datasets package are imported lazily so the rest of perfsim
-stays usable without the `[lm]` extra installed.
-
-KL-regularized SFT lives in a sibling file (`kl_sft.py`) and subclasses
-this one.
-"""
+"""SFTLearner: supervised fine-tuning via TRL's SFTTrainer."""
 
 from __future__ import annotations
 
+import inspect
+import os
 import tempfile
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
@@ -26,8 +14,19 @@ from perfsim.core.loss import Loss
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 from perfsim.models.hf_causal_lm import HFCausalLMModel
 
-if TYPE_CHECKING:
+try:
     from datasets import Dataset as HFDataset
+except ImportError:
+    HFDataset = None  # type: ignore[assignment,misc]
+
+try:
+    from trl import SFTConfig, SFTTrainer
+except ImportError:
+    SFTConfig = None  # type: ignore[assignment,misc]
+    SFTTrainer = None  # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    from datasets import Dataset as _HFDataset
 
 
 def _default_target_formatter(value: float) -> str:
@@ -36,25 +35,7 @@ def _default_target_formatter(value: float) -> str:
 
 
 class SFTLearner(Learner):
-    """SFT over an HFCausalLMModel via TRL's SFTTrainer.
-
-    Args:
-        model:               The HFCausalLMModel being trained.
-        loss:                A perfsim Loss instance. Not used by SFTTrainer
-                             directly (the LM's own CE loss is the SFT
-                             objective), but the field is kept on Learner for
-                             API consistency and for metric reuse.
-        target_formatter:    Callable mapping a per-agent opinion (float) to
-                             the target text string. Default: 2-decimal
-                             representation.
-        max_steps:           SFTTrainer.max_steps for each train() call.
-        learning_rate:       SFTTrainer learning rate.
-        per_device_batch_size: TRL batch size knob.
-        max_seq_length:      SFTConfig max_seq_length.
-        output_dir:          Where TRL writes its checkpoints. Default: a
-                             fresh temp dir per learner (kept across calls).
-        trainer_kwargs:      Extra kwargs forwarded to SFTConfig.
-    """
+    """SFT over an HFCausalLMModel via TRL's SFTTrainer."""
 
     accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
 
@@ -95,11 +76,12 @@ class SFTLearner(Learner):
     def model(self, value: HFCausalLMModel) -> None:
         self._model = value
 
-    # ---- Build SFT dataset from one round's filtered data ----------------
-
     def _build_dataset(self, data: Data) -> "HFDataset":
-        from datasets import Dataset as HFDataset
-
+        if HFDataset is None:
+            raise ImportError(
+                "SFTLearner requires the 'datasets' package. "
+                "Install with: pip install 'perfsim[lm]'"
+            )
         if "agent_idx" not in data:
             raise KeyError(
                 "SFTLearner.train requires data['agent_idx']; the env (e.g. FJWorld) "
@@ -117,10 +99,6 @@ class SFTLearner(Learner):
 
         self.model.ensure_loaded()
         examples: list[dict[str, str]] = []
-        # If response_template is set, emit `{prompt, completion}` columns.
-        # Modern TRL (>=0.11) auto-masks the prompt in this format so the
-        # SFT loss is only on the completion tokens, regardless of whether
-        # DataCollatorForCompletionOnlyLM is importable.
         use_prompt_completion = self._response_template is not None
         for i in range(idx.shape[0]):
             profile = self.model.profile_at(int(idx[i].item()))
@@ -132,13 +110,12 @@ class SFTLearner(Learner):
                 examples.append({"text": prompt + target})
         return HFDataset.from_list(examples)
 
-    # ---- Train ----------------------------------------------------------
-
     def train(self, data: Data) -> None:
-        import inspect
-
-        from trl import SFTConfig, SFTTrainer
-
+        if SFTConfig is None or SFTTrainer is None:
+            raise ImportError(
+                "SFTLearner requires the 'trl' package. "
+                "Install with: pip install 'perfsim[lm]'"
+            )
         ds = self._build_dataset(data)
 
         cfg_kwargs: dict[str, Any] = dict(
@@ -150,15 +127,11 @@ class SFTLearner(Learner):
             save_strategy="no",
             logging_strategy="no",
         )
-        # TRL renamed `max_seq_length` -> `max_length` between releases.
         _sig = inspect.signature(SFTConfig.__init__).parameters
         if "max_seq_length" in _sig:
             cfg_kwargs["max_seq_length"] = self._max_seq_length
         elif "max_length" in _sig:
             cfg_kwargs["max_length"] = self._max_seq_length
-        # If response_template is set and SFTConfig exposes the flag,
-        # explicitly enable completion-only loss. Defense in depth on top
-        # of the {prompt, completion} dataset format.
         if self._response_template is not None and "completion_only_loss" in _sig:
             cfg_kwargs.setdefault("completion_only_loss", True)
             print(
@@ -173,29 +146,7 @@ class SFTLearner(Learner):
         trainer.train()
 
     def _maybe_print_sanity(self, trainer: Any) -> None:
-        """If SFT_SANITY=1, dump one training batch's label-masking summary.
-
-        Ports the sanity check from opinion-dynamics-post-training:
-        llm_predictor.py:668-679. Pulls one batch from the trainer's
-        dataloader and reports:
-
-        - labels tensor shape
-        - count + fraction of -100 (masked) entries
-        - last 12 input_ids and last 12 labels of the first example
-
-        Interpretation:
-          masked == 100% of tokens  -> completion-only masking is broken;
-            every token is -100 so there's no training signal at all
-          masked == 0%               -> no masking; SFT is on full text
-          masked in 70-95% range     -> reasonable for completion-only with
-            short numeric targets and longer chat-formatted prompts
-
-        Fires once per learner instance to avoid spamming the log every
-        round. Wrapped in try/except so a broken dataloader does not break
-        training.
-        """
-        import os
-
+        """If SFT_SANITY=1, dump one training batch's label-masking summary."""
         if self._sanity_printed:
             return
         if os.environ.get("SFT_SANITY", "0") != "1":
@@ -225,17 +176,7 @@ class SFTLearner(Learner):
             self._sanity_printed = True
 
     def _completion_only_collator(self) -> Any | None:
-        """Return a DataCollatorForCompletionOnlyLM if available; else None.
-
-        Belt-and-suspenders backup for prompt masking. The primary mechanism
-        is the `{prompt, completion}` dataset format (handled in
-        `_build_dataset`). This collator is used in addition when the TRL
-        version exposes it, to be defensive about TRL versions whose
-        prompt-completion handling is incomplete.
-
-        Tries multiple import paths because newer TRL releases moved the
-        class out of the top-level namespace.
-        """
+        """Return a DataCollatorForCompletionOnlyLM if available; else None."""
         if self._response_template is None:
             return None
         cls = None
@@ -267,10 +208,6 @@ class SFTLearner(Learner):
 
     def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
         """Construct the underlying SFTTrainer. Subclassed by KLSFTLearner."""
-        import inspect
-
-        from trl import SFTTrainer
-
         _sig = inspect.signature(SFTTrainer.__init__).parameters
         tok_kwarg: dict[str, Any] = {}
         if "processing_class" in _sig:

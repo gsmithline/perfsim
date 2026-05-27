@@ -1,9 +1,4 @@
-"""Dataset ABC: load, hash, split.
-
-Reproducibility: every Dataset exposes a deterministic content hash, recorded
-in the run artifact alongside config and seed. Replays verify the hash and
-fail loudly on mismatch.
-"""
+"""Dataset ABC: load, hash, split."""
 
 from __future__ import annotations
 
@@ -18,12 +13,7 @@ from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 
 
 class Dataset(ABC):
-    """Base class for Datasets.
-
-    Subclasses implement `_load()` to produce a data dict; the base class
-    provides caching, hashing, and splitting. `produces_schema` is a class
-    attribute subclasses override (or instance attribute set in __init__).
-    """
+    """Base class for Datasets."""
 
     produces_schema: DataSchema = SUPERVISED_SCHEMA
 
@@ -90,11 +80,7 @@ class Dataset(ABC):
 
 
 class SubsetDataset(Dataset):
-    """View into a parent Dataset along the leading axis.
-
-    Hash chains from parent.hash() + indices + seed; changes to either parent
-    data or indices produce a different hash.
-    """
+    """View into a parent Dataset along the leading axis."""
 
     def __init__(self, parent: Dataset, indices: Tensor, seed: int) -> None:
         super().__init__()

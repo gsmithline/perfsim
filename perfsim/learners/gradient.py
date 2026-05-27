@@ -1,9 +1,4 @@
-"""Gradient-step Learner: k SGD or Adam steps per round.
-
-Celestine RSG
-persists across rounds by default; `reset()` clears it and restores initial
-parameters.
-"""
+"""Gradient-step Learner: k SGD or Adam steps per round."""
 
 from __future__ import annotations
 
@@ -18,8 +13,7 @@ from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 
 
 class GradientLearner(Learner):
-    """k SGD or Adam steps per round.
-    """
+    """k SGD or Adam steps per round."""
 
     accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
 

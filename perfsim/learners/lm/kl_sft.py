@@ -1,19 +1,8 @@
-"""KLSFTLearner: SFT with a KL anchor against a frozen reference policy.
-
-Extends SFTLearner with the Korbak-Williams form (I) SFT-KL loss:
-
-    L = L_CE(x, y) + beta * KL( pi_theta(.|x) || pi_ref(.|x) )
-
-The KL is computed token-wise over the model's output distribution against
-a frozen reference policy `pi_ref`. With `beta = 0` this reduces to plain
-SFT; large `beta` anchors the fine-tuned model to the reference.
-
-Mirrors the `KLSFTTrainer.compute_loss` pattern from
-`Opinion-dynamics-post-training/llm_predictor.py:366`.
-"""
+"""KLSFTLearner: SFT with a KL anchor against a frozen reference policy."""
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import torch
@@ -23,24 +12,22 @@ from perfsim.core.loss import Loss
 from perfsim.learners.lm.sft import SFTLearner, _default_target_formatter
 from perfsim.models.hf_causal_lm import HFCausalLMModel
 
+try:
+    from transformers import AutoModelForCausalLM
+except ImportError:
+    AutoModelForCausalLM = None  # type: ignore[assignment,misc]
+
+try:
+    from trl import SFTTrainer
+except ImportError:
+    SFTTrainer = None  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
 
 
 class KLSFTLearner(SFTLearner):
-    """SFT with a beta * KL anchor against a frozen reference policy.
-
-    Args:
-        model:           See SFTLearner.
-        loss:            See SFTLearner.
-        ref_model_name:  HF model ID for the reference policy. Loaded
-                         frozen (eval mode, requires_grad=False). Typically
-                         the same base name as `model._base_model_name` to
-                         anchor against the un-fine-tuned starting point.
-        kl_beta:         Coefficient on the KL term. 0 reduces to SFT.
-        target_formatter, max_steps, learning_rate, per_device_batch_size,
-        max_seq_length, output_dir, trainer_kwargs: as in SFTLearner.
-    """
+    """SFT with a beta * KL anchor against a frozen reference policy."""
 
     def __init__(
         self,
@@ -80,8 +67,11 @@ class KLSFTLearner(SFTLearner):
 
     def _ensure_ref(self) -> "PreTrainedModel":
         if self._ref_model is None:
-            from transformers import AutoModelForCausalLM
-
+            if AutoModelForCausalLM is None:
+                raise ImportError(
+                    "KLSFTLearner requires the 'transformers' package. "
+                    "Install with: pip install 'perfsim[lm]'"
+                )
             ref = AutoModelForCausalLM.from_pretrained(
                 self._ref_model_name,
                 torch_dtype=self.model._target_dtype,  # type: ignore[attr-defined]
@@ -94,10 +84,11 @@ class KLSFTLearner(SFTLearner):
         return self._ref_model
 
     def _build_trainer(self, *, cfg: Any, ds: Any) -> Any:
-        import inspect
-
-        from trl import SFTTrainer
-
+        if SFTTrainer is None:
+            raise ImportError(
+                "KLSFTLearner requires the 'trl' package. "
+                "Install with: pip install 'perfsim[lm]'"
+            )
         ref_model = self._ensure_ref() if self._kl_beta > 0 else None
         kl_beta = self._kl_beta
 
@@ -118,7 +109,6 @@ class KLSFTLearner(SFTLearner):
                         input_ids=inputs["input_ids"],
                         attention_mask=inputs.get("attention_mask"),
                     ).logits
-                # Token-wise KL(pi_theta || pi_ref). Masked by attention if present.
                 logp = F.log_softmax(outputs.logits, dim=-1)
                 logq = F.log_softmax(ref_logits, dim=-1)
                 p = logp.exp()

@@ -1,7 +1,4 @@
-"""ERM (RRM) Learner: 
-solves to convergence each round via L-BFGS newtowen method.
-Warm-starts from current params.
-"""
+"""ERM Learner: solves to convergence each round via L-BFGS."""
 
 from __future__ import annotations
 
@@ -17,13 +14,7 @@ from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 
 
 class ERMLearner(Learner):
-    """
-    Solves empirical risk minimization to convergence each round.
-
-    Backend: L-BFGS. Works for any (Model, Loss) where the loss is
-    differentiable wrt model parameters; the global minimizer is found for
-    convex losses (MSE, BCE, CE on linear models).
-    """
+    """Solves empirical risk minimization to convergence each round via L-BFGS."""
 
     accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
 
@@ -46,7 +37,7 @@ class ERMLearner(Learner):
 
     def train(self, data: Data) -> None:
         opt = torch.optim.LBFGS(
-            list(self.model.parameters()), #LFBGS method works in practice
+            list(self.model.parameters()),
             lr=1.0,
             max_iter=self.max_iter,
             tolerance_grad=self.tolerance_grad,

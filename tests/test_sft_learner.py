@@ -14,8 +14,10 @@ import torch
 pd = pytest.importorskip("pandas")  # type: ignore[assignment]
 pytest.importorskip("datasets")
 
+from perfsim.core.types import SUPERVISED_SCHEMA
 from perfsim.learners.lm.sft import SFTLearner
 from perfsim.losses import MSELoss
+from perfsim.models import LinearModel
 from perfsim.models.hf_causal_lm import HFCausalLMModel
 
 
@@ -91,14 +93,10 @@ class TestBuildDataset:
 
 class TestSchema:
     def test_accepts_supervised_schema(self) -> None:
-        from perfsim.core.types import SUPERVISED_SCHEMA
-
         assert SFTLearner.accepts(SUPERVISED_SCHEMA)
 
 
 class TestConstructorChecks:
     def test_rejects_non_lm_model(self) -> None:
-        from perfsim.models import LinearModel
-
         with pytest.raises(TypeError, match="HFCausalLMModel"):
             SFTLearner(LinearModel(in_features=3), MSELoss())

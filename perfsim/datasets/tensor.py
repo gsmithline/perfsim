@@ -1,6 +1,4 @@
-"""TensorDataset: load tensors from .npz / .pt / .pth.
-InMemoryDataset: wrap an in-memory data dict (useful for synthetic data).
-"""
+"""TensorDataset and InMemoryDataset: load tensors from disk or memory."""
 
 from __future__ import annotations
 
@@ -14,15 +12,7 @@ from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 
 
 class TensorDataset(Dataset):
-    """Dataset backed by tensors on disk.
-
-    Supported formats:
-    - `.npz` (numpy): each array in the archive becomes a tensor keyed by name.
-    - `.pt` / `.pth` (torch.save): the saved object must be a `dict[str, Tensor]`.
-
-    `produces_schema` defaults to `SUPERVISED_SCHEMA`. Required fields must
-    be present in the loaded dict; extras are allowed.
-    """
+    """Dataset backed by tensors on disk (.npz / .pt / .pth)."""
 
     def __init__(
         self,
@@ -62,13 +52,7 @@ class TensorDataset(Dataset):
 
 
 class InMemoryDataset(Dataset):
-    """Dataset backed by an in-memory data dict.
-
-    Used for synthetic data (this is also part of test). Hash is computed
-    over tensor contents via the base `Dataset._compute_hash`, so two
-    `InMemoryDataset` instances with identical contents produce identical
-    hashes.
-    """
+    """Dataset backed by an in-memory data dict."""
 
     def __init__(
         self,

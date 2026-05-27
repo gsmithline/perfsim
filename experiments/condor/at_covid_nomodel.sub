@@ -1,0 +1,22 @@
+universe = vanilla
+executable = /home/gsmithline/perfsim/experiments/condor/run_nomodel.sh
+arguments = $(tag) $(iso)
+
+environment = "SEED_FRAC=$(frac) CALIBRATED_R2=$(r2) K_STEPS=21 N_ROUNDS=10 WANDB_PROJECT=perfsim-covid-calibrated"
+
+output = experiments/condor/logs/$(tag).out
+error  = experiments/condor/logs/$(tag).err
+log    = experiments/condor/logs/$(tag).log
+
+request_cpus = 2
+request_memory = 16G
+request_disk = 5G
+
+requirements = (OpSys == "LINUX")
+
+should_transfer_files = NO
+
+notify_user = gsmithline@gmail.com
+notification = Complete
+
+queue tag, iso, frac, r2 from experiments/condor/configs_nomodel_baselines.txt

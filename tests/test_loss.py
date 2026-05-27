@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 import torch
 
@@ -53,8 +55,6 @@ class TestCrossEntropyLoss:
         x = torch.randn(8, 4)
         y = torch.randint(0, 3, (8,))
         loss = CrossEntropyLoss()(m, {"x": x, "y": y})
-        import math
-
         assert torch.allclose(loss, torch.tensor(math.log(3.0)), atol=1e-5)
 
     def test_per_example_reduction(self) -> None:
@@ -71,8 +71,6 @@ class TestBCELoss:
         x = torch.randn(8, 3)
         y = torch.randint(0, 2, (8, 1)).float()
         loss = BCELoss()(m, {"x": x, "y": y})
-        import math
-
         assert torch.allclose(loss, torch.tensor(-math.log(0.5)), atol=1e-5)
 
 
@@ -82,8 +80,6 @@ class TestBCEWithLogitsLoss:
         x = torch.randn(8, 3)
         y = torch.randint(0, 2, (8, 1)).float()
         loss = BCEWithLogitsLoss()(m, {"x": x, "y": y})
-        import math
-
         assert torch.allclose(loss, torch.tensor(math.log(2.0)), atol=1e-5)
 
 

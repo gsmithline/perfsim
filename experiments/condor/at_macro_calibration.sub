@@ -1,0 +1,23 @@
+universe = vanilla
+executable = /home/gsmithline/perfsim/experiments/condor/run_calibration_macro.sh
+arguments = $(tag) $(start)
+
+environment = "LR=$(lr) N_AGENTS=2712360 MACRO_YAML=config.yaml WANDB_PROJECT=perfsim-macro-calibration-full"
+
+output = experiments/condor/logs/$(tag)_full.out
+error  = experiments/condor/logs/$(tag)_full.err
+log    = experiments/condor/logs/$(tag)_full.log
+
+request_cpus = 8
+request_memory = 64G
+request_disk = 10G
+
+# CPU only — no LM involved in calibration
+requirements = (OpSys == "LINUX")
+
+should_transfer_files = NO
+
+notify_user = gsmithline@gmail.com
+notification = Complete
+
+queue tag, start, lr from experiments/condor/configs_macro_calibration.txt

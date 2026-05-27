@@ -1,9 +1,4 @@
-"""History: per-round records as a list of dicts.
-
-Records are appended each round by the Simulator. Tensors are kept lazy (no
-.item() per round), host conversion happens on to_dict, to_dataframe, or
-`save`. Supports round-trip via .pt (torch.save) and .json.
-"""
+"""History: per-round records as a list of dicts."""
 from __future__ import annotations
 
 import json
@@ -35,12 +30,7 @@ class History:
         return self._records
 
     def to_dict(self) -> dict[str, Any]:
-        """Columnar view.
-
-        - All-tensor column with uniform shape -> stacked tensor (CPU).
-        - All-tensor column with mixed shapes -> list of tensors.
-        - Other -> list of Python values.
-        """
+        """Columnar view: stacks uniform-shape tensor columns, lists the rest."""
         if not self._records:
             return {}
         keys = list(self._records[0].keys())

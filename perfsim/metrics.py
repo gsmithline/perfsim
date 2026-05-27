@@ -1,14 +1,4 @@
-"""Metrics: PR, DPR, stability_gap, optimality_gap, convergence detection.
-
-All metrics are pure functions on (world, model, loss) or their inputs. The
-Simulator wires them in as round-level callbacks via its `metrics` dict.
-
-For PR / DPR variance: pass a World with a larger `batch_size`. Multi-batch
-averaging would require advancing world state, which would pollute the main
-trajectory. 
-We keep single-batch estimates here and let users widen the
-batch instead.
-"""
+"""Metrics: PR, DPR, stability_gap, optimality_gap, convergence detection."""
 
 from __future__ import annotations
 
@@ -23,10 +13,7 @@ from perfsim.core.environment import Environment as World
 
 
 def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
-    """
-    Single-batch PR estimate.
-    Samples one batch from D(theta) via `world.sample(model)`.
-    """
+    """Single-batch performative risk estimate."""
     with torch.no_grad():
         data = world.sample(model)
         return loss(model, data, reduction="mean")
@@ -38,11 +25,7 @@ def decoupled_risk(
     model_eval: Model,
     loss: Loss,
 ) -> Tensor:
-    """
-    Single-batch DPR estimate: E_{Z ~ D(theta_deploy)} loss(model_eval, Z).
-
-    Identity: when model_deploy == model_eval (same object), DPR == PR.
-    """
+    """Single-batch decoupled performative risk estimate."""
     with torch.no_grad():
         data = world.sample(model_deploy)
         return loss(model_eval, data, reduction="mean")
@@ -59,11 +42,7 @@ def optimality_gap(
     optimal_model: Model,
     loss: Loss,
 ) -> Tensor:
-    """PR(model) - PR(optimal_model).
-
-    The optimal model is caller-provided (for GaussianShiftWorld it can be
-    constructed from `world.closed_form_fp()`).
-    """
+    """PR(model) - PR(optimal_model)."""
     pr_current = performative_risk(world, model, loss)
     pr_optimal = performative_risk(world, optimal_model, loss)
     return pr_current - pr_optimal
@@ -93,17 +72,7 @@ def _theta_diff_norm(model_a: Model, model_b: Model) -> Tensor:
 
 
 def sensitivity_paired(world: World, model_a: Model, model_b: Model) -> Tensor:
-    """Lipschitz estimate of D(θ) under the paired (identity) coupling.
-
-    Computes mean_i ||x_a_i - x_b_i||_2 / ||θ_a - θ_b||_2 over a batch sampled
-    twice from `world.sample` (peek, no state mutation). For deterministic
-    worlds whose i-th draw depends on a fixed shared latent, this equals the
-    exact Wasserstein-1; for stochastic worlds it is an upper bound that
-    converges to W_1 only under matched RNG (StatelessDynamics' forked-generator
-    peek does provide this).
-
-    Raises ValueError if θ_a == θ_b.
-    """
+    """Lipschitz estimate of D(theta) under the paired (identity) coupling."""
     with torch.no_grad():
         denom = _theta_diff_norm(model_a, model_b)
         if denom.item() == 0.0:
@@ -129,23 +98,7 @@ def sensitivity_sliced(
     n_proj: int = 50,
     seed: int = 0,
 ) -> Tensor:
-    """Sliced-Wasserstein-1 Lipschitz estimate of D(θ).
-
-    Approximates W_1(D(θ_a), D(θ_b)) by averaging 1-D Wasserstein-1 distances
-    across `n_proj` random unit-vector projections of the feature dim:
-
-        W_1(D_a, D_b) ≈ mean_u E[|sort(u·x_a) - sort(u·x_b)|]
-
-    Returns sliced_W_1 / ||θ_a - θ_b||. Sample sizes from `world.sample` must
-    match; sliced-W_1 with equal-size empirical distributions uses the sorted
-    pairing, which is exact in 1-D.
-
-    The dimension constant `E_u[|u·v|/||v||]` shrinks as 1/sqrt(d) for large d,
-    so absolute values are not directly comparable across worlds of differing
-    feature dimension; ordering across (θ_a, θ_b) pairs at fixed dimension is.
-
-    Raises ValueError if θ_a == θ_b.
-    """
+    """Sliced-Wasserstein-1 Lipschitz estimate of D(theta)."""
     with torch.no_grad():
         denom = _theta_diff_norm(model_a, model_b)
         if denom.item() == 0.0:

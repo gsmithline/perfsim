@@ -63,7 +63,10 @@ examples/.mpl_cache/
 # Logs
 *.log
 
-DESIGN.md
-ARCHITECTURE.md
+# Markdown (keep READMEs)
+*.md
+!README.md
+!readme.md
+
 .claude
 CLAUDE.md

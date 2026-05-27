@@ -1,10 +1,4 @@
-"""Tests for the AgentTorch adapter.
-
-Gated by pytest.importorskip("agent_torch"); core perfsim suite stays AT-free.
-Uses a FakeRunner duck-typed against agent_torch.Runner's interface (.state
-dict, .step(num_steps=...), .reset_state_before_episode()) so we do not need
-a real YAML config or substep registry to exercise adapter behavior.
-"""
+"""Tests for the AgentTorch adapter."""
 
 from __future__ import annotations
 
@@ -21,6 +15,10 @@ from perfsim.adapters.agenttorch import (
 )
 from perfsim.core.environment import AgentBased
 from perfsim.core.model import Model
+from perfsim.learners.erm import ERMLearner
+from perfsim.losses import MSELoss
+from perfsim.models.linear import LinearModel
+from perfsim.simulator import Simulator
 
 
 # ---- Stubs ----------------------------------------------------------------
@@ -310,11 +308,6 @@ def test_simulator_drives_at_env_through_one_epoch():
     """End-to-end: real Simulator + adapter + FakeRunner. Confirms the
     adapter's run() contract integrates with the Simulator hot path.
     """
-    from perfsim.simulator import Simulator
-    from perfsim.learners.erm import ERMLearner
-    from perfsim.losses import MSELoss
-    from perfsim.models.linear import LinearModel
-
     env = _make_env(mode="a2")
     model = LinearModel(in_features=1, out_features=1)
     loss = MSELoss()

@@ -26,6 +26,7 @@ from perfsim.scenarios.perdomo_loan import (
     make_synthetic_dataset,
     run,
 )
+from perfsim.scenarios.perdomo_loan.config import PERDOMO_STRAT_FEATURES, _balance_classes
 from perfsim.simulator import Simulator
 
 
@@ -78,8 +79,6 @@ class TestBuildWorld:
         assert torch.allclose(x0.median(dim=0).values, torch.zeros(4), atol=1e-5)
 
     def test_clip_bounds_features(self) -> None:
-        from perfsim.datasets import InMemoryDataset
-
         x = torch.randn(100, 3)
         x[0] = 1000.0
         y = torch.zeros(100)
@@ -88,8 +87,6 @@ class TestBuildWorld:
         assert world._x0.abs().max().item() <= 5.0 + 1e-6
 
     def test_clip_zero_disables(self) -> None:
-        from perfsim.datasets import InMemoryDataset
-
         x = torch.randn(100, 3)
         x[0] = 1000.0
         y = torch.zeros(100)
@@ -220,8 +217,6 @@ class TestConfig:
         assert cfg.decay_bias is False
 
     def test_default_strat_features_is_perdomo(self) -> None:
-        from perfsim.scenarios.perdomo_loan.config import PERDOMO_STRAT_FEATURES
-
         cfg = PerdomoLoanConfig()
         assert cfg.strat_features == PERDOMO_STRAT_FEATURES
         assert cfg.strat_features == (0, 5, 7)
@@ -250,15 +245,11 @@ class TestConfig:
 
 class TestClassBalancing:
     def _make_imbalanced(self, n_pos: int, n_neg: int) -> "InMemoryDataset":
-        from perfsim.datasets import InMemoryDataset
-
         x = torch.cat([torch.ones(n_pos, 3), torch.zeros(n_neg, 3)])
         y = torch.cat([torch.ones(n_pos), torch.zeros(n_neg)])
         return InMemoryDataset({"x": x, "y": y})
 
     def test_balance_takes_all_positives_plus_capped_negatives(self) -> None:
-        from perfsim.scenarios.perdomo_loan.config import _balance_classes
-
         raw = self._make_imbalanced(n_pos=50, n_neg=1000)
         bal = _balance_classes(raw, n_negatives=10, seed=0)
         data = bal.load()
@@ -267,16 +258,12 @@ class TestClassBalancing:
         assert (y == 0.0).sum().item() == 10
 
     def test_balance_deterministic_with_seed(self) -> None:
-        from perfsim.scenarios.perdomo_loan.config import _balance_classes
-
         raw = self._make_imbalanced(n_pos=30, n_neg=500)
         a = _balance_classes(raw, n_negatives=10, seed=42)
         b = _balance_classes(raw, n_negatives=10, seed=42)
         assert a.hash() == b.hash()
 
     def test_balance_seed_changes_order(self) -> None:
-        from perfsim.scenarios.perdomo_loan.config import _balance_classes
-
         raw = self._make_imbalanced(n_pos=30, n_neg=500)
         a = _balance_classes(raw, n_negatives=10, seed=0)
         b = _balance_classes(raw, n_negatives=10, seed=1)
@@ -284,8 +271,6 @@ class TestClassBalancing:
         assert a.hash() != b.hash()
 
     def test_n_negatives_fewer_than_available(self) -> None:
-        from perfsim.scenarios.perdomo_loan.config import _balance_classes
-
         raw = self._make_imbalanced(n_pos=10, n_neg=5)
         bal = _balance_classes(raw, n_negatives=100, seed=0)  # asks for more than exists
         y = bal.load()["y"]

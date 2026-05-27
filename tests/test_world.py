@@ -211,8 +211,6 @@ class TestStrategicLinearWorld:
         # Expected shift only at columns 0 and 2.
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)
-        from perfsim.environments.dynamics import StrategicLinearWorld
-
         world = StrategicLinearWorld(x0=x0, y=y, epsilon=1.0, strat_features=(0, 2))
         m = LinearModel(in_features=4, out_features=1, bias=False)
         m.linear.weight.data = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
@@ -223,8 +221,6 @@ class TestStrategicLinearWorld:
         assert torch.allclose(data["x"], expected)
 
     def test_strat_features_property(self) -> None:
-        from perfsim.environments.dynamics import StrategicLinearWorld
-
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)
         w_all = StrategicLinearWorld(x0=x0, y=y)
@@ -233,8 +229,6 @@ class TestStrategicLinearWorld:
         assert w_sub.strat_features == (0, 2)
 
     def test_strat_features_validation(self) -> None:
-        from perfsim.environments.dynamics import StrategicLinearWorld
-
         x0 = torch.zeros(5, 4)
         y = torch.zeros(5, 1)
         with pytest.raises(ValueError, match="cannot be empty"):

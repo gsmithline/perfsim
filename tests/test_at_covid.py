@@ -36,6 +36,9 @@ if not bundled_covid_yaml().exists():
 import torch  # noqa: E402
 
 from perfsim.adapters.agenttorch import AgentTorchEnvironment  # noqa: E402
+from perfsim.learners.erm import ERMLearner  # noqa: E402
+from perfsim.losses import MSELoss  # noqa: E402
+from perfsim.models.linear import LinearModel  # noqa: E402
 from perfsim.scenarios.at_covid import (  # noqa: E402
     PerfsimIsolationDecision,
     build_covid_runner,
@@ -44,6 +47,7 @@ from perfsim.scenarios.at_covid import (  # noqa: E402
     default_state_extractor,
     make_covid_env,
 )
+from perfsim.simulator import Simulator  # noqa: E402
 
 
 # ---- Package surface ------------------------------------------------------
@@ -147,11 +151,6 @@ def test_reset_replaces_runner():
 @pytest.mark.slow
 def test_smoke_one_round():
     """Real Runner, real Simulator, one round of one epoch step. ~10-15s."""
-    from perfsim.learners.erm import ERMLearner
-    from perfsim.losses import MSELoss
-    from perfsim.models.linear import LinearModel
-    from perfsim.simulator import Simulator
-
     env = make_covid_env(init_seed=0)
     model = LinearModel(in_features=1, out_features=1)
     loss = MSELoss()

@@ -1,8 +1,4 @@
-"""TabularDataset: loads CSV or parquet via pandas into a data dict.
-
-Specify `label_col`; `feature_cols` defaults to "all other columns" if not
-passed. Output dict: `{"x": Tensor[N, D], "y": Tensor[N]}`.
-"""
+"""TabularDataset: loads CSV or parquet via pandas into a data dict."""
 
 from __future__ import annotations
 
@@ -17,17 +13,7 @@ import pandas as pd
 
 
 class TabularDataset(Dataset):
-    """CSV / parquet -> supervised data dict.
-
-    Args:
-        path: file path with suffix .csv, .parquet, or .pq.
-        label_col: name of the label column.
-        feature_cols: names of feature columns; if None, all columns except
-            `label_col` are used.
-        drop_na: drop rows with NaN in any used column. Default True.
-        x_dtype, y_dtype: tensor dtypes for x and y.
-        schema: declared output schema; default supervised (x, y).
-    """
+    """CSV / parquet -> supervised data dict."""
 
     def __init__(
         self,
@@ -62,9 +48,7 @@ class TabularDataset(Dataset):
         return self._resolved_feature_cols
 
     def _read_df(self):
-        """
-        add support for .pt 
-        """
+        """Read the file into a pandas DataFrame."""
         suffix = self._path.suffix.lower()
         if suffix == ".csv":
             return pd.read_csv(self._path)
