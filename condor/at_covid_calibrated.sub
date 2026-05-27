@@ -3,7 +3,7 @@ executable = /home/gsmithline/perfsim/condor/run_one.sh
 arguments = $(tag) $(style) $(beta)
 
 # Pass calibrated params via environment
-environment = "SEED_FRAC=$(frac) CALIBRATED_R2=$(r2) K_STEPS=21 N_ROUNDS=10 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_BATCH_SIZE=4 WANDB_PROJECT=perfsim-covid-calibrated"
+environment = "SEED_FRAC=$(frac) CALIBRATED_R2=$(r2) K_STEPS=21 N_ROUNDS=10 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_BATCH_SIZE=4 WANDB_PROJECT=perfsim-covid-calibrated TARGET_KIND=exposure_aware LORA_R=32 USE_LORA=1 SFT_LR=1e-5 SFT_MAX_STEPS=50 SFT_SANITY=1"
 
 output = condor/logs/$(tag).out
 error  = condor/logs/$(tag).err
@@ -15,7 +15,7 @@ request_disk = 10G
 request_gpus = 1
 
 # Need GPU for LM inference + SFT
-requirements = (OpSys == "LINUX")
+requirements = (OpSys == "LINUX") && (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 should_transfer_files = NO
 
