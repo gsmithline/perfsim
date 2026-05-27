@@ -109,6 +109,7 @@ class Simulator:
         seed: int = 0,
         initial_data: dict[str, Tensor] | None = None,
         train_mask: Tensor | None = None,
+        on_round: Callable[[int, dict[str, Any]], None] | None = None,
     ) -> History:
         """Run the PP loop for `n_rounds` epochs of `epoch_size` env steps each.
 
@@ -154,6 +155,8 @@ class Simulator:
             handle = self.predictor.deploy()
             final_data = self.env.run(handle, n_steps=epoch_size)
             self._record_round(t)
+            if on_round is not None:
+                on_round(t, self.history[-1])
             prev_data = self._mask_data(final_data, train_mask)
         return self.history
 

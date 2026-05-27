@@ -471,41 +471,40 @@ def main() -> int:
         "subgroup_preds": _subgroup_preds,
         "train_loss": _train_loss,
     }
+    trajectory = []
+
+    def _on_round(t, record):
+        theta = record.get("theta")
+        row = {
+            "round": t,
+            "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
+            "daily_infected_sum": float(record["daily_infected_sum"]),
+            "fraction_non_S": float(record["fraction_non_S"]),
+            "train_loss": float(record.get("train_loss", 0)),
+        }
+        gap = record.get("stability_gap")
+        if hasattr(gap, "item"):
+            row["stability_gap"] = float(gap.item())
+        for key in ("stage_counts", "pred_stats", "subgroup_burden", "subgroup_preds"):
+            val = record.get(key)
+            if isinstance(val, dict):
+                row.update(val)
+        trajectory.append(row)
+        if wandb is not None:
+            wandb.log(row)
+        print(f"[round {t}] di={row['daily_infected_sum']:.0f} "
+              f"frac_nonS={row['fraction_non_S']:.4f} "
+              f"train_loss={row['train_loss']:.4f} "
+              f"pred_mean={row.get('pred_mean', 0):.3f}", flush=True)
+
     sim = Simulator(env=env, learner=learner, loss=loss, metrics=sim_metrics)
     print(f"[run] starting outer loop: n_rounds={n_rounds} K={k_steps}", flush=True)
     t_loop = time.time()
-    hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed)
+    hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed, on_round=_on_round)
     print(f"[run] loop done in {time.time() - t_loop:.1f}s", flush=True)
 
     torch.save([dict(r) for r in hist.records], out_dir / "history.pt")
 
-    # Post-SFT diagnostic: final per-profile LM recommendations.
-    print("[run] dumping final per-profile LM recommendations...", flush=True)
-    t0 = time.time()
-    final_features = env.runner.state["agents"]["citizens"]["age"].float()
-    with torch.no_grad():
-        final_preds = model(final_features).squeeze().detach().cpu()
-    print(f"[run] final-pass forward in {time.time() - t0:.1f}s", flush=True)
-
-    # Stats on final_preds (what platform_signal would be set to).
-    print(
-        f"[diag] final preds stats: min={float(final_preds.min()):.4f} "
-        f"max={float(final_preds.max()):.4f} mean={float(final_preds.mean()):.4f} "
-        f"std={float(final_preds.std()):.4f}",
-        flush=True,
-    )
-    # With logit_signal_writer the env path is: preds -> logit -> sigmoid
-    # so will_isolate ~= preds (within the clamp(0.01, 0.99) range applied
-    # by the writer). Reporting preds directly instead of double-sigmoiding.
-    _p = final_preds.clamp(min=0.01, max=0.99)
-    print(
-        f"[diag] will_isolate (= preds clamped): min={float(_p.min()):.4f} "
-        f"max={float(_p.max()):.4f} mean={float(_p.mean()):.4f}",
-        flush=True,
-    )
-
-    # Also dump 20 random (prompt, raw text, parsed) samples POST-SFT to
-    # compare against pre-SFT.
     _sample_texts_post = model._generate([model.build_prompt(model.profile_at(i)) for i in _sample_idx])
     _sample_log_post = []
     print("[diag] sample LM outputs (post-SFT):", flush=True)
@@ -514,55 +513,6 @@ def main() -> int:
         _sample_log_post.append({"agent_idx": int(_idx), "raw_text": _txt, "parsed": float(_parsed)})
         print(f"  agent {_idx}: text={_txt!r}  parsed={_parsed:.3f}", flush=True)
     (out_dir / "diagnostic_post_sft.json").write_text(json.dumps(_sample_log_post, indent=2))
-
-    # Group by (age_bucket, mean_interactions). Use a Python dict so we can
-    # save as JSON cleanly.
-    grp = {}
-    age_t = profiles["age_bucket"].tolist()
-    mi_t = profiles["mean_interactions"].tolist()
-    for i in range(n_agents):
-        key = f"age={int(age_t[i])}_mi={float(mi_t[i]):.1f}"
-        grp.setdefault(key, []).append(float(final_preds[i].item()))
-
-    profile_summary = []
-    for key in sorted(grp):
-        vals = torch.tensor(grp[key])
-        profile_summary.append({
-            "profile_type": key,
-            "n_agents": int(vals.shape[0]),
-            "rec_mean": float(vals.mean()),
-            "rec_std": float(vals.std()) if vals.shape[0] > 1 else 0.0,
-            "rec_min": float(vals.min()),
-            "rec_max": float(vals.max()),
-        })
-    (out_dir / "recommendations.json").write_text(json.dumps(profile_summary, indent=2))
-    print(f"[run] {len(profile_summary)} profile types saved -> recommendations.json", flush=True)
-
-    trajectory = []
-    for r in hist.records:
-        theta = r.get("theta")
-        row = {
-            "round": int(r["round"]),
-            "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
-            "daily_infected_sum": float(r["daily_infected_sum"]),
-            "fraction_non_S": float(r["fraction_non_S"]),
-            "train_loss": float(r.get("train_loss", 0)),
-        }
-        gap = r.get("stability_gap")
-        if hasattr(gap, "item"):
-            row["stability_gap"] = float(gap.item())
-        # Flatten nested metric dicts into the row
-        for key in ("stage_counts", "pred_stats", "subgroup_burden", "subgroup_preds"):
-            val = r.get(key)
-            if isinstance(val, dict):
-                row.update(val)
-        trajectory.append(row)
-        if wandb is not None:
-            wandb.log(row)
-        print(f"[round {row['round']}] di={row['daily_infected_sum']:.0f} "
-              f"frac_nonS={row['fraction_non_S']:.4f} "
-              f"train_loss={row['train_loss']:.4f} "
-              f"pred_mean={row.get('pred_mean', 0):.3f}", flush=True)
 
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
     print(f"[run] outputs in {out_dir}", flush=True)

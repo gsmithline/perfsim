@@ -349,40 +349,101 @@ def main() -> int:
         except Exception:
             return 0.0
 
+    def _pred_stats(sim_obj) -> dict:
+        features = sim_obj.env.runner.state["agents"]["consumers"]["age"].float()
+        with torch.no_grad():
+            preds = sim_obj.predictor.model(features).squeeze().detach().cpu()
+        return {
+            "pred_mean": float(preds.mean()),
+            "pred_std": float(preds.std()),
+            "pred_min": float(preds.min()),
+            "pred_max": float(preds.max()),
+        }
+
+    def _subgroup_assets(sim_obj) -> dict:
+        assets = sim_obj.env.runner.state["agents"]["consumers"]["assets"].float()
+        ages = sim_obj.env.runner.state["agents"]["consumers"]["age"].squeeze().long()
+        col_mean = assets.mean(dim=1)
+        out = {}
+        for bucket in range(6):
+            mask = ages == bucket
+            if mask.any():
+                out[f"assets_age{bucket}"] = float(col_mean[mask].mean())
+        return out
+
+    def _subgroup_preds(sim_obj) -> dict:
+        features = sim_obj.env.runner.state["agents"]["consumers"]["age"].float()
+        ages = features.squeeze().long()
+        with torch.no_grad():
+            preds = sim_obj.predictor.model(features).squeeze().detach().cpu()
+        out = {}
+        for bucket in range(6):
+            mask = ages == bucket
+            if mask.any():
+                out[f"pred_age{bucket}"] = float(preds[mask].mean())
+        return out
+
+    def _train_loss(sim_obj) -> float:
+        data = sim_obj.env._state_extractor(sim_obj.env.runner)
+        return float(sim_obj.predictor.loss(sim_obj.predictor.model, data).item())
+
+    def _price_of_goods(sim_obj) -> float:
+        p = sim_obj.env.runner.state["environment"].get("P")
+        if p is None:
+            return 0.0
+        try:
+            return float(p[-1][-1].item())
+        except Exception:
+            return 0.0
+
     sim_metrics = {
         "mean_assets": _mean_assets,
         "mean_consumption_prop": _mean_consumption_prop,
         "inflation": _inflation,
         "unemployment": _unemployment,
+        "pred_stats": _pred_stats,
+        "subgroup_assets": _subgroup_assets,
+        "subgroup_preds": _subgroup_preds,
+        "train_loss": _train_loss,
+        "price_of_goods": _price_of_goods,
     }
+
+    trajectory = []
+
+    def _on_round(t, record):
+        theta = record.get("theta")
+        row = {
+            "round": t,
+            "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
+            "mean_assets": float(record["mean_assets"]),
+            "mean_consumption_prop": float(record["mean_consumption_prop"]),
+            "inflation": float(record["inflation"]),
+            "unemployment": float(record["unemployment"]),
+            "train_loss": float(record["train_loss"]),
+            "price_of_goods": float(record["price_of_goods"]),
+        }
+        gap = record.get("stability_gap")
+        if hasattr(gap, "item"):
+            row["stability_gap"] = float(gap.item())
+        ps = record.get("pred_stats", {})
+        row.update(ps)
+        sa = record.get("subgroup_assets", {})
+        row.update(sa)
+        sp = record.get("subgroup_preds", {})
+        row.update(sp)
+
+        trajectory.append(row)
+        if wandb is not None:
+            wandb.log(row)
+        print(f"[round {t}] {row}", flush=True)
+
     sim = Simulator(env=env, learner=learner, loss=loss, metrics=sim_metrics)
     print(f"[run] starting outer loop: n_rounds={n_rounds} K={k_steps}", flush=True)
     t_loop = time.time()
-    hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed)
+    hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed, on_round=_on_round)
     print(f"[run] loop done in {time.time() - t_loop:.1f}s", flush=True)
 
     torch.save([dict(r) for r in hist.records], out_dir / "history.pt")
-
-    # Post-SFT diagnostic.
-    print("[run] dumping final per-profile LM recommendations...", flush=True)
-    t0 = time.time()
-    final_features = env.runner.state["agents"]["consumers"]["age"].float()
-    with torch.no_grad():
-        final_preds = model(final_features).squeeze().detach().cpu()
-    print(f"[run] final-pass forward in {time.time() - t0:.1f}s", flush=True)
-
-    print(
-        f"[diag] final preds stats: min={float(final_preds.min()):.4f} "
-        f"max={float(final_preds.max()):.4f} mean={float(final_preds.mean()):.4f} "
-        f"std={float(final_preds.std()):.4f}",
-        flush=True,
-    )
-    _p = final_preds.clamp(min=0.01, max=0.99)
-    print(
-        f"[diag] consumption_propensity (= preds clamped): min={float(_p.min()):.4f} "
-        f"max={float(_p.max()):.4f} mean={float(_p.mean()):.4f}",
-        flush=True,
-    )
 
     _sample_texts_post = model._generate([model.build_prompt(model.profile_at(i)) for i in _sample_idx])
     _sample_log_post = []
@@ -392,25 +453,6 @@ def main() -> int:
         _sample_log_post.append({"agent_idx": int(_idx), "raw_text": _txt, "parsed": float(_parsed)})
         print(f"  agent {_idx}: text={_txt!r}  parsed={_parsed:.3f}", flush=True)
     (out_dir / "diagnostic_post_sft.json").write_text(json.dumps(_sample_log_post, indent=2))
-
-    trajectory = []
-    for r in hist.records:
-        theta = r.get("theta")
-        row = {
-            "round": int(r["round"]),
-            "theta_norm": float(theta.norm().item()) if hasattr(theta, "norm") else None,
-            "mean_assets": float(r["mean_assets"]),
-            "mean_consumption_prop": float(r["mean_consumption_prop"]),
-            "inflation": float(r["inflation"]),
-            "unemployment": float(r["unemployment"]),
-        }
-        gap = r.get("stability_gap")
-        if hasattr(gap, "item"):
-            row["stability_gap"] = float(gap.item())
-        trajectory.append(row)
-        if wandb is not None:
-            wandb.log(row)
-        print(f"[round {row['round']}] {row}", flush=True)
 
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
     print(f"[run] outputs in {out_dir}", flush=True)
