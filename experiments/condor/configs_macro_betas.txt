@@ -1,2 +1,3 @@
-at_macro_sft_full, sft, 0.0
-at_macro_sftkl_b10_full, sft_kl, 10.0
+at_macro_sft_b0,     sft,     0.0
+at_macro_sftkl_b1,   sft_kl,  1.0
+at_macro_sftkl_b10,  sft_kl,  10.0

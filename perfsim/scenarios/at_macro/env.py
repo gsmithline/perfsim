@@ -152,7 +152,7 @@ class _PatchedFinancialMarket(SubstepTransition):
         max_rate_change = self.config["simulation_metadata"]["maximum_rate_of_change_of_price"]
         if omega > 0:
             r2 = max_rate_change * omega
-            sampled_omega = -r2 * torch.rand(1, 1)
+            sampled_omega = r2 * torch.rand(1, 1)
         else:
             r1 = max_rate_change * omega
             sampled_omega = r1 * torch.rand(1, 1)
@@ -160,7 +160,7 @@ class _PatchedFinancialMarket(SubstepTransition):
 
         new_cumulative = cumulative_price_of_goods + new_price_of_goods.squeeze()
         avg_price = new_cumulative / number_of_months
-        new_inflation_rate = (price_of_goods - avg_price) / avg_price.clamp(min=1e-8)
+        new_inflation_rate = (new_price_of_goods - price_of_goods) / price_of_goods.clamp(min=1e-8)
 
         return {
             self.output_variables[0]: new_interest_rate,
@@ -179,6 +179,70 @@ from agent_torch.core.helpers.environment import grid_network  # noqa: E402
 from perfsim.adapters.agenttorch import AgentTorchEnvironment  # noqa: E402
 from perfsim.scenarios.at_macro.action import PerfsimEarningDecision  # noqa: E402
 
+
+class _PatchedUpdateAssets(UpdateAssets):
+    """UpdateAssets with the non-working-income bug fixed.
+
+    Bundled calculateMonthlyIncome adds monthly_income_per_agent to all agents
+    regardless of will_work. This subclass gates income on will_work so only
+    working agents earn.
+    """
+
+    def calculateMonthlyIncome(self, state, action):
+        hourly_wage = get_by_path(
+            state, re.split("/", self.input_variables["hourly_wage"])
+        )
+        will_work = action["consumers"]["will_work"]
+        hours_worked = self.config["simulation_metadata"]["hours_worked"]
+        prior_monthly_income = get_by_path(
+            state, re.split("/", self.input_variables["monthly_income"])
+        )
+        monthly_income_per_agent = hourly_wage * hours_worked * will_work
+        return prior_monthly_income + monthly_income_per_agent
+
+
+class _PatchedAssetsGoods(SubstepTransition):
+    """UpdateAssetsGoods with the asset-update and inventory bugs fixed.
+
+    Bundled bugs:
+      - `new_assets = assets * torch.rand(1)` ignores demand entirely.
+      - `new_inventory = min(G - D, 0)` keeps inventory <= 0 always.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.productivity = self.config["simulation_metadata"]["universal_productivity"]
+
+    def forward(self, state, action):
+        will_work = get_by_path(state, re.split("/", "agents/consumers/will_work"))
+        assets = get_by_path(state, re.split("/", self.input_variables["assets"]))
+        consumption_prop = get_by_path(
+            state, re.split("/", self.input_variables["consumption_propensity"])
+        )
+        price_of_goods = get_by_path(
+            state, re.split("/", self.input_variables["price_of_goods"])
+        )
+        goods_inventory = get_by_path(
+            state, re.split("/", self.input_variables["goods_inventory"])
+        )
+
+        production = (will_work * 168 * self.productivity).sum()
+        new_inventory = goods_inventory + production
+
+        intended_consumption = (assets * consumption_prop) / price_of_goods.clamp(min=1e-6)
+        total_demand = intended_consumption.sum()
+        imbalance = (total_demand - new_inventory) / torch.max(total_demand, new_inventory).clamp(min=1e-6)
+
+        spending = assets * consumption_prop
+        new_assets = assets - spending
+        new_inventory_after = torch.max(new_inventory - total_demand, torch.zeros_like(new_inventory))
+
+        return {
+            self.output_variables[0]: new_inventory_after,
+            self.output_variables[1]: new_assets,
+            self.output_variables[2]: total_demand,
+            self.output_variables[3]: imbalance,
+        }
 
 
 def default_feature_provider(runner: Runner) -> Tensor:
@@ -223,9 +287,9 @@ def _build_registry() -> Registry:
     """Register perfsim's action + bundled transitions + initializers."""
     reg = Registry()
     reg.register(PerfsimEarningDecision, "get_work_consumption_decision", key="policy")
-    reg.register(UpdateAssets, "update_assets", key="transition")
+    reg.register(_PatchedUpdateAssets, "update_assets", key="transition")
     reg.register(WriteActionToState, "write_action_to_state", key="transition")
-    reg.register(UpdateAssetsGoods, "update_assets_and_goods", key="transition")
+    reg.register(_PatchedAssetsGoods, "update_assets_and_goods", key="transition")
     reg.register(_PatchedMacroRates, "update_macro_rates", key="transition")
     reg.register(_PatchedFinancialMarket, "update_financial_market", key="transition")
     reg.register(load_population_attribute, "load_population_attribute", key="initialization")

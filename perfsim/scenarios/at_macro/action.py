@@ -40,24 +40,34 @@ class PerfsimEarningDecision(SubstepAction):
         super().__init__(*args, **kwargs)
         self.num_agents = self.config["simulation_metadata"]["num_agents"]
         self.device = torch.device(self.config["simulation_metadata"]["device"])
-        # Default work propensity (probability of agent working this round).
-        # 0.95 means most agents work unless the LM-or-env says otherwise.
-        # Override by setting `simulation_metadata.default_work_propensity`
-        # in the YAML.
         self.default_work_propensity = float(
             self.config["simulation_metadata"].get("default_work_propensity", 0.95)
+        )
+        self.demand_employment_sensitivity = float(
+            self.config["simulation_metadata"].get("demand_employment_sensitivity", 0.5)
         )
         self.st_bernoulli = StraightThroughBernoulli.apply
 
     def forward(self, state, observation):
         signal = state["agents"]["consumers"]["platform_signal"]
         consumption_propensity = torch.sigmoid(signal).reshape(-1, 1).to(self.device)
-        # Fixed work propensity → sample via StraightThroughBernoulli for
-        # differentiability through the downstream substeps. Per-agent
-        # tensor so the bundled UpdateAssets transition sees the right shape.
+
+        prev_imbalance = state["environment"].get("Im")
+        if prev_imbalance is not None:
+            try:
+                imb_scalar = float(prev_imbalance.item())
+            except Exception:
+                imb_scalar = 0.0
+        else:
+            imb_scalar = 0.0
+
+        work_prob_scalar = max(
+            0.5,
+            min(1.0, self.default_work_propensity + self.demand_employment_sensitivity * imb_scalar),
+        )
         work_propensity = torch.full(
             (self.num_agents, 1),
-            self.default_work_propensity,
+            work_prob_scalar,
             dtype=torch.float32,
             device=self.device,
         )
