@@ -9,6 +9,10 @@ import time
 import traceback
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import pandas as pd
 import torch
 
@@ -31,6 +35,18 @@ from perfsim.simulator import Simulator
 
 
 TYPE_NAMES = ["White", "Black", "Hispanic", "Asian"]
+# values: -1=empty, 0=White, 1=Black, 2=Hispanic, 3=Asian (shifted +1 for indexing)
+CELL_CMAP = ListedColormap(["#dddddd", "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"])
+
+
+def _render_grid(grid_type: torch.Tensor, title: str) -> "plt.Figure":
+    arr = (grid_type.cpu().numpy() + 1).astype("int32")
+    fig, ax = plt.subplots(figsize=(4, 4), dpi=90)
+    ax.imshow(arr, cmap=CELL_CMAP, vmin=0, vmax=4, interpolation="nearest")
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([])
+    fig.tight_layout()
+    return fig
 
 
 def _env_or(name, default=None):
@@ -238,6 +254,8 @@ def main() -> int:
         return out
 
     trajectory = []
+    grids_dir = out_dir / "grids"
+    grids_dir.mkdir(exist_ok=True)
 
     def on_round(t, record):
         row = {"round": t}
@@ -252,7 +270,12 @@ def main() -> int:
             elif isinstance(v, (int, float)):
                 row[k] = float(v)
         trajectory.append(row)
+        grid = sim.env.runner.state["environment"]["grid_type"].detach().cpu().clone()
+        torch.save(grid, grids_dir / f"grid_t{t:03d}.pt")
         if wandb is not None:
+            fig = _render_grid(grid, title=f"{run_tag}  round {t}")
+            row["grid"] = wandb.Image(fig)
+            plt.close(fig)
             wandb.log(row)
         print(f"[round {t}] {row}", flush=True)
 
