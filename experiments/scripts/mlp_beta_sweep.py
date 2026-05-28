@@ -44,7 +44,7 @@ class L2AnchoredLoss(Loss):
 
 
 def macro_setup(n_agents=100, calibrated_uac_path=None):
-    from perfsim.scenarios.at_macro import make_macro_env
+    from perfsim.scenarios._deprecated.at_macro import make_macro_env
 
     env = make_macro_env(
         init_seed=0,

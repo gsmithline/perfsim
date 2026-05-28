@@ -12,7 +12,7 @@ Deploying an LM into a population creates a feedback loop. KL regularization, st
 
 - **COVID (Astoria, 37k agents):** LM recommends per-agent isolation levels. ABM simulates SEIRM disease transmission. We measure per-subgroup disease burden, model recommendations, and the gap between what the model recommends and what the data says is needed at each beta.
 
-- **Macro economics (Queens County, 100-agent subsample of 2.7M):** LM advises consumption decisions. ABM simulates earning, consumption, labor markets, and inflation. At equilibrium, the population's economic state (unemployment, asset distribution, inflation) is a function of beta.
+- **Macro economics (Queens County, 100-agent subsample of 2.7M):** LM advises consumption decisions. ABM simulates earning, consumption, labor markets, and inflation. **Currently dropped from active work.** The bundled AgentTorch macro_economics model had multiple structural bugs (`assets * torch.rand(1)` ignoring demand, inventory min/max sign flip, non-working agents earning full income, work_propensity never written to state, inflation formula structurally negative). After patching all of these and adding employment-responds-to-imbalance dynamics, the simulator does respond to consumption decisions (assets diverge ~35x across fixed policies) but the LM beta sweep doesn't produce meaningful differentiation in the headline economic outcomes -- inflation saturates at the rate-cap, unemployment is weakly linked to consumption, and the per-bucket consumption-aware target collapses the LM to predicting ~0.65 for all demographics. The hand-crafted SFT target is the binding limitation: it's not genuinely produced by ABM dynamics in the FJ sense (just `base_by_age - 0.5 * inflation` heuristic), so the LM's loss has no real signal tied to what the population would actually do.
 
 **Three reference lines:**
 1. Equilibrium under the optimal performative policy (gradient descent through the differentiable ABM)
@@ -107,9 +107,13 @@ Optional protocols an Environment may declare:
 
 ## Implementation TODOs
 
-- [ ] AT LLM archetype agents as strategic population layer frozen API models (GPT-4, Claude, Llama) make per-agent decisions via AT arch-type prompting with current state context, while the outer perfsim model (HFCausalLM) is SFT/KL fine-tuned each round as usual. Different archetypes respond differently to the same recommendation, producing different outcomes per beta.
+- [ ] mastodon-sim PP loop (built in `mastodon-sim/pp_loop/`, separate repo) -- LLM recommender ranks posts for Concordia agents, engagement is the SFT signal, opinion shift measured via probes + BERT stance/sentiment analysis. This is the active replacement for the macro ABM.
+- [ ] AT LLM archetype agents as strategic population layer: frozen API models (GPT-4, Claude, Llama) make per-agent decisions via AT archetype prompting with current state context, while the outer perfsim model (HFCausalLM) is SFT/KL fine-tuned each round as usual. Different archetypes respond differently to the same recommendation, producing different outcomes per beta.
 - [ ] vLLM integration for faster LM inference during generation sweeps
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
-- [ ] Macro ABM cluster validation (beta sweep)
 - [ ] Fix examples, they do not fully load with marimo
+
+## Dropped / parked
+
+- **Macro ABM (`at_macro/`)**: see note in research direction above. The bundled simulator has structural issues that even after patching don't produce meaningful beta-driven differentiation in headline economic outcomes. The bug fixes in `_PatchedAssetsGoods`, `_PatchedUpdateAssets`, `_PatchedMacroRates`, `_PatchedFinancialMarket` and the option-A employment-responds-to-imbalance change are preserved in case someone returns to this work, but no active cluster runs. The covid ABM remains active because its `local_infection_rate` target is genuinely dynamics-produced and beta sweeps differentiate meaningfully there.

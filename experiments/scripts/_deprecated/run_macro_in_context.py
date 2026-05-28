@@ -28,7 +28,7 @@ except ImportError:
     _HAS_WANDB = False
 
 from perfsim.models.hf_causal_lm import HFCausalLMModel
-from perfsim.scenarios.at_macro import make_macro_env
+from perfsim.scenarios._deprecated.at_macro import make_macro_env
 
 
 def _env_or(name, default=None):

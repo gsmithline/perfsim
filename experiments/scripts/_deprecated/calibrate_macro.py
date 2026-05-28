@@ -26,7 +26,7 @@ try:
 except ImportError:
     agent_torch = None
 
-from perfsim.scenarios.at_macro import make_macro_env
+from perfsim.scenarios._deprecated.at_macro import make_macro_env
 
 
 def load_queens_unemployment() -> pd.DataFrame:

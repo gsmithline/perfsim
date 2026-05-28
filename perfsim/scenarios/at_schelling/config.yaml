@@ -1,0 +1,276 @@
+# AT config for Schelling segregation. Mirrors predator_prey/config.yaml.
+# Initial placement of coordinates/type/grid_occupancy/grid_type is
+# zero-valued here and overwritten by env.py's post-init callback.
+
+simulation_metadata:
+  device: 'cpu'
+  num_episodes: 1
+  num_steps_per_episode: 5
+  num_substeps_per_step: 5
+  calibration: false
+  visualize: false
+
+  num_agents: 50
+  grid_height: 10
+  grid_width: 10
+  n_types: 4
+  baseline_threshold: 0.4
+  lambda_: 0.15
+  neighborhood_radius: 1
+  move_hardness: 8.0
+  seed: 0
+
+state:
+  environment:
+    grid_occupancy:
+      name: 'Grid Occupancy'
+      learnable: false
+      shape:
+        - ${simulation_metadata.grid_height}
+        - ${simulation_metadata.grid_width}
+      dtype: 'int'
+      value: 0
+      initialization_function: null
+    grid_type:
+      name: 'Grid Cell Type'
+      learnable: false
+      shape:
+        - ${simulation_metadata.grid_height}
+        - ${simulation_metadata.grid_width}
+      dtype: 'int'
+      value: -1
+      initialization_function: null
+
+  agents:
+    residents:
+      number: ${simulation_metadata.num_agents}
+      properties:
+        coordinates:
+          name: 'Position (row, col)'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+            - 2
+          dtype: 'int'
+          value: 0
+          initialization_function: null
+        type:
+          name: 'Demographic Type ID'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'int'
+          value: 0
+          initialization_function: null
+        same_frac:
+          name: 'Same-type neighbor fraction'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.5
+          initialization_function: null
+        opp_frac:
+          name: 'Opposite-type neighbor fraction'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.5
+          initialization_function: null
+        empty_frac:
+          name: 'Empty-cell fraction in neighborhood'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.0
+          initialization_function: null
+        p_pred:
+          name: 'LM-predicted P(HAPPY)'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.5
+          initialization_function: null
+        effective_threshold:
+          name: 'LM-modulated threshold H_i'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.4
+          initialization_function: null
+        move_decision:
+          name: 'Move decision'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.0
+          initialization_function: null
+        realized_happiness:
+          name: 'Realized happiness 1[s_new >= H_0]'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.0
+          initialization_function: null
+        previous_state:
+          name: 'Prior-round realized happiness'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.5
+          initialization_function: null
+        platform_signal:
+          name: 'LM signal slot'
+          learnable: false
+          shape:
+            - ${state.agents.residents.number}
+          dtype: 'float'
+          value: 0.5
+          initialization_function: null
+
+  objects: null
+
+  network:
+    agent_agent:
+      grid:
+        type: 'grid'
+        arguments:
+          shape:
+            - ${simulation_metadata.grid_height}
+            - ${simulation_metadata.grid_width}
+
+substeps:
+  '0':
+    name: 'ComputeNeighborhood'
+    description: 'Compute same/opp/empty fractions in Moore neighborhood'
+    active_agents:
+      - 'residents'
+    observation:
+      residents: null
+    policy:
+      residents: null
+    transition:
+      compute_neighborhood:
+        generator: 'ComputeNeighborhood'
+        arguments: null
+        input_variables:
+          coordinates: 'agents/residents/coordinates'
+          type: 'agents/residents/type'
+          grid_occupancy: 'environment/grid_occupancy'
+          grid_type: 'environment/grid_type'
+          same_frac: 'agents/residents/same_frac'
+          opp_frac: 'agents/residents/opp_frac'
+          empty_frac: 'agents/residents/empty_frac'
+        output_variables:
+          - same_frac
+          - opp_frac
+          - empty_frac
+
+  '1':
+    name: 'HappinessPredictAction'
+    description: 'Lift platform_signal into p_pred'
+    active_agents:
+      - 'residents'
+    observation:
+      residents: null
+    policy:
+      residents:
+        happiness_predict_action:
+          generator: 'HappinessPredictAction'
+          arguments: null
+          input_variables:
+            platform_signal: 'agents/residents/platform_signal'
+          output_variables:
+            - p_pred
+    transition:
+      write_p_pred:
+        generator: 'WritePPred'
+        arguments: null
+        input_variables:
+          p_pred: 'agents/residents/p_pred'
+        output_variables:
+          - p_pred
+
+  '2':
+    name: 'MoveDecision'
+    description: 'H_i = clip(H_0 - lambda*(p-0.5)); move = ST-Bernoulli'
+    active_agents:
+      - 'residents'
+    observation:
+      residents: null
+    policy:
+      residents: null
+    transition:
+      move_decision:
+        generator: 'MoveDecision'
+        arguments: null
+        input_variables:
+          p_pred: 'agents/residents/p_pred'
+          same_frac: 'agents/residents/same_frac'
+          type: 'agents/residents/type'
+          effective_threshold: 'agents/residents/effective_threshold'
+          move_decision: 'agents/residents/move_decision'
+        output_variables:
+          - effective_threshold
+          - move_decision
+
+  '3':
+    name: 'ExecuteMoves'
+    description: 'Relocate movers to random empty cells'
+    active_agents:
+      - 'residents'
+    observation:
+      residents: null
+    policy:
+      residents: null
+    transition:
+      execute_moves:
+        generator: 'ExecuteMoves'
+        arguments: null
+        input_variables:
+          coordinates: 'agents/residents/coordinates'
+          type: 'agents/residents/type'
+          move_decision: 'agents/residents/move_decision'
+          grid_occupancy: 'environment/grid_occupancy'
+          grid_type: 'environment/grid_type'
+        output_variables:
+          - coordinates
+          - grid_occupancy
+          - grid_type
+
+  '4':
+    name: 'ComputeRealizedHappiness'
+    description: 'Recompute neighborhoods post-move; y = 1[s_new >= H_0]'
+    active_agents:
+      - 'residents'
+    observation:
+      residents: null
+    policy:
+      residents: null
+    transition:
+      compute_realized_happiness:
+        generator: 'ComputeRealizedHappiness'
+        arguments: null
+        input_variables:
+          coordinates: 'agents/residents/coordinates'
+          type: 'agents/residents/type'
+          grid_occupancy: 'environment/grid_occupancy'
+          grid_type: 'environment/grid_type'
+          same_frac: 'agents/residents/same_frac'
+          opp_frac: 'agents/residents/opp_frac'
+          empty_frac: 'agents/residents/empty_frac'
+          realized_happiness: 'agents/residents/realized_happiness'
+          previous_state: 'agents/residents/previous_state'
+        output_variables:
+          - same_frac
+          - opp_frac
+          - empty_frac
+          - realized_happiness
+          - previous_state

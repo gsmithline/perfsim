@@ -1,0 +1,27 @@
+# HTCondor submit file for AT Schelling + LM + KL-SFT beta sweep.
+# H_0 fixed at 0.30 (no per-type thresholds), 3 jobs at beta = 0, 1, 10.
+# Submit with: condor_submit_bid <BID> experiments/condor/at_schelling_lm.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_schelling.sh
+arguments         = $(tag) $(style) $(beta)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-schelling-lm N_ROUNDS=10 K_STEPS=3 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_MAX_STEPS=50 SFT_FULL_EPOCH=0 SFT_BATCH_SIZE=16 GEN_BATCH_SIZE=32 NUM_AGENTS=200 GRID_SIZE=20 BASELINE_THRESHOLD=0.30 LAMBDA=0.15 NEIGHBORHOOD_RADIUS=1 LORA_R=32 USE_LORA=1 SFT_LR=1e-5 WANDB_RUN_SUFFIX=_qwen7b_lora32"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta from experiments/condor/configs_schelling_betas.txt

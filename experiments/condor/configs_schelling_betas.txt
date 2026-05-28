@@ -1,0 +1,3 @@
+at_schelling_sft_b0,     sft,     0.0
+at_schelling_sftkl_b1,   sft_kl,  1.0
+at_schelling_sftkl_b10,  sft_kl,  10.0

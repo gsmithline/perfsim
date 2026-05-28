@@ -1,4 +1,19 @@
-"""Build an AgentTorchEnvironment wired to AT's bundled macro_economics model."""
+"""Build an AgentTorchEnvironment wired to AT's bundled macro_economics model.
+
+PARKED / NOT RECOMMENDED. The bundled macro_economics simulator has
+multiple structural bugs (asset random-walk ignoring demand, inventory
+sign flip, non-workers earning full income, work_propensity never written
+to state, inflation formula structurally negative). All are patched here
+in `_PatchedAssetsGoods`, `_PatchedUpdateAssets`, `_PatchedMacroRates`,
+`_PatchedFinancialMarket`. After patching, the simulator does respond to
+consumption decisions, but LM beta sweeps fail to produce meaningful
+differentiation in headline outcomes. The hand-crafted SFT target
+(`base_by_age - 0.5 * inflation`) is the binding limitation -- it isn't
+genuinely produced by ABM dynamics, so the LM's loss has no real signal
+tied to what the population would actually do.
+
+See perfsim/README.md "Dropped / parked" section for the full story.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +26,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from perfsim.scenarios.at_macro._compat import (
+from perfsim.scenarios._deprecated.at_macro._compat import (
     bundled_nyc_dir,
     bundled_macro_yaml,
     install_agenttorch_alias,
@@ -177,7 +192,7 @@ from agent_torch.models.macro_economics.substeps.utils import (  # noqa: E402
 from agent_torch.core.helpers.environment import grid_network  # noqa: E402
 
 from perfsim.adapters.agenttorch import AgentTorchEnvironment  # noqa: E402
-from perfsim.scenarios.at_macro.action import PerfsimEarningDecision  # noqa: E402
+from perfsim.scenarios._deprecated.at_macro.action import PerfsimEarningDecision  # noqa: E402
 
 
 class _PatchedUpdateAssets(UpdateAssets):

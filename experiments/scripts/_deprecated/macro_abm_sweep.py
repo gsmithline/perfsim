@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 
-from perfsim.scenarios.at_macro import make_macro_env
+from perfsim.scenarios._deprecated.at_macro import make_macro_env
 
 
 def run_fixed_policy(

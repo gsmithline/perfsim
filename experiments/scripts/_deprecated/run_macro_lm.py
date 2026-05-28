@@ -26,7 +26,7 @@ from perfsim.learners.lm.kl_sft import KLSFTLearner
 from perfsim.learners.lm.sft import SFTLearner
 from perfsim.losses import MSELoss
 from perfsim.models.hf_causal_lm import HFCausalLMModel
-from perfsim.scenarios.at_macro import make_macro_env
+from perfsim.scenarios._deprecated.at_macro import make_macro_env
 from perfsim.simulator import Simulator
 
 
