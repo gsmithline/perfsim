@@ -257,7 +257,7 @@ def main() -> int:
         print(f"[round {t}] {row}", flush=True)
 
     sim = Simulator(env=env, learner=learner, loss=MSELoss(), metrics={"m": metrics})
-    sim.predictor.model = scorer
+    sim.predictor._model = scorer  # env queries scorer; learner still trains lm
     print(f"[run] starting outer loop: n_rounds={n_rounds} K={k_steps}", flush=True)
     t_loop = time.time()
     hist = sim.run(n_rounds=n_rounds, epoch_size=k_steps, seed=seed, on_round=on_round)
