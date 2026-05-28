@@ -257,6 +257,15 @@ def main() -> int:
     grids_dir = out_dir / "grids"
     grids_dir.mkdir(exist_ok=True)
 
+    # Log the initial-placement grid (pre-loop). This is identical across
+    # jobs at the same seed, so the t=-1 frame is the shared starting state.
+    init_grid = env.runner.state["environment"]["grid_type"].detach().cpu().clone()
+    torch.save(init_grid, grids_dir / "grid_init.pt")
+    if wandb is not None:
+        fig0 = _render_grid(init_grid, title=f"{run_tag}  initial")
+        wandb.log({"round": -1, "grid": wandb.Image(fig0)})
+        plt.close(fig0)
+
     def on_round(t, record):
         row = {"round": t}
         for k, v in record.items():
@@ -274,9 +283,8 @@ def main() -> int:
         torch.save(grid, grids_dir / f"grid_t{t:03d}.pt")
         if wandb is not None:
             fig = _render_grid(grid, title=f"{run_tag}  round {t}")
-            row["grid"] = wandb.Image(fig)
+            wandb.log({**row, "grid": wandb.Image(fig)})
             plt.close(fig)
-            wandb.log(row)
         print(f"[round {t}] {row}", flush=True)
 
     sim = Simulator(env=env, learner=learner, loss=MSELoss(), metrics={"m": metrics})
