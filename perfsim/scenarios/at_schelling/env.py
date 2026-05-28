@@ -95,9 +95,18 @@ def _patched_config(overrides: dict[str, Any]) -> dict[str, Any]:
     cfg = read_config(CONFIG_YAML, register_resolvers=_register_resolvers_once())
     meta = cfg["simulation_metadata"]
     meta.update(overrides)
-    # state.agents.residents.number is interpolated from num_agents at load
-    # time; if num_agents is overridden, reflect it where AT actually reads it.
-    cfg["state"]["agents"]["residents"]["number"] = int(meta["num_agents"])
+    n = int(meta["num_agents"])
+    H = int(meta["grid_height"])
+    W = int(meta["grid_width"])
+    cfg["state"]["agents"]["residents"]["number"] = n
+    # Property shapes interpolate ${state.agents.residents.number} at YAML load,
+    # so they freeze to the default before this override propagates. Rewrite
+    # them post-load so they match the patched num_agents.
+    props = cfg["state"]["agents"]["residents"]["properties"]
+    for name, prop in props.items():
+        prop["shape"] = [n, 2] if name == "coordinates" else [n]
+    for grid_name in ("grid_occupancy", "grid_type"):
+        cfg["state"]["environment"][grid_name]["shape"] = [H, W]
     return cfg
 
 
