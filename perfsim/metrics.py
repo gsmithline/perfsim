@@ -19,6 +19,12 @@ def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
         return loss(model, data, reduction="mean")
 
 
+def performative_risk_grad(world: World, model: Model, loss: Loss) -> Tensor:
+    """Performative risk with gradients live (for PerfGD optimization)."""
+    data = world.grad_sample(model)
+    return loss(model, data, reduction="mean")
+
+
 def decoupled_risk(
     world: World,
     model_deploy: Model,

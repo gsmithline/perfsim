@@ -67,6 +67,7 @@ def main() -> int:
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 1e-5)
     group_prompting = os.environ.get("GROUP_PROMPTING", "0").lower() in ("1", "true", "yes")
+    consumption_noise = _env_float("CONSUMPTION_NOISE", 0.05)
     calibrated_uac_path = os.environ.get("CALIBRATED_UAC", "")
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -108,6 +109,9 @@ def main() -> int:
     def logit_signal_writer(runner, preds):
         if preds.ndim == 2 and preds.shape[-1] == 1:
             preds = preds.squeeze(-1)
+        if consumption_noise > 0:
+            noise = torch.randn_like(preds) * consumption_noise
+            preds = preds + noise
         p = preds.clamp(min=0.01, max=0.99)
         logit_p = torch.log(p / (1.0 - p))
         runner.state["agents"]["consumers"]["platform_signal"] = logit_p.detach().clone()
@@ -276,44 +280,41 @@ def main() -> int:
     else:
         effective_max_steps = max_steps
 
-    # TODO: refine target extractor to be genuinely performative.
     _cit_init = env.runner.state["agents"]["consumers"]
     _age_init = _cit_init["age"].squeeze().long()
     _gender_init = _cit_init["gender"].squeeze().long()
     _ethnicity_init = _cit_init["ethnicity"].squeeze().long()
-    _keys = (_age_init * 100 + _gender_init * 10 + _ethnicity_init).long()
-    _unique_keys, _inverse = torch.unique(_keys, return_inverse=True)
+    _keys_init = (_age_init * 100 + _gender_init * 10 + _ethnicity_init).long()
+    _unique_keys, _bucket_idx = torch.unique(_keys_init, return_inverse=True)
     _n_buckets = int(_unique_keys.shape[0])
 
-    # Base recommended consumption by age:
-    # younger / mid-career → recommend higher consumption (build economy)
-    # retirees / high-age → recommend lower (preserve savings)
-    _base = torch.where(
-        _age_init >= 4, torch.tensor(0.3),   # 65+ → conservative
-        torch.where(
-            _age_init >= 2, torch.tensor(0.5),  # 30-64 → balanced
-            torch.tensor(0.7),                   # under 30 → growth-oriented
-        ),
+    _prev_assets = _cit_init["assets"].float().detach().mean(dim=1).clone()
+
+    _fallback_target = torch.where(
+        _age_init >= 4, torch.tensor(0.3),
+        torch.where(_age_init >= 2, torch.tensor(0.5), torch.tensor(0.7)),
     ).float()
 
     def custom_state_extractor(runner):
-        # Per-round target depends on agent's static profile (base) plus a
-        # small adjustment from current inflation. Higher inflation =
-        # recommend less consumption (preserve purchasing power).
-        # Performative loop closes because inflation depends on past
-        # consumption decisions.
+        nonlocal _prev_assets
         consumers = runner.state["agents"]["consumers"]
-        env_state = runner.state["environment"]
-        # Inflation tensor shape is (1, T+1) historically; take last value.
-        inflation = env_state.get("P_i")
-        if inflation is not None:
-            try:
-                inf_scalar = float(inflation[-1][-1].item())
-            except Exception:
-                inf_scalar = 0.0
-        else:
-            inf_scalar = 0.0
-        target = (_base - 0.5 * inf_scalar).clamp(0.05, 0.95)
+        cur_assets = consumers["assets"].float().detach().mean(dim=1)
+        asset_gain = cur_assets - _prev_assets
+        cons_used = consumers["consumption_propensity"].float().detach().squeeze()
+
+        target = _fallback_target.clone()
+        for b in range(_n_buckets):
+            mask = _bucket_idx == b
+            if mask.sum() < 2:
+                continue
+            bucket_gains = asset_gain[mask]
+            bucket_cons = cons_used[mask]
+            best = bucket_gains.argmax()
+            target[mask] = bucket_cons[best]
+
+        target = target.clamp(0.05, 0.95)
+        _prev_assets = cur_assets.clone()
+
         return {
             "x": consumers["age"].float().detach(),
             "y": target.detach().reshape(-1, 1),
@@ -322,7 +323,8 @@ def main() -> int:
     env._state_extractor = custom_state_extractor  # noqa: SLF001
     _y0 = custom_state_extractor(env.runner)["y"].squeeze()
     print(
-        f"[run] target = consumption_aware: n_buckets={_n_buckets} "
+        f"[run] target = best-outcome consumption per bucket (noise={consumption_noise}): "
+        f"n_buckets={_n_buckets} "
         f"init y min={float(_y0.min()):.3f} max={float(_y0.max()):.3f} "
         f"mean={float(_y0.mean()):.3f} std={float(_y0.std()):.3f}",
         flush=True,
