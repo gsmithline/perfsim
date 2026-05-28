@@ -135,8 +135,8 @@ def main() -> int:
     # with the value found by scripts/calibrate_covid_single.py. Without this,
     # the ABM uses AT's bundled R2=4.75 which may not match the target epidemic
     # regime.
-    calibrated_r2 = os.environ.get("CALIBRATED_R2")
-    if calibrated_r2 is not None:
+    calibrated_r2 = os.environ.get("CALIBRATED_R2", "").strip()
+    if calibrated_r2:
         r2_val = float(calibrated_r2)
         transmission = env.runner.initializer.transition_function["0"].new_transmission
         with torch.no_grad():
