@@ -1,0 +1,28 @@
+# HTCondor submit file for in-context macro performative loop sweep.
+# Each row in configs_macro_in_context.txt is (tag, static, history_window).
+# Submit with: condor_submit_bid <BID> experiments/condor/at_macro_in_context.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_in_context.sh
+arguments         = $(tag) $(static) $(window)
+
+# No SFT, only inference. Single 7B model fits in ~16GB VRAM.
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 24000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-at-macro-in-context N_ROUNDS=20 K_STEPS=3 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct GEN_BATCH_SIZE=32 MAX_NEW_TOKENS=16 MACRO_YAML=config_100_agents.yaml N_AGENTS=20000 GROUP_PROMPTING=1 CONSUMPTION_NOISE=0.05 WANDB_RUN_SUFFIX=_qwen7b CALIBRATED_UAC=/home/gsmithline/perfsim/runs/calibration_macro/recovery_lr0p05/calibrated_UAC.pt"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, static, window from experiments/condor/configs_macro_in_context.txt
