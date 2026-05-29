@@ -151,6 +151,72 @@ class HFCausalLMModel(Model):
         ).unsqueeze(-1)
         return values
 
+    @torch.no_grad()
+    def perplexity(self, texts: list[str]) -> float:
+        """Mean token-level perplexity of `texts` under the current model.
+
+        Standard model-collapse health metric. Scores each text independently
+        (no padding) so left-padding for generation does not corrupt the NLL.
+        """
+        self.ensure_loaded()
+        assert self.inner_model is not None and self.tokenizer is not None
+        was_use_cache = bool(getattr(self.inner_model.config, "use_cache", False))
+        self.inner_model.config.use_cache = False
+        total_nll = 0.0
+        total_tok = 0
+        try:
+            for text in texts:
+                ids = self.tokenizer(
+                    text, return_tensors="pt", truncation=True
+                ).input_ids.to(self._target_device)
+                if ids.shape[1] < 2:
+                    continue
+                out = self.inner_model(ids, labels=ids)
+                n_tok = ids.shape[1] - 1
+                total_nll += float(out.loss) * n_tok
+                total_tok += n_tok
+        finally:
+            self.inner_model.config.use_cache = was_use_cache
+        if total_tok == 0:
+            return float("nan")
+        return float(torch.tensor(total_nll / total_tok).exp())
+
+    @torch.no_grad()
+    def answer_distribution_stats(self) -> dict:
+        """Entropy and top-1 prob of the answer-position next-token distribution,
+        averaged over all agents.
+
+        Model-collapse diagnostic: as the output distribution sharpens, entropy
+        falls toward 0 and top-1 rises toward 1. This is the model's own
+        distribution, decoupled from the argmax that drives the dynamics, so it
+        measures "low-probability tokens disappear" at the model level. One
+        forward over all agents (left-padding => logits[:, -1] is the next-token
+        distribution after each full prompt).
+        """
+        self.ensure_loaded()
+        assert self.inner_model is not None and self.tokenizer is not None
+        prompts = [self.build_prompt(self.profile_at(i)) for i in range(self._n)]
+        was_use_cache = bool(getattr(self.inner_model.config, "use_cache", False))
+        self.inner_model.config.use_cache = False
+        ent_sum = 0.0
+        top1_sum = 0.0
+        count = 0
+        try:
+            for i in range(0, len(prompts), self._gen_batch_size):
+                batch = prompts[i : i + self._gen_batch_size]
+                inputs = self.tokenizer(
+                    batch, return_tensors="pt", padding=True, truncation=True
+                ).to(self._target_device)
+                logits = self.inner_model(**inputs).logits[:, -1, :].float()
+                logp = torch.log_softmax(logits, dim=-1)
+                p = logp.exp()
+                ent_sum += float((-(p * logp).sum(dim=-1)).sum())
+                top1_sum += float(p.max(dim=-1).values.sum())
+                count += logits.shape[0]
+        finally:
+            self.inner_model.config.use_cache = was_use_cache
+        return {"answer_entropy": ent_sum / count, "answer_top1": top1_sum / count}
+
     @staticmethod
     def _deduplicate_prompts(prompts: list[str]) -> tuple[list[str], list[int]]:
         """Deduplicate by exact equality; returns (unique, inverse_indices)."""

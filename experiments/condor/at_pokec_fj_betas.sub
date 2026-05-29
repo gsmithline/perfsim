@@ -1,0 +1,36 @@
+# HTCondor: Pokec FJ + LM beta sweep (Fig 2a replica).
+#
+# The LM predicts each agent's smoking attitude in [0,1]; predictions seed FJ on
+# the real Pokec graph; the population settles; the LM is fine-tuned (SFT/KL-SFT)
+# on the labeled subset's evolved opinions. Higher KL_BETA keeps the LM near its
+# diverse prior, so the population mean rises toward the untuned LLM and variance
+# stays large; low beta collapses both. One condor job + one W&B run per beta.
+#
+# Config: 7B LoRA r=512, chat template, 30 rounds, deploy every round to FJ
+# equilibrium. Sizing: 128G RAM, one >=80GB GPU.
+#
+# Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_betas.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_fj.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-lm N_ROUNDS=30 EPOCH_SIZE=20 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_MAX_STEPS=50 SFT_BATCH_SIZE=8 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=1e-5 N_LABELED=1730 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 WANDB_RUN_SUFFIX=_qwen7b_lora512"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, seed, deploy_every, regime from experiments/condor/configs_pokec_fj_betas.txt

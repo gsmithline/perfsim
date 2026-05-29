@@ -1,0 +1,31 @@
+# HTCondor: Pokec FJ + LM cheap smoke test (0.5B, 3 rounds).
+#
+# Validates the whole cluster pipeline end-to-end (data load, LM forward,
+# SFT/KL-SFT, W&B logging, outputs) on the 0.5B model before committing 7B
+# hours. Two jobs: sft and sft_kl. Sizing: 48G RAM, one >=24GB GPU.
+#
+# Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_smoke.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_fj.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime)
+
+request_cpus      = 4
+request_memory    = 48G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 24000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-lm-smoke N_ROUNDS=3 EPOCH_SIZE=20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_MAX_STEPS=1 SFT_BATCH_SIZE=2 GEN_BATCH_SIZE=32 LORA_R=8 USE_LORA=1 SFT_LR=5e-5 N_LABELED=1730 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=32 WANDB_RUN_SUFFIX=_smoke05b"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, seed, deploy_every, regime from experiments/condor/configs_pokec_fj_smoke.txt

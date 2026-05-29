@@ -1,0 +1,16 @@
+# tag, style, beta, seed, deploy_every, regime
+# Fig 2a replica: opinion family vs beta. Deploy every round, replace, to FJ
+# equilibrium each round, 30 retraining steps. Higher beta keeps the LLM near
+# its diverse prior so the population mean rises toward the untuned LLM and
+# variance stays large; low beta collapses both. frozen = "untuned (no
+# post-training)" baseline; sft = "beta=0 (SFT)".
+pokec_fj_untuned,        frozen,  0.0,    0,  1,  replace
+pokec_fj_sft_b0,         sft,     0.0,    0,  1,  replace
+pokec_fj_sftkl_b0p01,    sft_kl,  0.01,   0,  1,  replace
+pokec_fj_sftkl_b0p05,    sft_kl,  0.05,   0,  1,  replace
+pokec_fj_sftkl_b0p1,     sft_kl,  0.1,    0,  1,  replace
+pokec_fj_sftkl_b0p3,     sft_kl,  0.3,    0,  1,  replace
+pokec_fj_sftkl_b0p5,     sft_kl,  0.5,    0,  1,  replace
+pokec_fj_sftkl_b1,       sft_kl,  1.0,    0,  1,  replace
+pokec_fj_sftkl_b3,       sft_kl,  3.0,    0,  1,  replace
+pokec_fj_sftkl_b10,      sft_kl,  10.0,   0,  1,  replace
