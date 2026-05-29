@@ -94,7 +94,8 @@ Optional protocols an Environment may declare:
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
 - [ ] Change data collection settings (refresh data set each round or append growing data)
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
-- [ ] Fix examples, they do not fully load with marimo
+- [ ] Add in Hydra to configure experiments
+
 
 ## Dropped / parked
 
