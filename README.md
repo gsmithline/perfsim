@@ -98,4 +98,4 @@ Optional protocols an Environment may declare:
 
 ## Dropped / parked
 
-- **Macro ABM (`at_macro/`)**: See note in research direction above.  I found many bugs with the simulator had to change so much that it wasn't faithful hence dropping. 
+- **Macro ABM (`at_macro/`)**: I found many bugs with the simulator had to change so much that it wasn't faithful hence dropping. 
