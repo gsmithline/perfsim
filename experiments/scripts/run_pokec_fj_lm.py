@@ -277,9 +277,13 @@ def main() -> int:
             for i in range(min(n_ppl, n))
         ]
 
+    # bf16 on GPU (matches opdyn SFTConfig bf16=(DEVICE=="cuda")); fp32 + use_cpu
+    # otherwise so a CUDA-less node fails cleanly instead of a confusing bf16 error.
+    trainer_kwargs = {"bf16": device == "cuda", "use_cpu": device != "cuda"}
     # Epoch-based training (matches the opinion-dynamics study: num_train_epochs
     # per round, not a fixed step count). SFT_EPOCHS=0 falls back to max_steps.
-    trainer_kwargs = {"num_train_epochs": sft_epochs, "max_steps": -1} if sft_epochs > 0 else {}
+    if sft_epochs > 0:
+        trainer_kwargs.update({"num_train_epochs": sft_epochs, "max_steps": -1})
     learner_kwargs = dict(
         model=lm, loss=MSELoss(), max_steps=max_steps,
         per_device_batch_size=sft_batch_size, output_dir=str(out_dir / "trl"),
