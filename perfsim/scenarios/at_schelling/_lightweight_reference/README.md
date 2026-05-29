@@ -179,4 +179,3 @@ Hardcoded for Stage 1:
 
 - `perfsim/scenarios/at_covid/README.md` -- analogous wiring for covid.
 - `perfsim/adapters/agenttorch.py` -- adapter contract.
-- `STAGE_1_REPORT.md` (in this dir) -- honest verification log.
