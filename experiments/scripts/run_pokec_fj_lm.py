@@ -171,7 +171,7 @@ def main() -> int:
     training_style = _env_or("TRAINING_STYLE", "sft_kl")
     base_model = _env_or("BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
     n_rounds = _env_int("N_ROUNDS", 12)
-    epoch_size = _env_int("EPOCH_SIZE", 10)
+    epoch_size = _env_int("EPOCH_SIZE", 100)
     deploy_every = _env_int("DEPLOY_EVERY", 1)
     data_regime = os.environ.get("DATA_REGIME", "replace")
     seed = _env_int("SEED", 0)
