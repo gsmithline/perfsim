@@ -162,6 +162,7 @@ def main() -> int:
     out_dir = Path(os.environ.get("OUT_DIR", f"runs/pokec_fj_lm/{run_tag}"))
     wandb_project = os.environ.get("WANDB_PROJECT")
     max_steps = _env_int("SFT_MAX_STEPS", 1)
+    sft_epochs = _env_int("SFT_EPOCHS", 1)
     gen_batch_size = _env_int("GEN_BATCH_SIZE", 32)
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 2)
     lora_r = _env_int("LORA_R", 8)
@@ -178,7 +179,8 @@ def main() -> int:
         "run_tag": run_tag, "kl_beta": kl_beta, "training_style": training_style,
         "base_model": base_model, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "deploy_every": deploy_every, "data_regime": data_regime, "seed": seed,
-        "n_labeled": n_labeled, "max_steps": max_steps, "sft_batch_size": sft_batch_size,
+        "n_labeled": n_labeled, "max_steps": max_steps, "sft_epochs": sft_epochs,
+        "sft_batch_size": sft_batch_size,
         "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
         "host": os.uname().nodename,
     }
@@ -246,11 +248,14 @@ def main() -> int:
             for i in range(min(n_ppl, n))
         ]
 
+    # Epoch-based training (matches the opinion-dynamics study: num_train_epochs
+    # per round, not a fixed step count). SFT_EPOCHS=0 falls back to max_steps.
+    trainer_kwargs = {"num_train_epochs": sft_epochs, "max_steps": -1} if sft_epochs > 0 else {}
     learner_kwargs = dict(
         model=lm, loss=MSELoss(), max_steps=max_steps,
         per_device_batch_size=sft_batch_size, output_dir=str(out_dir / "trl"),
         response_template="<|im_start|>assistant\n", learning_rate=sft_lr,
-        target_formatter=format_number,
+        target_formatter=format_number, trainer_kwargs=trainer_kwargs,
     )
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)

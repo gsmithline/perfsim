@@ -109,16 +109,22 @@ class KLSFTLearner(SFTLearner):
                         input_ids=inputs["input_ids"],
                         attention_mask=inputs.get("attention_mask"),
                     ).logits
-                logp = F.log_softmax(outputs.logits, dim=-1)
-                logq = F.log_softmax(ref_logits, dim=-1)
-                p = logp.exp()
-                kl_per_token = (p * (logp - logq)).sum(dim=-1)
-                attn = inputs.get("attention_mask")
-                if attn is not None:
-                    denom = attn.sum().clamp_min(1)
-                    kl = (kl_per_token * attn).sum() / denom
+                # KL on the completion tokens only (labels != -100), with the
+                # next-token shift, so beta is on the same scale as the
+                # opinion-dynamics study (KL anchors the answer, not the prompt).
+                labels = inputs.get("labels")
+                if labels is not None:
+                    mask = (labels != -100).float()
                 else:
-                    kl = kl_per_token.mean()
+                    attn = inputs.get("attention_mask")
+                    mask = attn.float() if attn is not None else torch.ones(
+                        outputs.logits.shape[:2], device=outputs.logits.device
+                    )
+                logp = F.log_softmax(outputs.logits[:, :-1, :], dim=-1)
+                logq = F.log_softmax(ref_logits[:, :-1, :], dim=-1)
+                mask_shift = mask[:, 1:]
+                kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
+                kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
                 total = ce + kl_beta * kl
                 return (total, outputs) if return_outputs else total
 

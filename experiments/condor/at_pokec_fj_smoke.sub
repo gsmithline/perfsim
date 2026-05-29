@@ -17,7 +17,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 24000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-lm-smoke N_ROUNDS=3 EPOCH_SIZE=20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_MAX_STEPS=1 SFT_BATCH_SIZE=2 GEN_BATCH_SIZE=32 LORA_R=8 USE_LORA=1 SFT_LR=5e-5 N_LABELED=1730 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=32 WANDB_RUN_SUFFIX=_smoke05b"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-lm-smoke N_ROUNDS=3 EPOCH_SIZE=20 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=8 USE_LORA=1 SFT_LR=5e-5 N_LABELED=1730 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=32 WANDB_RUN_SUFFIX=_smoke05b"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err

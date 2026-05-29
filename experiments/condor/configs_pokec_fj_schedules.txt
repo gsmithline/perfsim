@@ -1,16 +1,3 @@
-# tag, style, beta, seed, deploy_every, regime
-# Deployment-schedule factorial (style=sft, beta=0, seed=0):
-#   1. deploy every round   -> replace, accumulate
-#   2. deploy every K=3     -> replace, accumulate, deployed_into, not_deployed_into
-# NOTE: the LLM-driven FJ dynamics converge fast (as in the opinion-dynamics
-# runs), so within a fixed-deployment window the K rounds produce near-identical
-# settled opinions. Consequence: deployed_into reduces to replace (both = the
-# current deployment's settled data, just duplicated K times). accumulate (full
-# history) and not_deployed_into (history minus the current deployment) stay
-# distinct, because across deployments the mean has drifted and they carry the
-# older distributions. So the meaningful contrasts are:
-#   replace == deployed_into  <  not_deployed_into  <  accumulate
-# in how much drifted history each retrain sees.
 pokec_fj_K1_replace,        sft,  0.0,  0,  1,  replace
 pokec_fj_K1_accumulate,     sft,  0.0,  0,  1,  accumulate
 pokec_fj_K3_replace,        sft,  0.0,  0,  3,  replace
