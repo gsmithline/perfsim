@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING, Callable, Sequence
 import torch
 from torch import Tensor
 
-from perfsim.core.model import Model
 import pandas as pd
-from transformers import PreTrainedModel, PreTrainedTokenizerBase,  AutoModelForCausalLM, AutoTokenizer
+from transformers import PreTrainedModel, PreTrainedTokenizerBase, AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
+
+from perfsim.core.model import Model
 
 
 
@@ -21,28 +22,10 @@ PromptBuilder = Callable[[object, "PreTrainedTokenizerBase"], str]
 class HFCausalLMModel(Model):
     """HuggingFace causal LM wrapped as a perfsim Model.
 
-    Args:
-        base_model_name: HuggingFace model ID (e.g."Qwen/Qwen2.5-0.5B-Instruct").
-        profiles: Row-aligned per-agent metadata, typically a
-                         pandas.DataFrame of length N. The i-th row
-                         is the profile for agent i.
-        prompt_builder: Callable taking profile_row, tokenizer and
-                         returning the full prompt string for generation.
-        use_lora: Whether to wrap the base model with a LoRA adapter
-                         via PEFT. Default True.
-        lora_r: LoRA rank.
-        lora_alpha: LoRA scaling factor.
-        lora_target_modules: Module name patterns LoRA targets.
-        device: torch device for the model. CPU by defaulnpass
-                         cuda or mps if available.
-        dtype: Model dtype. Defaults to float32 on CPU (bf16 on CPU is slow) 
-                            use bf16 on GPU.
-        max_new_tokens:  Generation budget per query.
-        gen_batch_size:  Batched generation chunk size.
-        load_now:        If False defer the HF/PEFT imports and model
-                         download until ensure_loaded() is called.
-                         Lets unit tests construct the wrapper without
-                         pulling in transformers.
+    profiles is row-aligned per-agent metadata (DataFrame, row i = agent i);
+    prompt_builder(profile_row, tokenizer) -> prompt string. use_lora wraps the
+    base model with a PEFT LoRA adapter. load_now=False defers the model
+    download until ensure_loaded(), so tests can construct without transformers.
     """
 
     def __init__(
@@ -126,11 +109,7 @@ class HFCausalLMModel(Model):
         return self._profiles
 
     def profile_at(self, idx: int) -> object:
-        """Return the profile row for agent index `idx`.
-
-        Works for pandas DataFrames, 
-        lists/tuples, or any object exposing __getitem__.
-        """
+        """Profile row for agent `idx` (DataFrame, list, or __getitem__ object)."""
         if hasattr(self._profiles, "iloc"):
             return self._profiles.iloc[int(idx)]
         return self._profiles[int(idx)]
@@ -174,11 +153,7 @@ class HFCausalLMModel(Model):
 
     @staticmethod
     def _deduplicate_prompts(prompts: list[str]) -> tuple[list[str], list[int]]:
-        """Deduplicate prompts by exact string equality.
-
-        Returns (unique_prompts, inverse_indices) where
-        inverse_indices[i] is the index into unique_prompts for agent i.
-        """
+        """Deduplicate by exact equality; returns (unique, inverse_indices)."""
         seen: dict[str, int] = {}
         unique: list[str] = []
         inverse: list[int] = []
@@ -192,15 +167,9 @@ class HFCausalLMModel(Model):
     def _generate(self, prompts: list[str]) -> list[str]:
         """Batched greedy generation.
 
-        Toggles gradient checkpointing off and re-enables KV cache for the
-        duration of generation. HF refuses to populate the KV cache when
-        gradient checkpointing is active (the recompute-on-backward logic
-        would invalidate cached keys/values), so leaving it on means every
-        decode step re-runs the full prefix forward pass. Toggling around
-        generation gets the ~5-10x KV-cache speedup back without affecting
-        the training path. Original state is restored in `finally` so SFT
-        steps after generation continue to use grad checkpointing for the
-        memory savings.
+        Toggles grad checkpointing off + KV cache on for generation (HF won't
+        populate the cache under checkpointing, costing ~5-10x), restoring both
+        in `finally` so the training path keeps checkpointing's memory savings.
         """
         assert self.inner_model is not None
         assert self.tokenizer is not None
@@ -252,13 +221,10 @@ class HFCausalLMModel(Model):
 
  
     def get_params(self) -> Tensor:
-        """Return a 1-element tensor: L2 norm of trainable parameters.
+        """L2 norm of trainable params as a 1-element tensor.
 
-        The flat-tensor view of an LM is not meaningful (billions of
-        params, and they live across HF/PEFT/nn.Linear layers in a
-        non-canonical order). The Simulator only uses get_params for
-        history bookkeeping and stability_gap a scalar diagnostic is the
-        honest substitute.
+        A flat-tensor view of an LM is not meaningful; the Simulator only uses
+        this for history / stability_gap, so a scalar norm is the honest stand-in.
         """
         if self.inner_model is None:
             return torch.zeros(1)

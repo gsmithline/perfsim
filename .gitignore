@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 
+# marimo editor session cache
+**/__marimo__/
+
 # Distribution / packaging
 .Python
 build/

@@ -9,21 +9,18 @@ def _():
     """
     RRM vs RGD convergence demo on GaussianShiftWorld.
 
-    Both Learners chase the same closed-form fixed point theta* = (I - A)^-1 b, on a stateless, MSE-regression world. 
-    ERMLearner solves to convergence each round (RRM), GradientLearner takes ``k`` SGD steps per round (RGD). 
-    Prints the distance to theta* per round and saves a log-scale convergence plot.
+    Both learners chase the same closed-form fixed point theta* = (I - A)^-1 b on
+    a stateless MSE-regression world. ERMLearner solves to convergence each round
+    (RRM); GradientLearner takes k SGD steps per round (RGD). Prints the distance
+    to theta* per round.
 
-    Run:
-        python examples/gaussian_shift_rrm_vs_rgd.py
-        python examples/gaussian_shift_rrm_vs_rgd.py --d 5 --n-rounds 40
+    Run: marimo edit examples/gaussian_shift_rrm.py  (or python examples/gaussian_shift_rrm.py)
     """
     return
 
 
 @app.cell
 def _():
-    from __future__ import annotations
-
     import argparse
     import os
     from pathlib import Path
@@ -52,13 +49,8 @@ def _():
 
 @app.cell
 def _(GaussianShiftWorld, torch):
-    def _make_world(d: int, contraction: float, seed: int) -> GaussianShiftWorld:
-        """
-        Construct a contractive Gaussian-shift world.
-
-        A is set so ||A||_2 == contraction (< 1 for RRM convergence) by drawing
-        a random matrix, normalizing by its spectral norm, then scaling.
-        """
+    def make_world(d: int, contraction: float, seed: int) -> GaussianShiftWorld:
+        """Contractive Gaussian-shift world with ||A||_2 == contraction (<1)."""
         g = torch.Generator().manual_seed(seed)
         raw = torch.randn(d, d, generator=g)
         spectral = torch.linalg.matrix_norm(raw, ord=2)
@@ -66,7 +58,7 @@ def _(GaussianShiftWorld, torch):
         b = torch.randn(d, generator=g) * 0.5
         return GaussianShiftWorld(A=A, b=b, sigma_noise=0.01, batch_size=512)
 
-    return
+    return (make_world,)
 
 
 @app.cell
@@ -79,7 +71,7 @@ def _(
     MSELoss,
     Simulator,
 ):
-    def _run_one(
+    def run_one(
         world: GaussianShiftWorld,
         learner_kind: str,
         *,
@@ -88,9 +80,7 @@ def _(
         steps: int,
         seed: int,
     ) -> tuple[History, list[float]]:
-        """
-        Run one simulator and return (history, || theta_t - theta||_2 trajectory).
-        """
+        """Run one simulator; return (history, ||theta_t - theta*||_2 trajectory)."""
         model = LinearModel(in_features=world.dim, out_features=1, bias=False)
         loss = MSELoss()
         if learner_kind == "rrm":
@@ -110,30 +100,29 @@ def _(
             distances.append((theta - theta_star).norm().item())
         return history, distances
 
-    return
+    return (run_one,)
 
 
 @app.cell
-def _():
+def _(make_world, run_one):
     d = 3
     contraction = .5
     n_rounds = 20
-    rgd_lr = 20
-    rgd_steps = 1
+    rgd_lr = 0.05
+    rgd_steps = 5
     seed = 0
-    out = "figures/gaussian_shift_rrm_vs_rgd.png"
 
 
-    world = _make_world(d, contraction, seed)
+    world = make_world(d, contraction, seed)
     theta_star = world.closed_form_fp()
     print(f"# GaussianShift: d={d} ||A||_2={contraction}")
     print(f"# theta* = {theta_star.tolist()}")
 
-    _, rrm_dist = _run_one(
+    _, rrm_dist = run_one(
         world, "rrm", n_rounds=n_rounds, lr=rgd_lr, steps=rgd_steps, seed=seed
     )
     world.reset(seed=seed)
-    _, rgd_dist = _run_one(
+    _, rgd_dist = run_one(
         world, "rgd", n_rounds=n_rounds, lr=rgd_lr, steps=rgd_steps, seed=seed
     )
 

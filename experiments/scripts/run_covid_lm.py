@@ -64,7 +64,6 @@ def main() -> int:
     sft_full_epoch = os.environ.get("SFT_FULL_EPOCH", "0").lower() in ("1", "true", "yes")
     target_kind = os.environ.get("TARGET_KIND", "exposed_binary")
     lora_r = _env_int("LORA_R", 32)
-    # every parameter and bypasses any LoRA-capacity bottleneck.
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 1e-5)
     group_prompting = os.environ.get("GROUP_PROMPTING", "0").lower() in ("1", "true", "yes")
@@ -108,20 +107,10 @@ def main() -> int:
     torch.manual_seed(seed)
     print("[run] building covid env", flush=True)
     t0 = time.time()
-    '''
-    '''
-    # Seed initial infections via the factory so Simulator.run's env.reset
-    # does not wipe them between sim.run() calls. Without this, the
-    # population stays effectively all-Susceptible and the LM's isolation
-    # decisions have nothing to gate (daily_infected stays at the baseline
-    # exposed count across all rounds and betas).
-    # keep_trajectory=True: AT runner state PERSISTS across env.run() calls.
-    # Without this, env.run resets state to the initial seeded state every
-    # round (only LM weights carry across rounds), so the "performative" loop
-    # is degenerate: every round is an independent K-step rollout. With this
-    # flag, the AT sim evolves continuously and round t starts from the end
-    # state of round t-1, so the LM's earlier policy choices have cumulative
-    # downstream effect (the actual performative-prediction semantics).
+    # Seed infections via the factory so env.reset does not wipe them between
+    # rounds. keep_trajectory=True persists AT state across rounds, so round t
+    # starts from round t-1's end state (the real performative loop, not
+    # independent K-step rollouts).
     env = make_covid_env(
         init_seed=seed,
         initial_infections_fraction=seed_frac,
@@ -131,10 +120,8 @@ def main() -> int:
     n_agents = env.runner.state["agents"]["citizens"]["age"].shape[0]
     citizens = env.runner.state["agents"]["citizens"]
 
-    # Apply calibrated R2 if provided. Overrides AT's default transmission rate
-    # with the value found by scripts/calibrate_covid_single.py. Without this,
-    # the ABM uses AT's bundled R2=4.75 which may not match the target epidemic
-    # regime.
+    # Override AT's default transmission rate with a calibrated R2 if provided
+    # (from calibrate_covid_single.py); otherwise the bundled R2=4.75 is used.
     calibrated_r2 = os.environ.get("CALIBRATED_R2", "").strip()
     if calibrated_r2:
         r2_val = float(calibrated_r2)
@@ -146,9 +133,8 @@ def main() -> int:
     print(f"[run] env ready: {n_agents} agents, {n_seeded} initially infected, "
           f"in {time.time() - t0:.1f}s", flush=True)
 
-    # Build per-agent profile with the two features the bundled covid substep
-    # actually uses for transmission: age bucket (SFSusceptibility multiplier)
-    # and mean_interactions (per-agent contacts/day).
+    # Profile uses the two features the covid substep uses for transmission:
+    # age bucket (susceptibility multiplier) and mean_interactions (contacts/day).
     ages = env.runner.state["agents"]["citizens"]["age"].squeeze().long().tolist()
     mean_int = env.runner.state["environment"]["mean_interactions"].squeeze().tolist()
     AGE_LABELS = ["under 18", "18-29", "30-44", "45-59", "60-74", "75+"]
@@ -161,11 +147,9 @@ def main() -> int:
     print(f"[run] profile features: age_buckets={sorted(set(ages))} "
           f"interactions={sorted(set(mean_int))}", flush=True)
 
-    # Qwen2.5-Instruct was trained with chat templates. Running it on raw
-    # completion text is off-distribution and triggers LoRA-SFT collapse.
-    # We route ALL prompts through `tokenizer.apply_chat_template` so the
-    # SFT-time prompt and the generation-time prompt are byte-identical
-    # (avoids the train/gen format-mismatch trap we hit in opinion-dyn).
+    # Route all prompts through apply_chat_template so SFT-time and gen-time
+    # prompts are byte-identical. Raw completion text triggers LoRA-SFT collapse
+    # on Qwen2.5-Instruct (off-distribution).
     SYSTEM_MSG = (
         "You are a public health official assigning personalized "
         "isolation recommendations during an active respiratory disease "
@@ -213,10 +197,8 @@ def main() -> int:
     )
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
 
-    # Diagnostic: dump (prompt, raw LM text, parsed value) for 20 random
-    # agents BEFORE any SFT, so we see what the base model is actually
-    # emitting and what the parser is doing with it. Crucial for debugging
-    # the "LM signal collapses to 0 in env" issue.
+    # Dump (prompt, raw text, parsed value) for 20 agents pre-SFT, to see what
+    # the base model emits and how the parser handles it.
     _rng = _random.Random(seed)
     _sample_idx = _rng.sample(range(n_agents), min(20, n_agents))
     _sample_prompts = [model.build_prompt(model.profile_at(i)) for i in _sample_idx]
@@ -229,8 +211,7 @@ def main() -> int:
         print(f"  agent {_idx}: text={_txt!r}  parsed={_parsed:.3f}", flush=True)
     (out_dir / "diagnostic_pre_sft.json").write_text(json.dumps(_sample_log, indent=2))
 
-    # Resolve max_steps. If SFT_FULL_EPOCH=1, override to one full epoch
-    # over the 37k examples at the chosen batch size.
+    # SFT_FULL_EPOCH=1 overrides max_steps to one full epoch over all examples.
     if sft_full_epoch:
         effective_max_steps = -(-n_agents // sft_batch_size)  # ceil div
         print(
@@ -241,8 +222,7 @@ def main() -> int:
     else:
         effective_max_steps = max_steps
 
-    # Override the default state_extractor if the user asked for the
-    # binary-exposed target instead of disease_stage.
+    # Swap the state_extractor per TARGET_KIND.
     if target_kind == "exposed_binary":
         def custom_state_extractor(runner):
             citizens = runner.state["agents"]["citizens"]
@@ -256,14 +236,9 @@ def main() -> int:
         env._state_extractor = custom_state_extractor  # noqa: SLF001
         print("[run] target = (disease_stage > 0).float() (binary exposed)", flush=True)
     elif target_kind == "risk_recommendation":
-        # Recommend isolation level from per-agent risk features (age x
-        # mean_interactions). Static across rounds; the SFT target is a real
-        # policy the LM is being supervised on, not a prediction of outcome.
-        # Three tiers: high (elderly OR high-contact) -> 0.9,
-        # medium (middle-aged, not high-contact) -> 0.5,
-        # low (young AND low-contact) -> 0.2.
-        # KL beta now controls how strongly each fine-tune anchors back to
-        # base Qwen vs commits to this policy.
+        # Static isolation policy from risk tiers: high (elderly OR high-contact)
+        # -> 0.9, medium (middle-aged) -> 0.5, low -> 0.2. The LM is supervised
+        # on this policy; beta controls how far it commits vs anchoring to base.
         def custom_state_extractor(runner):
             citizens = runner.state["agents"]["citizens"]
             env_state = runner.state["environment"]
@@ -282,7 +257,7 @@ def main() -> int:
                 "agent_idx": torch.arange(target.shape[0]),
             }
         env._state_extractor = custom_state_extractor  # noqa: SLF001
-        # Pre-compute label histogram so we know the class balance.
+        # Label histogram for class balance.
         _cit = env.runner.state["agents"]["citizens"]
         _envs = env.runner.state["environment"]
         _age = _cit["age"].squeeze().long()
@@ -296,19 +271,10 @@ def main() -> int:
             flush=True,
         )
     elif target_kind == "exposure_aware":
-        # Performative target: per-agent recommendation depends on the
-        # CURRENT local exposure pressure in the agent's demographic slice.
-        #
-        # Bundled AT covid has no explicit contact graph; we proxy "neighbors
-        # of i" by bucketing on (age_bucket, round(mean_interactions)) and
-        # using the fraction of that bucket currently in E or I state.
-        #
-        # target_i = clamp( base_risk(age_i, mi_i) + local_rate_i, 0.05, 0.95 )
-        #
-        # base_risk gives a static prior (high-risk slice -> baseline higher
-        # isolation even when no one is infected). local_rate lifts the
-        # target as cases mount in the slice. True performative loop: LM
-        # policy this round -> who gets exposed -> next round's local_rate.
+        # Performative target: target_i = clamp(base_risk_i + local_rate_i, 0.05,
+        # 0.95). No contact graph, so "neighbors of i" is proxied by the (age,
+        # round(mean_interactions)) bucket's fraction in E/I. local_rate rises as
+        # cases mount in the slice -> the LM's policy this round feeds next round.
         _cit_init = env.runner.state["agents"]["citizens"]
         _envs_init = env.runner.state["environment"]
         _age_long_init = _cit_init["age"].squeeze().long()
@@ -351,12 +317,9 @@ def main() -> int:
         raise ValueError(f"unknown TARGET_KIND: {target_kind!r}")
 
     loss = MSELoss()
-    # Mirror opinion-dynamics-post-training/llm_predictor.py:sft_on_round,
-    # which is the working setup for Qwen2.5-Instruct + LoRA + KL-SFT.
-    # Plain "0.42" target (no EOS): TRL with `completion_only_loss=True`
-    # handles EOS appending internally; manually appending double-stacks it.
-    # Response_template matches Qwen2.5-Instruct chat template's assistant
-    # opener (model-specific; change if switching model families).
+    # Plain "0.42" target (no EOS): TRL with completion_only_loss handles EOS
+    # internally. response_template matches Qwen2.5-Instruct's assistant opener
+    # (model-specific; change if switching model families).
     learner_kwargs = dict(
         model=model,
         loss=loss,
@@ -395,9 +358,7 @@ def main() -> int:
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
-    # Register per-round metrics. The Simulator calls these at the END of
-    # each round (after env.run + state extraction), so they capture the
-    # actual per-round env state.
+    # Per-round metrics; the Simulator calls these at the end of each round.
     def _di_metric(sim_obj) -> float:
         di = sim_obj.env.runner.state["environment"]["daily_infected"]
         return float(di.sum().item())
@@ -417,7 +378,7 @@ def main() -> int:
             "n_dead": int((ds == 4).sum().item()),
         }
 
-    # LM prediction distribution — what the model is recommending this round
+    # LM prediction distribution: what the model recommends this round
     def _pred_stats(sim_obj) -> dict:
         features = sim_obj.env.runner.state["agents"]["citizens"]["age"].float()
         with torch.no_grad():
@@ -429,7 +390,7 @@ def main() -> int:
             "pred_max": float(preds.max()),
         }
 
-    # Per-age-group disease burden — who is getting sick
+    # Per-age-group disease burden: who is getting sick
     def _subgroup_burden(sim_obj) -> dict:
         citizens = sim_obj.env.runner.state["agents"]["citizens"]
         ds = citizens["disease_stage"].squeeze()
@@ -443,7 +404,7 @@ def main() -> int:
                 out[f"burden_age{bucket}"] = float(sick[mask].mean().item())
         return out
 
-    # Per-age-group prediction mean — what the model recommends per subgroup
+    # Per-age-group prediction mean: what the model recommends per subgroup
     def _subgroup_preds(sim_obj) -> dict:
         citizens = sim_obj.env.runner.state["agents"]["citizens"]
         age = citizens["age"].squeeze().long()

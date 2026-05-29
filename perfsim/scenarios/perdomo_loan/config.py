@@ -1,15 +1,7 @@
-"""Perdomo loan scenario configuration and dataset factories.
+"""Perdomo loan scenario config and dataset factories (ICML 2020 setup).
 
-Defaults match the Perdomo et al. (ICML 2020) experimental setup as
-closely as is practical with our abstractions:
-
-- Class balancing: all positive cases + first N=10000 negative cases.
-- mean / std standardization (sklearn `preprocessing.scale`).
-- Strategic features restricted to columns (0, 5, 7) of the 10 features
-  (`RevolvingUtilizationOfUnsecuredLines`, `NumberOfOpenCreditLinesAndLoans`,
-  `NumberRealEstateLoansOrLines`).
-- L2 regularization with bias excluded (`lam = 1/n` in Perdomo; default
-  `weight_decay = 5e-5` here for the balanced n ~ 20k).
+Defaults: all positives + first 10000 negatives, mean/std standardization,
+strategic features = columns (0, 5, 7), L2 with bias excluded (lam = 1/n).
 """
 
 from __future__ import annotations
@@ -53,7 +45,9 @@ class PerdomoLoanConfig(ConfigBase):
     learner: str = "erm"
     learner_lr: float = 0.01
     learner_steps: int = 1
-    weight_decay: float = 5e-5
+    # None means Juan's exact lam = 1/n (resolved from the training set size
+    # in reproduction.run); a float sets a fixed L2 coefficient instead.
+    weight_decay: float | None = None
     decay_bias: bool = False
     strat_features: Tuple[int, ...] = field(default_factory=lambda: PERDOMO_STRAT_FEATURES)
     balance_classes: bool = True

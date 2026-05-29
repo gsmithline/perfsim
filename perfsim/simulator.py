@@ -118,28 +118,13 @@ class Simulator:
             prev = filter(initial_data, train_mask)
             for t in 0..n_rounds-1:
                 if prev is not None: predictor.train(prev)
-                handle = predictor.deploy()
-                final_data = env.run(handle, epoch_size)
-                record(t)         # records theta deployed at round t
+                final_data = env.run(predictor.deploy(), epoch_size)
+                record(t)
                 prev = filter(final_data, train_mask)
 
-        With `initial_data=None`, round 0 skips training; the predictor's
-        initial theta_0 (from construction) drives the first env run. From
-        round 1 onward, each round trains on the previous round's
-        final_data. With `initial_data` supplied (e.g., a seed labeled
-        opinion vector), round 0 also trains.
-
-        With `epoch_size=1`, each env.run is one inner update (lockstep
-        PP). With `epoch_size>1`, env.run amortizes a single K-agent
-        model query across the inner loop (per-env override; see FJWorld).
-
-        `train_mask`: optional boolean tensor of shape `(N,)` selecting
-        which rows of env-produced data are used for training. Rows with
-        mask=False are still computed and persisted by the env (they
-        participate in dynamics, e.g., FJ peer-averaging) but are not
-        passed to `predictor.train`. Use this to model labeled/unlabeled
-        splits where only labeled-agent opinions serve as training
-        targets.
+        initial_data=None skips round-0 training (theta_0 drives the first run).
+        train_mask: optional (N,) bool selecting which env-produced rows feed
+        training; masked-out rows still participate in dynamics but not training.
         """
         self._validate_epoch_size(epoch_size)
         if train_mask is not None:
@@ -187,9 +172,8 @@ class Simulator:
     ) -> dict[str, Tensor] | None:
         """Filter a data dict by `mask` along the leading axis.
 
-        Tensors whose leading dim matches `mask.shape[0]` are sliced;
-        tensors with a different leading dim (or zero-dim scalars) are
-        passed through unchanged. None data or None mask is a no-op.
+        Tensors whose leading dim matches mask are sliced; others pass through.
+        None data or mask is a no-op.
         """
         if data is None or mask is None:
             return data

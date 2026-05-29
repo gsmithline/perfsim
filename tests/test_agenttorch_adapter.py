@@ -231,7 +231,7 @@ def test_grad_sample_raises_not_implemented():
 
 def test_b_violation_raises_under_strict_signal():
     env = _make_env(mode="b", strict_signal=True)
-    with pytest.raises(SignalMutationError, match="pattern B"):
+    with pytest.raises(SignalMutationError, match="read-only"):
         env.run(IdentityModel(), n_steps=5)
 
 

@@ -43,11 +43,11 @@ def _intro():
 def config(PerdomoLoanConfig):
     cfg = PerdomoLoanConfig(
         mu=1.0,
-        n_rounds=15,
+        n_rounds=25,
         learner="erm",
         learner_lr=0.01,
         learner_steps=1,
-        weight_decay=5e-5,
+        weight_decay=None,  # Juan's exact lam = 1/n
         seed=0,
         use_synthetic_fallback=False,
     )

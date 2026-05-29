@@ -40,11 +40,16 @@ def run(config: PerdomoLoanConfig) -> History:
     )
     model = LinearModel(in_features=world.dim, out_features=1, bias=True)
 
+    # Juan's exact lam = 1/n (bias excluded); weight_decay=None resolves to that
+    # from the training set size.
+    n_train = world.n_agents
+    weight_decay = 1.0 / n_train if config.weight_decay is None else config.weight_decay
+
     base_loss = BCEWithLogitsLoss()
-    if config.weight_decay > 0.0:
+    if weight_decay > 0.0:
         train_loss = L2RegularizedLoss(
             base_loss,
-            weight_decay=config.weight_decay,
+            weight_decay=weight_decay,
             decay_bias=config.decay_bias,
         )
     else:

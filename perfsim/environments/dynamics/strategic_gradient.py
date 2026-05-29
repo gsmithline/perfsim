@@ -1,26 +1,10 @@
 """StrategicGradientWorld: non-linear strategic best-response via autograd.
 
-Generalizes `StrategicLinearWorld` to arbitrary differentiable predictors.
-Each agent has fixed initial features `x_0` and a fixed label `y`. On each
-round, agents shift their features along the gradient of the predictor's
-scalar output wrt the input:
-
-    x_t = x_0 + epsilon * ∂f(x_0; theta) / ∂x
-
-For a linear predictor f(x) = w·x (e.g. `LinearModel(out_features=1)`)
-this gradient is just `w`, so `StrategicGradientWorld` reduces exactly to
-`StrategicLinearWorld`. For non-linear predictors (MLPs etc.) the
-gradient is a non-trivial function of `x_0`, giving each agent a
-location-dependent strategic shift.
-
-Sign convention (matches StrategicLinearWorld and Perdomo's notebook):
-positive `epsilon` shifts agents *up* the predictor's gradient. To get
-the Perdomo strategic-loan setup where agents try to *lower* their
-predicted default probability, pass `epsilon = -mu` for `mu > 0`.
-
-The predictor's output for each agent must be a scalar; for vector-valued
-predictors the world sums over output dims before computing the
-gradient (matches the behavior of `model(x).sum().backward()`).
+Generalizes StrategicLinearWorld to any differentiable predictor: each round
+agents shift along the input gradient, x_t = x_0 + epsilon * df(x_0; theta)/dx.
+Linear f reduces to StrategicLinearWorld; non-linear f gives location-dependent
+shifts. Positive epsilon shifts up the gradient (pass -mu for Perdomo
+risk-lowering). Vector outputs are summed before the gradient.
 """
 
 from __future__ import annotations
@@ -43,8 +27,7 @@ from perfsim.environments.dynamics._common import (
 class StrategicGradientWorld(StatefulDynamics):
     """Strategic best-response via the predictor's input gradient.
 
-    One-shot best-response to a deployed classifier; N>1 inner steps either
-    repeat or compound trivially. Forces `epoch_size = 1` (DESIGN.md §8).
+    One-shot response to a deployed classifier; forces epoch_size=1.
     """
 
     max_meaningful_epoch_size: ClassVar[int] = 1

@@ -1,18 +1,9 @@
-"""GaussianShiftWorld: stateless location-shift world for the canonical
-closed-form fixed-point convergence test.
+"""GaussianShiftWorld: stateless location-shift world for the closed-form FP test.
 
-Performative map: given deployed parameter vector theta in R^d,
-
-    x ~ N(0, I_d)
-    y = x . (A theta + b) + sigma * N(0, 1)
-
-For a linear regressor model(x) = x . theta_model with MSE, the population
-risk minimizer is `A theta_deployed + b`. RRM iterates theta_{t+1} =
-A theta_t + b; the closed-form fixed point is `theta* = (I - A)^-1 b`.
-
-Implements the `Differentiable` trait via `grad_sample`, exposing
-partial-D / partial-theta through a reparameterized sample (noise drawn
-without grad, theta path autograd-traceable).
+Performative map for deployed theta in R^d: x ~ N(0, I), y = x.(A theta + b) + noise.
+Under MSE linear regression, RRM iterates theta_{t+1} = A theta_t + b with
+closed-form fixed point theta* = (I - A)^-1 b. Differentiable via grad_sample
+(noise drawn without grad, theta path autograd-traceable).
 """
 
 from __future__ import annotations
@@ -26,13 +17,7 @@ from perfsim.core.environment import StatelessDynamics
 
 
 class GaussianShiftWorld(StatelessDynamics):
-    """Stateless D(theta) = N(A theta + b, Sigma) over regression targets.
-
-    The deployed theta is read from the model as a flat parameter vector
-    (matching `Model.get_params()` order). For `LinearModel(in_features=d,
-    out_features=1, bias=False)`, theta is the d-dim weight vector and the
-    closed-form FP is `(I - A)^-1 b`.
-    """
+    """Stateless D(theta) over regression targets; theta read via get_params()."""
 
     def __init__(
         self,
@@ -79,9 +64,7 @@ class GaussianShiftWorld(StatelessDynamics):
         return {"x": x, "y": y.unsqueeze(-1)}
 
     def grad_sample(self, model: Model) -> Data:
-        """Autograd-traceable sample. Noise drawn without grad; theta path
-        retains autograd so derivative-aware Learners can backprop.
-        """
+        """Autograd-traceable sample; noise without grad, theta path retains it."""
         if self._gen is None:
             self.reset(seed=0)
         assert self._gen is not None

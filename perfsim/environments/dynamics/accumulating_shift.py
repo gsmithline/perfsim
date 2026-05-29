@@ -1,25 +1,15 @@
-"""AccumulatingShiftWorld: strategic agents whose initial features drift.
+"""AccumulatingShiftWorld: strategic agents whose baseline features drift.
 
-The Hardt-Megiddo-Papadimitriou-Wootters (2016) / Perdomo et al. (2020)
-strategic-classification setup assumes agents' "natural" features x_0 are
-fixed across rounds; only their strategic response x_t depends on the
-deployed predictor. This world relaxes that: at the end of each round,
-x_0 partially drifts toward the strategic position x_t, modeling agents
-who gradually internalize their past manipulations:
+Relaxes static strategic classification: each round x_0 drifts toward the
+strategic position, modeling agents who internalize past manipulations.
 
-    grad         = ∂ f(x_0^t; theta_t) / ∂x
-    x_strategic  = x_0^t + epsilon * grad                  (this round's data)
-    x_0^{t+1}    = (1 - eta) * x_0^t + eta * x_strategic   (drift)
+    grad        = d f(x_0; theta) / dx
+    x_strategic = x_0 + epsilon * grad                 (this round's data)
+    x_0_next    = (1 - eta) * x_0 + eta * x_strategic  (drift)
 
-`eta = 0` recovers the static strategic-classification setup (this
-reduces to `StrategicGradientWorld`). `eta = 1` means the population
-fully adopts each round's strategic position as the new baseline.
-Intermediate values give a sticky population.
-
-Sign convention is identical to `StrategicGradientWorld`: positive
-`epsilon` shifts agents up the predictor's input gradient. For
-Perdomo-style strategic-loan setups where agents try to *lower* their
-predicted default risk, pass `epsilon = -mu`.
+eta=0 recovers static StrategicGradientWorld; eta=1 fully adopts each round's
+strategic position. Positive epsilon shifts up the input gradient; pass
+epsilon=-mu for Perdomo-style risk-lowering agents.
 """
 
 from __future__ import annotations

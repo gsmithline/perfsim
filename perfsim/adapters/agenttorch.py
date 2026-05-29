@@ -1,34 +1,11 @@
-"""AgentTorch adapter: wraps an `agent_torch.Runner` as a perfsim `AgentBased`
-environment.
+"""AgentTorch adapter: wraps an `agent_torch.Runner` as a perfsim `AgentBased` env.
 
-See DESIGN.md §20 for the full design rationale. Short version:
-
-- Algorithm 1 (arxiv 2603.12137): the deployed perfsim model is queried ONCE
-  at the top of `env.run`. Its predictions are written into AT state via a
-  user-supplied `signal_writer`. The AT runner then advances `n_steps` time
-  steps internally without re-querying the model.
-
-- The adapter is pure plumbing. The user supplies three callables
-  (`feature_provider`, `signal_writer`, `state_extractor`) plus a
-  `runner_factory(seed)` for reset/seeding. perfsim knows nothing about
-  AT-side config or substep code.
-
-- Pattern contract:
-    A1 (one-shot seed): predictions used at step 0, then dropped. OK.
-    A2 (fixed anchor): predictions read every substep, never overwritten. OK.
-    B  (signal mutated): some substep overwrites the signal field. Forbidden.
-  The adapter snapshots the signal field before `runner.step(...)` and
-  asserts `torch.allclose` after, flagging B violations. Disable with
-  `strict_signal=False`.
-
-- The adapter satisfies `Differentiable` only (gradients can flow through
-  the single per-epoch model query). It does NOT satisfy `FullyDifferentiable`:
-  the Simulator's epoch loop freezes theta across the inner loop (DESIGN.md
-  §8), so gradients wrt theta over a full rollout are not supported in v1.
-
-- Install: `pip install 'perfsim[agenttorch]'`. The module imports `agent_torch`
-  at load time; if the extra is missing, you get an ImportError pointing to
-  the install hint.
+Algorithm 1 (arxiv 2603.12137): the deployed model is queried once at the top
+of `env.run`, its predictions are written into AT state via `signal_writer`,
+then the runner advances n_steps internally without re-querying. The signal
+field must stay read-only across the inner loop; `strict_signal` asserts this.
+The adapter satisfies `Differentiable` (grad through the single query) but not
+`FullyDifferentiable` (theta is frozen across the epoch loop).
 """
 
 from __future__ import annotations
@@ -38,10 +15,8 @@ from typing import Any, Callable, ClassVar
 import torch
 from torch import Tensor
 
-
 import agent_torch  # noqa: F401
 from agent_torch.core.runner import Runner as ATRunner
-
 
 from perfsim.core.environment import AgentBased
 from perfsim.core.model import Model
@@ -56,37 +31,15 @@ SignalPath = tuple[str, ...]
 
 
 class SignalMutationError(RuntimeError):
-    """Raised when the AT sim mutated the platform-signal field during an
-    epoch's inner loop (pattern B violation; DESIGN.md §20).
-    """
+    """Raised when the AT sim mutated the signal field during the inner loop."""
 
 
 class AgentTorchEnvironment(AgentBased):
-    """Wraps an agent_torch.Runner as a perfsim AgentBased environment.
+    """Wraps an agent_torch.Runner via runner_factory + 3 callables + signal_path.
 
-    Construction:
-
-        env = AgentTorchEnvironment(
-            runner_factory  = lambda seed: build_my_at_runner(seed),
-            feature_provider= lambda r: r.state["agents"]["citizen"]["features"],
-            signal_writer   = lambda r, p: r.state["agents"]["citizen"].__setitem__("platform_signal", p),
-            state_extractor = lambda r: {
-                "x": r.state["agents"]["citizen"]["features"],
-                "y": r.state["agents"]["citizen"]["opinion"],
-                "agent_idx": torch.arange(r.state["agents"]["citizen"]["opinion"].shape[0]),
-            },
-            signal_path = ("agents", "citizen", "platform_signal"),
-        )
-   
-    env.run(model, n_steps):
-        if not keep_trajectory: runner.reset_state_before_episode()
-        X = feature_provider(runner)
-        preds = model(X) # queried ONCE
-        sig_before = read(runner.state, signal_path)
-        signal_writer(runner, preds)  write into runner.state
-        runner.step(num_steps=n_steps) # AT advances internally
-        assert torch.allclose(sig_before_overwritten_by_preds, sig_after)
-        return state_extractor(runner)
+    The user supplies feature_provider (state -> X), signal_writer (state, preds
+    -> mutate state), state_extractor (state -> Data), and signal_path (the
+    state-dict key path to the signal field that must stay read-only).
     """
 
     max_meaningful_epoch_size: ClassVar[int | float] = float("inf")
@@ -125,8 +78,7 @@ class AgentTorchEnvironment(AgentBased):
         self._state_extractor = state_extractor
         self._signal_path = signal_path
         self._produces_schema = produces_schema
-        # Stored per-instance so the Simulator's epoch_size validator (which
-        # reads getattr(env, 'max_meaningful_epoch_size', ...)) sees the
+        # Per-instance so the Simulator's epoch_size validator reads the
         # constructor value, not the class default.
         self.max_meaningful_epoch_size = max_meaningful_epoch_size
         self._keep_trajectory = bool(keep_trajectory)
@@ -140,7 +92,7 @@ class AgentTorchEnvironment(AgentBased):
 
     @property
     def runner(self) -> ATRunner:
-        """The held `agent_torch.Runner`. Exposed for debug / inspection."""
+        """The held agent_torch.Runner, exposed for debug / inspection."""
         return self._runner
 
     @property
@@ -148,48 +100,27 @@ class AgentTorchEnvironment(AgentBased):
         return self._signal_path
 
     def _build_runner(self, seed: int) -> ATRunner:
-        runner = self._factory(int(seed))
-        # AT's Runner constructor does NOT call init(); the user typically
-        # calls runner.init() before use. We do not call it here because the
-        # factory may have done so already. If state is None, run() will
-        # fail loudly at the first state read, which is the right behavior.
-        # No isinstance check: duck-typing on .state, .step(num_steps=...),
-        # .reset_state_before_episode() is enough, and lets tests use stubs.
-        return runner
+        # Duck-typed on .state / .step / .reset_state_before_episode so tests
+        # can pass stubs. The factory is expected to have called runner.init().
+        return self._factory(int(seed))
 
     def reset(self, seed: int = 0) -> None:
-        """Discard the current runner and construct a fresh one via the
-        factory. This is the only supported way to re-seed; AT's own
-        `Runner.reset()` does not re-seed any RNG.
-        """
+        """Rebuild a fresh runner via the factory (the only supported re-seed)."""
         self._runner = self._build_runner(seed)
 
     def sample(self, model: Model) -> Data:
-        """Not supported in v1. AT runners do not expose a free peek
-        primitive; the Simulator's hot path uses `run`, not `sample`.
-        """
+        """Not supported in v1; the hot path uses `run`, not `sample`."""
         raise NotImplementedError(
-            "AgentTorchEnvironment.sample is not supported in v1 "
-            "(DESIGN.md §20). Use env.run(model, n_steps) instead."
+            "AgentTorchEnvironment.sample is not supported in v1. "
+            "Use env.run(model, n_steps) instead."
         )
 
     def step(self, model: Model) -> Data:
-        """One AT time step (= one pass through all substeps).
-
-        Convenience wrapper around `self.run(model, n_steps=1)`. AT's step
-        is the elementary unit; there is no smaller granularity to expose.
-        """
+        """One AT time step; wrapper around run(model, n_steps=1)."""
         return self.run(model, n_steps=1)
 
     def run(self, model: Model, n_steps: int) -> Data:
-        """Algorithm 1 epoch: query the model once, write the signal,
-        advance AT for `n_steps` time steps, return the final-state Data.
-
-        Raises:
-            SignalMutationError: if `strict_signal=True` and the signal
-              field changed during the inner loop (pattern B violation).
-            ValueError: if `n_steps < 1`.
-        """
+        """Query the model once, write the signal, advance n_steps, extract Data."""
         if not isinstance(n_steps, int) or n_steps < 1:
             raise ValueError(f"n_steps must be a positive int; got {n_steps!r}")
 
@@ -214,49 +145,26 @@ class AgentTorchEnvironment(AgentBased):
             if not torch.allclose(sig_before, sig_after):
                 raise SignalMutationError(
                     f"Signal field {self._signal_path!r} was mutated during "
-                    f"runner.step(num_steps={n_steps}). This violates the "
-                    f"Algorithm 1 contract: AT substeps must treat the signal "
-                    f"field as read-only across the inner loop (DESIGN.md §20 "
-                    f"pattern B). Pass strict_signal=False to disable this "
-                    f"check."
+                    f"runner.step(num_steps={n_steps}). AT substeps must treat "
+                    f"the signal field as read-only across the inner loop. "
+                    f"Pass strict_signal=False to disable this check."
                 )
 
         return self._state_extractor(runner)
 
-
     def grad_sample(self, model: Model) -> Data:
         raise NotImplementedError(
-            "AgentTorchEnvironment.grad_sample is not supported in v1 "
-            "(see DESIGN.md §20: sample() is unsupported in v1; the "
-            "differentiable variant inherits that limitation)."
+            "AgentTorchEnvironment.grad_sample is not supported in v1."
         )
 
     def grad_step(self, model: Model) -> Data:
-        """Same shape as `step` but with gradients live (no `torch.no_grad`).
-
-        Convenience wrapper around `self.grad_run(model, n_steps=1)`.
-        """
+        """Like step but with gradients live; wrapper around grad_run(., 1)."""
         return self.grad_run(model, n_steps=1)
 
     def grad_run(self, model: Model, n_steps: int) -> Data:
-        """Same shape as `run` but with gradients live.
-
-        Differences from `run`:
-          - `model(X)` is invoked WITHOUT `torch.no_grad`; the autograd
-            graph from model params to preds is preserved.
-          - Predictions are not explicitly detached before being passed to
-            `signal_writer`. The user-supplied `signal_writer` must not
-            detach either; the at_covid defaults already use `.clone()`
-            without `.detach()` so they are grad-safe.
-
-        Gradient through `runner.step(num_steps=n_steps)` depends on the
-        AT sim's differentiability. For covid: yes through
-        `StraightThroughBernoulli` + `update_stages`; see the at_covid
-        README for the four conditions needed for non-zero gradient.
-
-        The strict-signal check still fires if the AT sim mutates the
-        signal field (pattern B). Snapshots are detached before the
-        allclose, so the check itself does not consume gradient.
+        """Like run but with gradients live: model(X) runs without no_grad and
+        preds are not detached. Grad through runner.step depends on the AT sim's
+        differentiability (covid: yes, via StraightThroughBernoulli).
         """
         if not isinstance(n_steps, int) or n_steps < 1:
             raise ValueError(f"n_steps must be a positive int; got {n_steps!r}")
@@ -280,16 +188,13 @@ class AgentTorchEnvironment(AgentBased):
             if not torch.allclose(sig_before, sig_after):
                 raise SignalMutationError(
                     f"Signal field {self._signal_path!r} was mutated during "
-                    f"runner.step(num_steps={n_steps}) in grad_run "
-                    f"(DESIGN.md §20 pattern B)."
+                    f"runner.step(num_steps={n_steps}) in grad_run."
                 )
 
         return self._state_extractor(runner)
 
-    # ---- Internal helpers --------------------------------------------------
-
     def _read_signal(self) -> Tensor:
-        """Walk `runner.state` along `signal_path` and return the leaf tensor."""
+        """Walk runner.state along signal_path and return the leaf tensor."""
         cursor: Any = self._runner.state
         if cursor is None:
             raise RuntimeError(

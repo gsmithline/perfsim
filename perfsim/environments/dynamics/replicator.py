@@ -1,24 +1,9 @@
 """ReplicatorWorld: discrete-time replicator dynamics on a K-strategy mixture.
 
-Direct torch port of
-`evolutionary-prediction-games/evoml/dynamics.py::discrete_replicator`.
-The Taylor-Jonker 1978 (eq. 3) discrete replicator:
-
-    p_{t+1} = p_t * (1 + f(p_t)) / <p_t, 1 + f(p_t)>
-
-where p_t is the population mixture on the K-simplex and f is the
-per-strategy fitness vector (depends on the current mixture and, in PP,
-on the deployed predictor).
-
-Non-ABM: this is a population-level dynamical system on Δ^K, not a
-per-agent decision rule. K is the number of strategies / groups.
-
-PP coupling: each PP round runs `n_ticks` of the replicator update where
-the fitness function depends on both the current mixture *and* the
-deployed predictor theta_t. The fitness function is supplied by the caller
-(typically per-strategy accuracy or utility of theta_t on strategy-k data).
-The world emits per-strategy fitness as the training signal and persists
-the resulting mixture.
+Taylor-Jonker 1978 discrete replicator:
+p_{t+1} = p_t * (1 + f(p_t)) / <p_t, 1 + f(p_t)>, where f is the per-strategy
+fitness (depends on the mixture and, in PP, on the deployed predictor). Each PP
+round runs n_ticks of the update; emits per-strategy fitness, persists the mixture.
 """
 
 from __future__ import annotations
@@ -39,22 +24,12 @@ class ReplicatorWorld(StatefulPopulationWorld):
     """Discrete replicator dynamics on a K-strategy mixture.
 
     Args:
-        p0:          (K,) initial mixture in the K-simplex (entries >= 0, sum to 1).
-        fitness:     callable ``(p, model) -> (K,)`` returning per-strategy
-                     fitness given the current mixture and deployed predictor.
-                     For the platform-free baseline (no PP coupling), use a
-                     fitness function that ignores the model argument.
-        n_ticks:     inner replicator iterations per PP round.
-        dtype:       tensor dtype.
+        p0:       (K,) initial mixture in the simplex (>= 0, sums to 1).
+        fitness:  callable (p, model) -> (K,) per-strategy fitness. For the
+                  platform-free baseline, ignore the model argument.
+        n_ticks:  inner replicator iterations per PP round.
 
-    Per PP round:
-        for _ in range(n_ticks):
-            f = fitness(p, model) + 1
-            p = (p * f) / (p @ f)
-
-    Emits data = {"x": one-hot strategy index, "y": fitness vector} so the
-    predictor sees (strategy_id, per-strategy_fitness) pairs. Persists the
-    new mixture as state["mixture"].
+    Emits {"x": one-hot strategy id, "y": fitness vector}; persists state["mixture"].
     """
 
     def __init__(

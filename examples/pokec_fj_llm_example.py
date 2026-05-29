@@ -31,7 +31,7 @@ def _():
     "examples/pokec/profiles.parquet"
     )
 
-    2. Replace `_make_synthetic_setup` below with a loader that reads
+    2. Replace `make_synthetic_setup` below with a loader that reads
     `examples/pokec/profiles.parquet` (and the graph + parameter pickles
     from `examples/pokec/`).
 
@@ -42,11 +42,11 @@ def _():
 
 @app.cell
 def _():
-    from __future__ import annotations
-
-    import argparse
+    import pickle
     import random
+    from pathlib import Path
 
+    import networkx as nx
     import numpy as np
     import pandas as pd
     import torch
@@ -61,11 +61,14 @@ def _():
         FJWorld,
         HFCausalLMModel,
         MSELoss,
+        Path,
         SFTLearner,
         Simulator,
         normalize_adjacency,
         np,
+        nx,
         pd,
+        pickle,
         random,
         torch,
     )
@@ -85,10 +88,8 @@ def _():
 
 @app.cell
 def _(ALCOHOL_VALUES, normalize_adjacency, np, pd, random, torch):
-    def _make_synthetic_setup(n: int = 30, seed: int = 0):
-        """
-        test function to generate data
-        """
+    def make_synthetic_setup(n: int = 30, seed: int = 0):
+        """Generate a synthetic Pokec-shaped setup (profiles, graph, FJ params)."""
         rng = random.Random(seed)
         nprng = np.random.default_rng(seed)
 
@@ -120,16 +121,73 @@ def _(ALCOHOL_VALUES, normalize_adjacency, np, pd, random, torch):
             "n": n,
         }
 
-    return
+    return (make_synthetic_setup,)
+
+
+@app.cell
+def _(Path, normalize_adjacency, np, nx, pickle, torch):
+    POKEC_DIR = Path("examples/pokec")
+
+    def load_pokec_setup():
+        """Load the real Pokec setup, aligned row-for-row with the profiles order.
+
+        innate = concat(y_label, y_unlabel) and peer/platform_sus are stored in
+        the profiles' canonical order; the graph is reindexed to df.user_id so
+        adjacency rows match. Demographics come from the real lcc_profiles.
+        """
+        with open(POKEC_DIR / "lcc_profiles_relation_to_smoking.pk", "rb") as fh:
+            df = pickle.load(fh)
+        with open(POKEC_DIR / "lcc_graph_relation_to_smoking.pk", "rb") as fh:
+            graph = pickle.load(fh)
+        pp = POKEC_DIR / "parametric_params"
+        with open(pp / "y_label2163.pk", "rb") as fh:
+            y_lab = pickle.load(fh)
+        with open(pp / "y_unlabel_label2163.pk", "rb") as fh:
+            y_unlab = pickle.load(fh)
+        with open(pp / "hetero_peer_sus2163.pkl", "rb") as fh:
+            peer_sus = pickle.load(fh)
+        with open(pp / "hetero_platform_sus2163.pkl", "rb") as fh:
+            platform_sus = pickle.load(fh)
+
+        innate = np.asarray(list(y_lab) + list(y_unlab), dtype=np.float64)
+        profiles = df[["age", "gender", "relation_to_alcohol"]].reset_index(drop=True)
+        n = len(profiles)
+        adj = nx.to_numpy_array(graph, nodelist=df["user_id"].tolist())
+        W = normalize_adjacency(torch.tensor(adj, dtype=torch.float32))
+
+        return {
+            "profiles": profiles,
+            "innate": torch.tensor(innate, dtype=torch.float32),
+            "W": W,
+            "peer_sus": torch.tensor(np.asarray(peer_sus), dtype=torch.float32),
+            "platform_sus": torch.tensor(np.asarray(platform_sus), dtype=torch.float32),
+            "n": n,
+        }
+
+    return (load_pokec_setup,)
 
 
 @app.cell
 def _(pd):
+    # Slovak -> English alcohol mapping, mirroring the opinion-dynamics repo's
+    # run_untuned_llm.translate_alcohol so prompts match the original runs.
+    def translate_alcohol(val) -> str:
+        s = str(val).strip().lower()
+        if "nepij" in s or "abstin" in s or "apstin" in s:
+            return "does not drink"
+        if "pravidel" in s:
+            return "drinks regularly"
+        if "prilezitost" in s or "prilezitos" in s:
+            return "drinks occasionally"
+        if "pij" in s:
+            return "drinks"
+        return "unknown"
+
     def build_prompt(profile: pd.Series, tokenizer) -> str:
         """Profile row -> chat-templated prompt asking for an opinion in [0, 1]."""
-        age = int(profile["age"])
-        gender_str = "female" if int(profile["gender"]) == 0 else "male"
-        alcohol = str(profile["relation_to_alcohol"])
+        age = int(float(profile["age"]))
+        gender_str = {0.0: "female", 1.0: "male"}.get(float(profile["gender"]), "unknown")
+        alcohol = translate_alcohol(profile["relation_to_alcohol"])
         user_msg = (
             "Estimate this person's attitude toward smoking. "
             "0 means very negative (anti-smoking), 1 means very positive (pro-smoking).\n\n"
@@ -150,19 +208,21 @@ def _(pd):
 
 
 @app.cell
-def _():
-    n=30
-    n_labeled = int(n * 0.8)
-    seed=42
-    setup = _make_synthetic_setup(seed=seed)
+def _(load_pokec_setup):
+    # Real Pokec LCC (2163 agents). Swap to make_synthetic_setup(seed=seed) for a
+    # fast n=30 smoke test. innate is ordered [labeled (1730), unlabeled (433)].
+    seed = 42
+    setup = load_pokec_setup()
+    n = setup["n"]
+    n_labeled = 1730
     epoch_size = 100
     n_rounds = 10
     sft_max_steps = 1
     base_model = "Qwen/Qwen2.5-0.5B-Instruct"
     print(
-    f"Synthetic setup: N={n} agents, n_labeled={n_labeled}, "
-    f"n_rounds={epoch_size}, epoch_size={100}, "
-    f"sft_max_steps={sft_max_steps}"
+        f"Pokec setup: N={n} agents, n_labeled={n_labeled}, "
+        f"n_rounds={n_rounds}, epoch_size={epoch_size}, "
+        f"sft_max_steps={sft_max_steps}"
     )
     return (
         base_model,

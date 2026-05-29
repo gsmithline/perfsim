@@ -30,7 +30,8 @@ def imports():
     from perfsim.history import History
     from perfsim.scenarios.perdomo_loan.config import PerdomoLoanConfig
     from perfsim.scenarios.perdomo_loan.reproduction import run
-    return History, Path, PerdomoLoanConfig, plt, run, torch
+
+    return PerdomoLoanConfig, plt, run, torch
 
 
 @app.cell
@@ -45,11 +46,11 @@ def _intro():
         RGD (one SGD step/round) compared side by side.
 
         At large mu RRM saturates numerically (LBFGS settles at a point with
-        ||theta|| ~ 1e10+ and reported gap=0). We mask the gap curve past
-        that threshold and keep the norm panel as the witness of divergence.
+        ||theta|| is about 1e10+ and reported gap=0). We mask the gap curve past
+        that threshold.
         """
     )
-    return (mo,)
+    return
 
 
 @app.cell
@@ -62,13 +63,7 @@ def constants():
     }
     GAP_FLOOR = 1e-12
     SATURATION_THRESHOLD = 1e8
-    return (
-        DEFAULT_LEARNERS,
-        DEFAULT_MUS,
-        GAP_FLOOR,
-        LEARNER_TITLES,
-        SATURATION_THRESHOLD,
-    )
+    return DEFAULT_LEARNERS, GAP_FLOOR, LEARNER_TITLES, SATURATION_THRESHOLD
 
 
 @app.cell
@@ -76,7 +71,7 @@ def config():
     MUS = (0.01, 1.0, 100.0, 1000.0)
     LEARNERS = ("erm", "gradient")
     N_ROUNDS = 25
-    WEIGHT_DECAY = 5e-5
+    WEIGHT_DECAY = None  # Juan's exact lam = 1/n
     RGD_LR = 0.1
     RGD_STEPS = 1
     SEED = 0
@@ -94,7 +89,7 @@ def config():
 
 
 @app.cell
-def run_sweep_fn(History, PerdomoLoanConfig, run):
+def run_sweep_fn(PerdomoLoanConfig, run):
     def run_sweep(
         mus, learners,
         *, n_rounds, weight_decay, rgd_lr, rgd_steps, seed, use_synthetic_fallback,
@@ -115,6 +110,7 @@ def run_sweep_fn(History, PerdomoLoanConfig, run):
                 print(f"  learner={ln:>8s}  mu={mu:>8g}  hash={cfg.content_hash()}  running...")
                 out[ln][mu] = run(cfg)
         return out
+
     return (run_sweep,)
 
 
@@ -177,7 +173,12 @@ def summary(SATURATION_THRESHOLD, extract_series, results):
 
 
 @app.cell
-def plot_row_fn(GAP_FLOOR, LEARNER_TITLES, SATURATION_THRESHOLD, extract_series):
+def plot_row_fn(
+    GAP_FLOOR,
+    LEARNER_TITLES,
+    SATURATION_THRESHOLD,
+    extract_series,
+):
     def plot_row_inner(axes, results_for_learner, learner_name, *, is_top_row):
         ax_gap, ax_pr, ax_norm = axes
         for mu, history in sorted(results_for_learner.items()):
@@ -238,7 +239,7 @@ def plot(DEFAULT_LEARNERS, plot_row, plt, results):
     fig.suptitle("Perdomo strategic-loan sweep (perfsim)")
     fig.tight_layout()
     fig
-    return (axes, fig, learner_order)
+    return
 
 
 if __name__ == "__main__":

@@ -1,19 +1,9 @@
-"""StrategicLinearWorld: stateful agent-based world with linear strategic
-best-response (Perdomo et al. ICML 2020).
+"""StrategicLinearWorld: linear strategic best-response (Perdomo et al. 2020).
 
-Each agent has fixed initial features `x_0` and a fixed label `y`. On each
-round, agents shift their features by `epsilon * w` (first-order
-best-response of a linear utility against a quadratic feature-shift cost),
-where `w` is the deployed linear classifier's weight vector. Returns the
-shifted features as the round's training data.
-
-If `strat_features` is set, only those feature indices are shifted; the
-others remain at their initial values. This matches Perdomo's notebook
-where only three of the GMSC columns can be strategically manipulated.
-
-"Stateful" in the agent-based sense: the population (x_0, y) is
-materialized once at init and persists across rounds. State does not evolve
-beyond the strategic shift.
+Each round agents shift features by epsilon * w (first-order best-response of a
+linear utility against a quadratic shift cost), w = the deployed classifier's
+weights. If strat_features is set, only those indices shift. The population
+(x_0, y) is fixed at init and persists across rounds.
 """
 
 from __future__ import annotations
@@ -30,12 +20,7 @@ from perfsim.environments.dynamics._common import apply_strategic_shift, validat
 
 
 class StrategicLinearWorld(StatefulDynamics):
-    """Perdomo-style linear strategic best-response.
-
-    Strategic best-response is a one-shot response to a deployed classifier;
-    N inner steps under fixed theta either repeat or compound trivially.
-    Forces `epoch_size = 1` (DESIGN.md §8).
-    """
+    """Perdomo-style linear strategic best-response; forces epoch_size=1."""
 
     max_meaningful_epoch_size: ClassVar[int] = 1
 
@@ -86,11 +71,7 @@ class StrategicLinearWorld(StatefulDynamics):
         return
 
     def _weight_vector(self, model: Model) -> Tensor:
-        """Extract the linear weight vector from a model.
-
-        Convention: model exposes a `linear` attribute of type nn.Linear
-        (`LinearModel`, `LogisticModel`).
-        """
+        """Extract the linear weight vector (model must expose `.linear`)."""
         if not hasattr(model, "linear"):
             raise TypeError(
                 "StrategicLinearWorld expects a model with a `.linear` "
@@ -104,8 +85,6 @@ class StrategicLinearWorld(StatefulDynamics):
             raise ValueError(
                 f"model weight has {w.numel()} elements but population dim is {self._d}"
             )
-        # Broadcast w (D,) against x0 (N, D); apply_strategic_shift treats it
-        # as a per-row direction by relying on broadcasting in `+`.
         direction = w.expand_as(self._x0)
         x = apply_strategic_shift(
             self._x0, direction, epsilon=self._epsilon, strat_features=self._strat_features

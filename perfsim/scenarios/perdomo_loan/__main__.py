@@ -30,8 +30,8 @@ def _build_argparser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--weight-decay",
         type=float,
-        default=5e-5,
-        help="L2 regularization coefficient (Perdomo uses ~1/n on balanced ~20k data).",
+        default=None,
+        help="L2 coefficient; default None uses Juan's exact lam = 1/n.",
     )
     parser.add_argument(
         "--decay-bias",

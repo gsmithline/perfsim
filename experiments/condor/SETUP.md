@@ -73,7 +73,7 @@ condor_submit_bid <BID> condor/at_calibration.sub
 
 After jobs finish, pick best per season:
 ```bash
-python scripts/pick_best_calibration.py
+python scripts/calibrate_covid.py pick-best
 ```
 
 ### 4.3 COVID performative loop (LM + KL-SFT beta sweep)
@@ -221,11 +221,7 @@ must contain only data rows.
 | Script | Purpose |
 |--------|---------|
 | `scripts/run_covid_lm.py` | Performative loop: LM + AT covid + KL-SFT |
-| `scripts/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) |
-| `scripts/calibrate_covid.py` | Local calibration (joint R2 + seed_frac) |
-| `scripts/calibrate_covid_local.py` | Local calibration (grid search) |
-| `scripts/calibrate_macro_single.py` | Calibrate macro UAC for one (period, lr) |
-| `scripts/calibrate_macro.py` | Local macro calibration |
-| `scripts/pick_best_calibration.py` | Read all covid calibration results, pick best per season |
+| `scripts/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) on the cluster |
+| `scripts/calibrate_covid.py` | Local calibration: `r2` / `surge` / `pick-best` subcommands |
 | `scripts/grad_diagnostics.py` | Validate AT autodiff (sign, FD, variance) |
 | `scripts/run_macro_lm.py` | Performative loop: LM + AT macro + KL-SFT |

@@ -30,8 +30,6 @@ def _():
 
 @app.cell
 def _():
-    from __future__ import annotations
-
     import pickle
     from pathlib import Path
 
