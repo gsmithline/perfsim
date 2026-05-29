@@ -40,5 +40,3 @@ env = make_schelling_env(
 - `model_scoring.py` -- `BinaryLMScorer` over HAPPY/UNHAPPY token logits.
 - `substeps/` -- five `SubstepTransition` (+ one `SubstepAction`) classes.
 - `_lightweight_reference/` -- the previous duck-typed runner. Kept for substep-math reference.
-
-See `STAGE_1_REPORT.md` for verification log and AT framework gotchas.
