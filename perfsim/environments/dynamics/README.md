@@ -6,8 +6,8 @@ training data given a deployed predictor theta. The Simulator drives the
 dynamical-systems environments.
 
 For `AgentBased` environments (per-agent stateful agent objects with
-per-agent decision rules), see `perfsim/adapters/` -- the first concrete
-`AgentBased` env in v1 is the `agent_torch.Runner` adapter, not anything
+per-agent decision rules), see `perfsim/adapters/` -- the only concrete
+`AgentBased` env is the `agent_torch.Runner` adapter, not anything
 under `environments/agent_based/` (which remains an empty package).
 
 A `Dynamics` environment answers two questions:
@@ -60,9 +60,9 @@ There are also **capability traits** (runtime-checkable Protocols in
 - `FullyDifferentiable`: additionally exposes a `grad_step` that is
   autograd-traceable across multiple inner steps.
 - `Rewarding`: fills a `reward` field in the data dict. Required by
-  RL-family Learners (v2).
+  RL-family Learners.
 - `Trajectory`: produces multi-step trajectory tensors with a leading
-  time axis (v2).
+  time axis.
 - `ClosedFormFixedPoint`: has a `closed_form_fp()` returning the analytic
   RRM fixed point. Used in gating tests.
 

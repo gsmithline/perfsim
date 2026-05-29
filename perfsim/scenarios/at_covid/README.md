@@ -154,9 +154,9 @@ and `update_transition_times` are linear in `newly_exposed_today`, and
 `StraightThroughBernoulli.backward` returns `grad_output * ones` (pass-
 through), so the chain is intact.
 
-The Simulator's epoch loop still freezes theta across the inner loop
-(DESIGN.md §8). `grad_run` is for one-shot gradient measurement, not for
-end-to-end differentiable PP loops (that is a v2 question).
+The Simulator's epoch loop still freezes theta across the inner loop.
+`grad_run` is for one-shot gradient measurement, not for end-to-end
+differentiable PP loops.
 
 ## Pattern contract
 
@@ -190,5 +190,4 @@ mirror this one's layout. Until then, only covid is wired.
 ## See also
 
 - `perfsim/adapters/README.md` -- adapter contract, three-callable API, A/B taxonomy
-- `DESIGN.md` S20 -- design rationale, AT 0.6.0 verification findings
 - `examples/at_covid_smoke.py` -- thin caller, ~40 lines

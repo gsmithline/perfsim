@@ -109,9 +109,9 @@ class AgentTorchEnvironment(AgentBased):
         self._runner = self._build_runner(seed)
 
     def sample(self, model: Model) -> Data:
-        """Not supported in v1; the hot path uses `run`, not `sample`."""
+        """Not supported; the hot path uses `run`, not `sample`."""
         raise NotImplementedError(
-            "AgentTorchEnvironment.sample is not supported in v1. "
+            "AgentTorchEnvironment.sample is not supported. "
             "Use env.run(model, n_steps) instead."
         )
 
@@ -154,7 +154,7 @@ class AgentTorchEnvironment(AgentBased):
 
     def grad_sample(self, model: Model) -> Data:
         raise NotImplementedError(
-            "AgentTorchEnvironment.grad_sample is not supported in v1."
+            "AgentTorchEnvironment.grad_sample is not supported."
         )
 
     def grad_step(self, model: Model) -> Data:

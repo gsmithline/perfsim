@@ -120,12 +120,11 @@ The adapter satisfies `Differentiable` but **not** `FullyDifferentiable`.
   `StraightThroughBernoulli` plus `update_stages`'s linear update; see
   `perfsim/scenarios/at_covid/README.md` for the four conditions needed
   for non-zero gradient.
-- Across the full epoch loop, theta is frozen by the Simulator's design
-  (see `DESIGN.md` §8). `grad_run` is for one-shot gradient measurement,
-  not for end-to-end differentiable PP rollouts where theta varies
-  inside the inner loop (that is a v2 question).
+- Across the full epoch loop, theta is frozen by the Simulator's design.
+  `grad_run` is for one-shot gradient measurement, not for end-to-end
+  differentiable PP rollouts where theta varies inside the inner loop.
 
-`sample(model)` and `grad_sample(model)` raise `NotImplementedError` in v1.
+`sample(model)` and `grad_sample(model)` raise `NotImplementedError`.
 AT runners do not expose a free peek primitive, and the Simulator hot path
 uses `run`, not `sample`.
 
@@ -206,8 +205,6 @@ so a full AT YAML config is not required to exercise the adapter contract.
 
 ### See also
 
-- `DESIGN.md` §20 for the full design rationale, including the four
-  verification items resolved against `agent-torch==0.6.0`.
 - `perfsim/core/environment.py` for the `AgentBased` ABC and the
   `Differentiable` / `FullyDifferentiable` capability Protocols.
 - `arxiv 2603.12137` (Wu, Abebe, Mendler-Dünner 2026) Algorithm 1.

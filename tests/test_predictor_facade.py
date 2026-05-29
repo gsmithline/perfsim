@@ -1,4 +1,4 @@
-"""Tests for the Predictor facade (DESIGN.md §5, §15 test 10).
+"""Tests for the Predictor facade.
 
 Verifies the facade preserves (Model, Loss, Learner) semantics:
 - Constructor rejects mismatched model and learner.model.

@@ -1,4 +1,4 @@
-"""Tests for the epoch-based training loop (DESIGN.md §8, §15 tests 7-10).
+"""Tests for the epoch-based training loop.
 
 Covers:
 - Default epoch_size=1 preserves classical lockstep semantics.

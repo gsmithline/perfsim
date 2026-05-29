@@ -2,10 +2,6 @@
 
 General simulator for performative prediction (PP). A deployed model's outputs shape the population's behavior, which becomes the model's next training data. perfsim provides the loop, the environments, and the measurement tools. 
 
-**What we measure, population impact as a function of beta:**
-
-- **COVID (Astoria, 37k agents):** LM recommends per-agent isolation levels. ABM simulates SEIRM disease transmission. We measure per-subgroup disease burden, model recommendations, and the gap between what the model recommends and what the data says is needed at each beta.
-
 ## Core loop
 
 Each outer round is one epoch:
@@ -96,6 +92,7 @@ Optional protocols an Environment may declare:
 - [ ] AT LLM archetype agents as strategic population layer: frozen API models (GPT-4, Claude, Llama) make per-agent decisions via AT archetype prompting with current state context, while the outer perfsim model (HFCausalLM) is SFT/KL fine-tuned each round as usual. Different archetypes respond differently to the same recommendation, producing different outcomes per beta.
 - [ ] vLLM integration for faster LM inference during generation sweeps
 - [ ] RL learners (PPO, GRPO, DPO) with trajectory data schema
+- [ ] Change data collection settings (refresh data set each round or append growing data)
 - [ ] Learned surrogate (D-hat) for PerfGD without running the full ABM
 - [ ] Fix examples, they do not fully load with marimo
 

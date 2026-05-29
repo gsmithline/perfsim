@@ -19,7 +19,7 @@ Faithful replication of the strategic loan example from:
 python -m perfsim.scenarios.perdomo_loan --mu 100 --n-rounds 50 --learner erm
 ```
 
-Produces the headline convergence figure from the paper. Visual tolerance gate; v1 literature-replication target.
+Produces the headline convergence figure from the paper. Visual tolerance gate; literature-replication target.
 
 ## Synthetic fallback
 
@@ -31,4 +31,4 @@ python -m perfsim.scenarios.perdomo_loan --synthetic
 
 ## Status
 
-v0 skeleton stub. No implementation yet.
+Implemented and tested (see `tests/test_perdomo_scenario.py`).

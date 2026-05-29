@@ -2,9 +2,9 @@
 schemas at binding time, not at first hot-path call.
 
 The check uses Learner.accepts(world.produces_schema). A Learner with a
-custom accepted_schemas (or the v2 trajectory schema, which has empty
-required fields) must be rejected when paired with a World whose produced
-schema does not satisfy the requirements.
+custom accepted_schemas (or a trajectory schema with empty required fields)
+must be rejected when paired with a World whose produced schema does not
+satisfy the requirements.
 """
 
 from __future__ import annotations

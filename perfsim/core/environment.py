@@ -88,7 +88,7 @@ class StatefulDynamics(Dynamics):
 
 
 class AgentBased(Environment):
-    """Population of stateful agents with per-agent decision rules (v2 stub)."""
+    """Population of stateful agents with per-agent decision rules (stub)."""
 
 
 @runtime_checkable
@@ -109,7 +109,7 @@ class FullyDifferentiable(Protocol):
 
 @runtime_checkable
 class Rewarding(Protocol):
-    """Environment that fills a `reward` field; required by RL learners (v2)."""
+    """Environment that fills a `reward` field; required by RL learners."""
 
     @property
     def produces_reward(self) -> bool: ...
@@ -117,7 +117,7 @@ class Rewarding(Protocol):
 
 @runtime_checkable
 class Trajectory(Protocol):
-    """Environment that produces multi-step trajectory tensors (v2)."""
+    """Environment that produces multi-step trajectory tensors."""
 
     @property
     def trajectory_length(self) -> int: ...

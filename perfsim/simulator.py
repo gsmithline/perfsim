@@ -94,7 +94,7 @@ class Simulator:
             raise ValueError(
                 f"epoch_size={epoch_size} exceeds {type(self.env).__name__}."
                 f"max_meaningful_epoch_size={max_size}. This Environment's inner "
-                f"step is not meaningful for N>1 under fixed theta (DESIGN.md §8)."
+                f"step is not meaningful for N>1 under fixed theta."
             )
 
     @property
