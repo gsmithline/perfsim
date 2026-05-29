@@ -78,8 +78,27 @@ def _wandb_hist(wb, values, bins):
     return wb.Histogram(np_histogram=(counts.tolist(), edges.tolist()))
 
 
+# Byte-identical to Opinion-dynamics-post-training/llm_predictor.py so prompts
+# (and therefore predictions) reproduce the original study.
+PROMPT_COLS = ["age", "gender", "relation_to_alcohol"]
+
+SK_ALCOHOL_EXACT = {
+    "pijem prilezitostne": "I drink occasionally",
+    "abstinent": "I abstain from alcohol",
+    "uz nepijem": "I no longer drink",
+    "nepijem": "I don't drink",
+    "pijem pravidelne": "I drink regularly",
+    "prilezitostne": "occasionally",
+    "pijem": "I drink",
+    "nikdy": "never",
+    "alkoholik": "alcoholic",
+}
+
+
 def translate_alcohol(val) -> str:
     s = str(val).strip().lower()
+    if s in SK_ALCOHOL_EXACT:
+        return SK_ALCOHOL_EXACT[s]
     if "nepij" in s or "abstin" in s or "apstin" in s:
         return "does not drink"
     if "pravidel" in s:
@@ -204,17 +223,27 @@ def main() -> int:
           f"std={innate.std():.4f} in {time.time() - t0:.1f}s", flush=True)
 
     def build_prompt(profile: pd.Series, tokenizer) -> str:
-        age = int(float(profile["age"]))
-        gender_str = {0.0: "female", 1.0: "male"}.get(float(profile["gender"]), "unknown")
-        alcohol = translate_alcohol(profile["relation_to_alcohol"])
+        profile_lines = []
+        for col in PROMPT_COLS:
+            val = profile.get(col, "")
+            if pd.isna(val) or val == "" or str(val) == "nan":
+                continue
+            if col == "age":
+                if float(val) == 0.0:
+                    continue
+                val = int(val)
+            elif col == "gender":
+                val = {0.0: "female", 1.0: "male"}.get(float(val), "unknown")
+            elif col == "relation_to_alcohol":
+                val = translate_alcohol(val)
+            profile_lines.append(f"- {col}: {val}")
+        profile_str = "\n".join(profile_lines) if profile_lines else "- (no profile info)"
         user_msg = (
-            "Estimate this person's attitude toward smoking. "
-            "0 means very negative (anti-smoking), 1 means very positive (pro-smoking).\n\n"
-            "Person profile:\n"
-            f"- Age: {age}\n"
-            f"- Gender: {gender_str}\n"
-            f"- Alcohol use: {alcohol}\n\n"
-            "Output a single number in [0, 1], e.g. 0.42. Respond with only the number."
+            "Estimate this user's attitude toward smoking based on their profile.\n"
+            "Profile:\n"
+            f"{profile_str}\n\n"
+            "Output a single number in [0, 1] (1 = very positive, 0 = very negative). "
+            "Respond with only the number, e.g. 0.42."
         )
         messages = [{"role": "user", "content": user_msg}]
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -337,6 +366,8 @@ def main() -> int:
             row["dissoc_gap"] = pred_block["pred_eff_support"] - row["op_eff_support"]
 
         trajectory.append(row)
+        # persist every round so a killed/held job keeps its partial results
+        (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
         if wandb is not None:
             payload = dict(row)
             payload["op_hist"] = _wandb_hist(wandb, op, n_bins)
