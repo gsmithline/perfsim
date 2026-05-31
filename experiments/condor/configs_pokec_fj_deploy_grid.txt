@@ -1,0 +1,33 @@
+# Deployment schedule experiment, re-run with betas and FIXED.
+# Fix: the real base data now lives in the data buffer (SEED_BASE_DATA=1, set in
+# the .sub), so regimes that use the full history (accumulate, not_deployed_into)
+# include it and recent-only regimes (replace, deployed_into) do not -- as intended.
+# Crossed with KL anchor beta {0,1,3}, 1 seed each.
+# K=1 only runs replace/accumulate (deployed_into==replace, not_deployed_into==accumulate at K=1).
+# beta=0 -> style 'sft'; beta>0 -> 'sft_kl' (so kl_beta is applied).
+# Columns: tag, style, beta, seed, deploy_every, regime
+
+
+# ---- beta=0 (sft) ----
+replace_K1_b0_s0,        sft,     0.0, 0, 1, replace
+accumulate_K1_b0_s0,     sft,     0.0, 0, 1, accumulate
+replace_K3_b0_s0,        sft,     0.0, 0, 3, replace
+accumulate_K3_b0_s0,     sft,     0.0, 0, 3, accumulate
+deployed_K3_b0_s0,       sft,     0.0, 0, 3, deployed_into
+notdeployed_K3_b0_s0,    sft,     0.0, 0, 3, not_deployed_into
+
+# ---- beta=1 (sft_kl) ----
+replace_K1_b1_s0,        sft_kl,  1.0, 0, 1, replace
+accumulate_K1_b1_s0,     sft_kl,  1.0, 0, 1, accumulate
+replace_K3_b1_s0,        sft_kl,  1.0, 0, 3, replace
+accumulate_K3_b1_s0,     sft_kl,  1.0, 0, 3, accumulate
+deployed_K3_b1_s0,       sft_kl,  1.0, 0, 3, deployed_into
+notdeployed_K3_b1_s0,    sft_kl,  1.0, 0, 3, not_deployed_into
+
+# ---- beta=3 (sft_kl) ----
+replace_K1_b3_s0,        sft_kl,  3.0, 0, 1, replace
+accumulate_K1_b3_s0,     sft_kl,  3.0, 0, 1, accumulate
+replace_K3_b3_s0,        sft_kl,  3.0, 0, 3, replace
+accumulate_K3_b3_s0,     sft_kl,  3.0, 0, 3, accumulate
+deployed_K3_b3_s0,       sft_kl,  3.0, 0, 3, deployed_into
+notdeployed_K3_b3_s0,    sft_kl,  3.0, 0, 3, not_deployed_into

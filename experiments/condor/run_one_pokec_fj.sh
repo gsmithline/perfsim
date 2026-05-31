@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Single Pokec FJ + LM run.
-# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME [TRAIN_CAP] [ANCHOR_REAL]
+# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME
 
 set -eo pipefail
 
@@ -10,8 +10,6 @@ KL_BETA="$3"
 SEED="${4:-0}"
 DEPLOY_EVERY="${5:-1}"
 DATA_REGIME="${6:-replace}"
-TRAIN_CAP="${7:-0}"
-ANCHOR_REAL="${8:-0}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -35,10 +33,11 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-6}"
 HIST_BINS="${HIST_BINS:-50}"
 LOG_PERPLEXITY="${LOG_PERPLEXITY:-1}"
 N_PERPLEXITY="${N_PERPLEXITY:-64}"
+SEED_BASE_DATA="${SEED_BASE_DATA:-1}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_fj] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
-echo "[run_one_pokec_fj] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME train_cap=$TRAIN_CAP anchor_real=$ANCHOR_REAL model=$BASE_MODEL"
+echo "[run_one_pokec_fj] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME seed_base_data=$SEED_BASE_DATA model=$BASE_MODEL"
 
 # shellcheck disable=SC1090
 source "$CONDA_SH"
@@ -60,8 +59,7 @@ env \
     SEED="$SEED" \
     DEPLOY_EVERY="$DEPLOY_EVERY" \
     DATA_REGIME="$DATA_REGIME" \
-    TRAIN_CAP="$TRAIN_CAP" \
-    ANCHOR_REAL="$ANCHOR_REAL" \
+    SEED_BASE_DATA="$SEED_BASE_DATA" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

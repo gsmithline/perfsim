@@ -165,26 +165,6 @@ def select_train_data(buffer, regime, cur_dep):
     }
 
 
-def cap_and_anchor(train_data, initial_data, cap, anchor, gen):
-    """Volume cap + real-data anchor controls for the retrain pool.
-
-    cap>0:  randomly subsample the selected synthetic pool to `cap` rows
-            (reproducible via `gen`), matching replace's per-round volume.
-    anchor: concatenate the real initial_data (true innate labels) on top.
-    """
-    if train_data is None:
-        return dict(initial_data) if anchor else None
-    x, y, idx = train_data["x"], train_data["y"], train_data["agent_idx"]
-    if cap and x.shape[0] > cap:
-        sel = torch.randperm(x.shape[0], generator=gen)[:cap]
-        x, y, idx = x[sel], y[sel], idx[sel]
-    if anchor:
-        x = torch.cat([x, initial_data["x"]], 0)
-        y = torch.cat([y, initial_data["y"]], 0)
-        idx = torch.cat([idx, initial_data["agent_idx"]], 0)
-    return {"x": x, "y": y, "agent_idx": idx}
-
-
 def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
@@ -212,15 +192,11 @@ def main() -> int:
     log_ppl = _env_int("LOG_PERPLEXITY", 1) == 1
     n_ppl = _env_int("N_PERPLEXITY", 64)
     log_answer_dist = _env_int("LOG_ANSWER_DIST", 1) == 1
-    # Controls for disentangling accumulate's collapse:
-    #   TRAIN_CAP>0   subsample the selected pool to this many rows each retrain
-    #                 (matches replace's per-round volume -> isolates the volume
-    #                 confound from the staleness/drift effect).
-    #   ANCHOR_REAL=1 re-inject the real initial_data (true innate labels) into
-    #                 every retrain (the missing real-data anchor; the Gerstgrasser
-    #                 condition under which accumulation breaks the curse).
-    train_cap = _env_int("TRAIN_CAP", 0)
-    anchor_real = _env_int("ANCHOR_REAL", 0) == 1
+    # Fix: seed the data buffer with the real base data as the earliest entry, so
+    # regimes that draw on the full history (accumulate, not_deployed_into) include
+    # it while recent-only regimes (replace, deployed_into) do not. Toggle off to
+    # reproduce the old behavior, where the real data was used only at round 0.
+    seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -230,7 +206,7 @@ def main() -> int:
         "n_labeled": n_labeled, "max_steps": max_steps, "sft_epochs": sft_epochs,
         "sft_batch_size": sft_batch_size,
         "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
-        "train_cap": train_cap, "anchor_real": anchor_real,
+        "seed_base_data": seed_base_data,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -350,7 +326,15 @@ def main() -> int:
     }
 
     buffer = []
-    cap_gen = torch.Generator().manual_seed(seed)
+    if seed_base_data:
+        # Real base data as the earliest "deployment" (dep=-1): true innate labels.
+        # accumulate / not_deployed_into pick it up; replace / deployed_into do not.
+        buffer.append({
+            "t": -1, "dep": -1,
+            "x": innate[mask].unsqueeze(-1),
+            "y": innate[mask].unsqueeze(-1),
+            "idx": idx_all[mask],
+        })
     cur_dep = -1
     pred_block = {}
     last_preds = None
@@ -368,9 +352,6 @@ def main() -> int:
                 train_data = initial_data
             else:
                 train_data = select_train_data(buffer, data_regime, cur_dep)
-                train_data = cap_and_anchor(
-                    train_data, initial_data, train_cap, anchor_real, cap_gen
-                )
             if training_style != "frozen" and train_data is not None:
                 learner.train(train_data)
             cur_dep += 1
