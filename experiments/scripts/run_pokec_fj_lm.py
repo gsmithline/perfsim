@@ -341,6 +341,8 @@ def main() -> int:
     op_round0 = None
     prev_op = None
     trajectory = []
+    op_raw = []      # per-round raw per-agent opinions (for subgroup / tail analysis)
+    pred_raw = []    # per-round raw per-agent model predictions (current deployment)
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime}", flush=True)
@@ -398,6 +400,11 @@ def main() -> int:
               f"pred_mean={pred_block.get('pred_mean', float('nan')):.4f}", flush=True)
 
         prev_op = op.clone()
+        op_raw.append(op.detach().cpu().clone())
+        pred_raw.append(
+            last_preds.detach().cpu().clone() if last_preds is not None
+            else torch.full_like(op.cpu(), float("nan"))
+        )
         buffer.append({
             "t": t, "dep": cur_dep,
             "x": innate[mask].unsqueeze(-1),
@@ -407,7 +414,20 @@ def main() -> int:
 
     print(f"[run] loop done in {time.time() - t_loop:.1f}s", flush=True)
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
-    torch.save(trajectory, out_dir / "trajectory.pt")
+    # trajectory.pt: summary rows + raw per-agent opinions/predictions per round
+    # ([n_rounds, N]) + static agent features, so subgroup / tail analyses and any
+    # later metric can be recomputed without re-running the (expensive) loop.
+    torch.save(
+        {
+            "trajectory": trajectory,
+            "config": config,
+            "op_raw": torch.stack(op_raw) if op_raw else torch.empty(0),
+            "pred_raw": torch.stack(pred_raw) if pred_raw else torch.empty(0),
+            "innate": innate.detach().cpu(),
+            "profiles": setup["profiles"].to_dict(orient="list"),
+        },
+        out_dir / "trajectory.pt",
+    )
     print(f"[run] outputs in {out_dir}", flush=True)
     if wandb is not None:
         wandb.finish()
