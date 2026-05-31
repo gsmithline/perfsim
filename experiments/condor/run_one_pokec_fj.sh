@@ -34,6 +34,7 @@ HIST_BINS="${HIST_BINS:-50}"
 LOG_PERPLEXITY="${LOG_PERPLEXITY:-1}"
 N_PERPLEXITY="${N_PERPLEXITY:-64}"
 SEED_BASE_DATA="${SEED_BASE_DATA:-1}"
+TRAIN_CAP="${TRAIN_CAP:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_fj] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
@@ -60,6 +61,7 @@ env \
     DEPLOY_EVERY="$DEPLOY_EVERY" \
     DATA_REGIME="$DATA_REGIME" \
     SEED_BASE_DATA="$SEED_BASE_DATA" \
+    TRAIN_CAP="$TRAIN_CAP" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

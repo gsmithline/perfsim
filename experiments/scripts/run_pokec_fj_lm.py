@@ -165,6 +165,18 @@ def select_train_data(buffer, regime, cur_dep):
     }
 
 
+def subsample_train_data(train_data, cap, gen):
+    """Cap the retrain pool to `cap` rows (reproducible via `gen`) so every regime
+    trains on the same volume each round. cap<=0 or smaller pool -> unchanged."""
+    if train_data is None or cap <= 0:
+        return train_data
+    n = train_data["x"].shape[0]
+    if n <= cap:
+        return train_data
+    sel = torch.randperm(n, generator=gen)[:cap]
+    return {k: v[sel] for k, v in train_data.items()}
+
+
 def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
@@ -197,6 +209,10 @@ def main() -> int:
     # it while recent-only regimes (replace, deployed_into) do not. Toggle off to
     # reproduce the old behavior, where the real data was used only at round 0.
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
+    # TRAIN_CAP>0: subsample the selected retrain pool to this many rows each
+    # round, equalizing training volume across regimes (isolates the data
+    # composition effect from the overtraining confound). 0 = no cap.
+    train_cap = _env_int("TRAIN_CAP", 0)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -206,7 +222,7 @@ def main() -> int:
         "n_labeled": n_labeled, "max_steps": max_steps, "sft_epochs": sft_epochs,
         "sft_batch_size": sft_batch_size,
         "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
-        "seed_base_data": seed_base_data,
+        "seed_base_data": seed_base_data, "train_cap": train_cap,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -326,6 +342,7 @@ def main() -> int:
     }
 
     buffer = []
+    cap_gen = torch.Generator().manual_seed(seed)
     if seed_base_data:
         # Real base data as the earliest "deployment" (dep=-1): true innate labels.
         # accumulate / not_deployed_into pick it up; replace / deployed_into do not.
@@ -354,6 +371,7 @@ def main() -> int:
                 train_data = initial_data
             else:
                 train_data = select_train_data(buffer, data_regime, cur_dep)
+                train_data = subsample_train_data(train_data, train_cap, cap_gen)
             if training_style != "frozen" and train_data is not None:
                 learner.train(train_data)
             cur_dep += 1
