@@ -1,0 +1,60 @@
+# Disentangle accumulate's collapse, crossed with the KL anchor beta.
+# Data-side anchor (anchor_real / cap) x model-side anchor (beta): do they substitute or complement?
+# All cells: K=3.  beta=0 uses style 'sft'; beta>0 uses 'sft_kl' (so kl_beta is actually applied).
+# Columns: tag, style, beta, seed, deploy_every, regime, train_cap, anchor_real
+#   train_cap=1730 -> match replace's per-round volume (isolate volume confound)
+#   anchor_real=1  -> re-inject real innate labels every retrain (the data anchor)
+# Cells per (beta,seed): replace_ctrl, accumulate_ctrl, accum_cap (Q1 volume),
+#   accum_anchor (Q2 anchor), accum_capanchor (both fixes).
+
+
+# ---- beta=0 (sft) ----
+replace_ctrl_b0_s0,      sft,     0.0, 0, 3, replace,        0, 0
+accumulate_ctrl_b0_s0,   sft,     0.0, 0, 3, accumulate,     0, 0
+accum_cap_b0_s0,         sft,     0.0, 0, 3, accumulate,  1730, 0
+accum_anchor_b0_s0,      sft,     0.0, 0, 3, accumulate,     0, 1
+accum_capanchor_b0_s0,   sft,     0.0, 0, 3, accumulate,  1730, 1
+replace_ctrl_b0_s1,      sft,     0.0, 1, 3, replace,        0, 0
+accumulate_ctrl_b0_s1,   sft,     0.0, 1, 3, accumulate,     0, 0
+accum_cap_b0_s1,         sft,     0.0, 1, 3, accumulate,  1730, 0
+accum_anchor_b0_s1,      sft,     0.0, 1, 3, accumulate,     0, 1
+accum_capanchor_b0_s1,   sft,     0.0, 1, 3, accumulate,  1730, 1
+replace_ctrl_b0_s2,      sft,     0.0, 2, 3, replace,        0, 0
+accumulate_ctrl_b0_s2,   sft,     0.0, 2, 3, accumulate,     0, 0
+accum_cap_b0_s2,         sft,     0.0, 2, 3, accumulate,  1730, 0
+accum_anchor_b0_s2,      sft,     0.0, 2, 3, accumulate,     0, 1
+accum_capanchor_b0_s2,   sft,     0.0, 2, 3, accumulate,  1730, 1
+
+# ---- beta=1 (sft_kl) ----
+replace_ctrl_b1_s0,      sft_kl,  1.0, 0, 3, replace,        0, 0
+accumulate_ctrl_b1_s0,   sft_kl,  1.0, 0, 3, accumulate,     0, 0
+accum_cap_b1_s0,         sft_kl,  1.0, 0, 3, accumulate,  1730, 0
+accum_anchor_b1_s0,      sft_kl,  1.0, 0, 3, accumulate,     0, 1
+accum_capanchor_b1_s0,   sft_kl,  1.0, 0, 3, accumulate,  1730, 1
+replace_ctrl_b1_s1,      sft_kl,  1.0, 1, 3, replace,        0, 0
+accumulate_ctrl_b1_s1,   sft_kl,  1.0, 1, 3, accumulate,     0, 0
+accum_cap_b1_s1,         sft_kl,  1.0, 1, 3, accumulate,  1730, 0
+accum_anchor_b1_s1,      sft_kl,  1.0, 1, 3, accumulate,     0, 1
+accum_capanchor_b1_s1,   sft_kl,  1.0, 1, 3, accumulate,  1730, 1
+replace_ctrl_b1_s2,      sft_kl,  1.0, 2, 3, replace,        0, 0
+accumulate_ctrl_b1_s2,   sft_kl,  1.0, 2, 3, accumulate,     0, 0
+accum_cap_b1_s2,         sft_kl,  1.0, 2, 3, accumulate,  1730, 0
+accum_anchor_b1_s2,      sft_kl,  1.0, 2, 3, accumulate,     0, 1
+accum_capanchor_b1_s2,   sft_kl,  1.0, 2, 3, accumulate,  1730, 1
+
+# ---- beta=3 (sft_kl) ----
+replace_ctrl_b3_s0,      sft_kl,  3.0, 0, 3, replace,        0, 0
+accumulate_ctrl_b3_s0,   sft_kl,  3.0, 0, 3, accumulate,     0, 0
+accum_cap_b3_s0,         sft_kl,  3.0, 0, 3, accumulate,  1730, 0
+accum_anchor_b3_s0,      sft_kl,  3.0, 0, 3, accumulate,     0, 1
+accum_capanchor_b3_s0,   sft_kl,  3.0, 0, 3, accumulate,  1730, 1
+replace_ctrl_b3_s1,      sft_kl,  3.0, 1, 3, replace,        0, 0
+accumulate_ctrl_b3_s1,   sft_kl,  3.0, 1, 3, accumulate,     0, 0
+accum_cap_b3_s1,         sft_kl,  3.0, 1, 3, accumulate,  1730, 0
+accum_anchor_b3_s1,      sft_kl,  3.0, 1, 3, accumulate,     0, 1
+accum_capanchor_b3_s1,   sft_kl,  3.0, 1, 3, accumulate,  1730, 1
+replace_ctrl_b3_s2,      sft_kl,  3.0, 2, 3, replace,        0, 0
+accumulate_ctrl_b3_s2,   sft_kl,  3.0, 2, 3, accumulate,     0, 0
+accum_cap_b3_s2,         sft_kl,  3.0, 2, 3, accumulate,  1730, 0
+accum_anchor_b3_s2,      sft_kl,  3.0, 2, 3, accumulate,     0, 1
+accum_capanchor_b3_s2,   sft_kl,  3.0, 2, 3, accumulate,  1730, 1
