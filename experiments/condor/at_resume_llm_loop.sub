@@ -1,0 +1,27 @@
+# HTCondor: self-consuming resume rewriting loop, Qwen2.5-7B rewriter.
+# 520 Djinni resumes, {replace, clean_anchor} x {experience, occupation} = 4 runs.
+# Submit: condor_submit_bid <BID> experiments/condor/at_resume_llm_loop.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_resume_llm.sh
+arguments         = $(tag) $(regime) $(label) $(seed)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-resume-llm BASE_MODEL=Qwen/Qwen2.5-7B-Instruct N_ROUNDS=15 MAX_NEW_TOKENS=768 GEN_BATCH_SIZE=16 ANCHOR_ALPHA=0.3 WANDB_RUN_SUFFIX=_qwen7b"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, regime, label, seed from experiments/condor/configs_resume_llm.txt

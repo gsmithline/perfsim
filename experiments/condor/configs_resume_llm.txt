@@ -1,0 +1,4 @@
+resume_replace_exp_s0, replace, experience, 0
+resume_anchor_exp_s0, clean_anchor, experience, 0
+resume_replace_occ_s0, replace, occupation, 0
+resume_anchor_occ_s0, clean_anchor, occupation, 0
