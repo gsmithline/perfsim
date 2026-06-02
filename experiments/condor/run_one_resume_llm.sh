@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Args: RUN_TAG REGIME LABEL SEED
+# Args: RUN_TAG REGIME LABEL CONDITION SEED
 set -eo pipefail
 
 RUN_TAG="$1"
 DATA_REGIME="${2:-replace}"
 LABEL="${3:-experience}"
-SEED="${4:-0}"
+CONDITION="${4:-phenomenon}"
+SEED="${5:-0}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -39,6 +40,7 @@ env \
     RUN_TAG="$RUN_TAG" \
     DATA_REGIME="$DATA_REGIME" \
     LABEL="$LABEL" \
+    CONDITION="$CONDITION" \
     SEED="$SEED" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \

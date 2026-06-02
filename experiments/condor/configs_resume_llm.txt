@@ -1,4 +1,5 @@
-resume_replace_exp_s0, replace, experience, 0
-resume_anchor_exp_s0, clean_anchor, experience, 0
-resume_replace_occ_s0, replace, occupation, 0
-resume_anchor_occ_s0, clean_anchor, occupation, 0
+resume_phenom_replace_exp, replace, experience, phenomenon, 0
+resume_ident_replace_exp, replace, experience, identification, 0
+resume_generic_replace_exp, replace, experience, generic, 0
+resume_phenom_anchor_exp, clean_anchor, experience, phenomenon, 0
+resume_phenom_accum_exp, accumulate, experience, phenomenon, 0

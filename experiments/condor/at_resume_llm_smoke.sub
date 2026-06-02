@@ -4,7 +4,7 @@
 
 universe          = vanilla
 executable        = /home/gsmithline/perfsim/experiments/condor/run_one_resume_llm.sh
-arguments         = resume_smoke replace experience 0
+arguments         = resume_smoke replace experience phenomenon 0
 
 request_cpus      = 4
 request_memory    = 64G
