@@ -13,7 +13,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-resume-llm BASE_MODEL=Qwen/Qwen2.5-7B-Instruct N_ROUNDS=3 MAX_NEW_TOKENS=768 GEN_BATCH_SIZE=16 ANCHOR_ALPHA=0.3 WANDB_RUN_SUFFIX=_smoke"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-resume-llm BASE_MODEL=Qwen/Qwen2.5-7B-Instruct N_ROUNDS=10 MAX_NEW_TOKENS=768 GEN_BATCH_SIZE=16 ANCHOR_ALPHA=0.3 WANDB_RUN_SUFFIX=_smoke"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/resume_smoke.out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/resume_smoke.err

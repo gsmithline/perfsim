@@ -160,6 +160,12 @@ def blockvar(M):
     return float(M.var(axis=0).mean())
 
 
+def theta_weights(theta):
+    sc, clf = theta
+    coef = clf.coef_.ravel()
+    return coef, coef / sc.scale_  # standardized coefs, and raw-space (scaler-invariant)
+
+
 def compose(regime, buffer, anchor, alpha, rng):
     X_r, y_r = buffer[-1]
     if regime == "replace":
@@ -220,11 +226,12 @@ def main():
     c_cols = np.arange(n_c)
 
     def featurize(texts):
-        c = c_scaler.transform(pca.transform(bge(texts)))
+        raw = bge(texts)
+        c = c_scaler.transform(pca.transform(raw))
         z = z_scaler.transform(style_features(texts))
-        return np.hstack([c, z]).astype(np.float32)
+        return np.hstack([c, z]).astype(np.float32), raw
 
-    orig_X = featurize(cvs)
+    orig_X, orig_raw = featurize(cvs)
     theta0 = fit_screener(orig_X[idx_tr], y_tr)
     theta = theta0
     raw0 = auc(theta0, orig_X[idx_te], y_te)
@@ -243,6 +250,7 @@ def main():
     texts = list(cvs)
     cur_X = orig_X
     buffer, traj = [], []
+    prev_weff = None
     for t in range(n_rounds):
         yhat = score(theta, cur_X)
         if condition == "generic":
@@ -252,31 +260,44 @@ def main():
         else:
             ps = list(yhat)
         rewrites = rewriter(texts, ps)
-        obs_X = featurize(rewrites)
+        obs_X, obs_raw = featurize(rewrites)
         buffer.append((obs_X[idx_tr], y_tr))
 
         train_X, train_y = compose(regime, buffer, (orig_X[idx_tr], y_tr), alpha, rng)
         theta = fit_screener(train_X, train_y)
 
+        coef_std, weff = theta_weights(theta)
+        z_mass = np.abs(coef_std[z_cols]).sum()
+        z_weight_frac = float(z_mass / (np.abs(coef_std).sum() + 1e-9))
+        theta_drift = 0.0 if prev_weff is None else float(np.linalg.norm(weff - prev_weff))
+        prev_weff = weff
+        r_h = auc(theta, orig_X[idx_te], y_te)
+        r_obs = auc(theta, obs_X[idx_te], y_te)
+
         row = {
             "round": t,
-            "R_H": auc(theta, orig_X[idx_te], y_te),
-            "R_obs": auc(theta, obs_X[idx_te], y_te),
+            "R_H": r_h,
+            "R_obs": r_obs,
+            "gap": r_obs - r_h,
+            "z_weight_frac": z_weight_frac,
+            "theta_drift": theta_drift,
             "recoverability": recoverable_auc(obs_X[idx_tr], y_tr, seed),
             "diversity_z": blockvar(obs_X[:, z_cols]),
             "diversity_c": blockvar(obs_X[:, c_cols]),
-            "drift_z": float(np.mean(np.linalg.norm(obs_X[:, z_cols] - orig_X[:, z_cols], axis=1))),
-            "drift_c": float(np.mean(np.linalg.norm(obs_X[:, c_cols] - orig_X[:, c_cols], axis=1))),
+            "drift_z": float(np.mean(np.linalg.norm(obs_X[:, z_cols] - orig_X[:, z_cols], axis=1))) / np.sqrt(len(z_cols)),
+            "drift_c": float(np.mean(np.linalg.norm(obs_X[:, c_cols] - orig_X[:, c_cols], axis=1))) / np.sqrt(len(c_cols)),
+            "content_cos": float(np.mean(np.sum(orig_raw * obs_raw, axis=1))),
             "gamed_score": float(score(theta0, obs_X).mean()),
             "mean_yhat": float(yhat.mean()),
         }
         traj.append(row)
         (out_dir / f"round{t}.json").write_text(json.dumps(
             {"rewrites": rewrites, "yhat": yhat.tolist(), "y": y_all.tolist()}))
-        print(f"  r{t}: R_H={row['R_H']:.3f} R_obs={row['R_obs']:.3f} rec={row['recoverability']:.3f} "
+        print(f"  r{t}: R_H={row['R_H']:.3f} R_obs={row['R_obs']:.3f} gap={row['gap']:+.3f} "
+              f"rec={row['recoverability']:.3f} zwt={row['z_weight_frac']:.3f} dθ={row['theta_drift']:.3f} "
               f"div_z={row['diversity_z']:.3f} div_c={row['diversity_c']:.3f} "
-              f"drift_z={row['drift_z']:.2f} drift_c={row['drift_c']:.2f} "
-              f"gamed={row['gamed_score']:.3f}", flush=True)
+              f"drift_z={row['drift_z']:.3f} drift_c={row['drift_c']:.3f} "
+              f"ccos={row['content_cos']:.3f} gamed={row['gamed_score']:.3f}", flush=True)
         if wb is not None:
             wb.log(row, step=t)
         texts, cur_X = rewrites, obs_X
