@@ -43,7 +43,6 @@ class StatefulPopulationWorld(StatefulDynamics):
         self._state: State = {
             k: v.detach().clone() for k, v in initial_state.items()
         }
-        # Per-agent index for LM learners to look up profile rows; the leading
         # dim of the first state entry is the per-agent axis by convention.
         first = next(iter(initial_state.values()))
         self._n = int(first.shape[0])
