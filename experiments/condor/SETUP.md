@@ -56,7 +56,7 @@ in agent_torch). Population: 37,518 agents from Astoria, Queens.
 
 R2 = transmission rate in AT's `NewTransmission` substep.
 Seed frac = fraction of agents initially set to INFECTED (disease_stage=2).
-Calibration script: `scripts/calibrate_covid_single.py`.
+Calibration script: `scripts/old_experiments/calibrate_covid_single.py`.
 W&B project: `perfsim-calibration`.
 
 ### 4.2 COVID calibration jobs
@@ -64,7 +64,7 @@ W&B project: `perfsim-calibration`.
 Submit file: `condor/at_calibration.sub`
 Runner: `condor/run_calibration.sh`
 Configs: `condor/configs_calibration.txt`
-Python: `scripts/calibrate_covid_single.py`
+Python: `scripts/old_experiments/calibrate_covid_single.py`
 
 ```bash
 mkdir -p condor/logs
@@ -73,7 +73,7 @@ condor_submit_bid <BID> condor/at_calibration.sub
 
 After jobs finish, pick best per season:
 ```bash
-python scripts/calibrate_covid.py pick-best
+python scripts/old_experiments/calibrate_covid.py pick-best
 ```
 
 ### 4.3 COVID performative loop (LM + KL-SFT beta sweep)
@@ -82,7 +82,7 @@ Submit file: `condor/at_covid_calibrated.sub`
 Runner: `condor/run_one.sh`
 Configs: `condor/configs_alpha_sweep.txt` (Alpha only) or
          `condor/configs_calibrated_sweep.txt` (all 3 seasons)
-Python: `scripts/run_covid_lm.py`
+Python: `scripts/old_experiments/run_covid_lm.py`
 
 Current experiment parameters:
 
@@ -220,8 +220,8 @@ must contain only data rows.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/run_covid_lm.py` | Performative loop: LM + AT covid + KL-SFT |
-| `scripts/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) on the cluster |
-| `scripts/calibrate_covid.py` | Local calibration: `r2` / `surge` / `pick-best` subcommands |
+| `scripts/old_experiments/run_covid_lm.py` | Performative loop: LM + AT covid + KL-SFT |
+| `scripts/old_experiments/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) on the cluster |
+| `scripts/old_experiments/calibrate_covid.py` | Local calibration: `r2` / `surge` / `pick-best` subcommands |
 | `scripts/grad_diagnostics.py` | Validate AT autodiff (sign, FD, variance) |
 | `scripts/run_macro_lm.py` | Performative loop: LM + AT macro + KL-SFT |

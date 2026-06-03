@@ -29,4 +29,4 @@ env \
     CALIBRATED_R2="${CALIBRATED_R2:-}" \
     WANDB_PROJECT="${WANDB_PROJECT:-}" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_covid_nomodel/$RUN_TAG}" \
-    python experiments/scripts/run_covid_nomodel.py
+    python experiments/scripts/old_experiments/run_covid_nomodel.py

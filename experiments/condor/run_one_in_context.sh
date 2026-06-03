@@ -61,4 +61,4 @@ env \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     CALIBRATED_UAC="$CALIBRATED_UAC" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_macro_in_context/$RUN_TAG}" \
-    python experiments/scripts/run_macro_in_context.py
+    python experiments/scripts/_deprecated/run_macro_in_context.py
