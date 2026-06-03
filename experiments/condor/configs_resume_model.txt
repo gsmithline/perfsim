@@ -1,0 +1,4 @@
+resume_linear_clf, replace, experience, phenomenon, 0, linear, classification
+resume_mlp_clf, replace, experience, phenomenon, 0, mlp, classification
+resume_linear_reg, replace, experience, phenomenon, 0, linear, regression
+resume_mlp_reg, replace, experience, phenomenon, 0, mlp, regression

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Args: RUN_TAG REGIME LABEL CONDITION SEED
+# Args: RUN_TAG REGIME LABEL CONDITION SEED MODEL SCREENER
 set -eo pipefail
 
 RUN_TAG="$1"
@@ -7,6 +7,8 @@ DATA_REGIME="${2:-replace}"
 LABEL="${3:-experience}"
 CONDITION="${4:-phenomenon}"
 SEED="${5:-0}"
+MODEL="${6:-${MODEL:-linear}}"
+SCREENER="${7:-${SCREENER:-classification}}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -47,7 +49,9 @@ env \
     MAX_NEW_TOKENS="$MAX_NEW_TOKENS" \
     GEN_BATCH_SIZE="$GEN_BATCH_SIZE" \
     ANCHOR_ALPHA="$ANCHOR_ALPHA" \
+    MODEL="$MODEL" \
+    SCREENER="$SCREENER" \
     WANDB_PROJECT="$WANDB_PROJECT" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/resume_llm/$RUN_TAG}" \
-    python experiments/scripts/run_resume_llm_loop.py
+    python experiments/scripts/ai_mediated/run_resume_llm_loop.py

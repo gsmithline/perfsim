@@ -25,7 +25,8 @@ import pandas as pd
 import torch
 from fastembed import TextEmbedding
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -132,28 +133,48 @@ class Rewriter:
         return out
 
 
-def fit_screener(X, y):
+def _corr(p, y):
+    return float(np.corrcoef(p, y)[0, 1]) if np.std(p) > 1e-9 else 0.0
+
+
+def make_model(reg, kind):
+    if kind == "mlp":
+        mk = MLPRegressor if reg else MLPClassifier
+        return mk(hidden_layer_sizes=(128,), max_iter=400, random_state=0, early_stopping=True)
+    return Ridge(alpha=1.0) if reg else LogisticRegression(max_iter=1000)
+
+
+def fit_screener(X, y, reg=False, kind="linear"):
     sc = StandardScaler().fit(X)
-    clf = LogisticRegression(max_iter=1000).fit(sc.transform(X), y)
-    return sc, clf
+    model = make_model(reg, kind).fit(sc.transform(X), y)
+    return sc, model, reg
 
 
 def score(theta, X):
-    sc, clf = theta
-    return clf.predict_proba(sc.transform(X))[:, 1]
+    sc, model, reg = theta
+    if reg:
+        return model.predict(sc.transform(X))             
+    return model.predict_proba(sc.transform(X))[:, 1]
 
 
-def auc(theta, X, y):
-    return 0.5 if np.unique(y).size < 2 else float(roc_auc_score(y, score(theta, X)))
+def perf(theta, X, y):
+    _, _, reg = theta
+    p = score(theta, X)
+    if reg:
+        return _corr(p, y)                               
+    return 0.5 if np.unique(y).size < 2 else float(roc_auc_score(y, p))
 
 
-def recoverable_auc(X, y, seed):
-    if np.unique(y).size < 2:
+def recoverable(X, y, seed, reg=False):
+    if not reg and np.unique(y).size < 2:
         return 0.5
-    xtr, xte, ytr, yte = train_test_split(X, y, test_size=0.3, random_state=seed, stratify=y)
+    xtr, xte, ytr, yte = train_test_split(X, y, test_size=0.3, random_state=seed,
+                                          stratify=None if reg else y)
     sc = StandardScaler().fit(xtr)
-    clf = LogisticRegression(max_iter=1000).fit(sc.transform(xtr), ytr)
-    return float(roc_auc_score(yte, clf.predict_proba(sc.transform(xte))[:, 1]))
+    model = (Ridge(alpha=1.0) if reg else LogisticRegression(max_iter=1000)).fit(sc.transform(xtr), ytr)
+    if reg:
+        return _corr(model.predict(sc.transform(xte)), yte)
+    return float(roc_auc_score(yte, model.predict_proba(sc.transform(xte))[:, 1]))
 
 
 def blockvar(M):
@@ -161,9 +182,12 @@ def blockvar(M):
 
 
 def theta_weights(theta):
-    sc, clf = theta
-    coef = clf.coef_.ravel()
-    return coef, coef / sc.scale_  # standardized coefs, and raw-space (scaler-invariant)
+    sc, model, _ = theta
+    if hasattr(model, "coef_"):
+        coef = model.coef_.ravel()                       # linear: signed weights
+    else:
+        coef = np.abs(model.coefs_[0]).sum(axis=1)       # MLP: per-input importance (layer 0)
+    return coef, coef / sc.scale_
 
 
 def compose(regime, buffer, anchor, alpha, rng):
@@ -199,15 +223,23 @@ def main():
     df = pd.read_csv(data_csv)
     df = df[df["CV"].notna()].reset_index(drop=True)
     cvs = df["CV"].astype(str).tolist()
-    if label == "occupation":
+    screener = env("SCREENER", "classification")
+    reg = screener == "regression"
+    model_kind = env("MODEL", "linear")   # linear | mlp
+    if reg:
+        y_all = pd.to_numeric(df["Experience Years"], errors="coerce").to_numpy().astype(np.float32)
+        year_cap = float(max(1.0, np.nanmax(y_all)))
+    elif label == "occupation":
         y_all = pd.to_numeric(df["True Label"], errors="coerce").to_numpy().astype(int)
+        year_cap = 1.0
     else:
         exp = pd.to_numeric(df["Experience Years"], errors="coerce").to_numpy()
         y_all = (exp > np.nanmedian(exp)).astype(int)
+        year_cap = 1.0
 
     rng = np.random.default_rng(seed)
     idx_tr, idx_te = train_test_split(np.arange(len(cvs)), test_size=0.3,
-                                      random_state=seed, stratify=y_all)
+                                      random_state=seed, stratify=None if reg else y_all)
     y_tr, y_te = y_all[idx_tr], y_all[idx_te]
 
     embedder = TextEmbedding("BAAI/bge-base-en")
@@ -232,9 +264,9 @@ def main():
         return np.hstack([c, z]).astype(np.float32), raw
 
     orig_X, orig_raw = featurize(cvs)
-    theta0 = fit_screener(orig_X[idx_tr], y_tr)
+    theta0 = fit_screener(orig_X[idx_tr], y_tr, reg, model_kind)
     theta = theta0
-    raw0 = auc(theta0, orig_X[idx_te], y_te)
+    raw0 = perf(theta0, orig_X[idx_te], y_te)
     print(f"[resume_llm] tag={tag} cond={condition} regime={regime} label={label} "
           f"n={len(cvs)} c_dim={n_c} z_dim={len(z_cols)} R_H(theta_0)={raw0:.3f} device={device}",
           flush=True)
@@ -243,7 +275,7 @@ def main():
     if _wandb is not None and env("WANDB_PROJECT"):
         wb = _wandb.init(project=env("WANDB_PROJECT"), name=tag + env("WANDB_RUN_SUFFIX", ""),
                          config={"model": model_name, "condition": condition, "regime": regime,
-                                 "label": label, "n_rounds": n_rounds, "alpha": alpha,
+                                 "label": label, "screener": screener, "n_rounds": n_rounds, "alpha": alpha,
                                  "c_dim": int(n_c), "z_dim": int(len(z_cols)), "R_H_theta0": raw0})
 
     rewriter = Rewriter(model_name, device, max_new, gen_bs)
@@ -253,26 +285,27 @@ def main():
     prev_weff = None
     for t in range(n_rounds):
         yhat = score(theta, cur_X)
+        ps_norm = np.clip(yhat / year_cap, 0, 1) if reg else yhat   # prompt score in [0,1]
         if condition == "generic":
             ps = None
         elif condition == "identification":
-            ps = list(yhat[rng.permutation(len(yhat))])
+            ps = list(ps_norm[rng.permutation(len(ps_norm))])
         else:
-            ps = list(yhat)
+            ps = list(ps_norm)
         rewrites = rewriter(texts, ps)
         obs_X, obs_raw = featurize(rewrites)
         buffer.append((obs_X[idx_tr], y_tr))
 
         train_X, train_y = compose(regime, buffer, (orig_X[idx_tr], y_tr), alpha, rng)
-        theta = fit_screener(train_X, train_y)
+        theta = fit_screener(train_X, train_y, reg, model_kind)
 
         coef_std, weff = theta_weights(theta)
         z_mass = np.abs(coef_std[z_cols]).sum()
         z_weight_frac = float(z_mass / (np.abs(coef_std).sum() + 1e-9))
         theta_drift = 0.0 if prev_weff is None else float(np.linalg.norm(weff - prev_weff))
         prev_weff = weff
-        r_h = auc(theta, orig_X[idx_te], y_te)
-        r_obs = auc(theta, obs_X[idx_te], y_te)
+        r_h = perf(theta, orig_X[idx_te], y_te)
+        r_obs = perf(theta, obs_X[idx_te], y_te)
 
         row = {
             "round": t,
@@ -281,7 +314,7 @@ def main():
             "gap": r_obs - r_h,
             "z_weight_frac": z_weight_frac,
             "theta_drift": theta_drift,
-            "recoverability": recoverable_auc(obs_X[idx_tr], y_tr, seed),
+            "recoverability": recoverable(obs_X[idx_tr], y_tr, seed, reg),
             "diversity_z": blockvar(obs_X[:, z_cols]),
             "diversity_c": blockvar(obs_X[:, c_cols]),
             "drift_z": float(np.mean(np.linalg.norm(obs_X[:, z_cols] - orig_X[:, z_cols], axis=1))) / np.sqrt(len(z_cols)),
@@ -304,7 +337,7 @@ def main():
 
     (out_dir / "trajectory.json").write_text(json.dumps(
         {"config": {"model": model_name, "condition": condition, "regime": regime,
-                    "label": label, "n_rounds": n_rounds, "alpha": alpha, "seed": seed,
+                    "label": label, "screener": screener, "n_rounds": n_rounds, "alpha": alpha, "seed": seed,
                     "c_dim": int(n_c), "z_dim": int(len(z_cols)), "R_H_theta0": raw0},
          "trajectory": traj}, indent=2))
     if wb is not None:
