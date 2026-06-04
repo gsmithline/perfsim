@@ -16,7 +16,7 @@ from torch import Tensor
 from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 from perfsim.core.environment import StatefulDynamics
-from perfsim.environments.dynamics._common import apply_strategic_shift, validate_strat_features
+from perfsim.maps._common import apply_strategic_shift, validate_strat_features
 
 
 class StrategicLinearWorld(StatefulDynamics):

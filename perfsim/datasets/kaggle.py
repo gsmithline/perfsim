@@ -11,13 +11,6 @@ import torch
 from perfsim.core.types import SUPERVISED_SCHEMA, DataSchema
 from perfsim.datasets.tabular import TabularDataset
 
-try:
-    from kaggle.api.kaggle_api_extended import KaggleApi
-    _HAS_KAGGLE = True
-except (ImportError, OSError, SystemExit):
-    KaggleApi = None  # type: ignore[assignment,misc]
-    _HAS_KAGGLE = False
-
 
 def default_cache_dir() -> Path:
     """Default cache directory: `~/.cache/perfsim/datasets`."""
@@ -79,11 +72,15 @@ class KaggleDataset(TabularDataset):
 
     def _download(self) -> None:
         """Download competition files into `self._comp_dir` and unzip any archives."""
-        if KaggleApi is None:
+        # Lazy import: the kaggle SDK is an optional extra and authenticates
+        # at import time, so it must not load with the package.
+        try:
+            from kaggle.api.kaggle_api_extended import KaggleApi
+        except (ImportError, OSError, SystemExit) as exc:
             raise ImportError(
                 "KaggleDataset requires the 'kaggle' extra. "
                 "Install with: pip install 'perfsim[kaggle]'"
-            )
+            ) from exc
         api = KaggleApi()
         api.authenticate()
         api.competition_download_files(

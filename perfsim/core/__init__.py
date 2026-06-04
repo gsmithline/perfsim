@@ -18,6 +18,7 @@ from perfsim.core.loss import Loss
 from perfsim.core.model import Model
 from perfsim.core.predictor import Predictor
 from perfsim.core.types import (
+    FEATURES_SCHEMA,
     SUPERVISED_SCHEMA,
     TRAJECTORY_SCHEMA,
     ConfigBase,
@@ -27,6 +28,7 @@ from perfsim.core.types import (
 )
 
 __all__ = [
+    "FEATURES_SCHEMA",
     "SUPERVISED_SCHEMA",
     "TRAJECTORY_SCHEMA",
     "AgentBased",

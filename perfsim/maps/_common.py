@@ -1,4 +1,4 @@
-"""Helpers shared across multiple World implementations."""
+"""Strategic-response helpers shared by maps and the legacy worlds."""
 
 from __future__ import annotations
 

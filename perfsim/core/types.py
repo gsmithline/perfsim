@@ -42,6 +42,11 @@ SUPERVISED_SCHEMA: DataSchema = DataSchema(
     required=frozenset({"x", "y"}),
 )
 
+FEATURES_SCHEMA: DataSchema = DataSchema(
+    name="features",
+    required=frozenset({"x"}),
+)
+
 TRAJECTORY_SCHEMA: DataSchema = DataSchema(
     name="trajectory",
     required=frozenset(),
