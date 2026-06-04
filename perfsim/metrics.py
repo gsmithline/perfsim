@@ -1,4 +1,4 @@
-"""Metrics: PR, DPR, stability_gap, optimality_gap, convergence detection."""
+"""Metrics: PR, DPR, stability_gap, optimality_gap, convergence, long-term PR."""
 
 from __future__ import annotations
 
@@ -16,6 +16,27 @@ def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
     """Single-batch performative risk estimate."""
     with torch.no_grad():
         data = world.sample(model)
+        return loss(model, data, reduction="mean")
+
+
+def limiting_distribution(
+    world: World, model: Model, *, n_iters: int = 200, seed: int = 0
+) -> "dict[str, Tensor]":
+    """D_inf(theta): iterate the env under fixed theta to its limiting samples (eq 10)."""
+    world.reset(seed=seed)
+    data: dict[str, Tensor] | None = None
+    for _ in range(n_iters):
+        data = world.step(model)
+    assert data is not None
+    return data
+
+
+def long_term_performative_risk(
+    world: World, model: Model, loss: Loss, *, n_iters: int = 200, seed: int = 0
+) -> Tensor:
+    """PR_inf(theta) = Risk(theta, D_inf(theta)) (eq 11)."""
+    data = limiting_distribution(world, model, n_iters=n_iters, seed=seed)
+    with torch.no_grad():
         return loss(model, data, reduction="mean")
 
 

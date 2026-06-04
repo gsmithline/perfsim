@@ -27,7 +27,6 @@ def normalize_adjacency(adj: Tensor) -> Tensor:
     degs_inv = torch.where(degs > 0, 1.0 / degs, torch.zeros_like(degs))
     degs_inv = torch.where(degs_inv > 1.1, torch.zeros_like(degs_inv), degs_inv)
     # unsqueeze(-1) -> (N,1) row-normalizes; unsqueeze(0) -> (1,N) would
-    # column-normalize and break FJ's bounded-mixing. Do not change.
     return adj * degs_inv.unsqueeze(-1)
 
 

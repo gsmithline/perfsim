@@ -1,6 +1,6 @@
 """ReplicatorWorld: discrete-time replicator dynamics on a K-strategy mixture.
 
-Taylor-Jonker 1978 discrete replicator:
+Discrete replicator, similiar to Evolutionary Prediction Games:
 p_{t+1} = p_t * (1 + f(p_t)) / <p_t, 1 + f(p_t)>, where f is the per-strategy
 fitness (depends on the mixture and, in PP, on the deployed predictor). Each PP
 round runs n_ticks of the update; emits per-strategy fitness, persists the mixture.

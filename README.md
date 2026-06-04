@@ -83,6 +83,10 @@ More families from the survey's inventory (resampled-if-rejected, group-mixture 
 
 True simulators with internal state stay native `Environment`s: Friedkin-Johnsen opinion dynamics, the recommender ecosystem, replicator dynamics, AgentTorch ABMs. They are honestly described as worlds whose induced map is reachable only at level 1b by running them. This is the realistic tier the survey calls for: rich distribution maps beyond feature-space transformations.
 
+## Stateful PP: transition maps
+
+Any map can be lifted into a transition map `Tr(theta, Q_{t-1})` (survey eqs 21-22) that models slow adaptation: `GeometricDecayEnv(map, lam=...)` (geometric decay) and `StaggeredResponseEnv(map, k=...)`. These keep an empirical sample buffer; run them at `epoch_size=1` so each round applies one `Tr(theta_t, Q_{t-1})`. `limiting_distribution` and `long_term_performative_risk` in `metrics.py` give the limiting distribution `D_inf(theta)` and long-term risk `PR_inf(theta)` (eqs 10-11). Both combinators reshape the transient; their limit is `D(theta)`.
+
 ## Layout
 
 ```
@@ -142,7 +146,7 @@ Optional protocols an Environment may declare:
 
 ## Roadmap
 
-Headlines: learner-side access enforcement with stamped benchmark results, fitted maps (`fit(observations)`) sharing the map interface so StatErr/MisspecErr is measurable, stateful combinators (geometric decay, staggered response), assumption diagnostics (epsilon-sensitivity, mixture dominance) reported as estimates with probe sets, and the remaining map families from the survey.
+Headlines: learner-side access enforcement with stamped benchmark results, fitted maps (`fit(observations)`) sharing the map interface so StatErr/MisspecErr is measurable, assumption diagnostics (epsilon-sensitivity, mixture dominance) reported as estimates with probe sets, and the remaining map families from the survey.
 
 ## Implementation TODOs
 

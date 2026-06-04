@@ -9,5 +9,6 @@ Modules:
 """
 
 from perfsim.environments.map_env import MapEnvironment
+from perfsim.environments.stateful import GeometricDecayEnv, StaggeredResponseEnv
 
-__all__ = ["MapEnvironment"]
+__all__ = ["GeometricDecayEnv", "MapEnvironment", "StaggeredResponseEnv"]
