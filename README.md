@@ -6,7 +6,7 @@ Design follows the taxonomy of Kehrenberg et al. 2026 (arXiv:2602.10176), which 
 
 ## The distribution map
 
-A map is stateless and pure: give it model parameters, it gives back samples. Most maps in the literature are a fixed base population plus a theta-dependent transformation (survey eq 15), which is `TransformationMap`; you write two methods and sampling is derived:
+A map is stateless and pure: give it model parameters, it gives back samples. Most maps in the literature are a fixed base population plus a theta-dependent transformation, which is `TransformationMap`; you write two methods and sampling is derived:
 
 ```python
 import torch
@@ -37,7 +37,7 @@ Maps see the deployed model through a `ModelView`. The prediction channel is alw
 
 ## The access pyramid
 
-The survey classifies PP methods by how much of D they may touch (Sec 3.3.1). In perfsim that hierarchy is the type hierarchy:
+The survey classifies PP methods by how much of D they may touch. In perfsim that hierarchy is the type hierarchy:
 
 | Level | Meaning | perfsim type |
 |---|---|---|
@@ -85,7 +85,7 @@ True simulators with internal state stay native `Environment`s: Friedkin-Johnsen
 
 ## Stateful PP: transition maps
 
-Any map can be lifted into a transition map `Tr(theta, Q_{t-1})` (survey eqs 21-22) that models slow adaptation: `GeometricDecayEnv(map, lam=...)` (geometric decay) and `StaggeredResponseEnv(map, k=...)`. These keep an empirical sample buffer; run them at `epoch_size=1` so each round applies one `Tr(theta_t, Q_{t-1})`. `limiting_distribution` and `long_term_performative_risk` in `metrics.py` give the limiting distribution `D_inf(theta)` and long-term risk `PR_inf(theta)` (eqs 10-11). Both combinators reshape the transient; their limit is `D(theta)`.
+Any map can be lifted into a transition map `Tr(theta, Q_{t-1})` that models slow adaptation: `GeometricDecayEnv(map, lam=...)` (geometric decay) and `StaggeredResponseEnv(map, k=...)`. These keep an empirical sample buffer; run them at `epoch_size=1` so each round applies one `Tr(theta_t, Q_{t-1})`. `limiting_distribution` and `long_term_performative_risk` in `metrics.py` give the limiting distribution `D_inf(theta)` and long-term risk `PR_inf(theta)` (eqs 10-11). Both combinators reshape the transient; their limit is `D(theta)`.
 
 ## Layout
 
