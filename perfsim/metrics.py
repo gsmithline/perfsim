@@ -10,6 +10,8 @@ from torch import Tensor
 from perfsim.core.loss import Loss
 from perfsim.core.model import Model
 from perfsim.core.environment import Environment as World
+from typing import Callable, Sequence   
+from perfsim.core.types import Data
 
 
 def performative_risk(world: World, model: Model, loss: Loss) -> Tensor:
@@ -73,6 +75,33 @@ def optimality_gap(
     pr_current = performative_risk(world, model, loss)
     pr_optimal = performative_risk(world, optimal_model, loss)
     return pr_current - pr_optimal
+
+
+def performative_gap(
+    world: World, model: Model, reference: Model, loss: Loss
+) -> Tensor:
+    """Self-induced risk change: Risk(theta, D(theta)) - Risk(theta, D(reference)).
+    """
+    pr = performative_risk(world, model, loss)
+    base = decoupled_risk(world, reference, model, loss)
+    return pr - base
+
+def stability_residual(
+    world: World,
+    model: Model,
+    retrain_fn: Callable[[Data], Tensor],
+    *,
+    seed: int | None = None,
+) -> Tensor:
+    """PS fixed-point residual:.
+    """
+    theta = model.get_params().detach().flatten()
+    if seed is not None:
+        world.reset(seed=seed)
+    with torch.no_grad():
+        data = world.sample(model)
+    theta_star = retrain_fn(data).detach().flatten()
+    return (theta - theta_star).norm()
 
 
 def has_converged(

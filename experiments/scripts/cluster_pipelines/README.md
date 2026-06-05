@@ -1,9 +1,9 @@
-# old_experiments
+# cluster_pipelines
 
 Earlier experiment scripts (covid, Pokec FJ, Schelling, FJ/MLP locals, calibration).
 The current AI-mediated / market-collapse work lives in `../ai_mediated/`.
 
-Run from the repo root (`python experiments/scripts/old_experiments/<file>.py`). The
+Run from the repo root (`python experiments/scripts/cluster_pipelines/<file>.py`). The
 matching Condor wrappers in `experiments/condor/run_one_*.sh` point here.
 
 - `run_pokec_fj_lm.py` — Pokec FJ + LM deployment-schedule loop (uses `_collapse_metrics.py`)

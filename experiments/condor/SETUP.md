@@ -17,7 +17,6 @@ pip install -e ".[lm,agenttorch]"
 # Sanity
 python -c "import torch; print(torch.cuda.is_available(), torch.__version__)"
 python -c "from perfsim.scenarios.at_covid import make_covid_env; print('at_covid OK')"
-python -c "from perfsim.scenarios.at_macro import make_macro_env; print('at_macro OK')"
 ```
 
 ## 2. W&B
@@ -29,8 +28,7 @@ chmod 600 ~/.wandb_key
 
 ## 3. Machine-specific paths
 
-Edit these defaults in `condor/run_one.sh`, `condor/run_calibration.sh`,
-`condor/run_calibration_macro.sh`:
+Edit these defaults in `condor/run_one.sh`, `condor/run_calibration.sh`:
 
 ```
 REPO=/home/gsmithline/perfsim
@@ -56,7 +54,7 @@ in agent_torch). Population: 37,518 agents from Astoria, Queens.
 
 R2 = transmission rate in AT's `NewTransmission` substep.
 Seed frac = fraction of agents initially set to INFECTED (disease_stage=2).
-Calibration script: `scripts/old_experiments/calibrate_covid_single.py`.
+Calibration script: `scripts/cluster_pipelines/calibrate_covid_single.py`.
 W&B project: `perfsim-calibration`.
 
 ### 4.2 COVID calibration jobs
@@ -64,7 +62,7 @@ W&B project: `perfsim-calibration`.
 Submit file: `condor/at_calibration.sub`
 Runner: `condor/run_calibration.sh`
 Configs: `condor/configs_calibration.txt`
-Python: `scripts/old_experiments/calibrate_covid_single.py`
+Python: `scripts/cluster_pipelines/calibrate_covid_single.py`
 
 ```bash
 mkdir -p condor/logs
@@ -73,7 +71,7 @@ condor_submit_bid <BID> condor/at_calibration.sub
 
 After jobs finish, pick best per season:
 ```bash
-python scripts/old_experiments/calibrate_covid.py pick-best
+python scripts/cluster_pipelines/calibrate_covid.py pick-best
 ```
 
 ### 4.3 COVID performative loop (LM + KL-SFT beta sweep)
@@ -82,7 +80,7 @@ Submit file: `condor/at_covid_calibrated.sub`
 Runner: `condor/run_one.sh`
 Configs: `condor/configs_alpha_sweep.txt` (Alpha only) or
          `condor/configs_calibrated_sweep.txt` (all 3 seasons)
-Python: `scripts/old_experiments/run_covid_lm.py`
+Python: `scripts/cluster_pipelines/run_covid_lm.py`
 
 Current experiment parameters:
 
@@ -138,7 +136,7 @@ Subgroup effects:
 Validated AT autodiff through SEIRM epidemic sim:
 - Autograd/finite-difference ratio: 0.98-1.10
 - Gradient variance (CV): 0.02 across 10 seeds
-- Script: `scripts/grad_diagnostics.py` (runs locally, ~8 min)
+- Script: `scripts/cluster_pipelines/grad_diagnostics.py` (runs locally, ~8 min)
 
 ### 4.6 Outputs
 
@@ -155,52 +153,7 @@ runs/at_covid_lm/<tag>/
 
 ---
 
-## 5. Macro economics experiments
-
-### 5.1 ABM status
-
-Macro substeps patched and functional:
-- `_PatchedMacroRates` — fixes shape mismatch in bundled `UpdateMacroRates`
-  (unemployment_adaptation_coefficient: YAML shape [1] vs code expects [num_timesteps, 3])
-- `_PatchedFinancialMarket` — re-implements Taylor-rule interest rate,
-  price adjustment, inflation calculation
-
-Macro indicators that evolve: unemployment rate, hourly wages, price of
-goods, inflation rate, labor force participation.
-
-### 5.2 Macro calibration
-
-Target: Queens County monthly unemployment rates, 2019-2023 (bundled in
-`agent_torch/models/macro_economics/data/unemployment_rate_csvs/Queens-Table.csv`).
-
-| Period | Start month | Dates | Unemployment |
-|--------|------------|-------|-------------|
-| Pre-COVID baseline | 0 | Jan-Sep 2019 | 2.9-4.2% |
-| COVID shock | 15 | Apr-Dec 2020 | 23.2→11.5% |
-| Recovery | 24 | Jan-Sep 2021 | 12.5→8.3% |
-| Post-recovery | 36 | Jan-Sep 2022 | 7.4→4.1% |
-
-Parameter being calibrated: `unemployment_adaptation_coefficient` (UAC),
-a (num_timesteps, 3) regression coefficient matrix.
-
-Full population: 2,712,360 agents (full NYC census data, bundled in
-agent_torch). Uses `config.yaml` (not `config_100_agents.yaml`).
-
-Submit file: `condor/at_macro_calibration.sub`
-Runner: `condor/run_calibration_macro.sh`
-Configs: `condor/configs_macro_calibration.txt`
-Python: `scripts/calibrate_macro_single.py`
-
-```bash
-mkdir -p condor/logs
-condor_submit_bid <BID> condor/at_macro_calibration.sub
-```
-
-W&B project: `perfsim-macro-calibration-full`
-
----
-
-## 6. Config files (Condor queue-from)
+## 5. Config files (Condor queue-from)
 
 Condor's `queue from` does NOT support `#` comments. All config files
 must contain only data rows.
@@ -210,18 +163,16 @@ must contain only data rows.
 | `configs_alpha_sweep.txt` | tag, style, beta, frac, r2 | `at_covid_calibrated.sub` |
 | `configs_calibrated_sweep.txt` | tag, style, beta, frac, r2 | `at_covid_calibrated.sub` (all seasons) |
 | `configs_calibration.txt` | tag, frac, week | `at_calibration.sub` |
-| `configs_macro_calibration.txt` | tag, start, lr | `at_macro_calibration.sub` |
 | `configs_betas.txt` | tag, style, beta | `at_covid_lm.sub` (legacy, uncalibrated) |
 | `configs_baseline.txt` | tag, style, beta | `at_covid_lm.sub` (legacy) |
 
 ---
 
-## 7. Scripts
+## 6. Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/old_experiments/run_covid_lm.py` | Performative loop: LM + AT covid + KL-SFT |
-| `scripts/old_experiments/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) on the cluster |
-| `scripts/old_experiments/calibrate_covid.py` | Local calibration: `r2` / `surge` / `pick-best` subcommands |
-| `scripts/grad_diagnostics.py` | Validate AT autodiff (sign, FD, variance) |
-| `scripts/run_macro_lm.py` | Performative loop: LM + AT macro + KL-SFT |
+| `scripts/cluster_pipelines/run_covid_lm.py` | Performative loop: LM + AT covid + KL-SFT |
+| `scripts/cluster_pipelines/calibrate_covid_single.py` | Calibrate R2 for one (seed_frac, season) on the cluster |
+| `scripts/cluster_pipelines/calibrate_covid.py` | Local calibration: `r2` / `surge` / `pick-best` subcommands |
+| `scripts/cluster_pipelines/grad_diagnostics.py` | Validate AT autodiff (sign, FD, variance) |

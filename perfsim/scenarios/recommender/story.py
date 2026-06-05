@@ -6,6 +6,7 @@ import torch
 
 from perfsim.scenarios.recommender.entities import sample_corpus, sample_user_population
 from perfsim.scenarios.recommender.env import RecommenderEcosystemWorld
+from perfsim.scenarios.recommender.env_competition import CompetingRecommendersWorld
 from perfsim.scenarios.recommender.env_producers import ProducerEcosystemWorld
 
 
@@ -38,6 +39,40 @@ def build_recommender_env(
     )
     return RecommenderEcosystemWorld(
         corpus, users, alpha=alpha, beta=beta, temp=temp, eta=eta, noise=noise, dtype=dtype,
+    )
+
+
+def build_competition_env(
+    *,
+    n_platforms: int = 2,
+    n_items: int = 30,
+    n_users: int = 200,
+    dim: int = 8,
+    n_communities: int = 4,
+    community_spread: float = 0.3,
+    alpha: float = 4.0,
+    beta: float = 4.0,
+    temp: float = 0.5,
+    eta: float = 0.15,
+    eta_mob: float = 0.0,
+    seed: int = 0,
+    dtype: torch.dtype = torch.float32,
+) -> CompetingRecommendersWorld:
+    """Build a P-platform world over one shared population.
+
+    eta_mob: per-user share mobility (multiplicative weights on satisfaction);
+    0 fixes the attention split. Other knobs as in build_recommender_env.
+    """
+    gen = torch.Generator()
+    gen.manual_seed(int(seed))
+    corpus = sample_corpus(n_items, dim, generator=gen, dtype=dtype)
+    users = sample_user_population(
+        n_users, dim, n_communities=n_communities,
+        community_spread=community_spread, generator=gen, dtype=dtype,
+    )
+    return CompetingRecommendersWorld(
+        corpus, users, n_platforms=n_platforms, alpha=alpha, beta=beta,
+        temp=temp, eta=eta, eta_mob=eta_mob, dtype=dtype,
     )
 
 

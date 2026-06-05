@@ -94,6 +94,33 @@ def exposure_faithfulness(world) -> float: #TODO check this
     return _pearson(world.last_exposure, world.hidden_quality())
 
 
+# ---- competition probes ------------------------------------------------------
+def platform_divergence(world) -> float:
+    """Mean pairwise (1 - corr) between platform exposure profiles. 0 = clones."""
+    u = world.last_exposure
+    n = u.shape[0]
+    vals = [1.0 - _pearson(u[i], u[j]) for i in range(n) for j in range(i + 1, n)]
+    return float(sum(vals) / len(vals))
+
+
+def share_concentration(world) -> float:
+    """Mean max share per user. 1/P = even split, 1 = fully sorted."""
+    return float(world.last_shares.max(dim=1).values.mean())
+
+
+def satisfaction_current(world) -> float:
+    """Share-weighted realized affinity under current (drifted) tastes."""
+    return float((world.last_shares * world.last_satisfaction).sum(dim=1).mean())
+
+
+def welfare_innate(world) -> float:
+    """Share-weighted realized affinity under ORIGINAL tastes. The second ledger."""
+    with torch.no_grad():
+        aff0 = world.interest0 @ world.features.t()
+        per = (world.last_choice * aff0.unsqueeze(0)).sum(dim=2).t()   # (N, P)
+        return float((world.last_shares * per).sum(dim=1).mean())
+
+
 # ---- producer-ecosystem probes ---------------------------------------------
 def producer_diversity(world) -> float:
     """Effective number of live producers = exp(entropy(availability)).

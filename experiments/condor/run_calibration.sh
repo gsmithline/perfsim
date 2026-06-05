@@ -43,4 +43,4 @@ env \
     SEED="$SEED" \
     WANDB_PROJECT="$WANDB_PROJECT" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/calibration/$RUN_TAG}" \
-    python experiments/scripts/old_experiments/calibrate_covid_single.py
+    python experiments/scripts/cluster_pipelines/calibrate_covid_single.py

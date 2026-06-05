@@ -25,6 +25,7 @@ from perfsim.scenarios.recommender.entities import (
     sample_user_population,
 )
 from perfsim.scenarios.recommender.env import RecommenderEcosystemWorld
+from perfsim.scenarios.recommender.env_competition import CompetingRecommendersWorld
 from perfsim.scenarios.recommender.env_producers import ProducerEcosystemWorld
 from perfsim.scenarios.recommender.probes import (
     alignment_induced,
@@ -35,11 +36,19 @@ from perfsim.scenarios.recommender.probes import (
     exposure_gini,
     induced_calibration,
     interest_drift,
+    platform_divergence,
     producer_diversity,
+    satisfaction_current,
+    share_concentration,
     surviving_producers,
     user_welfare,
+    welfare_innate,
 )
-from perfsim.scenarios.recommender.story import build_producer_env, build_recommender_env
+from perfsim.scenarios.recommender.story import (
+    build_competition_env,
+    build_producer_env,
+    build_recommender_env,
+)
 
 __all__ = [
     "Corpus",
@@ -47,8 +56,10 @@ __all__ = [
     "sample_corpus",
     "sample_user_population",
     "RecommenderEcosystemWorld",
+    "CompetingRecommendersWorld",
     "ProducerEcosystemWorld",
     "build_recommender_env",
+    "build_competition_env",
     "build_producer_env",
     "alignment_induced",
     "alignment_truth",
@@ -58,6 +69,10 @@ __all__ = [
     "exposure_gini",
     "engagement_entropy",
     "interest_drift",
+    "platform_divergence",
+    "share_concentration",
+    "satisfaction_current",
+    "welfare_innate",
     "producer_diversity",
     "surviving_producers",
     "user_welfare",

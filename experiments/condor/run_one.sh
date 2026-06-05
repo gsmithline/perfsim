@@ -4,7 +4,7 @@
 #
 # Mirrors Opinion-dynamics-post-training/condor/run_one.sh.
 # Sets up the conda env + wandb key, then invokes
-# experiments/scripts/old_experiments/run_covid_lm.py with the (style, beta) for this job.
+# experiments/scripts/cluster_pipelines/run_covid_lm.py with the (style, beta) for this job.
 
 set -eo pipefail
 
@@ -79,4 +79,4 @@ env \
     GROUP_PROMPTING="$GROUP_PROMPTING" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/at_covid_lm/$RUN_TAG}" \
-    python experiments/scripts/old_experiments/run_covid_lm.py
+    python experiments/scripts/cluster_pipelines/run_covid_lm.py

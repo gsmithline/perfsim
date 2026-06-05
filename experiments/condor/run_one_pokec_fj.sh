@@ -81,4 +81,4 @@ env \
     N_PERPLEXITY="$N_PERPLEXITY" \
     WANDB_RUN_SUFFIX="$WANDB_RUN_SUFFIX" \
     OUT_DIR="${OUT_DIR:-$REPO/runs/pokec_fj_lm/$RUN_TAG}" \
-    python experiments/scripts/old_experiments/run_pokec_fj_lm.py
+    python experiments/scripts/cluster_pipelines/run_pokec_fj_lm.py
