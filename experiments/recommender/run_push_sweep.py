@@ -1,13 +1,6 @@
-"""Where does the retraining push come from? Sweep the two performativity channels.
-
-alpha gates the LABEL channel (exposure biases engagement); eta gates the
-POPULATION channel (tastes drift toward what is surfaced). For each (alpha, eta)
-cell we run the learning and frozen arms of run_performative_push and report
-the final-round push (learning - frozen). If the simulator behaves as designed,
-the push vanishes with both channels off and decomposes when one is on at a time.
-
-Run from repo root:
-    python experiments/recommender/run_push_sweep.py
+"""Sweep the two performativity channels: alpha (labels) x eta (population);
+push = learning - frozen, per run_performative_push.
+Run: python experiments/recommender/run_push_sweep.py
 """
 
 from __future__ import annotations

@@ -137,6 +137,10 @@ class FJWorld(StatefulPopulationWorld):
         return self._platform_sus.clone()
 
     @property
+    def current_opinion(self) -> Tensor:
+        return self._state["opinion"].clone()
+
+    @property
     def profiles(self) -> object | None:
         """Row-aligned per-agent metadata (e.g. a pandas DataFrame), or None."""
         return self._profiles

@@ -1,16 +1,6 @@
-"""Does RETRAINING push the world, beyond merely deploying a ranker?
-
-Same world, same seed, three deployment policies:
-  - learning:  ERM refit every round on the engagement it induced (the PP loop)
-  - frozen:    one ERM fit on round-0 engagement, then deployed unchanged
-  - untrained: random-init theta deployed unchanged (no information baseline)
-
-All three bias exposure (alpha>0) and drift tastes (eta>0); only `learning`
-closes the retraining feedback loop. The performative push of learning is the
-gap between the learning and frozen trajectories.
-
-Run from repo root:
-    python experiments/recommender/run_performative_push.py
+"""Push of retraining vs deploying a fixed ranker: learning / frozen /
+untrained arms in the same world.
+Run: python experiments/recommender/run_performative_push.py
 """
 
 from __future__ import annotations

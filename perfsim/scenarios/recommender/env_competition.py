@@ -1,10 +1,6 @@
-"""CompetingRecommendersWorld: P rankers share one drifting user population.
-
-Each platform trains only on the engagement its own attention share induced;
-interests drift toward the share-weighted consumption mixture. eta_mob > 0
-moves per-user shares by multiplicative weights on realized satisfaction
-(eta_mob = 0 freezes the split).
-"""
+"""P rankers over one shared drifting population; each trains only on the
+engagement its own attention share induced. eta_mob > 0 moves shares by MW
+on satisfaction."""
 
 from __future__ import annotations
 
@@ -159,7 +155,8 @@ class CompetingRecommendersWorld:
         interest_next = interest + self.eta * (target - interest)
         shares_next = shares
         if self.eta_mob > 0.0:
-            shares_next = shares * torch.exp(self.eta_mob * sat)
+            centered = sat - sat.max(dim=1, keepdim=True).values
+            shares_next = shares * torch.exp(self.eta_mob * centered)
             shares_next = shares_next / shares_next.sum(dim=1, keepdim=True)
         self._info = {
             "exposure": torch.stack([u for u, _ in choices]),

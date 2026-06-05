@@ -33,7 +33,9 @@ def mnl_choice(
     alpha: exposure bias (demand-side, from the ranker). gamma_supply: how much a
     producer's availability a_k raises its consumption odds (supply-side). With
     log_availability=None / gamma_supply=0 this is the plain demand-only choice model.
-    Returns (N, K); rows sum to 1.
+    Returns (N, K); rows sum to 1. Note alpha and beta reach the dynamics only
+    through alpha*beta (the logsumexp in alpha*log softmax(beta*scores) cancels
+    here); exposure itself is the only beta-only quantity.
     """
     logits = affinity + alpha * log_exposure.unsqueeze(0)
     if log_availability is not None and gamma_supply != 0.0:
