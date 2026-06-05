@@ -1,0 +1,4 @@
+comp_sft_t05, sft, 0.0, 0.05, 0
+comp_sft_t01, sft, 0.0, 0.01, 0
+comp_kl3_t05, sft_kl, 3.0, 0.05, 0
+comp_kl3_t01, sft_kl, 3.0, 0.01, 0

@@ -1,0 +1,26 @@
+# Smoke: one 3-rounds competition run.
+# Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_competition_smoke.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_competition.sh
+arguments         = comp_smoke sft 0.0 0.05 0
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-competition N_ROUNDS=3 EPOCH_SIZE=100 GEN_BATCH_SIZE=32"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/comp_smoke.out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/comp_smoke.err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/comp_smoke.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue
