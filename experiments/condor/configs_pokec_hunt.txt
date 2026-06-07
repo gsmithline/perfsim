@@ -1,0 +1,6 @@
+hunt3_t05, hunt+hunt+hunt, 0.05, 1e-5, 0
+hunt3_t01, hunt+hunt+hunt, 0.01, 1e-5, 0
+hunt3_t05_lrlo, hunt+hunt+hunt, 0.05, 3e-6, 0
+mix_t05, hunt+desc+desc, 0.05, 1e-5, 0
+mix_t01, hunt+desc+desc, 0.01, 1e-5, 0
+desc3_t05, desc+desc+desc, 0.05, 1e-5, 0
