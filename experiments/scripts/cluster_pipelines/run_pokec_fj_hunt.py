@@ -97,6 +97,8 @@ def main() -> int:
     sft_batch_size = base._env_int("SFT_BATCH_SIZE", 2)
     lora_r = base._env_int("LORA_R", 8)
     sft_lr = base._env_float("SFT_LR", 5e-5)
+    innate_mode = os.environ.get("INNATE_MODE", "real")
+    trust_scale = base._env_float("TRUST_SCALE", 1.0)
 
     n_platforms = len(base_models)
     assert len(types) == n_platforms
@@ -106,6 +108,7 @@ def main() -> int:
         "hunt_steps": hunt_steps, "hunt_batch": hunt_batch,
         "base_models": base_models, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "seed": seed, "n_labeled": n_labeled, "sft_epochs": sft_epochs,
+        "innate_mode": innate_mode, "trust_scale": trust_scale,
         "lora_r": lora_r, "sft_lr": sft_lr, "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -120,6 +123,13 @@ def main() -> int:
     setup = base.load_pokec_setup(pokec_dir)
     n = setup["n"]
     innate = setup["innate"]
+    if innate_mode == "bimodal":
+        gen0 = torch.Generator()
+        gen0.manual_seed(seed + 7)
+        med = innate.median()
+        innate = torch.where(innate >= med, 0.75, 0.25) + 0.04 * torch.randn(n, generator=gen0)
+        innate = innate.clamp(0.02, 0.98)
+        setup["innate"] = innate
 
     def _prompt_builder(profile: pd.Series, tokenizer) -> str:
         lines = []
@@ -194,7 +204,8 @@ def main() -> int:
 
     world = FJWorld(
         innate=innate, graph=setup["W"], peer_sus=setup["peer_sus"],
-        platform_sus=setup["platform_sus"], features=innate, profiles=setup["profiles"],
+        platform_sus=setup["platform_sus"] * trust_scale, features=innate,
+        profiles=setup["profiles"],
     )
     world.reset(seed=seed)
     mask = torch.zeros(n, dtype=torch.bool)

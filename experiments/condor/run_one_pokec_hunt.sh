@@ -9,6 +9,8 @@ PLATFORM_TYPES="$2"
 TAU="${3:-0.05}"
 HUNT_LR="${4:-1e-5}"
 SEED="${5:-0}"
+INNATE_MODE="${6:-real}"
+TRUST_SCALE="${7:-1.0}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -38,7 +40,7 @@ if [ -f "$WANDB_KEY_FILE" ]; then
   export WANDB_API_KEY="$(cat "$WANDB_KEY_FILE")"
 fi
 
-export RUN_TAG PLATFORM_TYPES TAU HUNT_LR SEED \
+export RUN_TAG PLATFORM_TYPES TAU HUNT_LR SEED INNATE_MODE TRUST_SCALE \
   N_ROUNDS EPOCH_SIZE BASE_MODELS HUNT_STEPS HUNT_BATCH \
   SFT_EPOCHS SFT_BATCH_SIZE WANDB_PROJECT LORA_R SFT_LR N_LABELED POKEC_DIR
 

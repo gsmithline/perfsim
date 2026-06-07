@@ -1,0 +1,7 @@
+div_bi_hunt_t05, hunt+hunt+hunt, 0.05, 1e-5, 0, bimodal, 1.0
+div_bi_hunt_t01, hunt+hunt+hunt, 0.01, 1e-5, 0, bimodal, 1.0
+div_bi_desc_t05, desc+desc+desc, 0.05, 1e-5, 0, bimodal, 1.0
+div_bi_desc_t01, desc+desc+desc, 0.01, 1e-5, 0, bimodal, 1.0
+div_lt_hunt_t05, hunt+hunt+hunt, 0.05, 1e-5, 0, real, 0.3
+div_lt_desc_t05, desc+desc+desc, 0.05, 1e-5, 0, real, 0.3
+div_bi_lt_hunt_t01, hunt+hunt+hunt, 0.01, 1e-5, 0, bimodal, 0.3

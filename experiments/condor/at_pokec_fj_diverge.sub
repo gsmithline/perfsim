@@ -1,0 +1,26 @@
+# HTCondor: hunter (share-gradient) vs describer (SFT) LLM platforms on Pokec FJ.
+# Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_diverge.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_hunt.sh
+arguments         = $(tag) $(types) $(tau) $(huntlr) $(seed) $(innate) $(trust)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-hunt N_ROUNDS=12 EPOCH_SIZE=100"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, types, tau, huntlr, seed, innate, trust from experiments/condor/configs_pokec_diverge.txt
