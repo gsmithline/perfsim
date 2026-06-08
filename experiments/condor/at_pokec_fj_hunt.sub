@@ -12,7 +12,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-hunt N_ROUNDS=12 EPOCH_SIZE=100"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-hunt N_ROUNDS=25 EPOCH_SIZE=100"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
