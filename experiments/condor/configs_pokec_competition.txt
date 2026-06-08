@@ -1,5 +1,3 @@
-# KL phase line: sft_kl x beta{0,1,3,10} x seed{0,1,2} at tau=0.05, + tau=0.01 endpoints.
-# beta=0 == plain SFT baseline (same code path). tag, style, klbeta, tau, seed
 comp_kl0_t05_s0, sft_kl, 0.0, 0.05, 0
 comp_kl0_t05_s1, sft_kl, 0.0, 0.05, 1
 comp_kl0_t05_s2, sft_kl, 0.0, 0.05, 2
