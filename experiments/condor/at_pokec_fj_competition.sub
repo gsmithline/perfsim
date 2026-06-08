@@ -1,5 +1,5 @@
 # HTCondor: 3 LLM platforms competing over the Pokec FJ population.
-# {sft, sft_kl beta=3} x tau {0.05, 0.01} = 4 runs, seed 0.
+# KL phase line: beta{0,1,3,10} x seed{0,1,2} at tau=0.05 + tau=0.01 endpoints = 14 runs.
 # Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_competition.sub
 
 universe          = vanilla
@@ -13,7 +13,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-competition N_ROUNDS=12 EPOCH_SIZE=100 GEN_BATCH_SIZE=32"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-competition N_ROUNDS=25 EPOCH_SIZE=100 GEN_BATCH_SIZE=32"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err

@@ -17,7 +17,7 @@ import torch
 
 from perfsim.environments.dynamics.fj import FJWorld
 from run_beach import make_population
-from run_hotelling import FixedPredictions
+from _pokec import FixedPredictions
 
 OUT = Path("runs/fj_beach")
 SEEDS = (0, 1, 2)
