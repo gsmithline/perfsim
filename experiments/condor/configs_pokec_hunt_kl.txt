@@ -1,0 +1,12 @@
+hunt_kl0_t05_s0, hunt+hunt+hunt, 0.05, 1e-5, 0, 0.0
+hunt_kl0_t05_s1, hunt+hunt+hunt, 0.05, 1e-5, 1, 0.0
+hunt_kl0_t05_s2, hunt+hunt+hunt, 0.05, 1e-5, 2, 0.0
+hunt_kl1_t05_s0, hunt+hunt+hunt, 0.05, 1e-5, 0, 1.0
+hunt_kl1_t05_s1, hunt+hunt+hunt, 0.05, 1e-5, 1, 1.0
+hunt_kl1_t05_s2, hunt+hunt+hunt, 0.05, 1e-5, 2, 1.0
+hunt_kl3_t05_s0, hunt+hunt+hunt, 0.05, 1e-5, 0, 3.0
+hunt_kl3_t05_s1, hunt+hunt+hunt, 0.05, 1e-5, 1, 3.0
+hunt_kl3_t05_s2, hunt+hunt+hunt, 0.05, 1e-5, 2, 3.0
+hunt_kl10_t05_s0, hunt+hunt+hunt, 0.05, 1e-5, 0, 10.0
+hunt_kl10_t05_s1, hunt+hunt+hunt, 0.05, 1e-5, 1, 10.0
+hunt_kl10_t05_s2, hunt+hunt+hunt, 0.05, 1e-5, 2, 10.0

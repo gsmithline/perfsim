@@ -49,7 +49,6 @@ class ERMLearner(Learner):
             opt.zero_grad()
             value = self.loss(self.model, data, reduction="mean")
             value.backward()
-            # LBFGS only reads the scalar; detach silences the float() warning.
             return value.detach()
 
         opt.step(closure)

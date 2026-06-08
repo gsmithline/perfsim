@@ -1,0 +1,27 @@
+# HTCondor: all-hunters (hunt+hunt+hunt) with a KL leash to own prior.
+# KL phase line: beta{0,1,3,10} x seed{0,1,2} at tau=0.05 = 12 runs.
+# Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fj_hunt_kl.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_hunt_kl.sh
+arguments         = $(tag) $(types) $(tau) $(huntlr) $(seed) $(klbeta)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-pokec-fj-hunt-kl N_ROUNDS=25 EPOCH_SIZE=100"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, types, tau, huntlr, seed, klbeta from experiments/condor/configs_pokec_hunt_kl.txt

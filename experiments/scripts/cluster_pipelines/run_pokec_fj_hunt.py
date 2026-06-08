@@ -111,6 +111,7 @@ def main() -> int:
     mix_lambda = base._env_float("MIX_LAMBDA", 1.0)
     mobility = os.environ.get("MOBILITY", "memoryless")
     eta_mob = base._env_float("ETA_MOB", 0.5)
+    hunt_kl_beta = base._env_float("HUNT_KL_BETA", 0.0)   # KL leash on hunters to own prior
 
     n_platforms = len(base_models)
     assert len(types) == n_platforms
@@ -121,7 +122,7 @@ def main() -> int:
         "base_models": base_models, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "seed": seed, "n_labeled": n_labeled, "sft_epochs": sft_epochs,
         "innate_mode": innate_mode, "trust_scale": trust_scale, "mix_lambda": mix_lambda,
-        "mobility": mobility, "eta_mob": eta_mob,
+        "mobility": mobility, "eta_mob": eta_mob, "hunt_kl_beta": hunt_kl_beta,
         "lora_r": lora_r, "sft_lr": sft_lr, "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -271,6 +272,13 @@ def main() -> int:
                         slog = answer_logits(lms[p], [prompts_all[p][i] for i in ssel])
                         tgt = dids.to(slog.device)[(op[ssel] * 9).round().long().clamp(0, 9)]
                         loss = loss + F.cross_entropy(slog.float(), tgt)
+                    if hunt_kl_beta > 0:
+                        with torch.no_grad(), lms[p].inner_model.disable_adapter():
+                            ref_logits = answer_logits(lms[p], [prompts_all[p][i] for i in sel])
+                        logp = torch.log_softmax(logits.float(), dim=-1)
+                        logq = torch.log_softmax(ref_logits.float(), dim=-1)
+                        kl = (logp.exp() * (logp - logq)).sum(dim=-1).mean()
+                        loss = loss + hunt_kl_beta * kl
                     opts[p].zero_grad()
                     loss.backward()
                     opts[p].step()
