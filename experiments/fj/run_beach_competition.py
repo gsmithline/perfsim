@@ -14,10 +14,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
-from torch import Tensor
 
-from perfsim.core.model import Model
-from perfsim.environments.dynamics.fj import FJWorld, normalize_adjacency
+from perfsim.environments.dynamics.fj import FJWorld
+from run_beach import make_population
+from run_hotelling import FixedPredictions
 
 OUT = Path("runs/fj_beach")
 SEEDS = (0, 1, 2)
@@ -30,33 +30,12 @@ PRIORS = (-0.8, 0.8)
 LAMS = (0.0, 0.5, 4.0)
 
 
-class FixedPredictions(Model):
-    def __init__(self, values: Tensor) -> None:
-        super().__init__()
-        self.values = values
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.values
-
-
-def make_population(seed: int) -> tuple[Tensor, Tensor, Tensor]:
-    gen = torch.Generator()
-    gen.manual_seed(seed)
-    community = (torch.arange(N) >= N // 2).long()
-    innate = torch.where(community == 0, -1.0, 1.0) + 0.3 * torch.randn(N, generator=gen)
-    p = torch.where(community.unsqueeze(0) == community.unsqueeze(1), 0.10, 0.01)
-    adj = (torch.rand(N, N, generator=gen) < p).float()
-    adj = torch.triu(adj, diagonal=1)
-    adj = adj + adj.t()
-    return innate, normalize_adjacency(adj), community
-
-
 def run_market(priors: tuple[float, ...], lam: float, seed: int) -> dict:
     innate, graph, community = make_population(seed)
     world = FJWorld(innate, graph, torch.full((N,), 0.5), platform_sus=BETA_TRUST)
     world.reset(seed=seed)
     n_p = len(priors)
-    b = torch.tensor(priors)                      # platforms start at their priors
+    b = torch.tensor(priors)
     prior_t = torch.tensor(priors)
     shares = torch.full((N, n_p), 1.0 / n_p)
     gen = torch.Generator()

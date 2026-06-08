@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
+from _metrics import gini
 from run_performative_push import FreezeAfter
 
 from perfsim.competition import run_competition
@@ -39,12 +40,6 @@ ARMS = {
 COLORS = {"both frozen": "#3b6fd8", "one retrains": "#3bb0a0", "both retrain": "#d8633b"}
 
 
-def _gini(x: torch.Tensor) -> float:
-    xs, _ = x.reshape(-1).clamp_min(0.0).sort()
-    n = xs.numel()
-    idx = torch.arange(1, n + 1, dtype=xs.dtype)
-    return float((2.0 * (idx * xs).sum()) / (n * xs.sum()) - (n + 1) / n)
-
 
 def run_arm(kinds: tuple[str, str], eta: float, seed: int) -> dict[str, float]:
     gen = torch.Generator()
@@ -67,7 +62,7 @@ def run_arm(kinds: tuple[str, str], eta: float, seed: int) -> dict[str, float]:
     return {
         "sat": satisfaction_current(env),
         "welf": welfare_innate(env),
-        "gini": (_gini(env.last_exposure[0]) + _gini(env.last_exposure[1])) / 2,
+        "gini": (gini(env.last_exposure[0]) + gini(env.last_exposure[1])) / 2,
     }
 
 

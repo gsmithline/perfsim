@@ -1,22 +1,4 @@
 """AI-mediated human data channel as a performative map D(theta).
-
-A fixed raw human population (x0, y) is observed by the platform only AFTER it
-passes through an AI assistant psi (the Mediator). The assistant rewrites the
-"style" columns z while preserving the "fundamental" columns c; it may also be
-conditioned on the platform's current prediction theta(x) ("rewrite to raise the
-score"). The platform then trains on the mediated data, so what it sees next
-round depends on what it deployed this round: a performative loop.
-
-This mirrors StrategicLinearWorld (Perdomo): a fixed population, recomputed each
-round under the current theta. The difference is the response map. Strategic =
-rational best-response (epsilon * w); here the response is a mediation operator
-psi applied to the style columns. Recursion/accumulation across rounds is the
-job of the retrain driver (perfsim.scenarios.ai_mediated), NOT this env: the env
-is one-shot D(theta) over the fixed raw population.
-
-The z/c split is a column mask, exactly analogous to strat_features. Labels are
-either preserved (y = f(c) attached to the original person) or regenerated from
-the mediated artifact (y' = f(z'), e.g. toxicity of the rewritten text).
 """
 
 from __future__ import annotations
@@ -36,8 +18,8 @@ from perfsim.maps._common import validate_strat_features
 class Mediator(ABC):
     """The AI assistant psi: a channel that rewrites the style columns of x.
 
-    `score` is the platform's current prediction theta(x) (one value per row),
-    passed only when the mediation is platform-conditioned; otherwise None.
+    score is the platform's current prediction theta(x),
+    passed only when the mediation is platform-conditioned otherwise None.
     Implementations must leave non-style columns untouched.
     """
 
@@ -67,7 +49,7 @@ class IdentityMediator(Mediator):
         return x.clone()
 
 
-class ContractionMediator(Mediator):
+class ContractionMediator(Mediator): #holder
     """Quasi-model assistant: pull the style columns toward a shared target.
 
     x_z' = (1 - strength) * x_z + strength * target  (+ optional jitter)

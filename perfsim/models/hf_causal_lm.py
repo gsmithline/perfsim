@@ -1,4 +1,7 @@
-"""HFCausalLMModel: HuggingFace causal LM wrapped as a perfsim Model."""
+"""HFCausalLMModel: HuggingFace causal LM wrapped as a perfsim Model.
+
+Needs to be broken up this code is messy, it should just be hte model
+"""
 
 from __future__ import annotations
 
@@ -120,9 +123,7 @@ class HFCausalLMModel(Model):
             raise RuntimeError("ensure_loaded() must be called before build_prompt")
         return self._prompt_builder(profile, self.tokenizer)
 
-    # ---- Forward (predict for all N agents) ------------------------------
-
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor: #peragent interactins
         """Generate per-agent predictions. Returns (N, 1) tensor in [0, 1]."""
         if x.shape[0] != self._n:
             raise ValueError(

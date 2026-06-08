@@ -1,0 +1,4 @@
+mw_mix3_t05, mixed+mixed+mixed, 0.05, 1e-5, 0, real, 1.0
+mw_duel_mhd_t05, mixed+hunt+desc, 0.05, 1e-5, 0, real, 1.0
+mw_bi_mix_t01, mixed+mixed+mixed, 0.01, 1e-5, 0, bimodal, 1.0
+mw_bi_lt_mix_t01, mixed+mixed+mixed, 0.01, 1e-5, 0, bimodal, 0.3

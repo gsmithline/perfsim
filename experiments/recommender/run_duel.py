@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
+from _metrics import gini, pearson
 from run_performative_push import FreezeAfter
 
 from perfsim.competition import run_competition
@@ -31,17 +32,6 @@ OUT = Path("runs/recommender")
 SEEDS = (0, 1, 2)
 
 
-def _gini(x: torch.Tensor) -> float:
-    xs, _ = x.reshape(-1).clamp_min(0.0).sort()
-    n = xs.numel()
-    idx = torch.arange(1, n + 1, dtype=xs.dtype)
-    return float((2.0 * (idx * xs).sum()) / (n * xs.sum()) - (n + 1) / n)
-
-
-def _pearson(a: torch.Tensor, b: torch.Tensor) -> float:
-    a = a.reshape(-1) - a.mean()
-    b = b.reshape(-1) - b.mean()
-    return float((a @ b) / (a.norm() * b.norm()).clamp_min(1e-12))
 
 
 def trajectory(eta: float, *, seed: int = 0, n_rounds: int = 40,
@@ -72,10 +62,10 @@ def trajectory(eta: float, *, seed: int = 0, n_rounds: int = 40,
             sB = retrain(env.features).reshape(-1)
         sat = env.last_satisfaction
         out["share_retrain"].append(float(env.shares[:, 1].mean()))
-        out["truth_frozen"].append(_pearson(sA, q))
-        out["truth_retrain"].append(_pearson(sB, q))
-        out["gini_frozen"].append(_gini(env.last_exposure[0]))
-        out["gini_retrain"].append(_gini(env.last_exposure[1]))
+        out["truth_frozen"].append(pearson(sA, q))
+        out["truth_retrain"].append(pearson(sB, q))
+        out["gini_frozen"].append(gini(env.last_exposure[0]))
+        out["gini_retrain"].append(gini(env.last_exposure[1]))
         out["sat_frozen"].append(float(sat[:, 0].mean()))
         out["sat_retrain"].append(float(sat[:, 1].mean()))
 

@@ -72,8 +72,8 @@ class PerfGDLearner(Learner):
         pass
 
 
-class PerfGDFiniteDiffLearner(Learner):
-    """Performative gradient descent via finite differences (Perdomo et al. 2020).
+class PerfGDFiniteDiffLearner(Learner): #TODO fix this its wrong, its not the original perofmraitve gradient descent.
+    """Performative gradient descent via finite differences.
 
     Estimates the performative gradient by perturbing each model parameter,
     running the environment, and computing central differences on the

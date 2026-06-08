@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+import torch.nn.functional as F
 
 try:
     import wandb as _wandb
@@ -52,24 +53,32 @@ def digit_ids(tokenizer) -> torch.Tensor:
     return torch.tensor(ids)
 
 
+def answer_logits(lm, prompts: list[str]) -> torch.Tensor:
+    """Last-position logits for a prompt batch (grad-enabled)."""
+    dev = lm.inner_model.device
+    inputs = lm.tokenizer(prompts, return_tensors="pt", padding=True,
+                          truncation=True).to(dev)
+    logits = lm.inner_model(**inputs).logits
+    last = inputs["attention_mask"].sum(dim=1) - 1
+    row = torch.arange(logits.shape[0], device=dev)
+    return logits[row, last]
+
+
+def expected_value(logits: torch.Tensor, dids: torch.Tensor) -> torch.Tensor:
+    dlog = logits[:, dids.to(logits.device)]
+    probs = torch.softmax(dlog.float(), dim=1)
+    vals = torch.arange(10, device=logits.device, dtype=torch.float32) / 9.0
+    return probs @ vals
+
+
 def readout(lm, prompts: list[str], dids: torch.Tensor, *, grad: bool,
             chunk: int = 64) -> torch.Tensor:
     """Expected value over digit tokens at the next position, in [0, 1]."""
-    dev = lm.inner_model.device
     outs = []
     ctx = torch.enable_grad() if grad else torch.no_grad()
     with ctx:
         for i in range(0, len(prompts), chunk):
-            batch = prompts[i:i + chunk]
-            inputs = lm.tokenizer(batch, return_tensors="pt", padding=True,
-                                  truncation=True).to(dev)
-            logits = lm.inner_model(**inputs).logits
-            last = inputs["attention_mask"].sum(dim=1) - 1
-            row = torch.arange(logits.shape[0], device=dev)
-            dlog = logits[row, last][:, dids.to(dev)]
-            probs = torch.softmax(dlog.float(), dim=1)
-            vals = torch.arange(10, device=dev, dtype=torch.float32) / 9.0
-            outs.append(probs @ vals)
+            outs.append(expected_value(answer_logits(lm, prompts[i:i + chunk]), dids))
     return torch.cat(outs)
 
 
@@ -99,6 +108,9 @@ def main() -> int:
     sft_lr = base._env_float("SFT_LR", 5e-5)
     innate_mode = os.environ.get("INNATE_MODE", "real")
     trust_scale = base._env_float("TRUST_SCALE", 1.0)
+    mix_lambda = base._env_float("MIX_LAMBDA", 1.0)
+    mobility = os.environ.get("MOBILITY", "memoryless")
+    eta_mob = base._env_float("ETA_MOB", 0.5)
 
     n_platforms = len(base_models)
     assert len(types) == n_platforms
@@ -108,7 +120,8 @@ def main() -> int:
         "hunt_steps": hunt_steps, "hunt_batch": hunt_batch,
         "base_models": base_models, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "seed": seed, "n_labeled": n_labeled, "sft_epochs": sft_epochs,
-        "innate_mode": innate_mode, "trust_scale": trust_scale,
+        "innate_mode": innate_mode, "trust_scale": trust_scale, "mix_lambda": mix_lambda,
+        "mobility": mobility, "eta_mob": eta_mob,
         "lora_r": lora_r, "sft_lr": sft_lr, "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -214,6 +227,7 @@ def main() -> int:
     gen = torch.Generator()
     gen.manual_seed(seed + 1000)
 
+    shares = torch.full((n, n_platforms), 1.0 / n_platforms)
     trajectory, preds_raw, op_raw, assign_raw = [], [], [], []
     t_loop = time.time()
     for t in range(n_rounds):
@@ -222,8 +236,11 @@ def main() -> int:
             for p in range(n_platforms)
         ])                                                          # (P, N)
         x = world.state["opinion"].float()
-        probs = torch.softmax(-(preds - x.unsqueeze(0)).abs().t() / tau, dim=1)
-        assign = torch.multinomial(probs, 1, generator=gen).squeeze(1)
+        if mobility == "mw":
+            assign = torch.multinomial(shares, 1, generator=gen).squeeze(1)
+        else:
+            probs = torch.softmax(-(preds - x.unsqueeze(0)).abs().t() / tau, dim=1)
+            assign = torch.multinomial(probs, 1, generator=gen).squeeze(1)
         world.run(FixedPredictions(preds[assign, idx_all].unsqueeze(-1)), n_steps=epoch_size)
         op = world.state["opinion"].float()
 
@@ -237,19 +254,32 @@ def main() -> int:
                         "agent_idx": idx_all[served],
                     })
             else:
-                # gradient steps on expected capture, rivals fixed
+                # capture gradient (hunt) plus optional fit term (mixed), rivals fixed
                 rivals = torch.stack([preds[q] for q in range(n_platforms) if q != p])
                 rival_w = torch.exp(-(rivals - op.unsqueeze(0)).abs() / tau).sum(dim=0)
+                served_idx = ((assign == p) & mask).nonzero().reshape(-1)
+                dids = dids_all[p]
                 for _ in range(hunt_steps):
                     sel = torch.randperm(n, generator=gen)[:hunt_batch]
-                    f = readout(lms[p], [prompts_all[p][i] for i in sel],
-                                dids_all[p], grad=True)
+                    logits = answer_logits(lms[p], [prompts_all[p][i] for i in sel])
+                    f = expected_value(logits, dids)
                     own = torch.exp(-(f - op[sel].to(f.device)).abs() / tau)
                     capture = own / (own + rival_w[sel].to(f.device))
-                    loss = -capture.mean()
+                    loss = mix_lambda * -capture.mean() if types[p] == "mixed" else -capture.mean()
+                    if types[p] == "mixed" and served_idx.numel():
+                        ssel = served_idx[torch.randperm(served_idx.numel(), generator=gen)[:hunt_batch]]
+                        slog = answer_logits(lms[p], [prompts_all[p][i] for i in ssel])
+                        tgt = dids.to(slog.device)[(op[ssel] * 9).round().long().clamp(0, 9)]
+                        loss = loss + F.cross_entropy(slog.float(), tgt)
                     opts[p].zero_grad()
                     loss.backward()
                     opts[p].step()
+
+        if mobility == "mw":
+            agree = -(preds - op.unsqueeze(0)).abs().t()
+            shares = shares * torch.exp(eta_mob * (agree - agree.max(dim=1, keepdim=True).values))
+            shares = shares.clamp_min(1e-3)
+            shares = shares / shares.sum(dim=1, keepdim=True)
 
         means = preds.mean(dim=1)
         div = sum(float((preds[a] - preds[b_]).abs().mean())
@@ -261,6 +291,7 @@ def main() -> int:
             "position_gap": float(means.max() - means.min()),
             "pred_divergence": div / (n_platforms * (n_platforms - 1)),
             "shares": [float((assign == p).float().mean()) for p in range(n_platforms)],
+            "trust_conc": float(shares.max(dim=1).values.mean()),
         }
         trajectory.append(row)
         (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))

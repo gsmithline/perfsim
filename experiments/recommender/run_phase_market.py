@@ -15,6 +15,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
+from _metrics import gini
+
 from perfsim.competition import run_competition
 from perfsim.learners import ERMLearner
 from perfsim.losses import MSELoss
@@ -33,12 +35,6 @@ PRODUCTS = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0)
 BETA = 4.0
 ETAS = {0.0: "#3b6fd8", 0.01: "#3bb0a0", 0.05: "#b89b3b", 0.15: "#d8633b"}
 
-
-def _gini(x: torch.Tensor) -> float:
-    xs, _ = x.reshape(-1).clamp_min(0.0).sort()
-    n = xs.numel()
-    idx = torch.arange(1, n + 1, dtype=xs.dtype)
-    return float((2.0 * (idx * xs).sum()) / (n * xs.sum()) - (n + 1) / n)
 
 
 def market(product: float, eta: float, seed: int) -> dict[str, float]:
@@ -59,7 +55,7 @@ def market(product: float, eta: float, seed: int) -> dict[str, float]:
     return {
         "welf": true,
         "infl": felt / true if true > 1e-9 else float("nan"),
-        "gini": (_gini(env.last_exposure[0]) + _gini(env.last_exposure[1])) / 2,
+        "gini": (gini(env.last_exposure[0]) + gini(env.last_exposure[1])) / 2,
     }
 
 
