@@ -34,7 +34,7 @@ OUT = Path("runs/recommender")
 
 
 def trajectory(alpha: float, *, beta: float = 8.0, eta: float = 0.0, seed: int = 0,
-               n_rounds: int = 40, epoch_size: int = 8) -> tuple[list[float], list[float]]:
+               n_rounds: int = 20, epoch_size: int = 8) -> tuple[list[float], list[float]]:
     env = build_recommender_env(
         n_items=30, n_users=200, dim=8, alpha=alpha, beta=beta, eta=eta, seed=seed,
     )
