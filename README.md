@@ -20,7 +20,7 @@ class CreditGamingMap(TransformationMap):
 
     model_channel = "parameters"   # this map reads theta itself
 
-    def __init__(self, x0, y, eps=0.5):
+    def __init__(self, x0, y, eps=0.5):   # eps: sensitivity, how far features move per unit of model weight
         self._x0, self._y, self._eps = x0, y, eps
 
     @property
@@ -44,7 +44,7 @@ Methods differ in how much they assume they understand about how the world react
 | Level | What you assume you have | In code |
 |---|---|---|
 | samples | You can only get data by running the environment. You don't know its density function, you just draw samples from it. This is the realistic case. | `map.sample` |
-| mechanism | You know the part of the density, a fixed base population plus the rule for how deploying the model shifts it. You can compute the shift, but not the probability of any given outcome. | `TransformationMap` (`sample_base` + `transform`) |
+| mechanism |  A fixed base population plus the rule for how deploying the model shifts it. You can compute the shift, but not the probability of any given outcome. | `TransformationMap` (`sample_base` + `transform`) |
 | density | You know the full probabilities: how likely any outcome is under a given model. The strongest assumption, and the rarest in practice. | `DensityMap.log_prob` |
 
 Lower levels assume less, so they apply to more realistic environments but let a method do less. Higher levels let a method optimize more directly, but only apply when you genuinely know that much. `access_levels(map)` reports which a given map offers.
