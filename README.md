@@ -2,13 +2,13 @@
   <img src="docs/logo.png" alt="perfsim" width="420">
 </p>
 
-A benchmark library for performative prediction (PP): settings where a deployed model changes the distribution it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z) (Perdomo et al. 2020). Perfsim makes the map a first-class primitive, makes the field's access hierarchy part of the type system, and provides the retraining loop, environments, and measurement tools around it.
+A benchmark library for performative prediction (PP): settings where a deployed model changes the data it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z) (Perdomo et al. 2020), the rule for how the world reacts to your model. perfsim treats that map as the main building block, makes "how much a method is allowed to know about it" part of the types, and gives you the retraining loop, the environments, and the tools to measure what happens.
 
 The design is inspired by the survey of Kehrenberg et al. 2026 (arXiv:2602.10176). 
 
 ## The distribution map
 
-A map is stateless and pure: give it model parameters, it gives back samples. Most maps in the literature are a fixed base population plus a theta-dependent transformation, which is `TransformationMap`; you write two methods and sampling is derived:
+A map takes a model and gives back the data that model induces. The common case is a fixed base population plus a rule for how the model shifts it. That is a `TransformationMap`: you write those two pieces and sampling is handled for you.
 
 ```python
 import torch
@@ -35,7 +35,7 @@ class CreditGamingMap(TransformationMap):
         return {"x": z_base["x"] + self._eps * model.params, "y": z_base["y"]}
 ```
 
-Maps see the deployed model through a `ModelView`. The prediction channel is always open; the parameter channel opens only when the map declares `model_channel = "parameters"`. Reading an undeclared channel raises `AccessError`. What a component was allowed to see is enforced by the API, not by convention.
+Maps see the deployed model through a `ModelView`. The prediction channel is always open, the parameter channel opens only when the map declares `model_channel = "parameters"`. Reading an undeclared channel raises `AccessError`. What a component was allowed to see is enforced by the API, not by convention.
 
 ## Access levels: how much a method assumes it knows
 
@@ -43,8 +43,8 @@ Methods differ in how much they assume they understand about how the world react
 
 | Level | What you assume you have | In code |
 |---|---|---|
-| samples | You can only get data by running the environment. You don't know its math; you just draw samples from it. This is the realistic case. | `map.sample` |
-| mechanism | You know the recipe: a fixed base population plus the rule for how deploying the model shifts it. You can compute the shift, but not the probability of any given outcome. | `TransformationMap` (`sample_base` + `transform`) |
+| samples | You can only get data by running the environment. You don't know its math, you just draw samples from it. This is the realistic case. | `map.sample` |
+| mechanism | You know the part of the density, a fixed base population plus the rule for how deploying the model shifts it. You can compute the shift, but not the probability of any given outcome. | `TransformationMap` (`sample_base` + `transform`) |
 | density | You know the full probabilities: how likely any outcome is under a given model. The strongest assumption, and the rarest in practice. | `DensityMap.log_prob` |
 
 Lower levels assume less, so they apply to more realistic environments but let a method do less. Higher levels let a method optimize more directly, but only apply when you genuinely know that much. `access_levels(map)` reports which a given map offers.
@@ -53,7 +53,7 @@ Enforcement runs both ways. A map sees the model through a `ModelView` (it can r
 
 ## Running the PP loop
 
-Wrap a map in `MapEnvironment` to run it in the epoch loop. Repeated retraining (RRM) is `ERMLearner`; the Gaussian shift family has a closed-form fixed point to converge to:
+Wrap a map in `MapEnvironment` and run it with the `Simulator`. `ERMLearner` retrains to convergence each round (RRM) and the Gaussian-shift map has a known fixed point to check against:
 
 ```python
 import torch
@@ -73,7 +73,7 @@ history = sim.run(n_rounds=20, epoch_size=1, seed=0)
 print(model.get_params(), "vs", gmap.closed_form_fp())
 ```
 
-Each outer round: the learner trains on the previous round's data, the model is deployed, the environment produces the next data. With `epoch_size > 1` the population evolves under frozen parameters between retrainings (Algorithm 1 in the stateful worlds).
+Each round: the learner trains on last round's data, the model is deployed, the environment produces the next batch. With `epoch_size > 1` the population evolves under a frozen model before the next retraining.
 
 ## Map families included
 
@@ -86,11 +86,11 @@ More families from the survey's inventory (resampled-if-rejected, group-mixture 
 
 ## Worlds: stateful simulators
 
-True simulators with internal state stay native `Environment`s: Friedkin-Johnsen opinion dynamics, the recommender ecosystem, replicator dynamics, AgentTorch ABMs. You can't write down their map; you can only sample from it by running them forward (the samples level). These are the realistic environments, where the conclusions from the controllable maps get stress-tested.
+True simulators with internal state stay native `Environment`s: Friedkin-Johnsen opinion dynamics, the recommender ecosystem, AgentTorch ABMs. You can't write down their map analytically, you can only sample from it by running them forward (the samples level). These are the realistic environments, where the conclusions from the controllable maps get stress-tested.
 
 ## Stateful PP: transition maps
 
-Any map can be lifted into a transition map `Tr(theta, Q_{t-1})` that models slow adaptation: `GeometricDecayEnv(map, lam=...)` (geometric decay) and `StaggeredResponseEnv(map, k=...)`. These keep an empirical sample buffer; run them at `epoch_size=1` so each round applies one `Tr(theta_t, Q_{t-1})`. `limiting_distribution` and `long_term_performative_risk` in `metrics.py` give the limiting distribution `D_inf(theta)` and long-term risk `PR_inf(theta)` (eqs 10-11). Both combinators reshape the transient; their limit is `D(theta)`.
+By default the population reacts fully each round. To make it react gradually instead, wrap a map in `GeometricDecayEnv(map, lam=...)` or `StaggeredResponseEnv(map, k=...)` and run at `epoch_size=1`. `metrics.py` has `limiting_distribution` and `long_term_performative_risk` for the long-run behavior.
 
 ## Layout
 
@@ -128,7 +128,7 @@ perfsim/
   examples/                       # bundled datasets (pokec, two_tickets)
 ```
 
-Dependency rule: `maps/` depends only on `core` primitives (types, model); `environments/` depend on `maps/`; never the reverse.
+Dependency rule: `maps/` depends only on `core` primitives (types, model), `environments/` depend on `maps/`, never the reverse.
 
 ## Install
 
@@ -145,13 +145,13 @@ See `pyproject.toml` for all extras: `[tabular]`, `[kaggle]`, `[hf]`, `[trl]`, `
 
 Optional protocols an Environment may declare:
 
-- `Differentiable`: `grad_sample(model)` is autograd-traceable (oracle access; an upper-bound baseline, not a pyramid level).
-- `FullyDifferentiable`: full inner-loop rollout is autograd-traceable.
-- `Rewarding`: fills a `reward` field in the data dict (for RL learners).
-- `Trajectory`: produces multi-step trajectory tensors with a leading time axis.
-- `ClosedFormFixedPoint`: provides an analytic fixed point for validation.
+- `Differentiable`: you can take a gradient through `grad_sample(model)` (an oracle baseline, stronger than any of the access levels above).
+- `FullyDifferentiable`: you can take a gradient through the whole inner rollout.
+- `Rewarding`: fills a `reward` field for RL learners.
+- `Trajectory`: returns multi-step trajectories with a time axis.
+- `ClosedFormFixedPoint`: provides an exact fixed point to check against.
 
 ## Roadmap
 
-Headlines: the benchmark runner that runs every method on the same environments and stamps the results (the access enforcement itself is now in, via `MapAccess`; a method that uses the full-density access is next), fitted maps (`fit(observations)`) so you can approximate a sample-only world with a higher-level map and measure how wrong the approximation is, assumption diagnostics (how sensitive the environment is, whether it has one mode or several) reported as estimates, and the remaining map families from the survey.
+Headlines: the benchmark runner that runs every method on the same environments and stamps the results (the access enforcement itself is now in, via `MapAccess`, is a method that uses the full-density access is next), fitted maps (`fit(observations)`) so you can approximate a sample-only world with a higher-level map and measure how wrong the approximation is, assumption diagnostics (how sensitive the environment is, whether it has one mode or several) reported as estimates, and the remaining map families from the survey.
 

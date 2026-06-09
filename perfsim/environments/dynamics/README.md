@@ -1,81 +1,37 @@
 # `perfsim.environments.dynamics`
 
-Concrete `Dynamics` environments: the performative map **D(theta)** that produces
-training data given a deployed predictor theta. `AgentBased` envs (per-agent
-decision rules) live in `perfsim/adapters/`; the only one is the AgentTorch
-adapter.
+Ready-made environments that react to your model. You don't write a map for these; you pick one, pass it straight to the `Simulator`, and run the loop. Most carry internal state and can only be sampled by running them forward (the samples level).
 
-A `Dynamics` env answers: what data does the predictor train on
-(`env.step(handle) -> {"x", "y"}`), and what state persists to the next step.
-During one outer round `env.step(handle)` runs `epoch_size` times under a frozen
-handle; only the final step's data trains the predictor. `epoch_size = 1` is the
-classical lockstep PP loop.
+Each round the simulator runs the environment `epoch_size` times under a frozen model, and the model retrains on the last step's data. `epoch_size = 1` is the plain lockstep loop; larger values let the population settle under a fixed model before retraining.
 
-## At a glance
+```python
+from perfsim import Simulator
+from perfsim.environments.dynamics import FJWorld
+# world = FJWorld(...); sim = Simulator(env=world, learner=..., loss=...)
+```
 
-| Environment | State | Predictor's role | What it's for |
-|---|---|---|---|
-| `GaussianShiftWorld` | stateless | shifts the regression target via `Atheta + b` | RRM/RGD gating test against closed-form fixed point `(I − A)⁻¹ b` |
-| `StrategicLinearWorld` | fixed population (`x_0`, `y`) | linear strategic shift: `x_t = x_0 + ε·w` | Perdomo (2020) strategic classification with a linear predictor |
-| `StrategicGradientWorld` | fixed population (`x_0`, `y`) | gradient strategic shift: `x_t = x_0 + ε·∂f/∂x` | Same setup with arbitrary differentiable predictors |
-| `AccumulatingShiftWorld` | drifting `x_0` | gradient strategic shift | Strategic classification where the population internalizes manipulation over time |
-| `FJWorld` | per-agent opinions `x_i` | optional platform recommendation | Friedkin-Johnsen opinion dynamics on a graph |
-| `ReplicatorWorld` | mixture `p ∈ Δ^K` | enters via caller-supplied `fitness(p, model)` | Discrete Taylor-Jonker replicator on K strategies |
+## The environments
 
-`StrategicLinearWorld` and `StrategicGradientWorld` are one-shot best-response
-and set `max_meaningful_epoch_size = 1`; the rest accept any `epoch_size`.
+| Environment | What reacts | Use it for |
+|---|---|---|
+| `GaussianShiftWorld` | the regression target shifts with the model | quick sanity check: RRM/RGD should hit the closed-form fixed point `(I − A)⁻¹ b` |
+| `StrategicLinearWorld` | features move toward the classifier's weights | strategic classification with a linear model |
+| `StrategicGradientWorld` | features move along the model's input gradient | strategic classification with any differentiable model |
+| `AccumulatingShiftWorld` | the population slowly adopts the gamed position | strategic gaming that builds up over rounds |
+| `FJWorld` | opinions on a graph drift toward neighbors and the platform | opinion dynamics, recommendation effects |
+| `ReplicatorWorld` | a mixture over strategies evolves by fitness | population shares under selection |
+
+The two `Strategic*` worlds are one-shot (set `max_meaningful_epoch_size = 1`); the rest accept any `epoch_size`.
+
+## Notes per environment
+
+- **`GaussianShiftWorld`** — stateless. `x ~ N(0, I)`, `y = x·(Aθ + b) + noise`. With a linear model and MSE, retraining converges to `θ* = (I − A)⁻¹ b` when `‖A‖ < 1`. Run at `epoch_size = 1`.
+- **`StrategicLinearWorld`** — fixed population; each round `x = x₀ + ε·w` (w = the model's weights). Pass `ε = -μ` for agents lowering their risk.
+- **`StrategicGradientWorld`** — same idea for any differentiable model: `x = x₀ + ε·∂f/∂x`. Reduces to the linear world when the model is linear.
+- **`AccumulatingShiftWorld`** — like the gradient world, but `x₀` itself drifts toward the gamed position each round (rate `η`; `η=0` is static, `η=1` fully adopts).
+- **`FJWorld`** — Friedkin-Johnsen opinion dynamics on a graph. Each step blends innate opinion, the platform's prediction (weight `platform_sus`), and the neighbor average (weight set by peer susceptibility). `platform_sus=0` is the platform-free baseline. `fj_equilibrium()` gives the analytic fixed point; `normalize_adjacency()` prepares a raw graph.
+- **`ReplicatorWorld`** — discrete replicator on a K-strategy simplex; you supply `fitness(p, model)`. Stays on the simplex exactly.
 
 ## Base classes
 
-Defined in `perfsim/core/environment.py`. Concrete envs extend:
-
-- **`StatelessDynamics`**: history-independent D(theta), iid per step. Forked-generator
-  pattern keeps `sample` (peek) from advancing the `step` RNG.
-- **`StatefulPopulationWorld`**: persistent per-agent state. Subclasses implement
-  `_step(model) -> (data, next_state)`; the base handles reset/sample/step.
-
-Capability traits (runtime-checkable Protocols) an env may opt into:
-`Differentiable` (`grad_sample`), `FullyDifferentiable` (`grad_step` too),
-`Rewarding`, `Trajectory`, `ClosedFormFixedPoint` (`closed_form_fp`). Only
-`GaussianShiftWorld` opts in so far (`Differentiable`, `ClosedFormFixedPoint`).
-
-## Environments
-
-**`GaussianShiftWorld`** (`gaussian_shift.py`, `StatelessDynamics`). Stateless
-regression world: `x ~ N(0, I)`, `y = x·(Atheta + b) + σ·noise`. Under
-`LinearModel + MSELoss`, RRM iterates `theta_{t+1} = Atheta_t + b` with fixed
-point `theta* = (I − A)⁻¹ b`. Canonical gating test (`‖A‖_2 < 1`). Run with
-`epoch_size = 1`.
-
-**`StrategicLinearWorld`** (`strategic_linear.py`). Perdomo (2020 §5.1) strategic
-classification: `x_t = x_0 + ε·w`, `w` the predictor's weight vector. Pass
-`ε = -μ` for risk-lowering agents. Needs a `.linear.weight` (LinearModel,
-LogisticModel). One-shot: `max_meaningful_epoch_size = 1`.
-
-**`StrategicGradientWorld`** (`strategic_gradient.py`). Generalizes the above to
-any differentiable predictor: `x_t = x_0 + ε·∂f(x_0; theta)/∂x`. Linear `f`
-reduces to `StrategicLinearWorld`. Wraps its autograd in `enable_grad()` so it
-works inside a caller's `no_grad`. One-shot.
-
-**`AccumulatingShiftWorld`** (`accumulating_shift.py`). Like the gradient world
-but `x_0` drifts toward the strategic position: `x_0^{t+1} = (1−η)·x_0 + η·x_strategic`.
-`η=0` recovers the static world; `η=1` fully adopts each round's position. State
-persists as `state["x0"]`.
-
-**`FJWorld`** (`fj.py`). Linear Friedkin-Johnsen opinion dynamics on a graph. One
-step: `x_zero = (1−σ)·s + σ·predictions`, `x_new = α·x_zero + (1−α)·(W·x)`, where
-`s` is innate opinion, `α` peer susceptibility, `σ` platform_sus. `platform_sus=0`
-is platform-free FJ. `fj_equilibrium(x_zero)` gives the analytic fixed point.
-Canonical `epoch_size > 1` env (opinions settle under fixed theta).
-`normalize_adjacency` row-normalizes a raw adjacency.
-
-**`ReplicatorWorld`** (`replicator.py`). Discrete Taylor-Jonker replicator on a
-K-strategy mixture: `p_{t+1} = p·(1 + f(p, theta)) / ⟨p, 1 + f(p, theta)⟩`. Caller
-supplies `fitness(p, model) -> (K,)`; runs `n_ticks` per round. Emits
-`(one-hot strategy id, fitness)`. Simplex preserved exactly.
-
-## Helpers
-
-`_common.py` (internal): `validate_strat_features`, `input_gradient` (autograd
-`∂(sum f)/∂x`, `no_grad`-safe), `apply_strategic_shift`. `fj.normalize_adjacency`
-row-normalizes a raw adjacency the way `run_free_fj.py` does.
+In `perfsim/core/environment.py`: `StatelessDynamics` (no memory, fresh draw each step) and `StatefulPopulationWorld` (persistent per-agent state; subclasses write `_step`). An environment can opt into capability traits, `Differentiable`, `FullyDifferentiable`, `Rewarding`, `Trajectory`, `ClosedFormFixedPoint`, when it supports them.

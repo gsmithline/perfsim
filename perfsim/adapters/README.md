@@ -1,59 +1,38 @@
 # `perfsim.adapters`
 
-Bridges perfsim's `Environment` contract to external ABM frameworks. Loaded
-only when extras are installed, core perfsim has no runtime dependency on them.
+Run an external agent-based simulation as a perfsim environment. Only loaded when the matching extra is installed; core perfsim doesn't depend on these.
 
-- `agenttorch.AgentTorchEnvironment`: wraps an `agent_torch.Runner` as a perfsim
-  `AgentBased` environment.
+- `AgentTorchEnvironment` wraps an [AgentTorch](https://github.com/AgentTorch/AgentTorch) `Runner`. Install: `pip install 'perfsim[agenttorch]'`.
 
-## `AgentTorchEnvironment`
+## How it works
 
-Drives an [AgentTorch](https://github.com/AgentTorch/AgentTorch) sim under
-perfsim's epoch loop. Install: `pip install 'perfsim[agenttorch]'` (pins
-`agent-torch>=0.6,<0.7`); importing without the extra raises a clear ImportError.
-
-### Algorithm 1 contract
+Once per round the adapter does five things: read features out of the sim, run your model on them, write the model's predictions back into the sim, step the sim forward `n_steps`, then read out the training data.
 
 ```
-env.run(model, n_steps):
-    if not keep_trajectory: runner.reset_state_before_episode()
-    X     = feature_provider(runner)        # (N, F)
-    preds = model(X)                        # queried ONCE
-    signal_writer(runner, preds)            # mutates runner.state
-    runner.step(num_steps=n_steps)          # AT advances internally
-    return state_extractor(runner)          # Data dict incl. agent_idx
+read features -> model(features) -> write predictions into the sim
+              -> sim.step(n_steps) -> read back {x, y, agent_idx}
 ```
 
-Matches Algorithm 1 of Wu, Abebe, Mendler-Dünner 2026
-([arxiv 2603.12137](https://arxiv.org/abs/2603.12137)): the predictor is queried
-once per epoch, its output is a fixed input to the inner loop, and the runner
-advances `n_steps` without re-querying.
+The model is queried once and its output is held fixed while the sim runs. So you give the adapter four small functions that know your sim's layout:
 
-### Constructor
+| Argument | What it does |
+|---|---|
+| `runner_factory(seed)` | builds a fresh, seeded Runner (also called on every `reset`) |
+| `feature_provider(runner)` | returns the `(N, F)` features to feed the model |
+| `signal_writer(runner, preds)` | writes the predictions into the sim's state |
+| `state_extractor(runner)` | reads the sim after stepping, returns `{x, y, agent_idx}` |
 
-Four required callables / paths:
-
-| Arg | Type | What it does |
-|---|---|---|
-| `runner_factory` | `Callable[[int], Runner]` | Returns a fresh seeded Runner (seeds torch RNG itself). Called at construction and every `reset(seed)`. |
-| `feature_provider` | `Callable[[Runner], Tensor]` | Returns the (N, F) feature matrix fed to the model. |
-| `signal_writer` | `Callable[[Runner, Tensor], None]` | Writes per-agent predictions into `runner.state`; responsible for matching the AT sim's layout. |
-| `state_extractor` | `Callable[[Runner], Data]` | Reads `runner.state` after the loop, returns the supervised `Data` dict (`x`, `y`, `agent_idx`). |
-| `signal_path` | `tuple[str, ...]` | Key path into `runner.state` the writer targets; used for the mutation check below. |
-
-Optional: `produces_schema` (default supervised), `max_meaningful_epoch_size`,
-`keep_trajectory` (default False truncates the trajectory), `strict_signal`
-(default True), `init_seed`.
+Plus `signal_path` (where in the state the predictions go, used by the safety check below). Optional: `strict_signal`, `keep_trajectory`, `init_seed`.
 
 ```python
 env = AgentTorchEnvironment(
-    runner_factory   = lambda seed: build_my_at_runner(seed),
+    runner_factory   = lambda seed: build_my_runner(seed),
     feature_provider = lambda r: r.state["agents"]["citizen"]["features"],
     signal_writer    = lambda r, p: r.state["agents"]["citizen"].__setitem__("platform_signal", p),
     state_extractor  = lambda r: {
         "x": r.state["agents"]["citizen"]["features"],
         "y": r.state["agents"]["citizen"]["opinion"],
-        "agent_idx": torch.arange(r.state["agents"]["citizen"]["opinion"].shape[0]),
+        "agent_idx": torch.arange(len(r.state["agents"]["citizen"]["opinion"])),
     },
     signal_path = ("agents", "citizen", "platform_signal"),
 )
@@ -61,39 +40,10 @@ sim = Simulator(env=env, learner=ERMLearner(model, loss), loss=loss)
 hist = sim.run(n_rounds=10, epoch_size=20, seed=0)
 ```
 
-The AT config must define a substep that reads the `signal_path` field. perfsim
-ships no config; the AT author writes it.
+Your AgentTorch config needs a substep that reads `signal_path`; perfsim doesn't ship one.
 
-### Signal pattern (A1 / A2 / B)
+## Things to know
 
-The signal is written once at the top of `env.run`. What the inner loop does
-with it:
-
-| Pattern | Inside the inner loop | Allowed? |
-|---|---|---|
-| A1 | used at step 0, then dropped | allowed, atypical |
-| **A2** | **held constant, read every substep as anchor** | **default; matches FJ** |
-| B | overwritten by some substep | forbidden |
-
-B breaks Algorithm 1 (the recorded `theta_t` no longer witnesses the epoch). The
-adapter snapshots `signal_path` before `runner.step` and asserts `allclose`
-after; A1/A2 pass, B fails. Pass `strict_signal=False` to opt out (e.g. a
-decaying-platform model) — then `theta_t` records the deployed predictor, not the
-signal that drove the epoch.
-
-### Differentiability
-
-Satisfies `Differentiable`, not `FullyDifferentiable`.
-
-- `grad_run(model, n_steps)`: like `run` but without `no_grad`/`.detach()` around
-  `model(X)`; the `signal_writer` must not detach either (at_covid's default uses
-  `.clone()`, not `.detach()`). `grad_step` is `grad_run(., 1)`.
-- Whether grad flows through `runner.step` depends on the AT substeps (covid:
-  yes, via `StraightThroughBernoulli`). theta is frozen across the epoch loop, so
-  `grad_run` is one-shot measurement, not end-to-end rollout differentiation.
-- `sample` / `grad_sample` raise `NotImplementedError` (no peek primitive).
-
-### Testing
-
-`tests/test_agenttorch_adapter.py`, gated by `importorskip("agent_torch")`. Uses
-a `FakeRunner` stub duck-typing the Runner interface, so no AT YAML is needed.
+- **The prediction must stay fixed during the inner steps.** A substep may read it, but must not overwrite it. The adapter checks this (it compares `signal_path` before and after stepping) and errors if a substep changed it. Pass `strict_signal=False` to allow it (e.g. a decaying-signal model).
+- **Gradients.** `grad_run` is `run` without detaching, so you can get a gradient through one epoch (if the sim's substeps are differentiable). The model is frozen across rounds, so this is a one-shot measurement, not differentiation through the whole loop. There's no cheap peek, so `sample` isn't supported.
+- **Tests.** `tests/test_agenttorch_adapter.py` uses a fake Runner, so it runs without AgentTorch installed.
