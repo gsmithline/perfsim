@@ -19,7 +19,7 @@ class Learner(ABC):
     """
 
     accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
-    access_level: ClassVar[str] = "samples"
+    access_level: ClassVar[str] = "samples"   # declarative; a MapAccess handle is what enforces it
 
     def __init__(self, model: Model, loss: Loss) -> None:
         self.model = model

@@ -49,7 +49,9 @@ Methods differ in how much they assume they understand about how the world react
 
 Lower levels assume less, so they apply to more realistic environments but let a method do less. Higher levels let a method optimize more directly, but only apply when you genuinely know that much. `access_levels(map)` reports which a given map offers.
 
-Enforcement runs both ways. A map sees the model through a `ModelView` (it can read predictions, and the parameters only if it declares it needs them). A method sees the map through a `MapAccess` handle pinned to one level: ask for `env.access("mechanism")` and you can sample and apply the shift, but calling for densities, or asking for a level the map doesn't offer, raises `AccessError`. A learner states the level it needs with `access_level`. So "this method only used samples" is enforced, not taken on trust.
+The map side is enforced automatically: a map sees the model through a `ModelView` and cannot read the model's weights unless it declared that it needs them.
+
+On the method side, the standard loop hands a learner materialized samples, so ordinary methods (RRM, RGD) are samples-only just by what they're given. A method that needs more asks for a handle: `env.access("mechanism")` (or `"density"`) lets it sample and apply the shift, but refuses anything above the level it asked for, or any level the map doesn't offer. So a higher-level method commits to its level by the handle it takes, and the handle is what stops it from quietly using more.
 
 ## Running the PP loop
 

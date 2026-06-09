@@ -75,7 +75,7 @@ def _make_sim(n_features: int = 3) -> tuple[Simulator, LinearModel, _RecordingSt
     model = LinearModel(in_features=n_features, out_features=1, bias=False)
     loss = MSELoss()
     learner = GradientLearner(model, loss, lr=0.01, steps_per_round=1)
-    sim = Simulator(world=world, learner=learner, loss=loss)
+    sim = Simulator(env=world, learner=learner, loss=loss)
     return sim, model, world
 
 
@@ -137,7 +137,7 @@ class TestMaxMeaningfulEpochSize:
         model = LinearModel(in_features=d, out_features=1, bias=False)
         loss = MSELoss()
         learner = GradientLearner(model, loss, lr=0.01)
-        return Simulator(world=world, learner=learner, loss=loss)
+        return Simulator(env=world, learner=learner, loss=loss)
 
     def test_strategic_world_max_is_one(self) -> None:
         assert StrategicLinearWorld.max_meaningful_epoch_size == 1
@@ -161,7 +161,7 @@ class TestMaxMeaningfulEpochSize:
         model = LinearModel(in_features=3, out_features=1, bias=False)
         loss = MSELoss()
         learner = GradientLearner(model, loss, lr=0.01)
-        sim = Simulator(world=world, learner=learner, loss=loss)
+        sim = Simulator(env=world, learner=learner, loss=loss)
         sim.run(n_rounds=2, epoch_size=10, seed=0)  # should not raise
 
 

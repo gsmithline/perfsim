@@ -33,7 +33,7 @@ def _make_model(d: int = 3) -> LinearModel:
 
 def test_supervised_pair_binds() -> None:
     sim = Simulator(
-        world=_make_world(),
+        env=_make_world(),
         learner=ERMLearner(_make_model(), MSELoss()),
         loss=MSELoss(),
     )
@@ -51,7 +51,7 @@ def test_rejects_learner_requiring_extra_fields() -> None:
 
     learner = _RLLearner(_make_model(), MSELoss())
     with pytest.raises(SchemaError, match="does not accept"):
-        Simulator(world=_make_world(), learner=learner, loss=MSELoss())
+        Simulator(env=_make_world(), learner=learner, loss=MSELoss())
 
 
 def test_rejects_learner_requiring_only_reward() -> None:
@@ -62,7 +62,7 @@ def test_rejects_learner_requiring_only_reward() -> None:
 
     learner = _RewardLearner(_make_model(), MSELoss())
     with pytest.raises(SchemaError, match="does not accept"):
-        Simulator(world=_make_world(), learner=learner, loss=MSELoss())
+        Simulator(env=_make_world(), learner=learner, loss=MSELoss())
 
 
 def test_learner_with_subset_schema_binds() -> None:
@@ -74,7 +74,7 @@ def test_learner_with_subset_schema_binds() -> None:
         )
 
     learner = _XOnlyLearner(_make_model(), MSELoss())
-    Simulator(world=_make_world(), learner=learner, loss=MSELoss())
+    Simulator(env=_make_world(), learner=learner, loss=MSELoss())
 
 
 def test_error_message_lists_accepted_schemas() -> None:
@@ -86,7 +86,7 @@ def test_error_message_lists_accepted_schemas() -> None:
 
     learner = _FooLearner(_make_model(), MSELoss())
     with pytest.raises(SchemaError) as excinfo:
-        Simulator(world=_make_world(), learner=learner, loss=MSELoss())
+        Simulator(env=_make_world(), learner=learner, loss=MSELoss())
     msg = str(excinfo.value)
     assert "foo_schema" in msg
     assert "bar_schema" in msg

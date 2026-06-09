@@ -11,6 +11,7 @@ import torch
 from perfsim.core.types import Data
 from perfsim.maps.base import AccessError, DistributionMap, access_levels
 
+
 _ORDER = {"samples": 1, "mechanism": 2, "density": 3}
 _ALIASES = {"1b": "samples", "2a": "mechanism", "2b": "density"}
 

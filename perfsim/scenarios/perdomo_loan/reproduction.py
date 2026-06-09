@@ -75,7 +75,7 @@ def run(config: PerdomoLoanConfig) -> History:
         return performative_risk(sim.world, sim.learner.model, base_loss)
 
     sim = Simulator(
-        world=world,
+        env=world,
         learner=learner,
         loss=train_loss,
         metrics={"PR": pr_metric},

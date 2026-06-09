@@ -202,7 +202,7 @@ class TestAccumulatingShiftIntegration:
         )
         model = LinearModel(in_features=d, out_features=1, bias=False)
         learner = ERMLearner(model, MSELoss(), max_iter=20)
-        sim = Simulator(world=world, learner=learner, loss=MSELoss())
+        sim = Simulator(env=world, learner=learner, loss=MSELoss())
         history = sim.run(n_rounds=5, seed=0)
         # State should have drifted from initial after 5 rounds.
         assert not torch.allclose(world.state["x0"], x0, atol=1e-6)

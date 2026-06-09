@@ -46,7 +46,7 @@ def _make_sim(
     else:
         learner = GradientLearner(model, loss, lr=0.05, steps_per_round=1)
     sim = Simulator(
-        world=world, learner=learner, loss=loss, metrics=metrics, dataset=dataset
+        env=world, learner=learner, loss=loss, metrics=metrics, dataset=dataset
     )
     return sim, model, world
 
@@ -71,7 +71,7 @@ class TestBinding:
         loss = MSELoss()
         learner = _PickyLearner(model, loss)
         with pytest.raises(SchemaError, match="does not accept"):
-            Simulator(world=world, learner=learner, loss=loss)
+            Simulator(env=world, learner=learner, loss=loss)
 
 
 class TestRunLoop:

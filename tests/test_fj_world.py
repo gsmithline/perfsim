@@ -153,7 +153,7 @@ class TestSimulatorInitialData:
         model = LinearModel(in_features=1, out_features=1, bias=True)
         loss = MSELoss()
         learner = GradientLearner(model, loss, lr=0.05, steps_per_round=1)
-        sim = Simulator(world=world, learner=learner, loss=loss)
+        sim = Simulator(env=world, learner=learner, loss=loss)
         init_theta = model.get_params().clone()
         # Round 0 should train on initial_data, so theta should differ from init.
         sim.run(
@@ -175,7 +175,7 @@ class TestSimulatorInitialData:
         model = LinearModel(in_features=1, out_features=1, bias=True)
         loss = MSELoss()
         learner = GradientLearner(model, loss, lr=0.05, steps_per_round=1)
-        sim = Simulator(world=world, learner=learner, loss=loss)
+        sim = Simulator(env=world, learner=learner, loss=loss)
         init_theta = model.get_params().clone()
         sim.run(n_rounds=1, epoch_size=5, seed=0)  # no initial_data
         # No training happened (round 0 skipped, round 1 doesn't exist), so
@@ -195,7 +195,7 @@ class TestSimulatorTrainMask:
         model = LinearModel(in_features=1, out_features=1, bias=True)
         loss = MSELoss()
         learner = GradientLearner(model, loss, lr=0.05, steps_per_round=1)
-        sim = Simulator(world=world, learner=learner, loss=loss)
+        sim = Simulator(env=world, learner=learner, loss=loss)
         return sim, world, innate
 
     def test_train_mask_filters_rows_seen_by_learner(self) -> None:
@@ -407,7 +407,7 @@ class TestSimulatorIntegration:
                         platform_sus=0.3)
         model = LinearModel(in_features=1, out_features=1, bias=True)
         learner = ERMLearner(model, MSELoss(), max_iter=20)
-        sim = Simulator(world=world, learner=learner, loss=MSELoss())
+        sim = Simulator(env=world, learner=learner, loss=MSELoss())
         history = sim.run(n_rounds=3, epoch_size=20, seed=0)
         assert len(history.records) == 3
         assert not torch.allclose(world.state["opinion"], innate, atol=1e-6)

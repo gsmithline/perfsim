@@ -82,7 +82,7 @@ def main():
         "op_max": lambda s: float(s.env.state["opinion"].max()),
         "pred_std": lambda s: float(s.predictor.model(data["features"]).std()),
     }
-    sim = Simulator(world=world, learner=learner, loss=loss, metrics=metrics)
+    sim = Simulator(env=world, learner=learner, loss=loss, metrics=metrics)
 
     innate = data["innate"]
     print(f"innate:   mean={innate.mean():.4f}  std={innate.std():.4f}  "

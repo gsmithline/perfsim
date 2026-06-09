@@ -24,32 +24,16 @@ class Simulator:
 
     def __init__(
         self,
-        world: Environment | None = None,
-        learner: Learner | None = None,
-        loss: Loss | None = None,
+        env: Environment,
+        learner: Learner,
+        loss: Loss,
         *,
-        env: Environment | None = None,
-        predictor: Predictor | None = None,
         metrics: Optional[dict[str, MetricFn]] = None,
         history: Optional[History] = None,
         dataset: Optional[Dataset] = None,
     ) -> None:
-        env_arg = env if env is not None else world
-        if env_arg is None:
-            raise TypeError("Simulator requires `env=` (or legacy positional `world=`)")
-        if predictor is None:
-            if learner is None or loss is None:
-                raise TypeError(
-                    "Simulator: pass either `predictor=` or both `learner=` and `loss=`"
-                )
-            predictor = Predictor(model=learner.model, loss=loss, learner=learner)
-        elif learner is not None or loss is not None:
-            raise TypeError(
-                "Simulator: pass either `predictor=` or `(learner=, loss=)`, not both"
-            )
-
-        self.env: Environment = env_arg
-        self.predictor: Predictor = predictor
+        self.env: Environment = env
+        self.predictor: Predictor = Predictor(model=learner.model, loss=loss, learner=learner)
         self.metrics: dict[str, MetricFn] = metrics or {}
         self.history = history or History()
         self.dataset = dataset
