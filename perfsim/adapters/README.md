@@ -1,7 +1,7 @@
 # `perfsim.adapters`
 
 Bridges perfsim's `Environment` contract to external ABM frameworks. Loaded
-only when extras are installed; core perfsim has no runtime dependency on them.
+only when extras are installed, core perfsim has no runtime dependency on them.
 
 - `agenttorch.AgentTorchEnvironment`: wraps an `agent_torch.Runner` as a perfsim
   `AgentBased` environment.

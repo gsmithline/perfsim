@@ -2,9 +2,9 @@
   <img src="docs/logo.png" alt="perfsim" width="420">
 </p>
 
-A benchmark library for performative prediction (PP): settings where a deployed model changes the distribution it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z) (Perdomo et al. 2020). perfsim makes the map a first-class primitive, makes the field's access hierarchy part of the type system, and provides the retraining loop, environments, and measurement tools around it.
+A benchmark library for performative prediction (PP): settings where a deployed model changes the distribution it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z) (Perdomo et al. 2020). Perfsim makes the map a first-class primitive, makes the field's access hierarchy part of the type system, and provides the retraining loop, environments, and measurement tools around it.
 
-The design is inspired by the survey of Kehrenberg et al. 2026 (arXiv:2602.10176), which names the gap this library targets: no standard testbed serves every level of access to the distribution map. perfsim takes that structure as a guide, with its own naming.
+The design is inspired by the survey of Kehrenberg et al. 2026 (arXiv:2602.10176). 
 
 ## The distribution map
 
