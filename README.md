@@ -84,7 +84,7 @@ Each round: the learner trains on last round's data, the model is deployed, the 
 - `GaussianShiftMap`: all three access levels plus a closed-form RRM fixed point
 - `MixtureShiftMap`: the configurable benchmark map. A Gaussian-mixture base with a theta-dependent shift, exposing all three access levels on one object, with independent knobs for sensitivity (`epsilon`) and modality (`n_modes` / `separation`, which turns mixture dominance on or off). Use it when you want to vary one environment property at a time and hand the same env to a method at any tier.
 
-More families from the survey's inventory (resampled-if-rejected, group-mixture shift, outcome performativity) are planned.
+More families maps and environments are planned. 
 
 ## Worlds: stateful simulators
 
