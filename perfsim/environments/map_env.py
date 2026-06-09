@@ -41,6 +41,12 @@ class MapEnvironment(StatelessDynamics):
     def map(self) -> DistributionMap:
         return self._map
 
+    def access(self, level: str, *, generator: "torch.Generator | None" = None):
+        """A tier-restricted handle onto the map for a learner at `level`."""
+        from perfsim.maps.access import MapAccess
+
+        return MapAccess(self._map, level, generator=generator)
+
     @property
     def batch_size(self) -> int:
         return self._batch_size

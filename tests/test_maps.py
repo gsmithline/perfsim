@@ -70,8 +70,8 @@ class TestAccessLevels:
     def test_levels(self) -> None:
         gauss = GaussianShiftMap(0.5 * torch.eye(2), torch.ones(2))
         loc = LocationScaleMap(torch.zeros(4, 2), M=torch.eye(2))
-        assert access_levels(gauss) == frozenset({"1b", "2a", "2b"})
-        assert access_levels(loc) == frozenset({"1b", "2a"})
+        assert access_levels(gauss) == frozenset({"samples", "mechanism", "density"})
+        assert access_levels(loc) == frozenset({"samples", "mechanism"})
 
 
 class TestLocationScaleMap:

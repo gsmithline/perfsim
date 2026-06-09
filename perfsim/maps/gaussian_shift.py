@@ -1,8 +1,8 @@
 """Gaussian regression map with a closed-form RRM fixed point.
 
 x ~ N(0, I), y = x . (A theta + b) + sigma eps. Map version of
-GaussianShiftWorld; exposes all three access levels (1b, 2a, 2b) and the
-analytic fixed point theta* = (I - A)^-1 b for gating tests.
+GaussianShiftWorld; exposes all three levels (samples, mechanism, density) and
+the analytic fixed point theta* = (I - A)^-1 b for gating tests.
 """
 
 from __future__ import annotations

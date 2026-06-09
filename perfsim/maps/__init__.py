@@ -5,6 +5,7 @@ canonical families from the literature. This package depends only on
 perfsim.core primitives (types, model), never on environments.
 """
 
+from perfsim.maps.access import MapAccess
 from perfsim.maps.base import (
     AccessError,
     DensityMap,
@@ -15,6 +16,7 @@ from perfsim.maps.base import (
 )
 from perfsim.maps.gaussian_shift import GaussianShiftMap
 from perfsim.maps.location_scale import LocationScaleMap
+from perfsim.maps.mixture_shift import MixtureShiftMap
 from perfsim.maps.strategic import StrategicLinearMap
 
 __all__ = [
@@ -23,6 +25,8 @@ __all__ = [
     "DistributionMap",
     "GaussianShiftMap",
     "LocationScaleMap",
+    "MapAccess",
+    "MixtureShiftMap",
     "ModelView",
     "StrategicLinearMap",
     "TransformationMap",

@@ -1,10 +1,9 @@
-"""Distribution maps: the field's central object D: Theta -> Delta(Z).
+"""Distribution maps: the central object D: Theta -> Delta(Z).
 
 A DistributionMap is stateless and side-effect free; sampling never mutates
-it. The access pyramid (Kehrenberg et al. 2026, Sec 3.3.1) is the type
-hierarchy itself: DistributionMap.sample is level 1b, TransformationMap adds
-level 2a (base distribution + transformation function), DensityMap adds level
-2b (parameterized density). Maps see the deployed model through a ModelView,
+it. Access is the type hierarchy itself: DistributionMap.sample gives samples,
+TransformationMap adds the mechanism (base distribution + transform), and
+DensityMap adds the density. Maps see the deployed model through a ModelView,
 which opens the parameter channel only if the map declares it.
 """
 
@@ -60,7 +59,7 @@ def validate_n(n: int) -> None:
 
 
 class DistributionMap(ABC):
-    """Performative map D(theta). Implementing sample() grants level 1b."""
+    """Performative map D(theta). Implementing sample() is the samples level."""
 
     model_channel: ClassVar[str] = "predictions"
 
@@ -89,10 +88,10 @@ class DistributionMap(ABC):
 
 
 class TransformationMap(DistributionMap):
-    """Level 2a: a base distribution plus a theta-dependent transformation.
+    """The mechanism level: a base distribution plus a theta-dependent transform.
 
-    Survey eq 15: z = phi(z_base; theta) with z_base ~ D_base. sample() is
-    derived, so subclasses only write sample_base and transform.
+    z = phi(z_base; theta) with z_base ~ D_base. sample() is derived, so
+    subclasses only write sample_base and transform.
     """
 
     @abstractmethod
@@ -111,7 +110,7 @@ class TransformationMap(DistributionMap):
 
 
 class DensityMap(DistributionMap):
-    """Level 2b: adds a parameterized per-sample log density."""
+    """The density level: adds a parameterized per-sample log density."""
 
     @abstractmethod
     def log_prob(self, z: Data, model: "Model | ModelView") -> Tensor:
@@ -119,10 +118,10 @@ class DensityMap(DistributionMap):
 
 
 def access_levels(map_: DistributionMap) -> frozenset[str]:
-    """Access levels a map exposes, in the survey's naming."""
-    levels = {"1b"}
+    """What a map exposes: samples, mechanism (base + transform), density."""
+    levels = {"samples"}
     if isinstance(map_, TransformationMap):
-        levels.add("2a")
+        levels.add("mechanism")
     if isinstance(map_, DensityMap):
-        levels.add("2b")
+        levels.add("density")
     return frozenset(levels)

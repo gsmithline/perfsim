@@ -19,6 +19,7 @@ class Learner(ABC):
     """
 
     accepted_schemas: ClassVar[tuple[DataSchema, ...]] = (SUPERVISED_SCHEMA,)
+    access_level: ClassVar[str] = "samples"
 
     def __init__(self, model: Model, loss: Loss) -> None:
         self.model = model

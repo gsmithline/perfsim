@@ -113,6 +113,15 @@ from ~K to 1 (a single producer captures all attention). An ecosystem-aware
 fixates to a single vertex; a positive `kappa` or `boost` is what yields an
 interior, diverse equilibrium.
 
+## Competing platforms — `CompetingRecommendersWorld`
+
+Several rankers over one shared, drifting population. Each user splits attention
+across the platforms; each platform trains only on the engagement its own share
+of attention produced. `eta_mob` moves attention between platforms over time by
+multiplicative weights on satisfaction. Run it with `run_competition` (the
+single-model `Simulator` loop fanned over platforms). Use it to ask whether
+competing platforms differentiate or converge over a malleable population.
+
 ## Quickstart
 
 ```python

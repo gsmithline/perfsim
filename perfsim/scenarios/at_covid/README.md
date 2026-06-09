@@ -17,8 +17,7 @@ Per epoch: model scores each agent from age -> `signal_writer` deposits at
 `agents/citizens/platform_signal` -> `runner.step(epoch_size)` (our
 `PerfsimIsolationDecision` reads the signal as isolation probability; AT's
 `NewTransmission` + `SEIRMProgression` evolve `disease_stage`) ->
-`state_extractor` returns `(x=age, y=disease_stage)` -> retrain. Example:
-`examples/at_covid_smoke.py`.
+`state_extractor` returns `(x=age, y=disease_stage)` -> retrain.
 
 ## Files
 
@@ -57,7 +56,7 @@ Chain: `model.weight -> preds -> signal -> will_isolate -> newly_exposed_today -
 update_stages -> disease_stage` (and `daily_infected`); linear in
 `newly_exposed_today`, `StraightThroughBernoulli.backward` passes through. theta is
 frozen across the epoch loop, so this is one-shot measurement, not end-to-end
-rollout differentiation. Demo: `examples/at_covid_grad_smoke.py`.
+rollout differentiation.
 
 ## Signal pattern
 
