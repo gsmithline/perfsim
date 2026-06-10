@@ -1,0 +1,6 @@
+pair_kl0_t05_s0, sft_kl, 0.0, 0.05, 0
+pair_kl0_t05_s1, sft_kl, 0.0, 0.05, 1
+pair_kl0_t05_s2, sft_kl, 0.0, 0.05, 2
+pair_kl3_t05_s0, sft_kl, 3.0, 0.05, 0
+pair_kl3_t05_s1, sft_kl, 3.0, 0.05, 1
+pair_kl3_t05_s2, sft_kl, 3.0, 0.05, 2

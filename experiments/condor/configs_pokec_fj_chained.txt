@@ -1,0 +1,4 @@
+chain_replace_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, chained
+chain_replace_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, chained
+chain_accum_b1_s0, sft_kl, 1.0, 0, 1, accumulate, 1.0, chained
+chain_accum_b3_s0, sft_kl, 3.0, 0, 1, accumulate, 1.0, chained

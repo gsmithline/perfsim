@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Single Pokec FJ + LM run.
-# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME
+# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME [PLATFORM_SUS_SCALE] [ANCHOR_MODE]
 
 set -eo pipefail
 
@@ -10,6 +10,8 @@ KL_BETA="$3"
 SEED="${4:-0}"
 DEPLOY_EVERY="${5:-1}"
 DATA_REGIME="${6:-replace}"
+PLATFORM_SUS_SCALE="${7:-${PLATFORM_SUS_SCALE:-1.0}}"
+ANCHOR_MODE="${8:-${ANCHOR_MODE:-fixed}}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -38,7 +40,7 @@ TRAIN_CAP="${TRAIN_CAP:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_fj] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
-echo "[run_one_pokec_fj] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME seed_base_data=$SEED_BASE_DATA model=$BASE_MODEL"
+echo "[run_one_pokec_fj] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME seed_base_data=$SEED_BASE_DATA model=$BASE_MODEL pscale=$PLATFORM_SUS_SCALE anchor=$ANCHOR_MODE"
 
 # shellcheck disable=SC1090
 source "$CONDA_SH"
@@ -62,6 +64,8 @@ env \
     DATA_REGIME="$DATA_REGIME" \
     SEED_BASE_DATA="$SEED_BASE_DATA" \
     TRAIN_CAP="$TRAIN_CAP" \
+    PLATFORM_SUS_SCALE="$PLATFORM_SUS_SCALE" \
+    ANCHOR_MODE="$ANCHOR_MODE" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

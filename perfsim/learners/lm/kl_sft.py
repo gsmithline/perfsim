@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import inspect
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
@@ -27,7 +28,12 @@ if TYPE_CHECKING:
 
 
 class KLSFTLearner(SFTLearner):
-    """SFT with a beta * KL anchor against a frozen reference policy."""
+    """SFT with a beta * KL anchor against a frozen reference policy.
+
+    anchor_mode "fixed" keeps the reference at ref_model_name for the whole run
+    (re-anchored regime); "chained" re-freezes the reference to the just-trained
+    policy after every train() call, so each round anchors to the previous round.
+    """
 
     def __init__(
         self,
@@ -36,6 +42,7 @@ class KLSFTLearner(SFTLearner):
         *,
         ref_model_name: str,
         kl_beta: float = 1.0,
+        anchor_mode: str = "fixed",
         target_formatter: Callable[[float], str] = _default_target_formatter,
         max_steps: int = 50,
         learning_rate: float = 1e-5,
@@ -57,13 +64,33 @@ class KLSFTLearner(SFTLearner):
             response_template=response_template,
             trainer_kwargs=trainer_kwargs,
         )
+        if anchor_mode not in ("fixed", "chained"):
+            raise ValueError(f"anchor_mode must be 'fixed' or 'chained'; got {anchor_mode!r}")
         self._ref_model_name = ref_model_name
         self._kl_beta = float(kl_beta)
+        self._anchor_mode = anchor_mode
         self._ref_model: "PreTrainedModel | None" = None
 
     @property
     def kl_beta(self) -> float:
         return self._kl_beta
+
+    @property
+    def anchor_mode(self) -> str:
+        return self._anchor_mode
+
+    def train(self, data: Any) -> None:
+        super().train(data)
+        if self._anchor_mode == "chained" and self._kl_beta > 0:
+            self._chain_ref()
+
+    def _chain_ref(self) -> None:
+        """Freeze a copy of the current policy as next round's reference."""
+        new_ref = copy.deepcopy(self.model.inner_model)
+        new_ref.eval()
+        for p in new_ref.parameters():
+            p.requires_grad_(False)
+        self._ref_model = new_ref
 
     def _ensure_ref(self) -> "PreTrainedModel":
         if self._ref_model is None:

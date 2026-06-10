@@ -1,0 +1,9 @@
+pscale010_b0_s0, sft, 0.0, 0, 1, replace, 0.10, fixed
+pscale010_b1_s0, sft_kl, 1.0, 0, 1, replace, 0.10, fixed
+pscale010_b3_s0, sft_kl, 3.0, 0, 1, replace, 0.10, fixed
+pscale025_b0_s0, sft, 0.0, 0, 1, replace, 0.25, fixed
+pscale025_b1_s0, sft_kl, 1.0, 0, 1, replace, 0.25, fixed
+pscale025_b3_s0, sft_kl, 3.0, 0, 1, replace, 0.25, fixed
+pscale050_b0_s0, sft, 0.0, 0, 1, replace, 0.50, fixed
+pscale050_b1_s0, sft_kl, 1.0, 0, 1, replace, 0.50, fixed
+pscale050_b3_s0, sft_kl, 3.0, 0, 1, replace, 0.50, fixed

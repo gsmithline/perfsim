@@ -213,6 +213,12 @@ def main() -> int:
     # round, equalizing training volume across regimes (isolates the data
     # composition effect from the overtraining confound). 0 = no cap.
     train_cap = _env_int("TRAIN_CAP", 0)
+    # PLATFORM_SUS_SCALE: multiply the per-agent platform susceptibility by this
+    # factor (clamped to [0,1]). 1.0 = the calibrated heterogeneous values.
+    platform_scale = _env_float("PLATFORM_SUS_SCALE", 1.0)
+    # ANCHOR_MODE: "fixed" = KL to the base model every round (re-anchored);
+    # "chained" = KL to the previous round's policy.
+    anchor_mode = os.environ.get("ANCHOR_MODE", "fixed")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -223,6 +229,7 @@ def main() -> int:
         "sft_batch_size": sft_batch_size,
         "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
         "seed_base_data": seed_base_data, "train_cap": train_cap,
+        "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -315,7 +322,8 @@ def main() -> int:
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)
     elif training_style == "sft_kl":
-        learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta)
+        learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta,
+                               anchor_mode=anchor_mode)
     elif training_style == "frozen":
         class _Frozen(Learner):
             accepted_schemas = (SUPERVISED_SCHEMA,)
@@ -328,7 +336,8 @@ def main() -> int:
 
     world = FJWorld(
         innate=innate, graph=setup["W"], peer_sus=setup["peer_sus"],
-        platform_sus=setup["platform_sus"], features=innate, profiles=setup["profiles"],
+        platform_sus=(setup["platform_sus"] * platform_scale).clamp(0.0, 1.0),
+        features=innate, profiles=setup["profiles"],
     )
     world.reset(seed=seed)
 
