@@ -2,7 +2,7 @@
   <img src="docs/logo.png" alt="perfsim" width="420">
 </p>
 
-A benchmark library for performative prediction (PP): settings where a deployed model changes the data it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z) (Perdomo et al. 2020), the rule for how the world reacts to your model. perfsim treats that map as the main building block, makes "how much a method is allowed to know about it" part of the types, and gives you the retraining loop, the environments, and the tools to measure what happens.
+A benchmark library for performative prediction (PP): settings where a deployed model changes the data it is then evaluated and retrained on. The central object is the **distribution map** D: Theta -> Delta(Z), the rule for how the world reacts to your model. perfsim treats that map as the main building block/abstraction layer, makes "how much a method is allowed to know about it" part of the types, and gives you the retraining loop, the environments, and the tools to measure what happens.
 
 The design is inspired by the survey of Kehrenberg et al. 2026 (arXiv:2602.10176). 
 
@@ -20,7 +20,7 @@ class CreditGamingMap(TransformationMap):
 
     model_channel = "parameters"   # this map reads theta itself
 
-    def __init__(self, x0, y, eps=0.5):   # eps: sensitivity, how far features move per unit of model weight
+    def __init__(self, x0, y, eps=0.5): 
         self._x0, self._y, self._eps = x0, y, eps
 
     @property
@@ -47,11 +47,11 @@ Methods differ in how much they assume they understand about how the world react
 | mechanism |  A fixed base population plus the rule for how deploying the model shifts it. You can compute the shift, but not the probability of any given outcome. | `TransformationMap` (`sample_base` + `transform`) |
 | density | You know the full probabilities: how likely any outcome is under a given model. The strongest assumption, and the rarest in practice. | `DensityMap.log_prob` |
 
-Lower levels assume less, so they apply to more realistic environments but let a method do less. Higher levels let a method optimize more directly, but only apply when you genuinely know that much. `access_levels(map)` reports which a given map offers.
+Lower levels assume less, so they apply to more realistic environments but let a method do less. Higher levels let a method optimize more directly, but only apply when you genuinely know that much about the environment. `access_levels(map)` reports which a given map offers.
 
-The map side is enforced automatically: a map sees the model through a `ModelView` and cannot read the model's weights unless it declared that it needs them.
+The map side is enforced automatically: a map sees the model through a `ModelView` and cannot read the model's weights unless it declared that it needs them. 
 
-On the method side, the standard loop hands a learner materialized samples, so ordinary methods (RRM, RGD) are samples-only just by what they're given. A method that needs more asks for a handle: `env.access("mechanism")` (or `"density"`) lets it sample and apply the shift, but refuses anything above the level it asked for, or any level the map doesn't offer. So a higher-level method commits to its level by the handle it takes, and the handle is what stops it from quietly using more.
+On the method side, the standard loop hands a learner materialized samples, so ordinary methods (RRM, RGD) are samples-only just by what they're given. A method that needs more asks for a handle: `env.access("mechanism")` (or `"density"`) lets it sample and apply the shift, but refuses anything above the level it asked for, or any level the map doesn't offer. So a higher-level method commits to its level by the handle it takes, and the handle is what stops it from quietly using more. 
 
 ## Running the PP loop
 
@@ -76,6 +76,36 @@ print(model.get_params(), "vs", gmap.closed_form_fp())
 ```
 
 Each round: the learner trains on last round's data, the model is deployed, the environment produces the next batch. With `epoch_size > 1` the population evolves under a frozen model before the next retraining.
+
+## Visualizing a run
+
+`perfsim.viz` (requires `pip install -e ".[viz]"`) turns a `History` into the standard decoupled-risk pictures: the DPR landscape with the stable point, the optimal point (diagonal minimizer and if computatable), and recorded trajectories overlaid. Per-round convergence curves and the gradient decomposition `grad PR = grad_model DPR + grad_dist DPR`, whose model term vanishes at stable points and whose total vanishes at optimal points are also visualized.
+
+```python
+from perfsim import viz
+
+surf = viz.risk_surface(env, model, loss, torch.linspace(0, 3, 41))
+viz.plot_landscape(surf, trajectories={"RRM": history})
+viz.plot_landscape_3d(surf, trajectories={"RRM": history}, cross_sections=[1.0])
+viz.plot_risk_curve(surf, cross_sections=[surf.alpha_stable])
+viz.plot_convergence({"RRM": history}, theta_star=surf.theta_stable)
+viz.plot_gradient_norms(env, model, loss, history)
+```
+
+For models with more than one parameter, pass `base`/`direction` to `risk_surface` to choose the 1-D slice; `plot_convergence` and `plot_gradient_norms` work in any dimension.
+
+On the Gaussian-shift world above (RRM vs RGD, fixed point at theta = 2):
+
+![3D decoupled risk surface](docs/viz/landscape_3d.png)
+
+| landscape + trajectories | risk curve |
+| --- | --- |
+| ![decoupled risk landscape](docs/viz/landscape.png) | ![performative risk curve](docs/viz/risk_curve.png) |
+
+| convergence | gradient decomposition |
+| --- | --- |
+| ![convergence](docs/viz/convergence.png) | ![gradient norms](docs/viz/gradient_norms.png) |
+
 
 ## Map families included
 
@@ -125,6 +155,7 @@ perfsim/
       agenttorch.py               # wraps agent_torch.Runner as perfsim env
     simulator.py                  # outer epoch loop
     history.py / metrics.py / losses.py
+    viz.py                        # risk landscapes, convergence, gradient diagnostics
   experiments/                    # NOT part of the package
   tests/
   examples/                       # bundled datasets (pokec, two_tickets)
@@ -151,9 +182,5 @@ Optional protocols an Environment may declare:
 - `FullyDifferentiable`: you can take a gradient through the whole inner rollout.
 - `Rewarding`: fills a `reward` field for RL learners.
 - `Trajectory`: returns multi-step trajectories with a time axis.
-- `ClosedFormFixedPoint`: provides an exact fixed point to check against.
-
-## Roadmap
-
-Headlines: the benchmark runner that runs every method on the same environments and stamps the results (the access enforcement itself is now in, via `MapAccess`, is a method that uses the full-density access is next), fitted maps (`fit(observations)`) so you can approximate a sample-only world with a higher-level map and measure how wrong the approximation is, assumption diagnostics (how sensitive the environment is, whether it has one mode or several) reported as estimates, and the remaining map families from the survey.
+- `ClosedFormFixedPoint`: provides an exact fixed point to check against
 

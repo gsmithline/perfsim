@@ -16,9 +16,14 @@ from perfsim.core.model import Model
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
 
 PopulationLossFn = Callable[[Environment], Tensor]
+"""
+TODO this class is under-development, there are basically twoish ways to do perfgd,
+we can do it with finite difference and a buffer to estimate a gradient, or 
+in some maps that we can view the full data distribution and are differentiable we can treat the model 
+as part of the computation graph. 
+"""
 
-
-class PerfGDLearner(Learner):
+class PerfGDLearner(Learner):  
     """Performative gradient descent via backprop through a differentiable environment.
 
     Each train() call runs the env with gradients live, computes a
@@ -131,7 +136,6 @@ class PerfGDFiniteDiffLearner(Learner): #TODO fix this its wrong, its not the or
 
             grad[i] = (loss_plus - loss_minus) / (2 * self.eps)
 
-        # Restore original params and apply gradient step
         new_flat = flat - self.lr * grad
         self._set_flat_params(params, new_flat)
         self._step_count += 1
