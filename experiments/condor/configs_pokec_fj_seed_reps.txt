@@ -10,3 +10,7 @@ accumulate_K1_b1_s1, sft_kl, 1.0, 1, 1, accumulate, 1.0, fixed
 accumulate_K1_b1_s2, sft_kl, 1.0, 2, 1, accumulate, 1.0, fixed
 accumulate_K1_b3_s1, sft_kl, 3.0, 1, 1, accumulate, 1.0, fixed
 accumulate_K1_b3_s2, sft_kl, 3.0, 2, 1, accumulate, 1.0, fixed
+chain_replace_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, chained
+chain_replace_b1_s2, sft_kl, 1.0, 2, 1, replace, 1.0, chained
+chain_replace_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, chained
+chain_replace_b3_s2, sft_kl, 3.0, 2, 1, replace, 1.0, chained
