@@ -55,6 +55,15 @@ echo "[run_one_pokec_gated] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA see
 source "$CONDA_SH"
 conda activate "$ENV_NAME"
 
+# Fail fast if CUDA is not actually usable (a node can advertise a GPU but have
+# a broken driver/NVML, which silently drops us to CPU and grinds for hours).
+# Exit 17 is the agreed "bad node, please retry elsewhere" code (see .sub).
+if ! python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"; then
+    echo "[run_one_pokec_gated] FATAL: CUDA unavailable on $(hostname); exiting 17 for retry" >&2
+    exit 17
+fi
+export DEVICE=cuda
+
 if [ -f "$WANDB_KEY_FILE" ]; then
     export WANDB_API_KEY="$(tr -d '[:space:]' < "$WANDB_KEY_FILE")"
 fi

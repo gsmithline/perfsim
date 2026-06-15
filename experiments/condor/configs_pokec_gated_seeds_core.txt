@@ -1,0 +1,12 @@
+gcore_e010_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 1.5, 0.3, loop, 0.0
+gcore_e010_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 1.5, 0.3, loop, 0.0
+gcore_e010_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 1.5, 0.3, loop, 0.0
+gcore_e020_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.2, 1.5, 0.3, loop, 0.0
+gcore_e020_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.2, 1.5, 0.3, loop, 0.0
+gcore_e020_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.2, 1.5, 0.3, loop, 0.0
+gcore_e030_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, loop, 0.0
+gcore_e030_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, loop, 0.0
+gcore_e030_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, loop, 0.0
+gcore_e040_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0
+gcore_e040_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0
+gcore_e040_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0

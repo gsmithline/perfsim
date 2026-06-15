@@ -1,0 +1,2 @@
+gcore_e010_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 1.5, 0.3, loop, 0.0
+gnf_e030_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, no_feedback, 0.0

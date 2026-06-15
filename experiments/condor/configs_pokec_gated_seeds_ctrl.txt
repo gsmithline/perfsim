@@ -1,0 +1,6 @@
+gnf_e030_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, no_feedback, 0.0
+gnf_e030_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, no_feedback, 0.0
+gnf_e030_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, no_feedback, 0.0
+gdir_b0_s1, sft, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, direct, 0.0
+gdir_b1_s1, sft_kl, 1.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, direct, 0.0
+gdir_b3_s1, sft_kl, 3.0, 1, 1, replace, 1.0, fixed, ab, 0.3, 1.5, 0.3, direct, 0.0
