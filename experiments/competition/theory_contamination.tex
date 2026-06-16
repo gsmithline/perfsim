@@ -1,0 +1,468 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage[margin=1in]{geometry}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{assumption}{Assumption}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\R}{\mathbb{R}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\diag}{diag}
+\newcommand{\idea}[1]{\par\medskip\noindent\textbf{Idea.}\ #1\par\medskip}
+
+\title{Contamination in mediated opinion-dynamics loops:\\
+linear baseline (per-node platform) and the gated identity}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{What this document is about.}
+A platform (a model) is retrained each round on a population's opinions and feeds a
+prediction back to each person. Crucially, the platform reads each agent's
+\emph{features} and emits a \emph{per-node} prediction $\mu_i$ --- different for
+different people --- not a single broadcast value. We track one quantity,
+\emph{contamination} $s$, the fraction of the population's opinion that is the
+platform's own recycled output, and establish two facts. \textbf{Piece 1 (linear).}
+Contamination has a closed form and is \emph{value-blind}: it depends on the influence
+weights, not on what the platform predicts, so \emph{retraining cannot change it}.
+Displacement and diversity, by contrast, \emph{do} depend on the per-node predictions
+--- and this is where ``collapse'' lives: the population collapses to a point only when
+the predictions are concentrated; spread (feature-driven) predictions preserve
+diversity. \textbf{Piece 2 (gated).} Adding a gate (people ignore predictions too far
+from their own view) turns $s$ from a constant into a living variable with an exact
+growth law. All claims are certified by \texttt{theory\_contamination\_check.py}.
+
+\section{Notation}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{ll}
+\hline
+Symbol & Meaning\\
+\hline
+$N$ & number of agents\\
+$x(t)\in\R^N$ & opinion vector at round $t$; component $x_i(t)$; initial $x(0)$\\
+$\bar x:=\tfrac1N\one^{\!\top}x$ & population mean opinion\\
+$\one,\,I$ & all-ones vector, identity (size $N$)\\
+$\lambda_i\in[0,1]$,\ $\Lambda:=\diag(\lambda_i)$ & agent $i$'s self/innate weight (stubbornness)\\
+$W$ & social-influence matrix; $W_{ij}\ge0$, row-stochastic ($W\one=\one$)\\
+$C:=(I-\Lambda)W$ & composite social operator; $C\one=(I-\Lambda)\one$\\
+$\bm{\mu}\in\R^N$ & \textbf{per-node platform prediction}: $\mu_i$ is the model's output for agent $i$\\
+$\nu\one$ & a \emph{uniform broadcast}: the special case $\mu_i\equiv\nu$ (the linear-literature baseline)\\
+$f_i(t)\in[0,1]$ & contamination tag: platform-share of $x_i(t)$; $s_t:=\tfrac1N\sum_i f_i(t)$\\
+$m\in[0,1)$ & weight kept on the social signal; $1-m$ is the platform's injection weight\\
+\multicolumn{2}{l}{\emph{gated regime (Piece 2):}}\\
+$w\in[0,1]$ & per-absorption blend weight toward $\mu_i$\\
+$\varepsilon>0$,\ $G_t:=\{i:|\mu_i-x_i|<\varepsilon\}$ & confidence radius; contact set; $\mathrm{contact}_t:=|G_t|/N$\\
+$\langle g\rangle_{G_t}:=\tfrac1{|G_t|}\sum_{i\in G_t}g_i$ & average over the contact set\\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent\textbf{The experiments use $\bm{\mu}$, not $\nu\one$.} Every MLP and LLM run
+serves a per-node prediction from features. The scalar broadcast $\nu\one$ appears only
+as the uniform special case (and in the prior linear literature); we carry it as a
+limiting case, not the model.
+
+\section{Standing assumptions}
+
+\begin{assumption}\label{a:row} $W$ is row-stochastic ($W\one=\one$). \emph{Everywhere.}\end{assumption}
+\begin{assumption}\label{a:unif} $\lambda_i\equiv\lambda$. \emph{Props.~\ref{prop:scalar},\ref{prop:mean},\ref{prop:var}.}\end{assumption}
+\begin{assumption}\label{a:ds} $W$ doubly stochastic ($\one^{\!\top}W=\one^{\!\top}$); symmetric for Prop.~\ref{prop:var}(b). \emph{Props.~\ref{prop:mean},\ref{prop:var}.}\end{assumption}
+
+\paragraph{Linear dynamics (per-node platform).} Each agent updates to a blend of their
+innate opinion and a social average, where the social signal is the current opinions
+diluted, at weight $1-m$, by the platform's per-node prediction $\mu_i$:
+\begin{equation}\label{eq:lin}
+x(t+1)=\Lambda x(0)+(I-\Lambda)W\big[m\,x(t)+(1-m)\bm{\mu}(t)\big]
+       =\Lambda x(0)+mC\,x(t)+(1-m)(I-\Lambda)W\bm{\mu}(t).
+\end{equation}
+Note the platform term keeps $W$: $(I-\Lambda)W\bm{\mu}\neq(I-\Lambda)\bm{\mu}$ because
+$\bm{\mu}$ is not constant. ($W$ collapses out \emph{only} for a uniform broadcast,
+$W(\nu\one)=\nu\one$.)
+
+\section{Part A --- Contamination (value-blind)}
+
+\paragraph{The tag is a dye test (read this first).} To measure ``how much of an
+opinion came from the platform,'' run a second, parallel process on the \emph{same}
+network: put dye of strength $1$ on every platform source and $0$ on every innate
+source, mix by the same weights each round, and read the dye concentration $f_i$ at each
+agent. This is \emph{not} the opinion equation with $\bm{\mu}$ replaced by $1$; it is a
+separate bookkeeping flow. The opinion uses the real per-node values $\mu_i$; the dye
+uses the label $1$, which records only that the content is platform-origin --- whatever
+its value. Consequently the dye injection is the uniform vector $\one$ (so $W\one=\one$
+applies and $W$ drops out), even though the opinion's platform term keeps $W$ because
+$\bm{\mu}$ is not uniform. Everything in Part A is therefore identical whether the
+platform broadcasts one number or a different number to each person.
+
+\idea{High level: the platform-share of an opinion depends on \emph{how much} weight the
+platform carries and how it spreads, not on \emph{what} the platform predicted. The dye
+test makes this exact: dye records provenance ($1$ = platform, $0$ = innate), not value.
+Mathematically: the tag obeys a recursion whose injection is the constant $\one$ ---
+because every platform output is dyed $1$ regardless of its number.}
+
+\begin{lemma}[tag dynamics and exactness]\label{lem:tag}
+Let $f_i(t)$ be the platform-share of $x_i(t)$, $f(0)=0$. Under Assumption~\ref{a:row},
+\begin{equation}\label{eq:tag}
+f(t+1)=mC\,f(t)+(1-m)(I-\Lambda)\one,
+\end{equation}
+and $0\le f_i(t)\le1$ for all $i,t$ (a genuine fraction).
+\end{lemma}
+\begin{proof}
+Take the red (platform) fraction of each ingredient of $x_i(t+1)$ in \eqref{eq:lin},
+agent by agent:
+\[
+f_i(t+1)=\underbrace{\lambda_i\cdot 0}_{\text{innate seed}}
++\underbrace{(1-\lambda_i)\,m\textstyle\sum_j W_{ij}\,f_j(t)}_{\text{neighbor }j\text{ passes its own dye }f_j,\ \text{not }x_j}
++\underbrace{(1-\lambda_i)(1-m)\textstyle\sum_j W_{ij}\cdot 1}_{\text{platform content is }100\%\text{ red: dye }1,\ \text{not }\mu_j}.
+\]
+The innate seed is non-platform (dye $0$); a neighbor contributes red in proportion to
+\emph{its own} dye $f_j$, not its value $x_j$; the platform contributes dye $1$, not its
+value $\mu_j$ (under terminal attribution every model output is $100\%$ platform-origin,
+whatever its number). Since $\sum_j W_{ij}=1$, the last sum is $(1-\lambda_i)(1-m)$. In
+vector form, using $C=(I-\Lambda)W$ and $W\one=\one$, this is \eqref{eq:tag}. The injected
+dye vector is the constant $\one$ even though the injected \emph{value} vector $\bm{\mu}$
+is per-node (Part B uses the latter). Bounds: each $f_i(t+1)$ is a convex combination of
+$0$, past dyes, and $1$ (weights $\lambda_i,\,m(1-\lambda_i),\,(1-m)(1-\lambda_i)$ sum to
+$1$), so $f\in[0,1]$.
+\end{proof}
+
+\idea{High level: instead of simulating, get the long-run contamination in closed form.
+Mathematically: the tag recursion is a contraction plus a fixed injection, so it
+converges.}
+
+\begin{proposition}[contamination fixed point]\label{prop:fp}
+Under Assumption~\ref{a:row}, $f(t)\to B_\star:=(1-m)(I-mC)^{-1}(I-\Lambda)\one$.
+\end{proposition}
+\begin{proof}
+$f(t+1)=mC f(t)+b$, $b:=(1-m)(I-\Lambda)\one$, is affine and a
+$\|\cdot\|_\infty$-contraction ($\|mC\|_\infty=m\max_i(1-\lambda_i)<1$). Banach gives
+$B_\star=(I-mC)^{-1}b$.
+\end{proof}
+We write $s:=B_\star$ for the per-agent contamination vector.
+
+\idea{High level: with equal stubbornness the whole picture is one number, and you read
+off how stubbornness $\lambda$ and platform strength $1-m$ trade off. Mathematically:
+$B_\star$ is a constant vector $s\one$.}
+
+\begin{proposition}[scalar law]\label{prop:scalar}
+Under Assumptions~\ref{a:row}--\ref{a:unif}, $B_\star=s\one$ with
+\begin{equation}\label{eq:s}
+s=\frac{(1-m)(1-\lambda)}{\lambda+(1-\lambda)(1-m)}\qquad(\text{platform pull / total pull}).
+\end{equation}
+\end{proposition}
+\begin{proof}
+$C\one=(1-\lambda)\one\Rightarrow(I-mC)^{-1}\one=\one/(1-m(1-\lambda))$, and
+$(I-\Lambda)\one=(1-\lambda)\one$, so $B_\star=\tfrac{(1-m)(1-\lambda)}{1-m(1-\lambda)}\one$;
+the denominator is $\lambda+(1-\lambda)(1-m)$.
+\end{proof}
+
+\idea{High level: the punchline of the linear analysis. A platform that \emph{retrains}
+--- continually changing its per-node predictions in response to the population ---
+changes \emph{nothing} about contamination. Learning is inert here; only the gate
+(Part C) makes it matter. Mathematically: the tag recursion \eqref{eq:tag} contains no
+$\bm{\mu}$, so its limit $s$ is the same for any prediction sequence.}
+
+\begin{proposition}[degeneracy]\label{prop:degen}
+Under terminal attribution (platform output is $100\%$ platform content, whatever its
+value) and Assumption~\ref{a:row}, let the platform retrain: $\bm{\mu}(t)=G(x(t))$ for
+any map $G$ \textup{(per-node, state-dependent)}. Then $s=\lim_t s_t$ equals its static
+value, although $x(t)$ depends on $\{\bm{\mu}(t)\}$.
+\end{proposition}
+\begin{proof}
+By Lemma~\ref{lem:tag} the tag recursion is autonomous --- its injection $(1-m)(I-\Lambda)\one$
+contains neither opinion values nor $\bm{\mu}$. Hence $\{f(t)\}$ and $B_\star$ are
+identical for every $\{\bm{\mu}(t)\}$ (scalar, per-node, static, or retrained):
+retraining moves \emph{where} opinions sit, not \emph{how much} platform mass accrues.
+\end{proof}
+
+\section{Part B --- Displacement and diversity (value-dependent)}
+
+Here the per-node predictions enter. For a static $\bm{\mu}$, the value fixed point of
+\eqref{eq:lin} is
+\begin{equation}\label{eq:xinf}
+x_\infty=A_\star x(0)+S_\star\bm{\mu},\qquad
+A_\star:=(I-mC)^{-1}\Lambda,\quad
+S_\star:=(1-m)(I-mC)^{-1}(I-\Lambda)W,
+\end{equation}
+and $S_\star\one=B_\star$, $A_\star\one+B_\star=\one$ (consistency with Part A: a uniform
+prediction $\bm{\mu}=\one$ recovers the tag).
+
+\idea{High level: contamination is also the \emph{displacement} weight --- the
+population's average opinion is pulled a fraction $s$ of the way to the platform's
+average prediction. Mathematically: the mean is the $s$-blend of the starting mean and
+the mean prediction $\bar\mu$.}
+
+\begin{proposition}[equilibrium mean]\label{prop:mean}
+Under Assumptions~\ref{a:row}--\ref{a:ds}, $\bar x_\infty=(1-s)\,\bar x_0+s\,\bar\mu$,
+where $\bar\mu=\tfrac1N\one^{\!\top}\bm{\mu}$.
+\end{proposition}
+\begin{proof}
+Left-multiply \eqref{eq:xinf} by $\tfrac1N\one^{\!\top}$. With $\one^{\!\top}(I-mC)^{-1}
+=\one^{\!\top}/(1-m(1-\lambda))$ (Assumption~\ref{a:ds}) and $\one^{\!\top}(I-\Lambda)W
+=(1-\lambda)\one^{\!\top}$ (doubly stochastic), the innate coefficient is
+$\lambda/(1-m(1-\lambda))=1-s$ and the prediction coefficient is
+$(1-m)(1-\lambda)/(1-m(1-\lambda))=s$.
+\end{proof}
+
+\idea{High level: \emph{this is where ``collapse'' really lives, and where the scalar
+model was wrong.} A per-node platform does not squeeze everyone to one point --- it
+\emph{injects its own prediction-spread}. Diversity dies only if the predictions
+themselves are concentrated; feature-driven, spread-out predictions \emph{preserve}
+diversity. Mathematically: variance has three terms, and the scalar claim $(1-s)^2$ is
+just the $\Var(\bm{\mu})=0$ special case.}
+
+\begin{proposition}[equilibrium diversity]\label{prop:var}
+With $\Var(z):=\tfrac1N\sum_i(z_i-\bar z)^2$ and Assumptions~\ref{a:row}--\ref{a:unif}:
+\textup{(a)} if $W=I$, then $x_{\infty,i}=(1-s)x_{0,i}+s\mu_i$ and
+\begin{equation}\label{eq:var}
+\Var(x_\infty)=(1-s)^2\Var(x_0)+s^2\Var(\bm{\mu})+2s(1-s)\Cov(x_0,\bm{\mu}).
+\end{equation}
+In particular: collapse $\Var(x_\infty)\to0$ requires \emph{concentrated} predictions
+($\Var(\bm{\mu})\to0$); a uniform broadcast ($\Var(\bm{\mu})=0$) recovers the scalar
+result $\Var(x_\infty)=(1-s)^2\Var(x_0)$.
+\textup{(b)} for symmetric doubly-stochastic $W$ the innate channel is additionally
+smoothed: $(1-s)^2\Var(x_0)$ is replaced by $\tfrac1N\|A_\star\delta_0\|^2\le(1-s)^2\Var(x_0)$,
+while the platform injects $\tfrac1N\|S_\star(\bm{\mu}-\bar\mu\one)\|^2$.
+\end{proposition}
+\begin{proof}
+\textup{(a)} $W=I\Rightarrow A_\star=(1-s)I$, $S_\star=sI$, so $x_\infty=(1-s)x_0+s\bm{\mu}$;
+variance of a sum gives \eqref{eq:var}.
+\textup{(b)} From \eqref{eq:xinf}, $x_\infty-\bar x_\infty\one=A_\star\delta_0
++S_\star(\bm{\mu}-\bar\mu\one)$ with $\delta_0=x_0-\bar x_0\one$ (using
+$A_\star\one=(1-s)\one$, $S_\star\one=s\one$). The first norm is bounded as in the
+uniform case (all non-Perron eigenvalues of $A_\star$ are $\le1-s$); the second is the
+injected prediction-spread.
+\end{proof}
+
+\noindent\emph{Remark (the contraction is pinned --- it does not reach zero here).}
+Prop.~\ref{prop:var} is a single equilibrium: uniform predictions contract diversity
+\emph{once}, to $(1-s)^2\Var(x_0)$, and it \emph{stays} there. It does not fall to zero,
+because the innate anchor $\Lambda x(0)$ in \eqref{eq:lin} re-injects the original
+opinions every round and holds the spread up. Diversity reaches zero only by either
+\textup{(i)} starting from copies ($\Var(x_0)=0$), or \textup{(ii)} \emph{removing the
+innate anchor} and predicting uniformly round after round --- which is the
+bounded-confidence regime (no return-to-innate; Part C), not linear FJ. So the linear
+world is doubly safe: contamination $s$ is fixed (Prop.~\ref{prop:degen}) \emph{and}
+diversity is floored at $(1-s)^2\Var(x_0)$ (this remark). The experiments drop both
+protections.
+
+\noindent\emph{Reading of Part B.} The per-node structure is the whole point: collapse
+(diversity death) is the special case where the model's predictions concentrate ---
+which is exactly what an unanchored model does as it fits a narrowing population, and
+what an anchored ($\beta$-KL) model resists by keeping predictions feature-spread. The
+scalar model assumed $\Var(\bm{\mu})=0$ and so could only ever show collapse.
+
+\section{Part C --- Gated regime: the contamination identity}
+
+\paragraph{What changes.} The population is nonlinear. One round is a sweep of
+\textbf{peer} updates then a \textbf{gated absorption}, both using the per-node $\mu_i$.
+\emph{Peer:} an accepted pair ($|x_i-x_j|<\varepsilon$) meets in the middle,
+$x_i,x_j\leftarrow\tfrac{x_i+x_j}2$, $f_i,f_j\leftarrow\tfrac{f_i+f_j}2$.
+\emph{Absorption:} agent $i\in G_t$ blends toward its own prediction,
+$x_i\leftarrow(1-w)x_i+w\mu_i$, $f_i\leftarrow(1-w)f_i+w\cdot1$.
+
+\idea{High level: first pin down where contamination comes from. People influencing
+each other never \emph{creates} model-content; it only spreads it. So the platform is
+the sole source. Mathematically: the peer step preserves total tag mass $\sum f$.}
+
+\begin{lemma}[peers conserve contamination]\label{lem:peer}
+A peer midpoint preserves $f_i+f_j$; hence $\sum_i f_i$ is invariant under the peer sweep.
+\end{lemma}
+\begin{proof}$f_i'+f_j'=\tfrac{f_i+f_j}2+\tfrac{f_i+f_j}2=f_i+f_j$.\end{proof}
+
+\idea{High level: the central new result --- the exact per-round growth of
+contamination, in measurable quantities: absorption strength $w$, how many are
+listening, and how clean they still are. Mathematically: $\Delta s_t$ has a one-line
+closed form (and, like Part A, it does not read the values $\mu_i$, only who is in
+contact).}
+
+\begin{proposition}[exact $s$-identity]\label{prop:ds}
+Over one round, with $f$ taken before absorption,
+\begin{equation}\label{eq:ds}
+\Delta s_t=\frac{w}{N}\sum_{i\in G_t}(1-f_i)
+=w\cdot\mathrm{contact}_t\cdot\langle 1-f\rangle_{G_t}.
+\end{equation}
+\end{proposition}
+\begin{proof}
+By Lemma~\ref{lem:peer} peers contribute nothing. Each $i\in G_t$ changes $f_i$ by
+$[(1-w)f_i+w]-f_i=w(1-f_i)$; agents $\notin G_t$ are unchanged. Sum, divide by $N$.
+\end{proof}
+
+\idea{High level: recovers the simple law we measured in simulations and says exactly
+when it holds. Mathematically: the special case where listeners are a representative
+sample.}
+\begin{corollary}[empirical law]\label{cor:emp}
+If $\langle f\rangle_{G_t}=s_t$, then $\Delta s_t=w\cdot\mathrm{contact}_t\cdot(1-s_t)$.
+\end{corollary}
+
+\idea{High level: explains the plateau --- contamination can stall short of total when
+the model only reaches people it has already captured. Mathematically: the correction
+is a contamination--contact covariance that vanishes the increment.}
+\begin{corollary}[detachment stall]\label{cor:detach}
+$\langle 1-f\rangle_{G_t}=(1-s_t)-[\langle f\rangle_{G_t}-s_t]$. In detachment the gate
+stays open only for captured agents ($f_i\approx1$ on $G_t$), so $\Delta s_t\approx0$ and
+$s$ stalls below $1$.
+\end{corollary}
+
+\section{The hinge}
+
+\idea{High level: the one sentence that justifies the project. In the linear world $s$
+is a frozen constant retraining cannot touch (Prop.~\ref{prop:degen}); the gate makes
+$s$ a living, model-coupled variable (Prop.~\ref{prop:ds}) with no closed form.
+Mathematically: the per-round tag map depends on the contact set, so it does not
+telescope into a fixed point.}
+
+Let $P_t$ be the (mean-preserving) peer-averaging operator on tags and
+$D_t:=\diag(w\,\mathbf 1\{i\in G_t\})$. One round is $f_{t+1}=M_tf_t+c_t$ with
+$M_t=P_t(I-D_t)$, $c_t=P_tD_t\one$, both depending on $G_t$ --- hence on the opinions,
+hence on the model. Because $M_t$ varies along the trajectory, $\prod_{\tau\le t}M_\tau$
+does not telescope and no path-independent fixed point exists. Part~D below carries out
+the minimal reduction that is still solvable; the variance floor and the
+endogenous-fraction collapse law (which feeds $s_t$ into $\Var(\bm{\mu})$) build on it.
+
+\section{Part D --- the gated phase boundary (two-body reduction)}
+
+\paragraph{Why a reduction.} The hinge showed the full $N$-body gated loop has no
+closed-form fixed point. We reduce to the minimal model that still shows
+capture-vs-detachment: a single population position $y(t)$ and a platform anchored to a
+prior $P_0$. The platform fits the population but is held toward its prior, so its
+prediction is $\mu(t)=(1-\kappa)\,y(t)+\kappa\,P_0$, with anchor strength
+$\kappa\in(0,1)$ (increasing in the KL coefficient $\beta$). The gate is unchanged: the
+population absorbs only if $|\mu(t)-y(t)|<\varepsilon$, in which case
+$y(t+1)=(1-w)y(t)+w\mu(t)$; otherwise $y$ is frozen.
+
+\idea{High level: the full gated loop has no formula, but the question that matters ---
+does the platform drag the population to its prior, or lose it? --- does. It reduces to
+one number: the population's distance to the prior, against a threshold. Mathematically:
+in contact the dynamics are a one-dimensional linear contraction toward $P_0$, and the
+gate is a single inequality on that distance.}
+
+\begin{proposition}[capture/detachment phase boundary]\label{prop:twobody}
+Let $d(t):=|y(t)-P_0|$. In contact, $y(t+1)-P_0=(1-w\kappa)(y(t)-P_0)$ and the gap is
+$|\mu(t)-y(t)|=\kappa\,d(t)$. Hence:
+\begin{itemize}
+\item if $d(0)<\varepsilon/\kappa$: contact persists, $d(t)=(1-w\kappa)^t d(0)\to0$, and
+$y(t)\to P_0$ \emph{(capture)};
+\item if $d(0)>\varepsilon/\kappa$: the gate never opens and $y(t)\equiv y(0)$
+\emph{(detachment)}.
+\end{itemize}
+The basin boundary is $d(0)=\varepsilon/\kappa$.
+\end{proposition}
+\begin{proof}
+In contact, $y(t+1)-P_0=(1-w)(y(t)-P_0)+w(\mu(t)-P_0)$ with
+$\mu(t)-P_0=(1-\kappa)(y(t)-P_0)$, so $y(t+1)-P_0=(1-w\kappa)(y(t)-P_0)$; since
+$0<w\kappa<1$, $d(t)$ strictly decreases and the gap $\kappa d(t)$ with it. If
+$\kappa d(0)<\varepsilon$ the gap stays below $\varepsilon$ for all $t$ --- contact is
+self-reinforcing, $d(t)\to0$, $y\to P_0$. If $\kappa d(0)\ge\varepsilon$, $y$ is frozen,
+$d(t)=d(0)$, and the gap stays $\ge\varepsilon$. Both regions are absorbing; the boundary
+is $d(0)=\varepsilon/\kappa$.
+\end{proof}
+
+\noindent\emph{Plain reading.} Close enough to the prior to listen $\Rightarrow$ being
+pulled toward it brings you closer $\Rightarrow$ you keep listening: capture snowballs.
+Too far to listen $\Rightarrow$ you never move $\Rightarrow$ you stay too far: detachment
+is permanent.
+
+\idea{High level: a counterintuitive measured fact --- a \emph{stronger} anchor makes the
+platform \emph{lose} the population more easily --- now has a one-line reason.
+Mathematically: the capture region $\varepsilon/\kappa$ shrinks as $\kappa$ grows.}
+
+\begin{corollary}[anti-monotone in the anchor]\label{cor:antimono}
+The capture region $\{d(0)<\varepsilon/\kappa\}$ shrinks as $\kappa$ increases. Writing
+$\kappa=aw/(1+aw)$ for an anchor weight $aw$, the boundary is
+$\varepsilon/\kappa=\varepsilon(1+aw)/aw$ --- the gate condition observed empirically
+(08d).
+\end{corollary}
+
+\idea{High level: a spread-out population does not all go one way --- it \emph{splits}.
+The agents close enough to the prior are captured; the rest are stranded where they
+started. This is the stranded minority, and the reason contamination stalls.
+Mathematically: each agent's fate is decided independently by its own distance to $P_0$.}
+
+\begin{corollary}[dissociation and the contamination stall]\label{cor:dissoc}
+For a population spread over $\{y_i\}$, agent $i$ is captured iff
+$|y_i-P_0|<\varepsilon/\kappa$. The population dissociates into a captured mass at $P_0$
+and a detached residue frozen at $\{y_i\}$. The detached fraction never absorbs, so its
+tag stays $0$; by Cor.~\ref{cor:detach} the mean contamination $s$ stalls below $1$ at
+the captured fraction.
+\end{corollary}
+
+\idea{High level: at the threshold the outcome is knife-edge, so tiny differences decide
+it --- which is why repeated runs with different randomness land in different basins.
+Mathematically: the deterministic boundary is sharp, so finite-$N$ fluctuations flip
+marginal agents across it.}
+
+\begin{corollary}[bistability]\label{cor:bistable}
+Both basins are absorbing, so for $d(0)$ near $\varepsilon/\kappa$ the outcome is set by
+which side of the threshold the realised initial condition falls on; finite-$N$ noise
+yields seed-dependent splits.
+\end{corollary}
+
+\paragraph{Scope.} This is the reduction, not the full $N$-body loop: it assumes the
+anchored-fit prediction $\mu=(1-\kappa)y+\kappa P_0$ and treats agents as independent (no
+peer coupling). It captures capture, detachment, dissociation, and the boundary
+$\varepsilon/\kappa$, but not peer-driven cluster merging (neighbours pushing an agent
+across the threshold), which remains simulation-only. What is new and proven is the
+closed-form boundary $\varepsilon/\kappa$ and that one mechanism explains the
+anti-monotone anchor effect (Cor.~\ref{cor:antimono}), the dissociation
+(Cor.~\ref{cor:dissoc}), and the contamination stall.
+
+\section{Part E --- the diversity floor in capture}
+
+\paragraph{Setup.} Part~D says \emph{who} is captured; this asks why a captured
+population does not collapse to a single point. In the captured regime every agent
+absorbs the model each round, and two forces contest the spread: the model pulls each
+agent toward its \emph{own} prediction $\mu_i$ (whose spread is $\sigma_m^2=\Var(\bm\mu)$,
+so this \emph{maintains} diversity), while peer averaging contracts everyone toward the
+mean. Let $w$ be the absorption weight and $q$ the effective peer-contraction rate.
+
+\idea{High level: the captured population does not reach zero spread, because the model
+keeps pulling agents back apart toward their distinct predictions while peers pull them
+together. The standoff leaves a floor. Mathematically: a stationary variance balance,
+solved in closed form.}
+
+\begin{proposition}[diversity floor]\label{prop:floor}
+In deviations $\delta_i=x_i-\bar x$, $m_i=\mu_i-\bar\mu$, one round acts as
+$\delta_i\mapsto(1-q)\big[(1-w)\delta_i+w\,m_i\big]$. Its fixed point is
+$\delta_i^\star=A\,m_i$ with $A=\dfrac{(1-q)w}{1-(1-q)(1-w)}$, so
+\[
+\Var(x_\infty)=A^2\,\sigma_m^2 .
+\]
+\end{proposition}
+\begin{proof}
+The model step sends $\delta_i\mapsto(1-w)\delta_i+w m_i$ (mean shift cancels in
+deviations); the peer step contracts $\delta_i\mapsto(1-q)\delta_i$. Composing gives the
+affine scalar map; its fixed point is
+$\delta_i^\star=(1-q)w\,m_i/[1-(1-q)(1-w)]=A m_i$, and $\Var(x_\infty)=A^2\sigma_m^2$.
+\end{proof}
+
+\idea{High level: the floor is positive exactly when the model serves \emph{spread}
+predictions. Uniform predictions give a zero floor --- full collapse --- recovering Part
+B and tying to $\beta$. Mathematically: the limits of $A$.}
+
+\begin{corollary}[when the floor vanishes]\label{cor:floorzero}
+$\Var(x_\infty)=0$ iff $\sigma_m=0$ (uniform predictions) or $w=0$. For $\sigma_m,w>0$,
+$q<1$ the floor is strictly positive. Limits: $q\to0\Rightarrow A\to1$ (floor
+$=\sigma_m^2$, the full field spread); $q\to1$ or $w\to0\Rightarrow A\to0$.
+\end{corollary}
+
+\paragraph{Reading.} The residual spread measured in capture (std $\approx0.07$--$0.10$)
+is this floor: $\sigma_m$ sets the scale (the model's prediction spread), the $(w,q)$
+balance sets the contraction $A$. Since $\sigma_m$ is governed by the anchor --- $\beta=0$
+concentrates predictions ($\sigma_m\to0$, floor $\to0$, collapse), $\beta>0$ keeps them
+feature-spread ($\sigma_m>0$, floor $>0$) --- the floor is the captured-state face of the
+same $\beta$ switch as Part B.
+
+\paragraph{Scope.} $q$ is an effective (mean-field) peer-contraction rate; the closed
+form is exact for the mean-field peer step, and real pairwise (Deffuant) averaging
+matches it with an effective $q$ (verified: same positive floor, set by $\sigma_m$, not
+zero).
+
+\end{document}

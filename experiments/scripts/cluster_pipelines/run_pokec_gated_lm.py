@@ -231,6 +231,9 @@ def main() -> int:
     eps = _env_float("EPS", 0.3)
     gamma_bias = _env_float("GAMMA_BIAS", 1.5)
     w_plat = _env_float("W_PLAT", 0.3)
+    # population innate re-anchor: each round x <- (1-lambda) x + lambda innate
+    # (lambda=0 reproduces the replace/bounded-confidence behavior).
+    innate_lambda = _env_float("INNATE_LAMBDA", 0.0)
     # RUN_MODE: loop | no_feedback (platform weight 0, model still trains) |
     # direct (no population; model trains on its own previous predictions).
     run_mode = os.environ.get("RUN_MODE", "loop")
@@ -257,7 +260,8 @@ def main() -> int:
         "seed_base_data": seed_base_data, "train_cap": train_cap,
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
         "pop_model": pop_model, "eps": eps, "gamma_bias": gamma_bias,
-        "w_plat": w_plat, "run_mode": run_mode, "canary_delta": canary_delta,
+        "w_plat": w_plat, "innate_lambda": innate_lambda,
+        "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "host": os.uname().nodename,
     }
@@ -383,6 +387,8 @@ def main() -> int:
             ab_x = innate.to(ab_device).clone()
             ab_adj = (setup["adj"] > 0).float().to(ab_device)
             w_agent = (w_plat * plat_sus_eff).clamp(0.0, 1.0).to(ab_device)
+            ab_innate = innate.to(ab_device)
+            ab_f = torch.zeros(n, device=ab_device)   # provenance tag: model-share of opinion
 
     canary = gp.make_canary(n, canary_delta, seed)
     if canary_delta > 0:
@@ -485,6 +491,7 @@ def main() -> int:
 
         # advance the population one round under the current deployment
         contact = float("nan")
+        s_tag = float("nan")
         if run_mode == "direct":
             # no population: the model's own output is the next training target
             op = last_preds.clone()
@@ -495,9 +502,16 @@ def main() -> int:
             accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias)
             served = (last_preds.to(ab_x.device) + canary.to(ab_x.device)).clamp(0.0, 1.0)
             if feedback_on:
+                gate_open = (served - ab_x).abs() < eps
+                eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
                 ab_x, contact = gp.gated_blend(ab_x, served, w_agent, eps)
+                ab_f = (1.0 - eff_w) * ab_f + eff_w   # platform injects tag 1 on gated agents
             else:
                 contact = float(((served - ab_x).abs() < eps).float().mean())
+            if innate_lambda > 0:
+                ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
+                ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
+            s_tag = float(ab_f.mean())
             op = ab_x.detach().cpu().float().clone()
         if op_round0 is None:
             op_round0 = op.clone()
@@ -512,6 +526,7 @@ def main() -> int:
         if pop_model == "ab" and run_mode != "direct":
             row["contact"] = contact
             row["accepted"] = accepted
+            row["s_tag"] = s_tag
         row.update(pred_block)
         if "pred_eff_support" in pred_block:
             row["dissoc_gap"] = pred_block["pred_eff_support"] - row["op_eff_support"]

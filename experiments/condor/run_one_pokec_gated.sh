@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Single Pokec gated-population + LM run.
-# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME [PLATFORM_SUS_SCALE] [ANCHOR_MODE] [POP_MODEL] [EPS] [GAMMA_BIAS] [W_PLAT] [RUN_MODE] [CANARY_DELTA]
+# Args: RUN_TAG TRAINING_STYLE KL_BETA SEED DEPLOY_EVERY DATA_REGIME [PLATFORM_SUS_SCALE] [ANCHOR_MODE] [POP_MODEL] [EPS] [GAMMA_BIAS] [W_PLAT] [RUN_MODE] [CANARY_DELTA] [INNATE_LAMBDA]
 
 set -eo pipefail
 
@@ -18,6 +18,7 @@ GAMMA_BIAS="${11:-${GAMMA_BIAS:-1.5}}"
 W_PLAT="${12:-${W_PLAT:-0.3}}"
 RUN_MODE="${13:-${RUN_MODE:-loop}}"
 CANARY_DELTA="${14:-${CANARY_DELTA:-0.0}}"
+INNATE_LAMBDA="${15:-${INNATE_LAMBDA:-0.0}}"
 
 REPO="${REPO:-/home/gsmithline/perfsim}"
 CONDA_SH="${CONDA_SH:-/home/gsmithline/miniconda3/etc/profile.d/conda.sh}"
@@ -49,7 +50,7 @@ GRAD_NORM_N="${GRAD_NORM_N:-8}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_gated] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
-echo "[run_one_pokec_gated] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME pscale=$PLATFORM_SUS_SCALE anchor=$ANCHOR_MODE pop=$POP_MODEL eps=$EPS gamma=$GAMMA_BIAS w=$W_PLAT mode=$RUN_MODE canary=$CANARY_DELTA model=$BASE_MODEL"
+echo "[run_one_pokec_gated] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME pscale=$PLATFORM_SUS_SCALE anchor=$ANCHOR_MODE pop=$POP_MODEL eps=$EPS gamma=$GAMMA_BIAS w=$W_PLAT mode=$RUN_MODE canary=$CANARY_DELTA lam=$INNATE_LAMBDA model=$BASE_MODEL"
 
 # shellcheck disable=SC1090
 source "$CONDA_SH"
@@ -90,6 +91,7 @@ env \
     W_PLAT="$W_PLAT" \
     RUN_MODE="$RUN_MODE" \
     CANARY_DELTA="$CANARY_DELTA" \
+    INNATE_LAMBDA="$INNATE_LAMBDA" \
     N_PROBE="$N_PROBE" \
     TEL_EVAL_CAP="$TEL_EVAL_CAP" \
     GRAD_NORM_N="$GRAD_NORM_N" \

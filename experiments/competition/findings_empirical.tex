@@ -1,0 +1,125 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,bm}
+\usepackage[margin=1in]{geometry}
+\DeclareMathOperator{\Var}{Var}
+
+\title{Mediated model collapse: empirical findings\\
+\large(companion to \texttt{theory\_contamination.tex}, Parts A--E)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent This note reports the measurements and pairs each with the theory part it
+confirms, refines, or bounds. The theory document is the proven framework; here we say
+what the experiments show, and we are explicit about what is proven, what is measured,
+and what is only suggestive. Tiers: an \emph{MLP toy} (fast, with exact provenance tags)
+and the \emph{LLM tier} (Qwen2.5-7B, LoRA SFT-KL, real Pokec graph and profiles).
+
+\section{The loop}
+Each round: a nonlinear bounded-confidence population (Hegselmann--Krause, or
+Deffuant with algorithmic bias) updates; a model is retrained on the current
+(platform-mediated) opinions, anchored to a fixed prior with strength $\beta$ (the
+SFT-KL coefficient); the model feeds a \emph{per-node} prediction $\mu_i$ back, absorbed
+only by agents within the confidence radius $\varepsilon$. Contamination $s$ is the
+fraction of opinion that is recycled model output.
+
+\section{Contamination follows the identity (Parts A, C)}
+\emph{MLP, exact.} The gated identity
+$\Delta s_t = w\,\mathrm{contact}_t\,\langle1-f\rangle_{G_t}$ holds to machine precision;
+the measured law $ds/dt\propto\mathrm{contact}\,(1-s)$ is its uncorrelated case; forced
+detachment stalls $s$ at the captured fraction ($s\approx0.69$), as the covariance
+correction predicts. The degeneracy (retraining does not move $s$) is verified
+symbolically and numerically. These are the proven core (Part A) made visible.
+
+\section{The $\bm\beta$ switch: displacement vs collapse (Part B)}
+\emph{LLM, two seeds --- the headline.} The KL anchor selects the failure mode:
+\begin{itemize}
+\item $\beta=0$: population diversity \emph{contracts} (std $0.094\to0.067$ at
+$\varepsilon=0.4$) with small mean displacement ($+0.05$) --- \textbf{collapse};
+\item $\beta=3$: diversity is \emph{maintained/widened} (std $0.114\to0.153$) with large
+displacement ($+0.17$ toward the prior) --- \textbf{displacement without collapse}.
+\end{itemize}
+This is the gated, nonlinear realization of the \emph{mechanism} in Part B's variance
+decomposition $\Var(x_\infty)=(1-s)^2\Var(x_0)+s^2\Var(\bm\mu)+2s(1-s)\,$Cov (which is
+itself a linear-model identity): collapse is the concentrated-prediction case
+($\Var(\bm\mu)\to0$, $\beta=0$), displacement the spread-prediction case
+($\Var(\bm\mu)>0$, $\beta=3$). The qualitative driver --- whether the model's predictions
+are uniform or spread --- transfers from the linear formula to the gated experiment;
+the closed form itself does not (the gated dynamics also carry the floor of Part~E). The
+per-node structure is load-bearing either way: a scalar-broadcast model could only ever
+collapse.
+
+\section{Gate-monotone, loop-caused collapse (Parts C, D)}
+\emph{LLM, two seeds.} Model-side collapse is measured by $\ell_{c0}$, the current
+model's loss on the frozen round-0 data (forgetting of the original distribution). Peak
+$\ell_{c0}$ rises monotonically with the gate:
+\[
+\text{no-feedback }1.25 \;<\; \varepsilon{=}.1\ 1.85 \;<\; .2\ 2.59 \;<\; .3\ 3.36 \;<\; .4\ 3.98 .
+\]
+The flat no-feedback control ($\ell_{c0}$ barely moves) proves the loop causes the
+forgetting; the trust radius $\varepsilon$ sets the depth. This is the model-side
+shadow of Part~D's capture region: wider $\varepsilon$ captures more of the population,
+so the model trains on more-collapsed data. Reproduced across both seeds; the
+$\varepsilon{=}.3$ vs $.4$ ordering, unsettled at 30 rounds, resolves
+($\varepsilon{=}.4$ deeper) at 60.
+
+\section{The diversity floor (Part E)}
+Captured populations do not reach zero spread: the residual std is $0.07$--$0.10$,
+matching the floor $A^2\sigma_m^2$ with $\sigma_m$ the model's per-node prediction
+spread. Diversity reaches zero only when predictions concentrate ($\sigma_m\to0$),
+tying back to the $\beta$ switch.
+
+\section{The anchor does double duty}
+$\beta$ does not only prevent collapse --- it also \emph{stabilizes training}. At
+$\beta=0$, continual SFT destabilizes at long horizons (around round 50, the loss on the
+current batch jumps as the model stops fitting its own data); every $\beta>0$ run stays
+stable. The clean collapse metric is therefore the \emph{peak} $\ell_{c0}$, not the
+final value.
+
+\section{Collapse depth: the fraction-saturated corner (P5, honest)}
+The natural prediction $\ell_{c0}\sim s^2$ \textbf{fails}, and instructively. Contamination
+saturates ($s\to1$ in every loop cell), so the synthetic \emph{fraction} is pinned and
+cannot explain the $\varepsilon$-ladder. The depth instead tracks the training-data
+\emph{quality}: $\ell_{c0}$ rises as the batch variance falls
+($0.016\to0.005$ as $\ell_{c0}\,1.85\to3.98$). The decisive pair: no-feedback and
+$\varepsilon{=}.2$ share the same batch variance but differ in $\ell_{c0}$ ($1.25$ vs
+$2.59$) --- because one trains on real data ($s=0$) and the other on recycled data
+($s\approx1$). So in the two-factor law $\ell_{c0}=\text{base}+s^2 c^2$, the fraction
+$s^2$ is a \emph{switch} (real vs recycled) and the quality gap $c^2$ carries all the
+$\varepsilon$-dependence. Our loop retrains on the fully-mediated population every round,
+so it sits in the fraction-saturated, quality-varying corner --- distinct from the
+fraction-dialing regime of the model-collapse literature. The bridge holds structurally;
+the precise $c^2$-vs-quality form awaits more seeds (and is muddied by the $\beta=0$
+instability).
+
+\section{Real-data validation}
+\emph{Pokec} (unimodal innate, sparse graph): the $\varepsilon$ axis survives ---
+threshold, gated capture, stranded minority --- while the algorithmic-bias ($\gamma$)
+axis is inert (the graph is too sparse and the population too unimodal to fragment).
+\emph{PolitiSky24} (real polarized 2024-election stances on a dense interaction graph):
+$\gamma$ matters; a centrist-prior platform merges both camps at its prior; a
+partisan-prior platform flips the majority camp at wide $\varepsilon$ and strands roughly
+half of it at narrow $\varepsilon$. Caveats: PolitiSky labels are LLM-annotated and the
+camps are 13:1 imbalanced.
+
+\section{Limitations}
+Most cells are one or two seeds. The $\beta=0$ long-horizon instability corrupts the
+collapse tail (we report the peak). The inherited platform susceptibility is high, so
+magnitudes are conditional on strong trust. The $\gamma$-healing result needs a denser
+real graph to test fairly. LLM contamination $s$ is reconstructed from the contact
+trajectory via the Part-A identity, not directly tagged; a provenance tag in the pipeline
+would let us measure it.
+
+\section{Status}
+Proven and verified (Parts A--E): contamination is value-blind with closed-form $s$ and a
+degeneracy; per-node displacement and the three-term variance; the gated $s$-identity;
+the capture/detachment boundary $\varepsilon/\kappa$; the diversity floor $A^2\sigma_m^2$.
+Measured and reproduced (two seeds): the $\beta$ switch, gate-monotone loop-caused
+collapse, the floor magnitude, the anchor's stabilizing role. Refined, not closed: the
+collapse-depth law (P5, fraction-saturated corner). Conjectural: the
+performative-stable-point framing (P6), with the caveat that the closed-form KL result is
+RL-KL while our experiments are SFT-KL.
+
+\end{document}
