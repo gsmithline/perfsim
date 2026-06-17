@@ -1,5 +1,0 @@
-resume_phenom_replace_exp, replace, experience, phenomenon, 0
-resume_ident_replace_exp, replace, experience, identification, 0
-resume_generic_replace_exp, replace, experience, generic, 0
-resume_phenom_anchor_exp, clean_anchor, experience, phenomenon, 0
-resume_phenom_accum_exp, accumulate, experience, phenomenon, 0

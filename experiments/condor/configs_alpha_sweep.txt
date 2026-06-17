@@ -1,4 +1,0 @@
-alpha_sft_b0,       sft,     0.0,  0.005, 0.60
-alpha_sftkl_b1,     sft_kl,  1.0,  0.005, 0.60
-alpha_sftkl_b10,    sft_kl, 10.0,  0.005, 0.60
-alpha_frozen,        frozen,  0.0,  0.005, 0.60

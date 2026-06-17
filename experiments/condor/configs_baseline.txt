@@ -1,1 +1,0 @@
-at_covid_baseline_frozen, frozen, 0.0

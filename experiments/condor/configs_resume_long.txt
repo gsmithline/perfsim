@@ -1,6 +1,0 @@
-resume_mlp_reg_long_s0, replace, experience, phenomenon, 0, mlp, regression
-resume_mlp_reg_long_s1, replace, experience, phenomenon, 1, mlp, regression
-resume_mlp_reg_long_s2, replace, experience, phenomenon, 2, mlp, regression
-resume_linear_reg_long_s0, replace, experience, phenomenon, 0, linear, regression
-resume_linear_reg_long_s1, replace, experience, phenomenon, 1, linear, regression
-resume_linear_reg_long_s2, replace, experience, phenomenon, 2, linear, regression
