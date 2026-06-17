@@ -241,6 +241,10 @@ def main() -> int:
     n_probe = _env_int("N_PROBE", 64)
     tel_eval_cap = _env_int("TEL_EVAL_CAP", 64)
     grad_norm_n = _env_int("GRAD_NORM_N", 8)
+    # FRESH_EACH_ROUND=1: retrain a NEW adapter from the cached base every round
+    # (weights do NOT carry over) -- the model-collapse / Gerstgrasser protocol.
+    # Default 0 = continual SFT (weights persist, the performative-prediction RGD).
+    fresh_each_round = _env_int("FRESH_EACH_ROUND", 0) == 1
 
     if pop_model not in ("fj", "ab"):
         raise ValueError(f"unknown POP_MODEL: {pop_model!r}")
@@ -263,6 +267,7 @@ def main() -> int:
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
+        "fresh_each_round": fresh_each_round,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -363,6 +368,14 @@ def main() -> int:
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
+    # fresh-each-round: snapshot the pristine (base-behavior) adapter once; we
+    # reset to it before every round's training so no weights carry over.
+    fresh_adapter_snap = None
+    if fresh_each_round and use_lora and training_style != "frozen":
+        fresh_adapter_snap = gp.snapshot_trainable(lm.inner_model)
+        print(f"[run] FRESH_EACH_ROUND on: snapshotted pristine adapter "
+              f"({len(fresh_adapter_snap)} tensors)", flush=True)
+
     # per-agent platform weight: scaled FJ trust for fj, gated blend weight
     # W_PLAT * platform_sus * scale for ab; no_feedback zeroes both.
     feedback_on = run_mode == "loop"
@@ -458,6 +471,8 @@ def main() -> int:
                 loss_block["batch_var"] = float(y_flat.var(unbiased=False))
                 loss_block["grad_norm0"] = gp.sft_grad_norm(lm, train_data, format_number,
                                                             grad_norm_n)
+            if fresh_adapter_snap is not None and t > 0:
+                gp.load_trainable(lm.inner_model, fresh_adapter_snap)  # reset to base: fresh model
             if training_style != "frozen" and train_data is not None:
                 learner.train(train_data)
             cur_dep += 1

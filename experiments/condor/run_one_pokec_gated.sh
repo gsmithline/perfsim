@@ -47,6 +47,7 @@ TRAIN_CAP="${TRAIN_CAP:-0}"
 N_PROBE="${N_PROBE:-64}"
 TEL_EVAL_CAP="${TEL_EVAL_CAP:-64}"
 GRAD_NORM_N="${GRAD_NORM_N:-8}"
+FRESH_EACH_ROUND="${FRESH_EACH_ROUND:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_gated] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
@@ -95,6 +96,7 @@ env \
     N_PROBE="$N_PROBE" \
     TEL_EVAL_CAP="$TEL_EVAL_CAP" \
     GRAD_NORM_N="$GRAD_NORM_N" \
+    FRESH_EACH_ROUND="$FRESH_EACH_ROUND" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

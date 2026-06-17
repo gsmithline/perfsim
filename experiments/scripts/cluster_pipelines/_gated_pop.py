@@ -119,6 +119,16 @@ class swapped_params:
         return False
 
 
+def load_trainable(module, snap):
+    """Permanently copy a trainable-param snapshot into `module` (no restore).
+    Used for fresh-each-round retraining: reset the adapter to its pristine
+    base-behavior state before fitting a new model on the round's data."""
+    params = dict(module.named_parameters())
+    with torch.no_grad():
+        for k, v in snap.items():
+            params[k].copy_(v.to(params[k].device, params[k].dtype))
+
+
 def _example_ids(lm, agent_i, y_i, fmt):
     """(input_ids, labels) for one prompt+completion example, prompt masked."""
     prompt = lm.build_prompt(lm.profile_at(int(agent_i)))
