@@ -129,6 +129,18 @@ def load_trainable(module, snap):
             params[k].copy_(v.to(params[k].device, params[k].dtype))
 
 
+def adapter_step(cur, prev=None):
+    """L2 norm of the trainable (LoRA) params, or of their change vs `prev`.
+    adapter_step(cur, prev) = ||theta_t - theta_{t-1}|| = the weight-space
+    performative-stability step (decays to 0 at a stable point). adapter_step(cur)
+    = ||theta_t|| (so a relative step = step/norm is recoverable offline)."""
+    total = 0.0
+    for k in cur:
+        d = cur[k] if prev is None else (cur[k] - prev[k])
+        total += float((d * d).sum())
+    return total ** 0.5
+
+
 def _example_ids(lm, agent_i, y_i, fmt):
     """(input_ids, labels) for one prompt+completion example, prompt masked."""
     prompt = lm.build_prompt(lm.profile_at(int(agent_i)))

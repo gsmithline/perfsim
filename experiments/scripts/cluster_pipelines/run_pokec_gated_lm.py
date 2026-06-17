@@ -193,6 +193,34 @@ def subsample_train_data(train_data, cap, gen):
     return {k: v[sel] for k, v in train_data.items()}
 
 
+def mix_pristine_data(buffer, cap, frac, gen):
+    """`cap`-row training set holding a FIXED `frac` from the round-0 real seed
+    (dep==-1) and the rest from the recycled rounds (dep>=0). Stops the pristine
+    fraction from decaying to 1/t under plain accumulate -- the fixed-pristine arm
+    the contamination theory says bounds the drift. None if seed/rounds missing."""
+    pristine = [b for b in buffer if b["dep"] == -1]
+    recycled = [b for b in buffer if b["dep"] >= 0]
+    if not pristine or not recycled or cap <= 0:
+        return None
+
+    def _pool(blocks):
+        return {"x": torch.cat([b["x"] for b in blocks], 0),
+                "y": torch.cat([b["y"] for b in blocks], 0),
+                "agent_idx": torch.cat([b["idx"] for b in blocks], 0)}
+
+    def _take(pool, k):
+        n = pool["x"].shape[0]
+        if k <= 0:
+            return {key: v[:0] for key, v in pool.items()}
+        sel = (torch.randint(0, n, (k,), generator=gen) if k > n
+               else torch.randperm(n, generator=gen)[:k])
+        return {key: v[sel] for key, v in pool.items()}
+
+    n_p = int(round(frac * cap))
+    p, r = _take(_pool(pristine), n_p), _take(_pool(recycled), cap - n_p)
+    return {k: torch.cat([p[k], r[k]], 0) for k in ("x", "y", "agent_idx")}
+
+
 def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
@@ -245,6 +273,10 @@ def main() -> int:
     # (weights do NOT carry over) -- the model-collapse / Gerstgrasser protocol.
     # Default 0 = continual SFT (weights persist, the performative-prediction RGD).
     fresh_each_round = _env_int("FRESH_EACH_ROUND", 0) == 1
+    # PRISTINE_FRAC>0 (accumulate only): hold this fraction of every training
+    # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
+    # to 1/t. 0 = random subsample (decaying pristine = plain accumulate).
+    pristine_frac = _env_float("PRISTINE_FRAC", 0.0)
 
     if pop_model not in ("fj", "ab"):
         raise ValueError(f"unknown POP_MODEL: {pop_model!r}")
@@ -267,7 +299,7 @@ def main() -> int:
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
-        "fresh_each_round": fresh_each_round,
+        "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -445,6 +477,7 @@ def main() -> int:
     prev_op = None
     round0_snap = None
     round0_batch = None
+    prev_adapter = None              # t-1 LoRA adapter, for the weight-space stability step
     trajectory = []
     op_raw = []      # per-round raw per-agent opinions (for subgroup / tail analysis)
     pred_raw = []    # per-round raw per-agent model predictions (current deployment)
@@ -458,6 +491,12 @@ def main() -> int:
         if is_deploy:
             if t == 0:
                 train_data = initial_data
+            elif data_regime == "accumulate" and pristine_frac > 0:
+                cap = train_cap if train_cap > 0 else n_labeled
+                train_data = mix_pristine_data(buffer, cap, pristine_frac, cap_gen)
+                if train_data is None:  # seed/rounds missing -> fall back
+                    train_data = subsample_train_data(
+                        select_train_data(buffer, data_regime, cur_dep), train_cap, cap_gen)
             else:
                 train_data = select_train_data(buffer, data_regime, cur_dep)
                 train_data = subsample_train_data(train_data, train_cap, cap_gen)
@@ -483,6 +522,14 @@ def main() -> int:
                 if use_lora:
                     lm.inner_model.save_pretrained(str(out_dir / "round0_adapter"))
                 torch.save(round0_batch, out_dir / "round0_batch.pt")
+            # weight-space performative-stability step ||theta_t - theta_{t-1}|| on
+            # the LoRA adapter (continual = RGD convergence; fresh = fit-to-fit drift)
+            if use_lora and training_style != "frozen":
+                cur_adapter = gp.snapshot_trainable(lm.inner_model)
+                loss_block["w_norm"] = gp.adapter_step(cur_adapter)
+                if prev_adapter is not None:
+                    loss_block["w_step"] = gp.adapter_step(cur_adapter, prev_adapter)
+                prev_adapter = cur_adapter
             # the 2x2: {current, round-0} adapter x {current, round-0} batch
             if round0_snap is not None and train_data is not None:
                 loss_block["l_cc"] = gp.sft_batch_loss(lm, train_data, format_number,
