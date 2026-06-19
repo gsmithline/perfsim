@@ -49,6 +49,8 @@ TEL_EVAL_CAP="${TEL_EVAL_CAP:-64}"
 GRAD_NORM_N="${GRAD_NORM_N:-8}"
 FRESH_EACH_ROUND="${FRESH_EACH_ROUND:-0}"
 PRISTINE_FRAC="${PRISTINE_FRAC:-0.0}"
+LOG_PPL_DIST="${LOG_PPL_DIST:-0}"
+PPL_DIST_CAP="${PPL_DIST_CAP:-0}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
 echo "[run_one_pokec_gated] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
@@ -99,6 +101,8 @@ env \
     GRAD_NORM_N="$GRAD_NORM_N" \
     FRESH_EACH_ROUND="$FRESH_EACH_ROUND" \
     PRISTINE_FRAC="$PRISTINE_FRAC" \
+    LOG_PPL_DIST="$LOG_PPL_DIST" \
+    PPL_DIST_CAP="$PPL_DIST_CAP" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

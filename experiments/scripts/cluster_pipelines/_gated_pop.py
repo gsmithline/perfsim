@@ -177,6 +177,30 @@ def sft_batch_loss(lm, train_data, fmt, cap, module=None):
     return total_nll / max(total_tok, 1)
 
 
+def per_agent_ppl(lm, idx, y, fmt, cap=0, gen=None, module=None):
+    """Per-agent answer-token perplexity: how surprised the current model is by
+    each agent's target opinion y_i (prompt masked, like sft_batch_loss but kept
+    per-example, not averaged). Returns (ppl_list, scored_idx) -- the empirical
+    perplexity distribution over profiles. cap>0 scores a random cap-sized subset."""
+    module = module if module is not None else lm.inner_model
+    n = len(idx)
+    order = list(range(n))
+    if cap and n > cap:
+        order = sorted(torch.randperm(n, generator=gen)[:cap].tolist())
+    was = bool(getattr(module.config, "use_cache", False))
+    module.config.use_cache = False
+    ppl, scored = [], []
+    try:
+        for k in order:
+            ids, labels = _example_ids(lm, int(idx[k]), float(y[k]), fmt)
+            out = module(ids, labels=labels)
+            ppl.append(float(torch.tensor(float(out.loss)).exp()))
+            scored.append(int(idx[k]))
+    finally:
+        module.config.use_cache = was
+    return ppl, scored
+
+
 def sft_grad_norm(lm, train_data, fmt, n_examples):
     """Trainable-grad norm of the mean CE over the first n_examples rows: the
     step-0 gradient of the SFT objective (KL term excluded -- the easy grab)."""

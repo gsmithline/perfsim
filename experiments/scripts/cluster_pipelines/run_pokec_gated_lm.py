@@ -248,6 +248,12 @@ def main() -> int:
     log_ppl = _env_int("LOG_PERPLEXITY", 1) == 1
     n_ppl = _env_int("N_PERPLEXITY", 64)
     log_answer_dist = _env_int("LOG_ANSWER_DIST", 1) == 1
+    # LOG_PPL_DIST=1: log the full per-profile answer-perplexity distribution each
+    # round (the model-collapse signature). PPL_DIST_CAP=0 scores all labeled
+    # profiles; >0 scores a random subset (cheaper). Quantiles -> telemetry,
+    # full per-agent array -> trajectory.pt (ppl_raw).
+    log_ppl_dist = _env_int("LOG_PPL_DIST", 0) == 1
+    ppl_dist_cap = _env_int("PPL_DIST_CAP", 0)
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
     platform_scale = _env_float("PLATFORM_SUS_SCALE", 1.0)
@@ -300,6 +306,7 @@ def main() -> int:
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
+        "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -481,6 +488,7 @@ def main() -> int:
     trajectory = []
     op_raw = []      # per-round raw per-agent opinions (for subgroup / tail analysis)
     pred_raw = []    # per-round raw per-agent model predictions (current deployment)
+    ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
@@ -550,6 +558,16 @@ def main() -> int:
                 pred_block["perplexity"] = lm.perplexity(ref_texts)
             if log_answer_dist:
                 pred_block.update(lm.answer_distribution_stats())
+            if log_ppl_dist:
+                pv, _ = gp.per_agent_ppl(lm, idx_all[mask], innate[mask],
+                                         format_number, ppl_dist_cap, cap_gen)
+                pa = np.array(pv)
+                pred_block.update({"ppl_p10": float(np.percentile(pa, 10)),
+                                   "ppl_p50": float(np.percentile(pa, 50)),
+                                   "ppl_p90": float(np.percentile(pa, 90)),
+                                   "ppl_p99": float(np.percentile(pa, 99)),
+                                   "ppl_max": float(pa.max())})
+                ppl_raw.append(torch.tensor(pv, dtype=torch.float32))
 
         # advance the population one round under the current deployment
         contact = float("nan")
@@ -638,6 +656,7 @@ def main() -> int:
             "config": config,
             "op_raw": torch.stack(op_raw) if op_raw else torch.empty(0),
             "pred_raw": torch.stack(pred_raw) if pred_raw else torch.empty(0),
+            "ppl_raw": torch.stack(ppl_raw) if ppl_raw else torch.empty(0),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,
