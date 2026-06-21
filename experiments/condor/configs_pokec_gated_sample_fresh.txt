@@ -1,0 +1,12 @@
+gfrs_e040_b0_t03_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.3
+gfrs_e040_b0_t07_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.7
+gfrs_e040_b0_t1_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 1.0
+gfrs_e040_b0p1_t03_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.3
+gfrs_e040_b0p1_t07_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.7
+gfrs_e040_b0p1_t1_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 1.0
+gfrs_e040_b0p5_t03_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.3
+gfrs_e040_b0p5_t07_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.7
+gfrs_e040_b0p5_t1_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 1.0
+gfrs_e040_b1_t03_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.3
+gfrs_e040_b1_t07_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 0.7
+gfrs_e040_b1_t1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.0, 1, 0, 0.0, 1.0

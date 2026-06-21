@@ -46,6 +46,8 @@ class HFCausalLMModel(Model):
         dtype: torch.dtype = torch.float32,
         max_new_tokens: int = 8,
         gen_batch_size: int = 16,
+        do_sample: bool = False,
+        temperature: float = 1.0,
         group_prompting: bool = False,
         load_now: bool = True,
     ) -> None:
@@ -62,7 +64,16 @@ class HFCausalLMModel(Model):
         self._target_dtype = dtype
         self._max_new_tokens = max_new_tokens
         self._gen_batch_size = gen_batch_size
+        self._do_sample = do_sample
+        self._temperature = temperature
         self._group_prompting = group_prompting
+
+        # diagnostics from the most recent forward(): the raw decoded strings and
+        # the fraction with no parseable digit. Sampled generation can drift to
+        # nonsense (no number), which _parse silently turns into the 0.5 default;
+        # these surface that instead of hiding it as a fake collapse-to-0.5.
+        self._last_raw: list[str] = []
+        self._last_parse_fail: float = 0.0
 
         length = getattr(profiles, "__len__", lambda: -1)()
         if length == -1:
@@ -145,6 +156,10 @@ class HFCausalLMModel(Model):
         else:
             outputs = self._generate(prompts)
 
+        self._last_raw = list(outputs)
+        self._last_parse_fail = sum(
+            1 for o in outputs if re.search(r"\d", o) is None
+        ) / max(1, len(outputs))
         values = torch.tensor(
             [self._parse(o) for o in outputs],
             dtype=torch.float32,
@@ -232,7 +247,7 @@ class HFCausalLMModel(Model):
         return unique, inverse
 
     def _generate(self, prompts: list[str]) -> list[str]:
-        """Batched greedy generation.
+        """Batched generation: greedy when do_sample is False, else sampled at temperature.
 
         Toggles grad checkpointing off + KV cache on for generation (HF won't
         populate the cache under checkpointing, costing ~5-10x), restoring both
@@ -257,13 +272,15 @@ class HFCausalLMModel(Model):
                     padding=True,
                     truncation=True,
                 ).to(self._target_device)
+                gen_kwargs = dict(
+                    max_new_tokens=self._max_new_tokens,
+                    do_sample=self._do_sample,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+                if self._do_sample:
+                    gen_kwargs["temperature"] = self._temperature
                 with torch.no_grad():
-                    gen = self.inner_model.generate(
-                        **inputs,
-                        max_new_tokens=self._max_new_tokens,
-                        do_sample=False,
-                        pad_token_id=self.tokenizer.pad_token_id,
-                    )
+                    gen = self.inner_model.generate(**inputs, **gen_kwargs)
                 new_tokens = gen[:, inputs["input_ids"].shape[1] :]
                 decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
                 out.extend(decoded)

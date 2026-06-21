@@ -244,6 +244,11 @@ def main() -> int:
     use_lora = _env_int("USE_LORA", 1) == 1
     sft_lr = _env_float("SFT_LR", 5e-5)
     max_new_tokens = _env_int("MAX_NEW_TOKENS", 6)
+    # DO_SAMPLE=1 draws ONE sample per agent from the model's label distribution
+    # (the finite-sampling / Shumailov collapse channel) instead of greedy=mode.
+    # GEN_TEMPERATURE controls the sampling spread (1.0 = the model's true dist).
+    do_sample = _env_int("DO_SAMPLE", 0) == 1
+    gen_temperature = _env_float("GEN_TEMPERATURE", 1.0)
     n_bins = _env_int("HIST_BINS", 50)
     log_ppl = _env_int("LOG_PERPLEXITY", 1) == 1
     n_ppl = _env_int("N_PERPLEXITY", 64)
@@ -254,6 +259,11 @@ def main() -> int:
     # full per-agent array -> trajectory.pt (ppl_raw).
     log_ppl_dist = _env_int("LOG_PPL_DIST", 0) == 1
     ppl_dist_cap = _env_int("PPL_DIST_CAP", 0)
+    # DEBUG_GEN=1: each round print the parse-failure fraction (agents whose
+    # generation had no number, silently defaulted to 0.5) and a few raw decoded
+    # strings. Sanity check that sampled generation is real numbers, not nonsense.
+    debug_gen = _env_int("DEBUG_GEN", 0) == 1
+    debug_gen_n = _env_int("DEBUG_GEN_N", 12)
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
     platform_scale = _env_float("PLATFORM_SUS_SCALE", 1.0)
@@ -307,6 +317,7 @@ def main() -> int:
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
+        "do_sample": do_sample, "gen_temperature": gen_temperature,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -370,6 +381,8 @@ def main() -> int:
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
         max_new_tokens=max_new_tokens,
         gen_batch_size=gen_batch_size,
+        do_sample=do_sample,
+        temperature=gen_temperature,
         load_now=True,
     )
     print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
@@ -552,6 +565,11 @@ def main() -> int:
             # model-side distribution (predictions for all agents) + health
             preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
+            if debug_gen:
+                raw = [r.strip()[:24] for r in getattr(lm, "_last_raw", [])[:debug_gen_n]]
+                print(f"[round {t}] DEBUG_GEN parse_fail_frac="
+                      f"{getattr(lm, '_last_parse_fail', float('nan')):.4f} "
+                      f"raw={raw}", flush=True)
             pred_block = {f"pred_{k}": v for k, v in cm.summary(preds, bins=n_bins).items()}
             pred_block["pred_bias"] = float(preds.mean()) - innate_mean
             if log_ppl:
