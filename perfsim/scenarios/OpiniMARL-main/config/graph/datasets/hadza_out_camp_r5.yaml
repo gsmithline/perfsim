@@ -1,0 +1,7 @@
+# @package env
+GRAPH: "hadza_out_camp"
+GRAPH_KWARGS:
+  r: 5 # Interaction switch rate
+
+NUM_AGENTS: 37
+AGENT_ID_NUM_BITS: 6

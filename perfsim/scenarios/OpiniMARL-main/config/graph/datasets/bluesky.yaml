@@ -1,0 +1,9 @@
+# @package env
+GRAPH: "bluesky"
+GRAPH_KWARGS: {}
+
+NUM_AGENTS: 1000
+AGENT_ID_NUM_BITS: 10
+
+ENV_KWARGS:
+  p_signal: 0.14 # Probability of an agent receiving a private signal

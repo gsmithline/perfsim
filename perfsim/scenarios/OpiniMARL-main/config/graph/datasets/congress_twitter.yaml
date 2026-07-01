@@ -1,0 +1,9 @@
+# @package env
+GRAPH: "congress_twitter"
+GRAPH_KWARGS: {}
+
+NUM_AGENTS: 475
+AGENT_ID_NUM_BITS: 9
+
+ENV_KWARGS:
+  p_signal: 0.07 # Probability of an agent receiving a private signal

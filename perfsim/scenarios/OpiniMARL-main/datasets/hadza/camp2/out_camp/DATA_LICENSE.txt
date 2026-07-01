@@ -1,0 +1,74 @@
+Hadza Proximity Network Dataset Notice
+======================================
+
+This notice applies only to the data files in
+datasets/hadza/camp2/out_camp and does not replace the software
+licence for the code in this repository.
+
+Provenance
+----------
+
+This dataset is a processed, derived representation of the Hadza
+proximity-network dataset deposited with Dryad:
+
+* Fedurek, P., et al. Data used in: Social status does not predict in-camp
+  integration among egalitarian hunter-gatherer men [Dataset]. Dryad.
+  DOI: 10.5061/dryad.nk98sf7v6.
+
+The upstream dataset is associated with the publication:
+
+* Fedurek, P., Aktipis, A., Cronk, L., Makambi, E. J., Mabulla, I.,
+  Berbesque, J. C., & Lehmann, J. (2021). Social status does not predict
+  in-camp integration among egalitarian hunter-gatherer men.
+  Behavioral Ecology. DOI: 10.1093/beheco/arab110.
+
+The upstream Dryad dataset is made available under the Creative Commons CC0
+1.0 Universal Public Domain Dedication. This notice is intended for the
+processed dataset distributed with this repository and should be read together
+with any applicable upstream terms.
+
+What is included
+----------------
+
+* Processed numerical matrices derived from Hadza proximity-network data.
+
+What is not included
+--------------------
+
+* Names or direct personal identifiers of research participants.
+* Interview transcripts, field notes, audio, video, images, or raw
+  ethnographic records.
+* Private personal information beyond the processed numerical network data.
+* Any claim of ownership over the original research data beyond the rights
+  waived or granted under the upstream CC0 dedication.
+
+Redistribution and use
+----------------------
+
+The dataset distributed in this repository is a processed numerical network
+representation. Consistent with the upstream CC0 dedication, the processed
+dataset files in this directory are also made available under CC0 1.0
+Universal Public Domain Dedication.
+
+To the extent possible under law, the repository contributors waive all
+copyright and related or neighbouring rights they may have in these processed
+dataset files.
+
+CC0 does not legally require attribution. However, if you use this dataset in
+your own work, you are requested to cite the upstream Dryad dataset, the
+associated publication, and this repository where appropriate.
+
+Because the data concern real human participants and a living Indigenous
+community, users should handle the dataset respectfully and avoid attempts to
+identify individuals, infer sensitive personal information, stigmatise
+individuals or communities, or combine the data with other sources for
+re-identification. Users are responsible for ensuring that their use complies
+with applicable laws, institutional policies, research-ethics requirements,
+and community-sensitive research practices.
+
+Disclaimer
+----------
+
+This dataset is provided "as is", without warranty of any kind, express or
+implied. To the extent permitted by applicable law, the authors and
+contributors are not liable for any damages arising from its use.

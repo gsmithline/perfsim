@@ -1,0 +1,65 @@
+Congressional Twitter Network Dataset Notice
+===========================================
+
+This notice applies only to the data files in
+datasets/congress/congress_network/ and does not replace the software
+licence for the code in this repository.
+
+Provenance
+----------
+
+This dataset is a processed, derived representation of the Congressional
+Twitter/X network described in:
+
+* Fink, C. G., Fullin, K., Gutierrez, G., Omodt, N., Zinnecker, S.,
+  Sprint, G., & McCulloch, S. (2023). A centrality measure for quantifying
+  spread on weighted, directed networks. Physica A: Statistical Mechanics
+  and its Applications, 626, 129083.
+* Fink, C. G., Omodt, N., Zinnecker, S., Sprint, G. A Congressional Twitter
+  network dataset quantifying pairwise probability of influence. Data in Brief
+  (open-access article; CC BY-NC-ND 4.0).
+
+The upstream project that accompanied this dataset is the public GitHub
+repository gsprint23/CongressionalTwitterNetwork, whose software licence is
+MIT. This notice is intended for the processed dataset distributed with this
+repository and should be read together with any applicable upstream terms.
+
+What is included
+----------------
+
+* A derived weighted, directed network representation.
+
+What is not included
+--------------------
+
+* Tweet text or media.
+* Direct messages.
+* Private account data.
+* Public-member identifiers, including handles, usernames, user IDs, or profile
+  metadata.
+* Authentication secrets or API keys.
+* Any claim of ownership over third-party X/Twitter content beyond the rights
+  held by the original authors and by X.
+
+Redistribution and use
+----------------------
+
+The dataset distributed in this repository is a derived network representation,
+not a redistribution of raw X/Twitter content. It does not include tweet text,
+media, user identifiers, profile metadata, or other account-level records.
+
+If you use this dataset in your own work, cite the original paper(s) listed
+above and preserve this notice. You are responsible for ensuring that your use
+of the dataset is consistent with any applicable upstream terms, publication
+licences, platform policies, and legal requirements.
+
+This repository does not grant any rights to raw X/Twitter content or to any
+third-party material beyond the derived data included here.
+
+Disclaimer
+----------
+
+This dataset is provided "as is", without warranty of any kind, express or
+implied. To the extent permitted by applicable law, the authors and contributors
+are not liable for any damages arising from its use.
+

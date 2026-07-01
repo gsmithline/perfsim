@@ -1,0 +1,6 @@
+# @package env
+GRAPH: "random"
+GRAPH_KWARGS:
+  seed: 67
+  p: 0.1
+

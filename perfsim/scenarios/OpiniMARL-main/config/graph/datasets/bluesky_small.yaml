@@ -1,0 +1,6 @@
+# @package env
+GRAPH: "bluesky_small"
+GRAPH_KWARGS: {}
+
+NUM_AGENTS: 37
+AGENT_ID_NUM_BITS: 6

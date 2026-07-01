@@ -1,0 +1,7 @@
+# @package env
+GRAPH: "sbm"
+GRAPH_KWARGS:
+  seed: 67
+  num_communities: 25
+  p_in: 0.1455
+  p_ext: 0.0003

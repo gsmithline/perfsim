@@ -1,0 +1,11 @@
+# @package env
+GRAPH: "barabasi_albert"
+GRAPH_KWARGS:
+  seed: 0
+  m: 3
+
+NUM_AGENTS: 100
+AGENT_ID_NUM_BITS: 7
+
+ENV_KWARGS:
+  expert_agents: [10,20,30]

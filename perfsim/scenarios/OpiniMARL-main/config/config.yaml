@@ -1,0 +1,97 @@
+  # Graph parameters
+defaults:
+  - _self_
+  # - graph/datasets/bluesky
+
+env:
+  NAME: NetworkBinary
+  NUM_AGENTS: 1000
+  AGENT_ID_NUM_BITS: 10
+
+  ENV_KWARGS:
+    max_steps: 20
+    null_action: True
+    sigma: 1.7
+    p_signal: 1.0
+    expert_agents: []
+    extra_info: False
+
+
+  # Core simulation parameters
+  NULL_ACTION: True
+  ALPHAS: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  SIGMA: 1.7
+  P_SIGNAL: 1.0 # Probability of an agent receiving a private signal
+  MAX_STEPS: 20
+  EXTRA_INFO: False
+
+train:
+  ALGORITHM: ppo
+  OTHER_PLAY: True
+  NUM_ENVS: 20
+  TOTAL_TIMESTEPS: 1e6
+  TRAINING_INTERVAL: 20 # Should equal number of steps in one environment episode
+  MAX_GRAD_NORM: 0.5
+  LR: 2e-4
+  ANNEAL_LR: True
+  GAMMA: 0.99
+  GAE_LAMBDA: 0.95
+  LAMBDA_SCHEDULE: False
+  # LOG_INTERMEDIATE_PARAMS: False
+  PERCOLATION_PROB_INIT: 1.0
+  TIME_IT: False
+
+  epsilon:
+    CLIP: 0.3
+    SCALE_CLIP: False
+  
+  coef:
+    ENT_COEF: 0.05
+    VF_COEF: 1.0
+
+  param_update:
+    UPDATE_EPOCHS: 4
+    NUM_MINIBATCHES: 5
+
+  local_nash:
+    NASH_TEST: False
+    SELECTED_AGENTS: [10]
+
+  seed:
+    SEEDS: [0]
+    STARTING_SEED: 0
+    NUM_SEEDS: 10
+
+
+eval:
+  NUM_ENVS: 10
+  NUM_EPISODES: 200
+  OTHER_PLAY: True
+
+  attn:
+    NUM_STEPS: 2000
+
+
+  seed:
+    EVAL_SEED: 10
+
+
+NN_KWARGS:
+  fc_dim_size: 50
+  gru_hidden_size: 50
+  use_layer_norm: True
+  attention_d: 8
+  use_centralised_logic: True
+  use_rnn: True
+  use_agent_ids: True
+
+resources:
+  NUM_GPUS: 1
+
+path:
+  BASE_DIR: ""
+
+wandb:
+  PROJECT: ""
+  ENTITY: ""
+  WANDB_MODE: disabled

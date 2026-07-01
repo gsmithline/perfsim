@@ -1,0 +1,4 @@
+# @package env
+GRAPH: "ring"
+GRAPH_KWARGS:
+  seed: 67

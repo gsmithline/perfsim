@@ -1,0 +1,6 @@
+# @package env
+GRAPH: "watts_strogatz"
+GRAPH_KWARGS:
+  seed: 67
+  k: 6
+  p: 0.1

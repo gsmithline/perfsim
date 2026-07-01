@@ -1,4 +1,7 @@
-"""Block 9: MLP platform in the loop with NDlib AlgorithmicBias (Deffuant) population.
+"""
+
+Test dataset. 
+Block 9: MLP platform in the loop with NDlib AlgorithmicBias (Deffuant) population.
 
 Population: AlgorithmicBiasModel on a complete graph, opinions in [0,1].
 Known baselines from _ab_probe: gamma=0 is textbook Deffuant (consensus at

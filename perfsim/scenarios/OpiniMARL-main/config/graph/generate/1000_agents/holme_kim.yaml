@@ -1,0 +1,6 @@
+# @package env
+GRAPH: "holme_kim"
+GRAPH_KWARGS:
+  seed: 67
+  m: 2
+  p_t: 0.5

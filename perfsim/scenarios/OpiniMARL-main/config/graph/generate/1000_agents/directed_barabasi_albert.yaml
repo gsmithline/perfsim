@@ -1,0 +1,6 @@
+# @package env
+GRAPH: "directed_barabasi_albert"
+GRAPH_KWARGS:
+  seed: 67
+  m: 5
+  b: 0.6

@@ -1,5 +1,6 @@
-# HTCondor: SAMPLED generation (DO_SAMPLE=1) -- corner gcrs (continual / replace), beta {0,0.1,0.5,1.0} x temp {0.3,0.7,1.0}, eps=0.4, seed 0, 60 rounds = 12 jobs.
+# HTCondor: SAMPLED generation (DO_SAMPLE=1, temp=1.0) -- corner gcrs (continual / replace), temp=1.0 sampled twin of the argmax sweep: eps {0.2,0.4} x beta {0,0.1,0.5,1.0} + nf control = 9 jobs. DO_SAMPLE=1 draws one label per agent (vs argmax mode). Tags <corner>s_*_t1_s0.
 #
+# 1:1 sampled comparison to the argmax runs (gfr/gfa/gfp/gcr/gca). Same grid, 's' tags.
 # Submit: condor_submit_bid 25 experiments/condor/at_pokec_gated_sample_creplace.sub
 
 universe          = vanilla

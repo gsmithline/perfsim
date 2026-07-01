@@ -1,0 +1,14 @@
+# @package env
+GRAPH: "sbm"
+GRAPH_KWARGS:
+  seed: 0
+  num_communities: 5
+  p_in: 0.33
+  p_ext: 0.005
+
+NUM_AGENTS: 100
+AGENT_ID_NUM_BITS: 7
+
+ENV_KWARGS:
+  p_signal: 1.0
+

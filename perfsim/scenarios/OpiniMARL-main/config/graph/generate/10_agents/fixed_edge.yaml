@@ -1,0 +1,9 @@
+# @package env
+GRAPH: "fixed_edge"
+GRAPH_KWARGS:
+  seed: 0
+  num_edges: 30
+
+NUM_AGENTS: 10
+AGENT_ID_NUM_BITS: 4
+

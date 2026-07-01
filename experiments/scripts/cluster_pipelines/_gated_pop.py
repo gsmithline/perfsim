@@ -12,6 +12,7 @@ import os
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 # AB population: gated Deffuant-with-bias on the Pokec graph, torch-vectorized
 # (adapted from experiments/competition/16_model_mass.py, partner selection
@@ -19,6 +20,7 @@ import torch
 
 AB_BATCH = 75
 AB_MIN_DIST = 1e-5
+PPL_BATCH = int(os.environ.get("PPL_BATCH", "64"))   # micro-batch for per_agent_ppl
 
 
 def ab_sweep(x, adj, eps, gamma):
@@ -177,27 +179,62 @@ def sft_batch_loss(lm, train_data, fmt, cap, module=None):
     return total_nll / max(total_tok, 1)
 
 
-def per_agent_ppl(lm, idx, y, fmt, cap=0, gen=None, module=None):
+@torch.no_grad()
+def batched_answer_losses(module, examples, pad_id, micro=PPL_BATCH):
+    """Per-example mean answer-token CE for a list of (ids[1,L], labels[1,L]),
+    right-padded and run in micro-batches. Equals module(ids, labels=labels).loss
+    per example: right padding plus the causal mask leaves each real token's
+    logits identical to the unpadded forward, so the per-row loss matches while
+    one weight-streaming pass now covers `micro` agents instead of one."""
+    losses = []
+    for s in range(0, len(examples), micro):
+        chunk = examples[s:s + micro]
+        b, lmax = len(chunk), max(e[0].shape[1] for e in chunk)
+        dev = chunk[0][0].device
+        input_ids = torch.full((b, lmax), pad_id, dtype=torch.long, device=dev)
+        labels = torch.full((b, lmax), -100, dtype=torch.long, device=dev)
+        attn = torch.zeros((b, lmax), dtype=torch.long, device=dev)
+        for r, (ids, lab) in enumerate(chunk):
+            length = ids.shape[1]
+            input_ids[r, :length] = ids[0]
+            labels[r, :length] = lab[0]
+            attn[r, :length] = 1
+        logits = module(input_ids=input_ids, attention_mask=attn).logits
+        shift_logits = logits[:, :-1, :].reshape(-1, logits.shape[-1]).float()
+        shift_labels = labels[:, 1:].reshape(-1)
+        tok_ce = F.cross_entropy(shift_logits, shift_labels, ignore_index=-100,
+                                 reduction="none").view(b, -1)
+        valid = (labels[:, 1:] != -100).float()
+        row_loss = (tok_ce * valid).sum(1) / valid.sum(1).clamp_min(1.0)
+        losses.extend(row_loss.detach().float().cpu().tolist())
+    return losses
+
+
+def per_agent_ppl(lm, idx, y, fmt, cap=0, gen=None, module=None, micro=PPL_BATCH):
     """Per-agent answer-token perplexity: how surprised the current model is by
     each agent's target opinion y_i (prompt masked, like sft_batch_loss but kept
     per-example, not averaged). Returns (ppl_list, scored_idx) -- the empirical
-    perplexity distribution over profiles. cap>0 scores a random cap-sized subset."""
+    perplexity distribution over profiles. cap>0 scores a random cap-sized subset.
+    Batched over agents (see batched_answer_losses) instead of one forward each."""
     module = module if module is not None else lm.inner_model
     n = len(idx)
     order = list(range(n))
     if cap and n > cap:
         order = sorted(torch.randperm(n, generator=gen)[:cap].tolist())
+    if not order:
+        return [], []
+    pad_id = lm.tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = lm.tokenizer.eos_token_id
     was = bool(getattr(module.config, "use_cache", False))
     module.config.use_cache = False
-    ppl, scored = [], []
     try:
-        for k in order:
-            ids, labels = _example_ids(lm, int(idx[k]), float(y[k]), fmt)
-            out = module(ids, labels=labels)
-            ppl.append(float(torch.tensor(float(out.loss)).exp()))
-            scored.append(int(idx[k]))
+        examples = [_example_ids(lm, int(idx[k]), float(y[k]), fmt) for k in order]
+        losses = batched_answer_losses(module, examples, pad_id, micro)
     finally:
         module.config.use_cache = was
+    ppl = [float(np.exp(min(l, 60.0))) for l in losses]
+    scored = [int(idx[k]) for k in order]
     return ppl, scored
 
 
