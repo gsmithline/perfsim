@@ -153,6 +153,145 @@ def load_pokec_setup(pokec_dir: Path):
         "peer_sus": torch.tensor(np.asarray(peer_sus), dtype=torch.float32),
         "platform_sus": torch.tensor(np.asarray(platform_sus), dtype=torch.float32),
         "n": len(profiles),
+        "build_prompt": pokec_build_prompt,
+    }
+
+
+def pokec_build_prompt(profile, tokenizer):
+    profile_lines = []
+    for col in PROMPT_COLS:
+        val = profile.get(col, "")
+        if pd.isna(val) or val == "" or str(val) == "nan":
+            continue
+        if col == "age":
+            if float(val) == 0.0:
+                continue
+            val = int(val)
+        elif col == "gender":
+            val = {0.0: "female", 1.0: "male"}.get(float(val), "unknown")
+        elif col == "relation_to_alcohol":
+            val = translate_alcohol(val)
+        profile_lines.append(f"- {col}: {val}")
+    profile_str = "\n".join(profile_lines) if profile_lines else "- (no profile info)"
+    user_msg = (
+        "Estimate this user's attitude toward smoking based on their profile.\n"
+        "Profile:\n"
+        f"{profile_str}\n\n"
+        "Output a single number in [0, 1] (1 = very positive, 0 = very negative). "
+        "Respond with only the number, e.g. 0.42."
+    )
+    messages = [{"role": "user", "content": user_msg}]
+    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+
+def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
+    """MovieLens-100k: predict held-out genre `target` from demographics + the
+    other-genre ratings; cosine kNN graph on those features, restricted to LCC.
+    Everyone has a real opinion, so set N_LABELED=n to train on all agents."""
+    core = ["Drama", "Romance", "Comedy", "Action", "Thriller", "War", "Crime",
+            "Sci-Fi", "Adventure", "Mystery", "Children's"]
+    gen = pd.read_csv(ml_dir / "u.genre", sep="|", names=["name", "gid"], encoding="latin-1")
+    genres = list(gen.sort_values("gid")["name"])
+    items = pd.read_csv(ml_dir / "u.item", sep="|", encoding="latin-1", header=None)
+    gmat = pd.DataFrame(items.iloc[:, 5:5 + len(genres)].values, index=items[0].values, columns=genres)
+    users = pd.read_csv(ml_dir / "u.user", sep="|",
+                        names=["uid", "age", "gender", "occ", "zip"]).set_index("uid")
+    rat = pd.read_csv(ml_dir / "u.data", sep="\t", names=["uid", "iid", "r", "t"]).merge(
+        gmat, left_on="iid", right_index=True)
+    P = pd.DataFrame({g: rat[rat[g] == 1].groupby("uid")["r"].mean() for g in core}).dropna()
+    feats = [g for g in core if g != target]
+    Zc = P[feats].values - P[feats].values.mean(0)
+    norm = Zc / (np.linalg.norm(Zc, axis=1, keepdims=True) + 1e-9)
+    sim = norm @ norm.T
+    np.fill_diagonal(sim, -np.inf)
+    nbrs = np.argsort(-sim, axis=1)[:, :knn]
+    graph = nx.Graph(); graph.add_nodes_from(range(len(P)))
+    for i, row in enumerate(nbrs):
+        for j in row:
+            graph.add_edge(i, int(j))
+    lcc = sorted(max(nx.connected_components(graph), key=len))
+    h = nx.relabel_nodes(graph.subgraph(lcc).copy(), {node: k for k, node in enumerate(lcc)})
+    Pl = P.iloc[lcc]
+    demo = users.reindex(Pl.index)
+    innate = ((Pl[target].values - 1.0) / 4.0).astype(np.float64)
+    profiles = Pl[feats].reset_index(drop=True)
+    profiles["age"] = demo["age"].values
+    profiles["gender"] = demo["gender"].values
+    profiles["occ"] = demo["occ"].values
+    adj = nx.to_numpy_array(h, nodelist=range(len(Pl)))
+    n = len(Pl)
+
+    def build_prompt(profile, tokenizer):
+        lines = []
+        age = profile.get("age")
+        if age is not None and not pd.isna(age) and int(age) > 0:
+            lines.append(f"- age: {int(age)}")
+        gender = profile.get("gender")
+        if isinstance(gender, str) and gender:
+            lines.append(f"- gender: {'male' if gender == 'M' else 'female'}")
+        occ = profile.get("occ")
+        if isinstance(occ, str) and occ and occ != "none":
+            lines.append(f"- occupation: {occ}")
+        for gname in feats:
+            v = profile.get(gname)
+            if v is not None and not pd.isna(v):
+                lines.append(f"- average rating of {gname} movies: {float(v):.1f} out of 5")
+        body = "\n".join(lines) if lines else "- (no profile info)"
+        user_msg = (
+            f"Estimate how much this user likes {target} movies based on their profile.\n"
+            "Profile:\n"
+            f"{body}\n\n"
+            f"Output a single number in [0, 1] (1 = loves {target}, 0 = dislikes {target}). "
+            "Respond with only the number, e.g. 0.42."
+        )
+        messages = [{"role": "user", "content": user_msg}]
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+    return {
+        "profiles": profiles,
+        "innate": torch.tensor(innate, dtype=torch.float32),
+        "adj": torch.tensor(adj, dtype=torch.float32),
+        "W": normalize_adjacency(torch.tensor(adj, dtype=torch.float32)),
+        "peer_sus": torch.ones(n, dtype=torch.float32),
+        "platform_sus": torch.ones(n, dtype=torch.float32),
+        "n": n,
+        "build_prompt": build_prompt,
+    }
+
+
+def load_yelp_setup(yelp_dir: Path):
+    """Yelp Acme LCC: predict the reviewer's Acme rating (opinion) from their mean
+    star rating; the pre-built social graph is the interaction network. avg_stars
+    is the one nameable feature (extra columns are unlabeled, left out)."""
+    d = np.load(yelp_dir / "yelp_acme_lcc.npz", allow_pickle=True)
+    opinion = d["opinion"].astype(np.float64)
+    avg = d["avg_stars"].astype(np.float64)
+    edges = d["edges"]
+    n = len(opinion)
+    graph = nx.Graph(); graph.add_nodes_from(range(n)); graph.add_edges_from(edges.tolist())
+    adj = nx.to_numpy_array(graph, nodelist=range(n))
+    profiles = pd.DataFrame({"avg_stars": avg})
+
+    def build_prompt(profile, tokenizer):
+        user_msg = (
+            "Estimate how this reviewer would rate the business \"Acme\" based on their profile.\n"
+            "Profile:\n"
+            f"- average star rating across their past reviews: {float(profile['avg_stars']):.1f} out of 5\n\n"
+            "Output a single number in [0, 1] (1 = five stars, 0 = one star). "
+            "Respond with only the number, e.g. 0.42."
+        )
+        messages = [{"role": "user", "content": user_msg}]
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+    return {
+        "profiles": profiles,
+        "innate": torch.tensor(opinion, dtype=torch.float32),
+        "adj": torch.tensor(adj, dtype=torch.float32),
+        "W": normalize_adjacency(torch.tensor(adj, dtype=torch.float32)),
+        "peer_sus": torch.ones(n, dtype=torch.float32),
+        "platform_sus": torch.ones(n, dtype=torch.float32),
+        "n": n,
+        "build_prompt": build_prompt,
     }
 
 
@@ -273,6 +412,7 @@ def main() -> int:
     # Deffuant-with-bias sweep per round on the Pokec graph edges.
     pop_model = os.environ.get("POP_MODEL", "fj")
     eps = _env_float("EPS", 0.3)
+    eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
     gamma_bias = _env_float("GAMMA_BIAS", 1.5)
     w_plat = _env_float("W_PLAT", 0.3)
     # population innate re-anchor: each round x <- (1-lambda) x + lambda innate
@@ -311,7 +451,7 @@ def main() -> int:
         "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
         "seed_base_data": seed_base_data, "train_cap": train_cap,
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
-        "pop_model": pop_model, "eps": eps, "gamma_bias": gamma_bias,
+        "pop_model": pop_model, "eps": eps, "eps_ai": eps_ai, "gamma_bias": gamma_bias,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
@@ -330,40 +470,25 @@ def main() -> int:
         wandb.init(project=wandb_project, name=f"{run_tag}{suffix}", config=config)
 
     torch.manual_seed(seed)
-    print(f"[run] loading Pokec from {pokec_dir}", flush=True)
+    dataset = os.environ.get("DATASET", "pokec")
+    print(f"[run] loading dataset={dataset}", flush=True)
     t0 = time.time()
-    setup = load_pokec_setup(pokec_dir)
+    if dataset == "pokec":
+        setup = load_pokec_setup(pokec_dir)
+    elif dataset == "movielens":
+        setup = load_movielens_setup(
+            Path(os.environ.get("ML_DIR", "experiments/data/movielens/ml-100k")),
+            os.environ.get("ML_TARGET", "Action"))
+    elif dataset == "yelp":
+        setup = load_yelp_setup(Path(os.environ.get("YELP_DIR", "experiments/yelp")))
+    else:
+        raise ValueError(f"unknown DATASET: {dataset!r}")
     n = setup["n"]
     innate = setup["innate"]
     innate_mean = float(innate.mean())
-    print(f"[run] pokec ready: N={n}  innate mean={innate_mean:.4f} "
+    build_prompt = setup["build_prompt"]
+    print(f"[run] {dataset} ready: N={n}  innate mean={innate_mean:.4f} "
           f"std={innate.std():.4f} in {time.time() - t0:.1f}s", flush=True)
-
-    def build_prompt(profile: pd.Series, tokenizer) -> str:
-        profile_lines = []
-        for col in PROMPT_COLS:
-            val = profile.get(col, "")
-            if pd.isna(val) or val == "" or str(val) == "nan":
-                continue
-            if col == "age":
-                if float(val) == 0.0:
-                    continue
-                val = int(val)
-            elif col == "gender":
-                val = {0.0: "female", 1.0: "male"}.get(float(val), "unknown")
-            elif col == "relation_to_alcohol":
-                val = translate_alcohol(val)
-            profile_lines.append(f"- {col}: {val}")
-        profile_str = "\n".join(profile_lines) if profile_lines else "- (no profile info)"
-        user_msg = (
-            "Estimate this user's attitude toward smoking based on their profile.\n"
-            "Profile:\n"
-            f"{profile_str}\n\n"
-            "Output a single number in [0, 1] (1 = very positive, 0 = very negative). "
-            "Respond with only the number, e.g. 0.42."
-        )
-        messages = [{"role": "user", "content": user_msg}]
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     def format_number(y) -> str:
         return f"{float(y):.2f}"
@@ -505,7 +630,7 @@ def main() -> int:
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
-          f"mode={run_mode} eps={eps} gamma={gamma_bias} w={w_plat}", flush=True)
+          f"mode={run_mode} eps={eps} eps_ai={eps_ai} gamma={gamma_bias} w={w_plat}", flush=True)
     t_loop = time.time()
     for t in range(n_rounds):
         is_deploy = (t % deploy_every == 0)
@@ -600,12 +725,12 @@ def main() -> int:
             accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias)
             served = (last_preds.to(ab_x.device) + canary.to(ab_x.device)).clamp(0.0, 1.0)
             if feedback_on:
-                gate_open = (served - ab_x).abs() < eps
+                gate_open = (served - ab_x).abs() < eps_ai
                 eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
-                ab_x, contact = gp.gated_blend(ab_x, served, w_agent, eps)
+                ab_x, contact = gp.gated_blend(ab_x, served, w_agent, eps_ai)
                 ab_f = (1.0 - eff_w) * ab_f + eff_w   # platform injects tag 1 on gated agents
             else:
-                contact = float(((served - ab_x).abs() < eps).float().mean())
+                contact = float(((served - ab_x).abs() < eps_ai).float().mean())
             if innate_lambda > 0:
                 ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
                 ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
