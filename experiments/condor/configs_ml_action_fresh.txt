@@ -1,0 +1,2 @@
+mla2df_e040_a040_b0_rep_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0
+mla2df_e040_a040_b3_rep_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0

@@ -1,0 +1,1 @@
+e2dnf_e020_g00_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, no_feedback, 0.0, 0.2
