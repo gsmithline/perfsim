@@ -1,11 +1,11 @@
-# HTCondor: training-regime extension of the eps2d grid, Pokec (LLM). 4 runs.
+# HTCondor: training-regime extension of the eps2d grid, Pokec (LLM). 8 runs.
 #
 # Cells picked from the replace-grid heatmaps:
 #   e020_a020 (diagonal baseline, dr=0.83 under replace)
 #   e020_a040 (deepest usage-driven collapse dr=0.61 at b0; +0.16 displacement at b3)
-# x beta {0,3}, ACCUMULATE only for now (pristine pfrac=0.5 rows deferred until
-# the accumulate read is in). Continual weights, TRAIN_CAP=1730 volume-matches
-# replace. Tests replace-vs-accumulate at the decoupled wide-gate cells.
+# x beta {0,3} x {accumulate (pfrac=0), pristine (pfrac=0.5)}. Continual weights,
+# TRAIN_CAP=1730 volume-matches replace. Tests replace>accumulate>pristine ordering
+# at the decoupled wide-gate cells.
 # Submit: condor_submit_bid <BID> experiments/condor/at_pokec_regimes.sub
 
 universe          = vanilla

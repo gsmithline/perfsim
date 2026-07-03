@@ -1,10 +1,10 @@
-# HTCondor: FRESH weight axis at the picked eps2d cell, Yelp-Acme (LLM). 2 runs.
+# HTCondor: FRESH weight axis at the picked eps2d cell, Yelp-Acme (LLM). 6 runs.
 #
-# FRESH_EACH_ROUND=1 at the ppl-catastrophe corner e040_a040 x beta {0,3},
-# REPLACE only for now (acc/pri fresh rows deferred). The corner-run result
+# FRESH_EACH_ROUND=1 at the ppl-catastrophe corner e040_a040 x beta {0,3} x
+# {replace, accumulate (pfrac=0), pristine (pfrac=0.5)}. The corner-run result
 # says the ppl explosion lives on the weight axis (continual explodes, fresh
 # recovers); this tests it where the explosion was worst (median 368, mean 8728).
-# TRAIN_CAP=1789.
+# Completes the 2x3 factorial with ylp2d_ and ylp2dr_. TRAIN_CAP=1789.
 # Yelp npz must be on the cluster (experiments/yelp/yelp_acme_lcc.npz) -- it is.
 # Submit: condor_submit_bid <BID> experiments/condor/at_yelp_fresh.sub
 

@@ -1,11 +1,12 @@
-# HTCondor: FRESH weight axis at the picked eps2d cells, Pokec (LLM). 4 runs.
+# HTCondor: FRESH weight axis at the picked eps2d cells, Pokec (LLM). 12 runs.
 #
 # FRESH_EACH_ROUND=1: every retrain restarts from the snapshotted round-0
 # adapter, so nothing carries in the weights and contamination can only travel
-# through the data. REPLACE only for now (acc/pri fresh rows deferred): the
-# clean weight-axis contrast is fresh+replace vs the continual+replace grid.
+# through the data. Crossed with all three data regimes at the two picked cells:
 #   e020_a020 (diagonal baseline) and e020_a040 (deep collapse / displacement)
-#   x beta {0,3}. TRAIN_CAP=1730 volume-matches replace.
+#   x beta {0,3} x {replace, accumulate (pfrac=0), pristine (pfrac=0.5)}.
+# Completes the 2x3 weight x data factorial with the e2d_ (continual/replace)
+# and e2dr_ (continual/acc+pri) runs. TRAIN_CAP=1730 volume-matches replace.
 # Submit: condor_submit_bid <BID> experiments/condor/at_pokec_fresh.sub
 
 universe          = vanilla

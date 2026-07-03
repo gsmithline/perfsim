@@ -1,10 +1,10 @@
-# HTCondor: training-regime extension of the eps2d grid, MovieLens-Action (LLM). 2 runs.
+# HTCondor: training-regime extension of the eps2d grid, MovieLens-Action (LLM). 4 runs.
 #
 # Cell e040_a040 -- the trap corner under replace (apparent RMSE 0.008 vs true
 # 0.102, dr=0.48 at b0; b3 rescues dr but displaces the mean -0.17).
-# x beta {0,3}, ACCUMULATE only for now (pristine deferred). Continual weights,
-# TRAIN_CAP=723 volume-matches replace. Question: does accumulating history slow
-# the trap (true error rise) relative to replace?
+# x beta {0,3} x {accumulate (pfrac=0), pristine (pfrac=0.5)}. Continual weights,
+# TRAIN_CAP=723 volume-matches replace. Question: does pristine keep true error
+# near the replace-round-0 level while dr stays near 1?
 # Submit: condor_submit_bid <BID> experiments/condor/at_ml_action_regimes.sub
 
 universe          = vanilla

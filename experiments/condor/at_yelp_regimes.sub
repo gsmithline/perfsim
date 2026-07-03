@@ -1,10 +1,10 @@
-# HTCondor: training-regime extension of the eps2d grid, Yelp-Acme (LLM). 2 runs.
+# HTCondor: training-regime extension of the eps2d grid, Yelp-Acme (LLM). 4 runs.
 #
 # Cell e040_a040 -- the perplexity catastrophe under replace (median 368,
 # mean 8728 at b0; b3 does NOT rescue dr here, 0.60 vs 0.57).
-# x beta {0,3}, ACCUMULATE only for now (pristine deferred). Continual weights,
-# TRAIN_CAP=1789 volume-matches replace. Question: does accumulated history
-# slow the ppl poisoning that the KL anchor could not stop?
+# x beta {0,3} x {accumulate (pfrac=0), pristine (pfrac=0.5)}. Continual weights,
+# TRAIN_CAP=1789 volume-matches replace. Question: does pristine data prevent
+# the ppl poisoning that the KL anchor could not?
 # Yelp npz must be on the cluster (experiments/yelp/yelp_acme_lcc.npz) -- it is.
 # Submit: condor_submit_bid <BID> experiments/condor/at_yelp_regimes.sub
 
