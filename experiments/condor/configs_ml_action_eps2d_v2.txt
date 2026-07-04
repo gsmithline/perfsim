@@ -1,0 +1,16 @@
+mla2dv2_e010_a010_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e010_a010_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e010_a020_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.2
+mla2dv2_e010_a020_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.2
+mla2dv2_e010_a040_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4
+mla2dv2_e010_a040_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4
+mla2dv2_e020_a010_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e020_a010_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e020_a020_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.2
+mla2dv2_e020_a020_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.2
+mla2dv2_e020_a040_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+mla2dv2_e020_a040_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+mla2dv2_e040_a010_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e040_a010_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1
+mla2dv2_e040_a020_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.2
+mla2dv2_e040_a020_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.2

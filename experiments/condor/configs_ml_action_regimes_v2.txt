@@ -1,0 +1,4 @@
+mla2drv2_e040_a040_b0_acc_s0, sft, 0.0, 0, 1, accumulate, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0
+mla2drv2_e040_a040_b0_pri_s0, sft, 0.0, 0, 1, accumulate, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.5
+mla2drv2_e040_a040_b3_acc_s0, sft_kl, 3.0, 0, 1, accumulate, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0
+mla2drv2_e040_a040_b3_pri_s0, sft_kl, 3.0, 0, 1, accumulate, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.5
