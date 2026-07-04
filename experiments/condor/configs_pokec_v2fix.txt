@@ -1,0 +1,7 @@
+e2dv2_e020_a020_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.2
+e2dv2_e020_a020_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.2
+e2dv2_e020_a040_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+e2dv2_e020_a040_b3_s0, sft_kl, 3.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+e2dv2_e020_a020_gp15_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 1.5, 0.3, loop, 0.0, 0.2
+e2dv2_e020_a020_gn15_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, -1.5, 0.3, loop, 0.0, 0.2
+e2dnfv2_e020_g00_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, no_feedback, 0.0, 0.2
