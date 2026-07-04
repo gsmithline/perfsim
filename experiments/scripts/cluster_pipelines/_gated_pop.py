@@ -23,15 +23,17 @@ AB_MIN_DIST = 1e-5
 PPL_BATCH = int(os.environ.get("PPL_BATCH", "64"))   # micro-batch for per_agent_ppl
 
 
-def ab_sweep(x, adj, eps, gamma):
+def ab_sweep(x, adj, eps, gamma, gen=None):
     """Exactly N biased pair selections among graph neighbors; disjoint pairs
-    per batch via Luby-style conflict resolution. Mutates x, returns accepted."""
+    per batch via Luby-style conflict resolution. Mutates x, returns accepted.
+    `gen` isolates the population RNG from the global stream, which the HF
+    trainer re-seeds every round (frozen pair patterns otherwise)."""
     n = x.shape[0]
     device = x.device
     bsz = min(AB_BATCH, n)
     done, accepted = 0, 0
     while done < n:
-        ini = torch.randperm(n, device=device)[:bsz]
+        ini = torch.randperm(n, device=device, generator=gen)[:bsz]
         ar = torch.arange(ini.shape[0], device=device)
         d = (x[ini, None] - x[None, :]).abs().clamp_min(AB_MIN_DIST)
         wts = d.pow(-gamma) * adj[ini]
@@ -41,10 +43,10 @@ def ab_sweep(x, adj, eps, gamma):
             break  # only possible off the LCC (e.g. tiny mock graphs)
         ini, wts = ini[ok_row], wts[ok_row]
         ar = torch.arange(ini.shape[0], device=device)
-        par = torch.multinomial(wts, 1).squeeze(1)
+        par = torch.multinomial(wts, 1, generator=gen).squeeze(1)
         # Luby-style conflict resolution: keep a pair iff it holds the min
         # random priority at both endpoints
-        pri = torch.rand(ini.shape[0], device=device)
+        pri = torch.rand(ini.shape[0], device=device, generator=gen)
         inc = torch.zeros(ini.shape[0], n, dtype=torch.bool, device=device)
         inc[ar, ini] = True
         inc[ar, par] = True

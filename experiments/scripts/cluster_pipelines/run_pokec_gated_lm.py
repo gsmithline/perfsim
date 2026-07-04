@@ -579,6 +579,9 @@ def main() -> int:
             w_agent = (w_plat * plat_sus_eff).clamp(0.0, 1.0).to(ab_device)
             ab_innate = innate.to(ab_device)
             ab_f = torch.zeros(n, device=ab_device)   # provenance tag: model-share of opinion
+            # own generator: the HF trainer resets the global seed every round,
+            # which froze the sweep's pair pattern across rounds
+            ab_gen = torch.Generator(device=ab_device).manual_seed(seed + 424243)
 
     canary = gp.make_canary(n, canary_delta, seed)
     if canary_delta > 0:
@@ -722,7 +725,7 @@ def main() -> int:
             world.run(lm, n_steps=epoch_size)
             op = world.state["opinion"].float()
         else:
-            accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias)
+            accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
             served = (last_preds.to(ab_x.device) + canary.to(ab_x.device)).clamp(0.0, 1.0)
             if feedback_on:
                 gate_open = (served - ab_x).abs() < eps_ai
