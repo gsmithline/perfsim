@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/toy/figs"
+FIGS = "experiments/llm/figs"
 EPS = [("e010", 0.10), ("e020", 0.20), ("e030", 0.30), ("e040", 0.40)]
 BET = [("0", 0.0), ("1", 1.0), ("3", 3.0)]
 COL = {"0": "#d62728", "1": "#1f77b4", "3": "#2ca02c"}

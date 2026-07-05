@@ -18,10 +18,10 @@ from matplotlib.colors import TwoSlopeNorm, LogNorm
 from matplotlib.patches import Rectangle
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/toy/figs"
-DATASETS = [("e2d", "pokec", "Pokec (no usable feature, R2~0)"),
-            ("mla2d", "mlaction", "MovieLens-Action (strong feature, R2=0.79)"),
-            ("ylp2d", "yelp", "Yelp-Acme (weak feature, R2=0.07)")]
+FIGS = "experiments/llm/figs"
+DATASETS = [("e2d", "pokec", "Pokec (no usable feature, R2~0), pre-fix grid"),
+            ("mla2dv2", "mlaction_v2", "MovieLens-Action (strong feature, R2=0.79), post-fix v2"),
+            ("ylp2d", "yelp", "Yelp-Acme (weak feature, R2=0.07), pre-fix grid")]
 EPS = [("e010", 0.1), ("e020", 0.2), ("e040", 0.4)]
 EAI = [("a010", 0.1), ("a020", 0.2), ("a040", 0.4)]
 BETA = [("b0", 0), ("b3", 3)]

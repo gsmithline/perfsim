@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/toy/figs"
+FIGS = "experiments/llm/figs"
 BETAS = [("0", 0.0), ("1", 1.0), ("3", 3.0)]      # KL anchor
 EPS = [("e010", 0.10), ("e020", 0.20), ("e030", 0.30), ("e040", 0.40)]
 bins = np.linspace(0, 1, 41)
