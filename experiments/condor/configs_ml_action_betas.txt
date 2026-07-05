@@ -1,0 +1,9 @@
+mla2bv2_e040_a040_b0p1_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4
+mla2bv2_e040_a040_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4
+mla2bv2_e040_a040_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4
+mla2bv2_e040_a010_b0p1_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1
+mla2bv2_e040_a010_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1
+mla2bv2_e040_a010_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1
+mla2bv2_e020_a040_b0p1_s0, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+mla2bv2_e020_a040_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
+mla2bv2_e020_a040_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4
