@@ -19,6 +19,14 @@ REGIMES = ["rep", "acc", "pri", "frep", "facc"]
 BETAS = ["b0", "b0p5", "b1"]
 SEEDS = [0, 42, 43]
 
+# model -> atlas tag stem; legacy fallback applies to qwen only
+MODELS = {
+    "qwen": "mlat",
+    "llama": "mlatL",
+    "gemma": "mlatG",
+    "mistral": "mlatM",
+}
+
 # regime -> (fresh_each_round, data_regime, pristine_frac) expected in config
 REGIME_SPEC = {
     "rep":  (False, "replace", 0.0),
@@ -64,37 +72,48 @@ def stats(tag, regime):
         rounds=int(op.shape[0]))
 
 
-def find_tag(cell, regime, beta, seed):
-    tag = f"mlat_{cell}_{regime}_{beta}_s{seed}"
+def find_tag(model, cell, regime, beta, seed):
+    tag = f"{MODELS[model]}_{cell}_{regime}_{beta}_s{seed}"
     if (RUNS / tag / "trajectory.pt").exists():
         return tag
-    leg = LEGACY.get((cell, regime, beta, seed))
-    if leg and (RUNS / leg / "trajectory.pt").exists():
-        return leg
+    if model == "qwen":
+        leg = LEGACY.get((cell, regime, beta, seed))
+        if leg and (RUNS / leg / "trajectory.pt").exists():
+            return leg
     return None
 
 
 rows_out = []
 hdr = (f"{'regime':>6} {'b':>4} {'s':>3} | {'dr':>5} {'vr':>6} | {'true':>6} "
        f"{'app':>6} | {'bias':>7} | {'pmed':>8} {'ce':>6}")
-for cell in CELLS:
-    print(f"\n== {cell} ==")
-    print(hdr)
-    for regime in REGIMES:
-        for beta in BETAS:
-            for seed in SEEDS:
-                tag = find_tag(cell, regime, beta, seed)
-                if tag is None:
-                    continue
-                s = stats(tag, regime)
-                print(f"{regime:>6} {beta:>4} {seed:>3} | {s['dr']:>5.2f} {s['vr']:>6.2f} | "
-                      f"{s['tru']:>6.3f} {s['app']:>6.3f} | {s['bias']:>7.3f} | "
-                      f"{s['pmed']:>8.1f} {s['ce']:>6.2f}")
-                rows_out.append({"cell": cell, "regime": regime, "beta": beta,
-                                 "seed": seed, "tag": tag, **s})
+for model in MODELS:
+    present = False
+    for cell in CELLS:
+        cell_rows = []
+        for regime in REGIMES:
+            for beta in BETAS:
+                for seed in SEEDS:
+                    tag = find_tag(model, cell, regime, beta, seed)
+                    if tag is None:
+                        continue
+                    s = stats(tag, regime)
+                    cell_rows.append((regime, beta, seed, tag, s))
+        if not cell_rows:
+            continue
+        if not present:
+            print(f"\n#### {model} ####")
+            present = True
+        print(f"\n== {cell} ==")
+        print(hdr)
+        for regime, beta, seed, tag, s in cell_rows:
+            print(f"{regime:>6} {beta:>4} {seed:>3} | {s['dr']:>5.2f} {s['vr']:>6.2f} | "
+                  f"{s['tru']:>6.3f} {s['app']:>6.3f} | {s['bias']:>7.3f} | "
+                  f"{s['pmed']:>8.1f} {s['ce']:>6.2f}")
+            rows_out.append({"model": model, "cell": cell, "regime": regime,
+                             "beta": beta, "seed": seed, "tag": tag, **s})
 
 expected = len(CELLS) * len(REGIMES) * len(BETAS) * len(SEEDS)
-print(f"\n{len(rows_out)}/{expected} combos present")
+print(f"\n{len(rows_out)} rows ({expected} combos per model)")
 if rows_out:
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_CSV, "w", newline="") as f:
