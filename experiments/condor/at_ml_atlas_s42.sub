@@ -1,7 +1,7 @@
-# HTCondor: ML atlas, seed 42. 135 runs (full cross, no
+# HTCondor: ML atlas, seed 42. 60 runs (full slab, no
 # existing coverage at this seed).
 #
-# Full cross on MovieLens-Action: 9 (eps, eps_ai) cells x beta {0, 0.5, 1}
+# MovieLens-Action, eps fixed: eps=0.4 row + e020_a040 smear cell, x beta {0, 0.5, 1}
 # x 5 regimes {rep, acc, pri, frep, facc}. TRAIN_CAP=723 volume-matches the
 # accumulate arms; it is a no-op for replace. fresh column drives
 # FRESH_EACH_ROUND per row.

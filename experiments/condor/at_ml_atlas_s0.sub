@@ -1,10 +1,11 @@
-# HTCondor: ML atlas, seed 0. 116 runs (19 combos already exist as
+# HTCondor: ML atlas slab, seed 0. 46 runs (14 combos already exist as
 # mla2dv2/mla2bv2/mla2drv2/mla2dfv2 and are skipped).
 #
-# Full cross on MovieLens-Action: 9 (eps, eps_ai) cells x beta {0, 0.5, 1}
-# x 5 regimes {rep, acc, pri, frep, facc}. TRAIN_CAP=723 volume-matches the
-# accumulate arms; it is a no-op for replace. fresh column drives
-# FRESH_EACH_ROUND per row.
+# MovieLens-Action, eps fixed: the eps=0.4 row (a010 capture, a020, a040
+# trap) + the e020_a040 smear cell (gate > eps). Each cell x beta
+# {0, 0.5, 1} x 5 regimes {rep, acc, pri, frep, facc}. TRAIN_CAP=723
+# volume-matches the accumulate arms; it is a no-op for replace. fresh
+# column drives FRESH_EACH_ROUND per row.
 # Submit: condor_submit_bid <BID> experiments/condor/at_ml_atlas_s0.sub
 
 universe          = vanilla
