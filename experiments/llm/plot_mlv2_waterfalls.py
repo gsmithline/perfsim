@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/llm/figs"
+FIGS = "experiments/llm/figs/qwen"
 BINS = 60
 TAIL = 5
 

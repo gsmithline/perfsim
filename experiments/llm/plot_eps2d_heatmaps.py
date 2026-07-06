@@ -18,7 +18,7 @@ from matplotlib.colors import TwoSlopeNorm, LogNorm
 from matplotlib.patches import Rectangle
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/llm/figs"
+FIGS = "experiments/llm/figs/qwen"
 DATASETS = [("e2d", "pokec", "Pokec (no usable feature, R2~0), pre-fix grid"),
             ("mla2dv2", "mlaction_v2", "MovieLens-Action (strong feature, R2=0.79), post-fix v2"),
             ("ylp2d", "yelp", "Yelp-Acme (weak feature, R2=0.07), pre-fix grid")]

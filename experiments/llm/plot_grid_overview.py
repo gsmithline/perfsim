@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/llm/figs"
+FIGS = "experiments/llm/figs/qwen"
 EPS = [("e010", 0.1), ("e020", 0.2), ("e040", 0.4)]
 EAI = [("a010", 0.1), ("a020", 0.2), ("a040", 0.4)]
 BETA = [("b0", 0), ("b3", 3)]

@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 RUNS = "runs/pokec_gated_lm"
-FIGS = "experiments/llm/figs"
+FIGS = "experiments/llm/figs/qwen"
 SNAPS = [0, 4, 9, 19, 29]
 
 DATASETS = [

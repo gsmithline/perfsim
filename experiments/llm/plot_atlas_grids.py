@@ -1,8 +1,8 @@
-"""ML atlas slab overview figures, seed 0. Two figures:
-  grid_opinions_atlas.png : opinion histogram over rounds + platform p10/50/90,
-                            rows = regimes, columns = cell x beta
-  grid_ppl_atlas.png      : per-agent perplexity at snapshot rounds
-Panel style mirrors plot_grid_overview.py.
+"""ML atlas slab overview figures, seed 0, one output dir per model arm:
+  figs/<model>/grid_opinions_atlas.png : opinion histogram over rounds +
+                            platform p10/50/90, rows = regimes, cols = cell x beta
+  figs/<model>/grid_ppl_atlas.png      : per-agent perplexity at snapshot rounds
+Models with no runs on disk are skipped. Panel style mirrors plot_grid_overview.py.
 """
 import os
 import numpy as np
@@ -16,6 +16,13 @@ from matplotlib.colors import LogNorm
 
 RUNS = "runs/pokec_gated_lm"
 FIGS = "experiments/llm/figs"
+MODELS = {
+    "qwen": "mlat",
+    "qwen-reset": "mlatR",
+    "llama": "mlatL",
+    "gemma": "mlatG",
+    "mistral": "mlatM",
+}
 CELLS = ["e040_a010", "e040_a020", "e040_a040", "e020_a040"]
 CELL_LABEL = {"e040_a010": "capture", "e040_a020": "mid",
               "e040_a040": "trap", "e020_a040": "smear"}
@@ -38,13 +45,14 @@ LEGACY[("e040_a040", "frep", "b0")] = "mla2dfv2_e040_a040_b0_rep_s0"
 LEGACY[("e040_a040", "facc", "b0")] = "mla2dfv2_e040_a040_b0_acc_s0"
 
 
-def find_tag(cell, regime, beta):
-    tag = f"mlat_{cell}_{regime}_{beta}_s0"
+def find_tag(model, cell, regime, beta):
+    tag = f"{MODELS[model]}_{cell}_{regime}_{beta}_s0"
     if os.path.exists(f"{RUNS}/{tag}/trajectory.pt"):
         return tag
-    leg = LEGACY.get((cell, regime, beta))
-    if leg and os.path.exists(f"{RUNS}/{leg}/trajectory.pt"):
-        return leg
+    if model == "qwen":
+        leg = LEGACY.get((cell, regime, beta))
+        if leg and os.path.exists(f"{RUNS}/{leg}/trajectory.pt"):
+            return leg
     return None
 
 
@@ -87,37 +95,42 @@ def ppl_panel(ax, tag, show_legend=False):
         ax.legend(fontsize=6, frameon=False)
 
 
-for kind, panel in [("opinions", op_panel), ("ppl", ppl_panel)]:
-    ncol = len(CELLS) * len(BETAS)
-    fig, axes = plt.subplots(len(REGIMES), ncol, figsize=(2.1 * ncol, 10.5),
-                             sharex=True, sharey=(kind == "opinions"),
-                             constrained_layout=True)
-    for ri, regime in enumerate(REGIMES):
-        for ci, cell in enumerate(CELLS):
-            for bi, (bc, blab) in enumerate(BETAS):
-                ax = axes[ri, ci * len(BETAS) + bi]
-                tag = find_tag(cell, regime, bc)
-                if tag is None:
-                    ax.set_axis_off()
-                    continue
-                if kind == "ppl":
-                    panel(ax, tag, show_legend=(ri == 0 and ci == 0 and bi == 0))
-                else:
-                    panel(ax, tag)
-                if ri == 0:
-                    ax.set_title(f"{CELL_LABEL[cell]} $\\beta$={blab}\n" + ax.get_title(),
-                                 fontsize=7)
-                if ci * len(BETAS) + bi == 0:
-                    ax.set_ylabel(regime, fontsize=9)
-                if ri == len(REGIMES) - 1:
-                    ax.set_xlabel("round" if kind == "opinions" else "ppl", fontsize=7)
-                ax.tick_params(labelsize=6)
-    fig.suptitle("ML-Action atlas slab (seed 0): rows = training regime, "
-                 "columns = cell x beta -- "
-                 + ("opinion distribution/round + platform p10/p50/p90"
-                    if kind == "opinions" else
-                    "per-agent perplexity at rounds 1/5/10/20/30 (light to dark)"),
-                 fontsize=11)
-    out = f"{FIGS}/grid_{kind}_atlas.png"
-    fig.savefig(out, dpi=120); plt.close(fig)
-    print(f"saved {out}")
+for model in MODELS:
+    if not any(find_tag(model, c, r, b) for c in CELLS for r in REGIMES
+               for b, _ in BETAS):
+        continue
+    os.makedirs(f"{FIGS}/{model}", exist_ok=True)
+    for kind, panel in [("opinions", op_panel), ("ppl", ppl_panel)]:
+        ncol = len(CELLS) * len(BETAS)
+        fig, axes = plt.subplots(len(REGIMES), ncol, figsize=(2.1 * ncol, 10.5),
+                                 sharex=True, sharey=(kind == "opinions"),
+                                 constrained_layout=True)
+        for ri, regime in enumerate(REGIMES):
+            for ci, cell in enumerate(CELLS):
+                for bi, (bc, blab) in enumerate(BETAS):
+                    ax = axes[ri, ci * len(BETAS) + bi]
+                    tag = find_tag(model, cell, regime, bc)
+                    if tag is None:
+                        ax.set_axis_off()
+                        continue
+                    if kind == "ppl":
+                        panel(ax, tag, show_legend=(ri == 0 and ci == 0 and bi == 0))
+                    else:
+                        panel(ax, tag)
+                    if ri == 0:
+                        ax.set_title(f"{CELL_LABEL[cell]} $\\beta$={blab}\n" + ax.get_title(),
+                                     fontsize=7)
+                    if ci * len(BETAS) + bi == 0:
+                        ax.set_ylabel(regime, fontsize=9)
+                    if ri == len(REGIMES) - 1:
+                        ax.set_xlabel("round" if kind == "opinions" else "ppl", fontsize=7)
+                    ax.tick_params(labelsize=6)
+        fig.suptitle(f"ML-Action atlas slab, {model} (seed 0): rows = training "
+                     "regime, columns = cell x beta -- "
+                     + ("opinion distribution/round + platform p10/p50/p90"
+                        if kind == "opinions" else
+                        "per-agent perplexity at rounds 1/5/10/20/30 (light to dark)"),
+                     fontsize=11)
+        out = f"{FIGS}/{model}/grid_{kind}_atlas.png"
+        fig.savefig(out, dpi=120); plt.close(fig)
+        print(f"saved {out}")
