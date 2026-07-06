@@ -456,6 +456,8 @@ def main() -> int:
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
+        "dataset": os.environ.get("DATASET", "pokec"),
+        "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
         "do_sample": do_sample, "gen_temperature": gen_temperature,
         "host": os.uname().nodename,
