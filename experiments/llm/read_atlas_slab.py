@@ -23,6 +23,7 @@ SEEDS = [0, 42, 43]
 MODELS = {
     "qwen": "mlat",
     "qwen-reset": "mlatR",   # POP_RESET=1 memoryless-population control
+    "qwen-eq": "mlatE",      # POP_RESET=1 + AB_SWEEPS=100 equilibrated response
     "llama": "mlatL",
     "gemma": "mlatG",
     "mistral": "mlatM",

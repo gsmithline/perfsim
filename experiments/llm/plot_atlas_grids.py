@@ -19,6 +19,7 @@ FIGS = "experiments/llm/figs"
 MODELS = {
     "qwen": "mlat",
     "qwen-reset": "mlatR",
+    "qwen-eq": "mlatE",
     "llama": "mlatL",
     "gemma": "mlatG",
     "mistral": "mlatM",

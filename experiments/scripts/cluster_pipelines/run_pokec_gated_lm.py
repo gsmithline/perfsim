@@ -434,6 +434,11 @@ def main() -> int:
     # lives only in the model -- the memoryless D(theta) of Wu/Abebe/
     # Mendler-Duenner (2603.12137). Default 0 = state carries over.
     pop_reset = _env_int("POP_RESET", 0) == 1
+    # AB_SWEEPS>1 (ab only): sweeps per round, gate blended after each sweep.
+    # With POP_RESET this is the equilibrated-response protocol: predictions +
+    # innate seed a Deffuant run, the population relaxes under the platform,
+    # the model trains on the relaxed outcome.
+    ab_sweeps = _env_int("AB_SWEEPS", 1)
     # PRISTINE_FRAC>0 (accumulate only): hold this fraction of every training
     # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
     # to 1/t. 0 = random subsample (decaying pristine = plain accumulate).
@@ -447,6 +452,8 @@ def main() -> int:
         raise ValueError("CANARY_DELTA>0 requires POP_MODEL=ab and RUN_MODE=loop")
     if pop_reset and pop_model != "ab":
         raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
+    if ab_sweeps != 1 and pop_model != "ab":
+        raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -463,7 +470,7 @@ def main() -> int:
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
-        "pop_reset": pop_reset,
+        "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -739,6 +746,7 @@ def main() -> int:
         # advance the population one round under the current deployment
         contact = float("nan")
         s_tag = float("nan")
+        relax_trace = []
         if run_mode == "direct":
             # no population: the model's own output is the next training target
             op = last_preds.clone()
@@ -749,18 +757,26 @@ def main() -> int:
             if pop_reset:
                 ab_x = ab_innate.clone()
                 ab_f = torch.zeros_like(ab_f)
-            accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
             served = (last_preds.to(ab_x.device) + canary.to(ab_x.device)).clamp(0.0, 1.0)
-            if feedback_on:
-                gate_open = (served - ab_x).abs() < eps_ai
-                eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
-                ab_x, contact = gp.gated_blend(ab_x, served, w_agent, eps_ai)
-                ab_f = (1.0 - eff_w) * ab_f + eff_w   # platform injects tag 1 on gated agents
-            else:
-                contact = float(((served - ab_x).abs() < eps_ai).float().mean())
-            if innate_lambda > 0:
-                ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
-                ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
+            accepted = 0
+            contacts = []
+            relax_trace = []
+            for sw in range(ab_sweeps):
+                accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
+                if feedback_on:
+                    gate_open = (served - ab_x).abs() < eps_ai
+                    eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
+                    ab_x, c = gp.gated_blend(ab_x, served, w_agent, eps_ai)
+                    ab_f = (1.0 - eff_w) * ab_f + eff_w   # platform injects tag 1 on gated agents
+                    contacts.append(c)
+                else:
+                    contacts.append(float(((served - ab_x).abs() < eps_ai).float().mean()))
+                if innate_lambda > 0:
+                    ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
+                    ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
+                if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
+                    relax_trace.append(round(float(ab_x.std()), 4))
+            contact = float(np.mean(contacts))
             s_tag = float(ab_f.mean())
             op = ab_x.detach().cpu().float().clone()
         if op_round0 is None:
@@ -777,6 +793,8 @@ def main() -> int:
             row["contact"] = contact
             row["accepted"] = accepted
             row["s_tag"] = s_tag
+            if ab_sweeps > 1:
+                row["relax_trace"] = relax_trace   # op_std at sweeps 1/3/10/30/100/k
         row.update(pred_block)
         if "pred_eff_support" in pred_block:
             row["dissoc_gap"] = pred_block["pred_eff_support"] - row["op_eff_support"]
