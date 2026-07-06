@@ -115,6 +115,18 @@ for model in MODELS:
 
 expected = len(CELLS) * len(REGIMES) * len(BETAS) * len(SEEDS)
 print(f"\n{len(rows_out)} rows ({expected} combos per model)")
+
+# paired carry-vs-reset deltas where both arms exist
+by_key = {(r["model"], r["cell"], r["regime"], r["beta"], r["seed"]): r for r in rows_out}
+pairs = [(k, by_key[("qwen-reset",) + k[1:]]) for k in by_key
+         if k[0] == "qwen" and ("qwen-reset",) + k[1:] in by_key]
+if pairs:
+    print("\n#### carry vs reset (qwen, same cell/regime/beta/seed) ####")
+    print(f"{'cell':>10} {'regime':>6} {'b':>4} | {'dr c->r':>12} | {'pmed c->r':>14} | {'true c->r':>13}")
+    for k, rr in sorted(pairs):
+        rc = by_key[k]
+        print(f"{k[1]:>10} {k[2]:>6} {k[3]:>4} | {rc['dr']:>5.2f} {rr['dr']:>5.2f} | "
+              f"{rc['pmed']:>6.1f} {rr['pmed']:>6.1f} | {rc['tru']:>6.3f} {rr['tru']:>6.3f}")
 if rows_out:
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_CSV, "w", newline="") as f:
