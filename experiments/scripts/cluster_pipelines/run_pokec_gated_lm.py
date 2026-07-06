@@ -429,6 +429,11 @@ def main() -> int:
     # (weights do NOT carry over) -- the model-collapse / Gerstgrasser protocol.
     # Default 0 = continual SFT (weights persist, the performative-prediction RGD).
     fresh_each_round = _env_int("FRESH_EACH_ROUND", 0) == 1
+    # POP_RESET=1 (ab only): restart the population from innate every round, so
+    # each round is a one-step response to the current deployment and history
+    # lives only in the model -- the memoryless D(theta) of Wu/Abebe/
+    # Mendler-Duenner (2603.12137). Default 0 = state carries over.
+    pop_reset = _env_int("POP_RESET", 0) == 1
     # PRISTINE_FRAC>0 (accumulate only): hold this fraction of every training
     # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
     # to 1/t. 0 = random subsample (decaying pristine = plain accumulate).
@@ -440,6 +445,8 @@ def main() -> int:
         raise ValueError(f"unknown RUN_MODE: {run_mode!r}")
     if canary_delta > 0 and not (pop_model == "ab" and run_mode == "loop"):
         raise ValueError("CANARY_DELTA>0 requires POP_MODEL=ab and RUN_MODE=loop")
+    if pop_reset and pop_model != "ab":
+        raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -456,6 +463,7 @@ def main() -> int:
         "run_mode": run_mode, "canary_delta": canary_delta,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
+        "pop_reset": pop_reset,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -738,6 +746,9 @@ def main() -> int:
             world.run(lm, n_steps=epoch_size)
             op = world.state["opinion"].float()
         else:
+            if pop_reset:
+                ab_x = ab_innate.clone()
+                ab_f = torch.zeros_like(ab_f)
             accepted = gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
             served = (last_preds.to(ab_x.device) + canary.to(ab_x.device)).clamp(0.0, 1.0)
             if feedback_on:

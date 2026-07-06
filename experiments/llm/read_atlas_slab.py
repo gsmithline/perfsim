@@ -22,6 +22,7 @@ SEEDS = [0, 42, 43]
 # model -> atlas tag stem; legacy fallback applies to qwen only
 MODELS = {
     "qwen": "mlat",
+    "qwen-reset": "mlatR",   # POP_RESET=1 memoryless-population control
     "llama": "mlatL",
     "gemma": "mlatG",
     "mistral": "mlatM",
