@@ -1,0 +1,2 @@
+mlatLs_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatLs_e040_a040_pri_b1_s0, sft_kl, 1.0, 0, 1, accumulate, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.5, 0

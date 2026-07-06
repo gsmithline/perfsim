@@ -526,10 +526,21 @@ def main() -> int:
     trainer_kwargs = {"bf16": device == "cuda", "use_cpu": device != "cuda"}
     if sft_epochs > 0:
         trainer_kwargs.update({"num_train_epochs": sft_epochs, "max_steps": -1})
+    # assistant-turn marker per model family; the string is only tokenize-matched
+    # on the old-TRL collator path (new TRL masks via prompt/completion format)
+    bm = base_model.lower()
+    if "llama" in bm:
+        resp_marker = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    elif "gemma" in bm:
+        resp_marker = "<start_of_turn>model\n"
+    elif "mistral" in bm or "ministral" in bm:
+        resp_marker = "[/INST]"
+    else:
+        resp_marker = "<|im_start|>assistant\n"
     learner_kwargs = dict(
         model=lm, loss=MSELoss(), max_steps=max_steps,
         per_device_batch_size=sft_batch_size, output_dir=str(out_dir / "trl"),
-        response_template="<|im_start|>assistant\n", learning_rate=sft_lr,
+        response_template=resp_marker, learning_rate=sft_lr,
         target_formatter=format_number, trainer_kwargs=trainer_kwargs,
     )
     if training_style == "sft":
