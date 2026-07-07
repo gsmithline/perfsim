@@ -532,10 +532,10 @@ def main() -> int:
         cols = []
         for c in prof_df.columns:
             v = prof_df[c]
-            if v.dtype == object:
-                cols.append(pd.get_dummies(v).values.astype(float))
-            else:
+            if pd.api.types.is_numeric_dtype(v):
                 cols.append(v.values.astype(float)[:, None])
+            else:   # object locally, string[pyarrow] on the cluster
+                cols.append(pd.get_dummies(v).values.astype(float))
         X = np.hstack(cols)
         X = (X - X.mean(0)) / (X.std(0) + 1e-9)
         yv = np.asarray(setup["innate"], dtype=float)

@@ -53,10 +53,10 @@ def realized_r2(d):
     cols = []
     for c in prof.columns:
         v = prof[c]
-        if v.dtype == object:
-            cols.append(pd.get_dummies(v).values.astype(float))
-        else:
+        if pd.api.types.is_numeric_dtype(v):
             cols.append(v.values.astype(float)[:, None])
+        else:
+            cols.append(pd.get_dummies(v).values.astype(float))
     X = np.hstack(cols); X = (X - X.mean(0)) / (X.std(0) + 1e-9)
     rng = np.random.default_rng(0); idx = rng.permutation(len(y)); yh = np.zeros_like(y)
     for f in range(5):
