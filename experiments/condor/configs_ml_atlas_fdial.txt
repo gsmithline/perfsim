@@ -1,0 +1,12 @@
+mlatF_p005_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.05
+mlatF_p005_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.05
+mlatF_p015_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.15
+mlatF_p015_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.15
+mlatF_p033_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.33
+mlatF_p033_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.33
+mlatF_p040_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.4
+mlatF_p040_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.4
+mlatF_p065_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.65
+mlatF_p065_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 0.65
+mlatF_p100_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 1.0
+mlatF_p100_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, 1.0

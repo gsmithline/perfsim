@@ -434,6 +434,12 @@ def main() -> int:
     # lives only in the model -- the memoryless D(theta) of Wu/Abebe/
     # Mendler-Duenner (2603.12137). Default 0 = state carries over.
     pop_reset = _env_int("POP_RESET", 0) == 1
+    # PROFILE_SHUFFLE_P in (0,1]: feature-strength dial. A uniform subset S
+    # (|S| = p*n) gets its profile rows deranged (cyclic, no fixed points);
+    # innate and graph position stay with the agent. Fixed by (p, seed),
+    # cycle saved to shuffle_perm.json; realized probe-R2 is measured
+    # offline from the saved profiles, nominal p is just the knob.
+    shuffle_p = _env_float("PROFILE_SHUFFLE_P", 0.0)
     # AB_SWEEPS>1 (ab only): sweeps per round, gate blended after each sweep.
     # With POP_RESET this is the equilibrated-response protocol: predictions +
     # innate seed a Deffuant run, the population relaxes under the platform,
@@ -471,6 +477,7 @@ def main() -> int:
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
+        "profile_shuffle_p": shuffle_p,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -500,6 +507,19 @@ def main() -> int:
         setup = load_yelp_setup(Path(os.environ.get("YELP_DIR", "experiments/yelp")))
     else:
         raise ValueError(f"unknown DATASET: {dataset!r}")
+    if shuffle_p > 0:
+        prof_df = setup["profiles"].copy()
+        srng = np.random.default_rng(9700 + int(round(shuffle_p * 1000)) + seed)
+        k = max(2, int(round(shuffle_p * len(prof_df))))
+        S = np.sort(srng.choice(len(prof_df), size=k, replace=False))
+        cyc = S[srng.permutation(k)]
+        new_rows = prof_df.iloc[np.roll(cyc, -1)].values   # agent cyc[i] gets cyc[i+1]'s row
+        prof_df.iloc[cyc] = new_rows
+        setup["profiles"] = prof_df
+        (out_dir / "shuffle_perm.json").write_text(json.dumps(
+            {"p": shuffle_p, "cycle": cyc.tolist()}))
+        print(f"[run] PROFILE_SHUFFLE_P={shuffle_p}: deranged |S|={k} of {len(prof_df)}",
+              flush=True)
     n = setup["n"]
     innate = setup["innate"]
     innate_mean = float(innate.mean())
