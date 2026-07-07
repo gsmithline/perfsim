@@ -440,6 +440,11 @@ def main() -> int:
     # cycle saved to shuffle_perm.json; realized probe-R2 is measured
     # offline from the saved profiles, nominal p is just the knob.
     shuffle_p = _env_float("PROFILE_SHUFFLE_P", 0.0)
+    # PROFILE_SORT_Q in (0,1]: the up-dial. Ridge index yhat on the natural
+    # pairing; a uniform subset S (|S| = q*n) is comonotone-rematched
+    # (profile ranks by yhat matched to user ranks by innate). Exclusive
+    # with PROFILE_SHUFFLE_P.
+    sort_q = _env_float("PROFILE_SORT_Q", 0.0)
     # AB_SWEEPS>1 (ab only): sweeps per round, gate blended after each sweep.
     # With POP_RESET this is the equilibrated-response protocol: predictions +
     # innate seed a Deffuant run, the population relaxes under the platform,
@@ -460,6 +465,8 @@ def main() -> int:
         raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
     if ab_sweeps != 1 and pop_model != "ab":
         raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
+    if shuffle_p > 0 and sort_q > 0:
+        raise ValueError("PROFILE_SHUFFLE_P and PROFILE_SORT_Q are exclusive")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -477,7 +484,7 @@ def main() -> int:
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
-        "profile_shuffle_p": shuffle_p,
+        "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -520,6 +527,31 @@ def main() -> int:
             {"p": shuffle_p, "cycle": cyc.tolist()}))
         print(f"[run] PROFILE_SHUFFLE_P={shuffle_p}: deranged |S|={k} of {len(prof_df)}",
               flush=True)
+    if sort_q > 0:
+        prof_df = setup["profiles"].copy()
+        cols = []
+        for c in prof_df.columns:
+            v = prof_df[c]
+            if v.dtype == object:
+                cols.append(pd.get_dummies(v).values.astype(float))
+            else:
+                cols.append(v.values.astype(float)[:, None])
+        X = np.hstack(cols)
+        X = (X - X.mean(0)) / (X.std(0) + 1e-9)
+        yv = np.asarray(setup["innate"], dtype=float)
+        w = np.linalg.solve(X.T @ X + np.eye(X.shape[1]), X.T @ (yv - yv.mean()))
+        yhat = yv.mean() + X @ w
+        srng = np.random.default_rng(31000 + int(round(sort_q * 1000)) + seed)
+        k = max(2, int(round(sort_q * len(prof_df))))
+        S = srng.choice(len(prof_df), size=k, replace=False)
+        users_by_y = S[np.argsort(yv[S])]
+        profs_by_idx = S[np.argsort(yhat[S])]
+        prof_df.iloc[users_by_y] = setup["profiles"].iloc[profs_by_idx].values
+        setup["profiles"] = prof_df
+        (out_dir / "sort_perm.json").write_text(json.dumps(
+            {"q": sort_q, "users_by_y": users_by_y.tolist(),
+             "profs_by_idx": profs_by_idx.tolist()}))
+        print(f"[run] PROFILE_SORT_Q={sort_q}: comonotone rematch |S|={k}", flush=True)
     n = setup["n"]
     innate = setup["innate"]
     innate_mean = float(innate.mean())
