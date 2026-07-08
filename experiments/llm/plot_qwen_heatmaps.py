@@ -156,7 +156,7 @@ WORLD_BETAS = [("0", "b0"), ("0.5", "b0p5"), ("1", "b1")]
 
 def world_tag(ec, ac, bkey):
     cell = f"{ec}_{ac}"
-    for t in (f"mla2dv2_{cell}_{bkey}_s0" if bkey == "b0" else "",
+    for t in (f"mla2dv2_{cell}_{bkey}_s0" if bkey in ("b0", "b3") else "",
               f"mlat_{cell}_rep_{bkey}_s0",
               f"mla2bv2_{cell}_{bkey}_s0"):
         if t and (RUNS / t / "trajectory.pt").exists():
@@ -170,39 +170,48 @@ for cell in CELLS:
     if s1 and s3:
         print(f"saturation check {cell}: b1 dr={s1['dr']:.2f}  b3 dr={s3['dr']:.2f}")
 
-world = {}
-for blab, bkey in WORLD_BETAS:
-    M = np.full((len(EPS_LEVELS), len(AI_LEVELS)), np.nan)
-    for i, (ec, _) in enumerate(EPS_LEVELS):
-        for j, (ac, _) in enumerate(AI_LEVELS):
-            s = stats(world_tag(ec, ac, bkey) or "")
-            if s:
-                M[i, j] = s["dr"]
-    world[blab] = M
+def world_fig(betas, fname, note):
+    world = {}
+    for blab, bkey in betas:
+        M = np.full((len(EPS_LEVELS), len(AI_LEVELS)), np.nan)
+        for i, (ec, _) in enumerate(EPS_LEVELS):
+            for j, (ac, _) in enumerate(AI_LEVELS):
+                s = stats(world_tag(ec, ac, bkey) or "")
+                if s:
+                    M[i, j] = s["dr"]
+        world[blab] = M
+    fig, axes = plt.subplots(2, len(betas), figsize=(4.3 * len(betas) + 1.6, 7.8),
+                             constrained_layout=True)
+    axes = axes.reshape(2, len(betas))
+    for j, (blab, _) in enumerate(betas):
+        M = world[blab]
+        im = axes[0, j].imshow(M, cmap=DR_CMAP, vmin=0, vmax=1, aspect="auto")
+        annotate(axes[0, j], M, vmin=0, vmax=1, cmap=DR_CMAP)
+        axes[0, j].set_title(f"closed loop, $\\beta$={blab}", fontsize=13)
+        A = M - np.array([[base[e]] for _, e in EPS_LEVELS])
+        im2 = axes[1, j].imshow(A, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="auto")
+        annotate(axes[1, j], A, fmt="{:+.2f}", vmin=-1.0, vmax=1.0, cmap="RdBu_r")
+        axes[1, j].set_title(f"platform-added effect, $\\beta$={blab}", fontsize=13)
+    for ax in axes.flat:
+        ax.set_xticks(range(len(AI_LEVELS)), [f"{v:.1f}" for _, v in AI_LEVELS])
+        ax.set_yticks(range(len(EPS_LEVELS)), [f"{v:.1f}" for _, v in EPS_LEVELS])
+        ax.set_xlabel("AI gate width $\\epsilon_{AI}$", fontsize=12)
+        ax.set_ylabel("peer confidence $\\epsilon$", fontsize=12)
+    fig.colorbar(im, ax=axes[0, :], label="final $d_r$ (red: $d_r>1$, overshoot)",
+                 shrink=0.85, extend="max")
+    fig.colorbar(im2, ax=axes[1, :], label="$d_r$ closed $-$ $d_r$ no platform", shrink=0.85)
+    fig.suptitle(note, fontsize=12)
+    fig.savefig(FIGS / fname, dpi=150)
+    plt.close(fig)
+    print("saved", FIGS / fname)
 
-fig, axes = plt.subplots(2, 3, figsize=(13.0, 7.8), constrained_layout=True)
-for j, (blab, _) in enumerate(WORLD_BETAS):
-    M = world[blab]
-    im = axes[0, j].imshow(M, cmap=DR_CMAP, vmin=0, vmax=1, aspect="auto")
-    annotate(axes[0, j], M, vmin=0, vmax=1, cmap=DR_CMAP)
-    axes[0, j].set_title(f"closed loop, $\\beta$={blab}", fontsize=13)
-    A = M - np.array([[base[e]] for _, e in EPS_LEVELS])
-    im2 = axes[1, j].imshow(A, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="auto")
-    annotate(axes[1, j], A, fmt="{:+.2f}", vmin=-1.0, vmax=1.0, cmap="RdBu_r")
-    axes[1, j].set_title(f"platform-added effect, $\\beta$={blab}", fontsize=13)
-for ax in axes.flat:
-    ax.set_xticks(range(len(AI_LEVELS)), [f"{v:.1f}" for _, v in AI_LEVELS])
-    ax.set_yticks(range(len(EPS_LEVELS)), [f"{v:.1f}" for _, v in EPS_LEVELS])
-    ax.set_xlabel("AI gate width $\\epsilon_{AI}$", fontsize=12)
-    ax.set_ylabel("peer confidence $\\epsilon$", fontsize=12)
-fig.colorbar(im, ax=axes[0, :], label="final $d_r$ (red: $d_r>1$, overshoot)",
-             shrink=0.85, extend="max")
-fig.colorbar(im2, ax=axes[1, :], label="$d_r$ closed $-$ $d_r$ no platform", shrink=0.85)
-fig.suptitle("Qwen ML-Action, replace/continual, seed 0 (baseline: same-seed W=0 Deffuant; "
-             "-- = cell not run at this $\\beta$)", fontsize=12)
-fig.savefig(FIGS / "heatmap_world_plane.png", dpi=150)
-plt.close(fig)
-print("saved", FIGS / "heatmap_world_plane.png")
+
+world_fig(WORLD_BETAS, "heatmap_world_plane.png",
+          "Qwen ML-Action, replace/continual, seed 0 (baseline: same-seed W=0 Deffuant; "
+          "-- = cell not run at this $\\beta$)")
+world_fig([("0", "b0"), ("3", "b3")], "heatmap_world_plane_b3.png",
+          "Qwen ML-Action, full grid at the saturated dose $\\beta$=3 "
+          "(replace/continual, seed 0; $\\beta$=3 $\\approx$ $\\beta$=1 where both exist)")
 
 
 # Fig 2: knob plane
