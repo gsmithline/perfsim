@@ -151,18 +151,37 @@ FIGS.mkdir(parents=True, exist_ok=True)
 base = ml_baseline_dr([v for _, v in EPS_LEVELS])
 print("W=0 baselines:", {k: round(v, 3) for k, v in base.items()})
 
+WORLD_BETAS = [("0", "b0"), ("0.5", "b0p5"), ("1", "b1")]
+
+
+def world_tag(ec, ac, bkey):
+    cell = f"{ec}_{ac}"
+    for t in (f"mla2dv2_{cell}_{bkey}_s0" if bkey == "b0" else "",
+              f"mlat_{cell}_rep_{bkey}_s0",
+              f"mla2bv2_{cell}_{bkey}_s0"):
+        if t and (RUNS / t / "trajectory.pt").exists():
+            return t
+    return None
+
+
+for cell in CELLS:
+    s1 = stats(world_tag(*cell.split("_"), "b1") or "")
+    s3 = stats(f"mla2dv2_{cell}_b3_s0")
+    if s1 and s3:
+        print(f"saturation check {cell}: b1 dr={s1['dr']:.2f}  b3 dr={s3['dr']:.2f}")
+
 world = {}
-for blab, bkey in [("0", "b0"), ("3", "b3")]:
+for blab, bkey in WORLD_BETAS:
     M = np.full((len(EPS_LEVELS), len(AI_LEVELS)), np.nan)
     for i, (ec, _) in enumerate(EPS_LEVELS):
         for j, (ac, _) in enumerate(AI_LEVELS):
-            s = stats(f"mla2dv2_{ec}_{ac}_{bkey}_s0")
+            s = stats(world_tag(ec, ac, bkey) or "")
             if s:
                 M[i, j] = s["dr"]
     world[blab] = M
 
-fig, axes = plt.subplots(2, 2, figsize=(9.2, 8.0), constrained_layout=True)
-for j, blab in enumerate(["0", "3"]):
+fig, axes = plt.subplots(2, 3, figsize=(13.0, 7.8), constrained_layout=True)
+for j, (blab, _) in enumerate(WORLD_BETAS):
     M = world[blab]
     im = axes[0, j].imshow(M, cmap=DR_CMAP, vmin=0, vmax=1, aspect="auto")
     annotate(axes[0, j], M, vmin=0, vmax=1, cmap=DR_CMAP)
@@ -179,8 +198,8 @@ for ax in axes.flat:
 fig.colorbar(im, ax=axes[0, :], label="final $d_r$ (red: $d_r>1$, overshoot)",
              shrink=0.85, extend="max")
 fig.colorbar(im2, ax=axes[1, :], label="$d_r$ closed $-$ $d_r$ no platform", shrink=0.85)
-fig.suptitle("Qwen ML-Action, replace/continual, seed 0 (baseline: same-seed W=0 Deffuant)",
-             fontsize=12)
+fig.suptitle("Qwen ML-Action, replace/continual, seed 0 (baseline: same-seed W=0 Deffuant; "
+             "-- = cell not run at this $\\beta$)", fontsize=12)
 fig.savefig(FIGS / "heatmap_world_plane.png", dpi=150)
 plt.close(fig)
 print("saved", FIGS / "heatmap_world_plane.png")
@@ -202,9 +221,10 @@ def feat_tag(knob, beta):
     return f"mlatF_{knob}_e040_a040_rep_{beta}_s0"
 
 
-gate_dr = np.full((2, len(GATE_COLS)), np.nan)
-gate_ppl = np.full((2, len(GATE_COLS)), np.nan)
-for i, beta in enumerate(["b0", "b1"]):
+KNOB_BETAS = ["b0", "b0p5", "b1"]
+gate_dr = np.full((3, len(GATE_COLS)), np.nan)
+gate_ppl = np.full((3, len(GATE_COLS)), np.nan)
+for i, beta in enumerate(KNOB_BETAS):
     for j, (ac, _) in enumerate(GATE_COLS):
         s = stats(gate_tag(ac, beta) or "")
         if s:
@@ -213,7 +233,7 @@ for i, beta in enumerate(["b0", "b1"]):
 feat = []
 for knob in FEAT_KNOBS:
     row = {}
-    for beta in ["b0", "b1"]:
+    for beta in KNOB_BETAS:
         s = stats(feat_tag(knob, beta) or "")
         if s:
             row[beta] = s
@@ -222,15 +242,15 @@ for knob in FEAT_KNOBS:
         row["knob"] = knob
         feat.append(row)
 feat.sort(key=lambda r: r["r2"])
-feat_dr = np.full((2, len(feat)), np.nan)
-feat_ppl = np.full((2, len(feat)), np.nan)
+feat_dr = np.full((3, len(feat)), np.nan)
+feat_ppl = np.full((3, len(feat)), np.nan)
 for j, row in enumerate(feat):
-    for i, beta in enumerate(["b0", "b1"]):
+    for i, beta in enumerate(KNOB_BETAS):
         if beta in row:
             feat_dr[i, j] = row[beta]["dr"]
             feat_ppl[i, j] = np.log10(row[beta]["pmed"])
 
-fig, axes = plt.subplots(2, 2, figsize=(13.5, 5.6), constrained_layout=True)
+fig, axes = plt.subplots(2, 2, figsize=(13.5, 7.6), constrained_layout=True)
 panels = [
     (axes[0, 0], gate_dr, [f"{v:.2f}" for _, v in GATE_COLS],
      "gate dial: final $d_r$", "viridis", 0, 1, "{:.2f}"),
@@ -246,7 +266,7 @@ for ax, M, xl, title, cmap, vmin, vmax, fmt in panels:
     annotate(ax, M, fmt=fmt, vmin=vmin, vmax=vmax, cmap=cmap)
     ax.set_title(title, fontsize=13)
     ax.set_xticks(range(M.shape[1]), xl)
-    ax.set_yticks([0, 1], ["$\\beta$=0", "$\\beta$=1"])
+    ax.set_yticks([0, 1, 2], ["$\\beta$=0", "$\\beta$=0.5", "$\\beta$=1"])
     fig.colorbar(im, ax=ax, shrink=0.9)
 axes[0, 0].set_xlabel("$\\epsilon_{AI}$"); axes[0, 1].set_xlabel("$\\epsilon_{AI}$")
 axes[1, 0].set_xlabel("realized probe $R^2$"); axes[1, 1].set_xlabel("realized probe $R^2$")
