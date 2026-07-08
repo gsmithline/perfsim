@@ -32,7 +32,7 @@ BETAS = [("b0", "0"), ("b0p5", "0.5"), ("b1", "1")]
 TAIL = 5
 OPBINS = 50
 SNAPS = [0, 4, 9, 19, 29]
-PPLBINS = np.logspace(0, 4, 45)
+PPLBINS = np.linspace(0, 4, 45)   # log10 ppl
 
 LEGACY = {}
 for c in CELLS:
@@ -85,12 +85,12 @@ def op_panel(ax, tag):
 
 def ppl_panel(ax, tag, show_legend=False):
     _, _, _, ppl = load(tag)
+    lp = np.log10(ppl)
     colors = plt.cm.viridis(np.linspace(0.92, 0.05, len(SNAPS)))
     for t, c in zip(SNAPS, colors):
-        ax.hist(ppl[t], bins=PPLBINS, density=True, histtype="stepfilled", alpha=0.12, color=c)
-        ax.hist(ppl[t], bins=PPLBINS, density=True, histtype="step", color=c, lw=1.0,
+        ax.hist(lp[t], bins=PPLBINS, density=True, histtype="stepfilled", alpha=0.12, color=c)
+        ax.hist(lp[t], bins=PPLBINS, density=True, histtype="step", color=c, lw=1.0,
                 label=f"r{t + 1}" if show_legend else None)
-    ax.set_xscale("log")
     ax.set_title(f"med={np.median(ppl[-TAIL:]):.1f}", fontsize=7)
     if show_legend:
         ax.legend(fontsize=6, frameon=False)
@@ -124,13 +124,14 @@ for model in MODELS:
                     if ci * len(BETAS) + bi == 0:
                         ax.set_ylabel(regime, fontsize=9)
                     if ri == len(REGIMES) - 1:
-                        ax.set_xlabel("round" if kind == "opinions" else "ppl", fontsize=7)
+                        ax.set_xlabel("round" if kind == "opinions" else "$\\log_{10}$ ppl",
+                                      fontsize=7)
                     ax.tick_params(labelsize=6)
         fig.suptitle(f"ML-Action atlas slab, {model} (seed 0): rows = training "
                      "regime, columns = cell x beta -- "
                      + ("opinion distribution/round + platform p10/p50/p90"
                         if kind == "opinions" else
-                        "per-agent perplexity at rounds 1/5/10/20/30 (light to dark)"),
+                        "per-agent log10 perplexity at rounds 1/5/10/20/30 (light to dark)"),
                      fontsize=11)
         out = f"{FIGS}/{model}/grid_{kind}_atlas.png"
         fig.savefig(out, dpi=120); plt.close(fig)
