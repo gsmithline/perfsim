@@ -1,0 +1,12 @@
+mlatG_e040_a010_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatG_e040_a010_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatG_e040_a010_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatG_e040_a020_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatG_e040_a020_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatG_e040_a020_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatG_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatG_e040_a040_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatG_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatG_e020_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatG_e020_a040_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlatG_e020_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
