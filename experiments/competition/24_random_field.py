@@ -44,7 +44,7 @@ W = 0.3
 ROUNDS = 60
 TRAIN = 10
 SEEDS = [0, 1, 2]
-ARMS = ["model", "frozen", "shuffled", "rand_model", "rand_pop"]
+ARMS = ["model", "observer", "frozen", "shuffled", "rand_model", "rand_pop"]
 ENVS = [("preserve", 0.3, 0.15), ("collapse", 0.3, 1.2), ("unsat-gate", 0.1, 0.15)]
 
 
@@ -85,7 +85,7 @@ def run(arm, seed, eps, sf, moments=None):
     for t in range(ROUNDS):
         pop.iteration(node_status=False)
         x = np.array([pop.status[i] for i in range(N)])
-        if arm in ("model", "frozen", "shuffled"):
+        if arm in ("model", "frozen", "shuffled", "observer"):
             if arm != "frozen" or t == 0:
                 tgt = torch.tensor(x, dtype=torch.float32)
                 for _ in range(TRAIN):
@@ -101,16 +101,54 @@ def run(arm, seed, eps, sf, moments=None):
         rec_mom.append((float(m.mean()), float(m.std())))
         align = corr(x, m)
         g = np.abs(m - x) < eps
-        x = np.where(g, (1 - W) * x + W * m, x)
-        f = np.where(g, (1 - W) * f + W * 1.0, f)
-        for i in range(N):
-            pop.status[i] = float(x[i])
-        pop.sts = x.copy()
-        has_net = arm in ("model", "frozen", "shuffled")
+        if arm != "observer":                        # observer: model retrains but
+            x = np.where(g, (1 - W) * x + W * m, x)   # its field is never fed back,
+            f = np.where(g, (1 - W) * f + W * 1.0, f) # so the population runs free
+            for i in range(N):
+                pop.status[i] = float(x[i])
+            pop.sts = x.copy()
+        has_net = arm in ("model", "frozen", "shuffled", "observer")
         lc0 = float(((net(F).squeeze(1).detach() - y0) ** 2).mean()) if has_net else float("nan")
         traj.append(dict(s=float(f.mean()), contact=float(g.mean()), align=align,
                          pop_std=float(x.std()), lc0=lc0))
     return traj, rec_mom
+
+
+def model_vs_observer_fig(rows):
+    # The counterfactual core: model (full loop) vs observer (retrain kept,
+    # feedback cut). The gap between them is the AI's causal effect on each
+    # object -- diversity on the left, model forgetting on the right.
+    envs = [e for e, _, _ in ENVS]
+    arms = ["observer", "model"]
+    lab = {"observer": "observer (no feedback)", "model": "full loop"}
+    col = {"observer": "#7f7f7f", "model": "#2ca02c"}
+
+    def agg(env, arm, idx):
+        v = [r[idx] for r in rows if r[0] == env and r[1] == arm]
+        return float(np.mean(v)), float(np.std(v))
+
+    fig, (axd, axl) = plt.subplots(1, 2, figsize=(11, 4.6))
+    x = np.arange(len(envs)); wbar = 0.36
+    for k, arm in enumerate(arms):
+        off = (k - 0.5) * wbar
+        dm = [agg(e, arm, 6) for e in envs]
+        lm = [agg(e, arm, 7) for e in envs]
+        axd.bar(x + off, [m for m, _ in dm], wbar, yerr=[s for _, s in dm],
+                color=col[arm], label=lab[arm], capsize=3)
+        axl.bar(x + off, [m for m, _ in lm], wbar, yerr=[s for _, s in lm],
+                color=col[arm], label=lab[arm], capsize=3)
+    axd.set(ylabel="diversity kept  (final / initial pop_std)", ylim=(0, 1.1),
+            title="Population: the AI contracts diversity")
+    axl.set(ylabel="model forgetting  $\\ell_{c0}$  (MSE vs round-0 opinions)",
+            title="Model: feedback amplifies forgetting")
+    for ax in (axd, axl):
+        ax.set_xticks(x); ax.set_xticklabels(envs)
+        ax.legend(frameon=False); ax.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("Model vs observer: the gap is the AI's causal effect "
+                 "(model retrains in both; feedback cut in observer)", fontsize=12)
+    fig.tight_layout()
+    fig.savefig("experiments/competition/figs/model_vs_observer.png", dpi=140)
+    print("saved experiments/competition/figs/model_vs_observer.png")
 
 
 def main():
@@ -119,6 +157,7 @@ def main():
         for seed in SEEDS:
             tm, mom = run("model", seed, eps, sf)
             data = {"model": tm,
+                    "observer": run("observer", seed, eps, sf)[0],
                     "frozen": run("frozen", seed, eps, sf)[0],
                     "shuffled": run("shuffled", seed, eps, sf)[0],
                     "rand_model": run("rand_model", seed, eps, sf, moments=mom)[0],
@@ -139,8 +178,8 @@ def main():
             lcs = f"{lc:>7.3f}" if not np.isnan(lc) else f"{'--':>7}"
             print(f"{a:<12}{s:>7.3f}{c:>9.3f}{al:>8.3f}{dr:>11.3f}{lcs}")
 
-    col = {"model": "#2ca02c", "frozen": "#1f77b4", "shuffled": "#d62728",
-           "rand_model": "#ff7f0e", "rand_pop": "#9467bd"}
+    col = {"model": "#2ca02c", "observer": "#7f7f7f", "frozen": "#1f77b4",
+           "shuffled": "#d62728", "rand_model": "#ff7f0e", "rand_pop": "#9467bd"}
     fig, ax = plt.subplots(figsize=(7, 5.5))
     for a in ARMS:
         er = [r for r in rows if r[1] == a]
@@ -152,6 +191,8 @@ def main():
     fig.tight_layout()
     fig.savefig("experiments/competition/figs/random_field_alignment.png", dpi=130)
     print("\nsaved experiments/competition/figs/random_field_alignment.png")
+
+    model_vs_observer_fig(rows)
 
 
 if __name__ == "__main__":
