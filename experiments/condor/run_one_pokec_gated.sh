@@ -29,6 +29,12 @@ WANDB_KEY_FILE="${WANDB_KEY_FILE:-/home/gsmithline/.wandb_key}"
 N_ROUNDS="${N_ROUNDS:-12}"
 EPOCH_SIZE="${EPOCH_SIZE:-100}"
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
+# Gemma3 training needs torch>=2.6 (its masking uses or_mask_function);
+# route Gemma jobs to the isolated env so the torch-2.5.1 Qwen/Llama
+# pipeline stays untouched. Override with GEMMA_ENV_NAME if needed.
+if [[ "$BASE_MODEL" == *[Gg]emma* ]]; then
+  ENV_NAME="${GEMMA_ENV_NAME:-opdyn_gemma}"
+fi
 SFT_MAX_STEPS="${SFT_MAX_STEPS:-1}"
 SFT_EPOCHS="${SFT_EPOCHS:-1}"
 SFT_BATCH_SIZE="${SFT_BATCH_SIZE:-2}"
