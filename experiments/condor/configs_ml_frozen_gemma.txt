@@ -1,0 +1,2 @@
+frz_gemma_e010_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, google/gemma-3-12b-it
+frz_gemma_e040_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, google/gemma-3-12b-it
