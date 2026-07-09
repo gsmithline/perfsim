@@ -114,6 +114,30 @@ class HFCausalLMModel(Model):
                 task_type="CAUSAL_LM",
             )
             m = get_peft_model(m, lora_cfg)
+
+        if "gemma" in self._base_model_name.lower():
+            # Gemma3's text model raises when a training forward has no
+            # token_type_ids (it uses them to separate text from image
+            # tokens). For text-only SFT they are all zeros, and TRL never
+            # supplies them. Inject zeros matching each call's input shape;
+            # this fires transiently inside forward, so generate()'s own
+            # model_kwargs bookkeeping never sees it.
+            _orig_forward = m.forward
+
+            def _forward_with_token_type(*args, **kwargs):
+                if kwargs.get("token_type_ids") is None:
+                    ref = kwargs.get("input_ids")
+                    if ref is None and args and torch.is_tensor(args[0]):
+                        ref = args[0]
+                    if ref is None:
+                        ref = kwargs.get("inputs_embeds")
+                    if torch.is_tensor(ref):
+                        kwargs["token_type_ids"] = torch.zeros(
+                            ref.shape[:2], dtype=torch.long, device=ref.device
+                        )
+                return _orig_forward(*args, **kwargs)
+
+            m.forward = _forward_with_token_type
         self.inner_model = m
 
     
