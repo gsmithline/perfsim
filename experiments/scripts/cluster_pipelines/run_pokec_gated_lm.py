@@ -244,8 +244,13 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
             f"Output a single number in [0, 1] (1 = loves {target}, 0 = dislikes {target}). "
             "Respond with only the number, e.g. 0.42."
         )
-        messages = [{"role": "user", "content": user_msg}]
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        if getattr(tokenizer, "chat_template", None):
+            messages = [{"role": "user", "content": user_msg}]
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # base (non-chat) model: no chat template, so use a plain-text completion
+        # prompt cued for a number. NOTE: this differs from the instruct chat
+        # prompt, so base-vs-instruct is not a fully controlled comparison.
+        return user_msg + "\nAnswer: "
 
     return {
         "profiles": profiles,
@@ -280,8 +285,13 @@ def load_yelp_setup(yelp_dir: Path):
             "Output a single number in [0, 1] (1 = five stars, 0 = one star). "
             "Respond with only the number, e.g. 0.42."
         )
-        messages = [{"role": "user", "content": user_msg}]
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        if getattr(tokenizer, "chat_template", None):
+            messages = [{"role": "user", "content": user_msg}]
+            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # base (non-chat) model: no chat template, so use a plain-text completion
+        # prompt cued for a number. NOTE: this differs from the instruct chat
+        # prompt, so base-vs-instruct is not a fully controlled comparison.
+        return user_msg + "\nAnswer: "
 
     return {
         "profiles": profiles,
