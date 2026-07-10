@@ -1,0 +1,5 @@
+frz_olmo_e010_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0
+frz_olmo_e040_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0
+olmo_e040_a040_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 1
+olmo_e040_a040_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 1
+olmo_e040_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 1

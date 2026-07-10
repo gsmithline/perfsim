@@ -1,0 +1,33 @@
+# HTCondor: OLMo-2 stages 2+3 (Q5, open-data model). OLMo cached on /lustre
+# from the zero-shot smoke, so these run OFFLINE. USE_LORA is per-row so one sub
+# covers frozen (inference, USE_LORA=0) and retraining (SFT/SFT_KL, USE_LORA=1).
+# 5 runs, all nat / replace / continual / seed 0:
+#   frozen (stage 2): eps {0.10, 0.40}         -> attractor = OLMo's ~0.78 mode
+#   retraining (stage 3): eps 0.40 x beta {0, 0.5, 1}  -> two-object + anchor trade
+# NOTE: retraining is the first OLMo TRAINING run (frozen is inference only). If
+# the sft rows fail on the opdyn stack, that is an OLMo-train issue, not env-wide.
+# Submit: condor_submit_bid <BID> experiments/condor/at_ml_olmo.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 160G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=$(base) SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=$(uselora) SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=16 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_olmo7b_mlolmo"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, pfrac, fresh, base, uselora from experiments/condor/configs_ml_olmo.txt
