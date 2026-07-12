@@ -119,13 +119,15 @@ class HFCausalLMModel(Model):
             # Gemma3's text model raises when a training forward has no
             # token_type_ids (it uses them to separate text from image
             # tokens). For text-only SFT they are all zeros, and TRL never
-            # supplies them. Inject zeros matching each call's input shape;
-            # this fires transiently inside forward, so generate()'s own
-            # model_kwargs bookkeeping never sees it.
+            # supplies them. Inject zeros matching each call's input shape,
+            # but ONLY in training mode: Gemma3 requires them only when
+            # training, and supplying them during generate() routes mask
+            # building through or_mask_function, which needs torch>=2.6
+            # (eval-mode generation works fine on torch 2.5.1 without them).
             _orig_forward = m.forward
 
             def _forward_with_token_type(*args, **kwargs):
-                if kwargs.get("token_type_ids") is None:
+                if m.training and kwargs.get("token_type_ids") is None:
                     ref = kwargs.get("input_ids")
                     if ref is None and args and torch.is_tensor(args[0]):
                         ref = args[0]
