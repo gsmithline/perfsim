@@ -1,0 +1,30 @@
+# HTCondor: Q6 diagnostic, one GPU job, NO new loop runs.
+# Scores the FROZEN reference model's perplexity on each round's saved
+# training corpus (op_raw) for the trap-cell beta trio. Decides whether the
+# anchored population's data becomes higher-probability under the reference
+# (feedback-alignment channel) or stays hard (gradient-domination channel).
+# Output: runs/pokec_gated_lm/<tag>/ref_ppl.json per tag.
+# Submit: condor_submit_bid <BID> experiments/condor/at_eval_refppl.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_ref_ppl.sh
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn ML_TARGET=Action BASE_MODEL=Qwen/Qwen2.5-7B-Instruct PPL_BATCH=64 TAGS=mla2dv2_e040_a040_b0_s0,mla2bv2_e040_a040_b0p5_s0,mla2bv2_e040_a040_b1_s0,mlat_e010_a040_rep_b0_s0,mlat_e010_a040_rep_b0p5_s0,mlat_e010_a040_rep_b1_s0"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/eval_refppl.out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/eval_refppl.err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/eval_refppl.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1
