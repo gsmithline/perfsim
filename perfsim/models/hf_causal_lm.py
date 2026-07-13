@@ -5,6 +5,7 @@ Needs to be broken up this code is messy, it should just be hte model
 
 from __future__ import annotations
 
+import functools
 import re
 from typing import TYPE_CHECKING, Callable, Sequence
 
@@ -126,6 +127,11 @@ class HFCausalLMModel(Model):
             # (eval-mode generation works fine on torch 2.5.1 without them).
             _orig_forward = m.forward
 
+            # functools.wraps keeps the original forward signature visible:
+            # generate() inspects it to decide capabilities like
+            # logits_to_keep, and an opaque (*args, **kwargs) wrapper makes
+            # the model return full-sequence logits and crash in sampling.
+            @functools.wraps(_orig_forward)
             def _forward_with_token_type(*args, **kwargs):
                 if m.training and kwargs.get("token_type_ids") is None:
                     ref = kwargs.get("input_ids")
