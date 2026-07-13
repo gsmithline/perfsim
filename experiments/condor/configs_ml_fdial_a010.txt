@@ -1,0 +1,7 @@
+mlatF_nat_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.0, 0.0
+mlatF_p100_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 1.0, 0.0
+mlatF_p065_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.65, 0.0
+mlatF_p040_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.40, 0.0
+mlatF_p033_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.33, 0.0
+mlatF_p015_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.15, 0.0
+mlatF_p005_e040_a010_frep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.1, 0.0, 1, 0.05, 0.0
