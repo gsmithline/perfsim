@@ -1,4 +1,3 @@
-# w3s42_frozen: 6 jobs, generated 2026-07-14 from configs_ml_frozen.txt
 frz_qwen_e010_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn
 frz_qwen_e040_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn
 frz_llama_e010_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, meta-llama/Llama-3.1-8B-Instruct, opdyn

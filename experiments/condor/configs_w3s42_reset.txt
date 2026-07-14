@@ -1,2 +1,1 @@
-# w3s42_reset: 1 jobs, generated 2026-07-14 from configs_ml_atlas_reset_s0.txt
 mlatR_e040_a040_rep_b0_s42, sft, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0

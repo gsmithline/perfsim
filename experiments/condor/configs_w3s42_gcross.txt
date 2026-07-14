@@ -1,4 +1,3 @@
-# w3s42_gcross: 6 jobs, generated 2026-07-14 from configs_ml_gamma_cross.txt
 mlatgx_gp15_e040_a040_rep_b0_s42, sft, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.4, 0.0, 0
 mlatgx_gp15_e040_a040_rep_b0p5_s42, sft_kl, 0.5, 42, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.4, 0.0, 0
 mlatgx_gp15_e040_a040_rep_b1_s42, sft_kl, 1.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.4, 0.0, 0

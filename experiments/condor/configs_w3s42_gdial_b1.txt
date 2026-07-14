@@ -1,3 +1,2 @@
-# w3s42_gdial_b1: 2 jobs, generated 2026-07-14 from configs_ml_atlas_gdial_b1.txt
 mlatA_e040_a015_rep_b1_s42, sft_kl, 1.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.15, 0.0, 0
 mlatA_e040_a030_rep_b1_s42, sft_kl, 1.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.3, 0.0, 0
