@@ -1,0 +1,3 @@
+# w3s42_gdial_b0p5: 2 jobs, generated 2026-07-14 from configs_ml_atlas_dials_b0p5.txt
+mlatA_e040_a015_rep_b0p5_s42, sft_kl, 0.5, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.15, 0.0, 0, 0.0, 0.0
+mlatA_e040_a030_rep_b0p5_s42, sft_kl, 0.5, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.3, 0.0, 0, 0.0, 0.0

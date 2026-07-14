@@ -1,0 +1,15 @@
+# fig6_gcross: 12 jobs, gamma {+1.5,-1.5} x eps_AI {0.10,0.20} x beta
+# {0,0.5,1}, trap row e040, rep/continual, seed 0. Generated 2026-07-14
+# from configs_ml_gamma_cross.txt (a040 lines, eps_ai swapped).
+mlatgx_gp15_e040_a010_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gp15_e040_a010_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gp15_e040_a010_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gp15_e040_a020_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatgx_gp15_e040_a020_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatgx_gp15_e040_a020_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 1.5, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatgx_gn15_e040_a010_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gn15_e040_a010_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gn15_e040_a010_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.1, 0.0, 0
+mlatgx_gn15_e040_a020_rep_b0_s0, sft, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatgx_gn15_e040_a020_rep_b0p5_s0, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.2, 0.0, 0
+mlatgx_gn15_e040_a020_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.4, -1.5, 0.3, loop, 0.0, 0.2, 0.0, 0

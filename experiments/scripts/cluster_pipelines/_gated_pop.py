@@ -267,6 +267,65 @@ def sft_grad_norm(lm, train_data, fmt, n_examples):
         module.zero_grad(set_to_none=True)
 
 
+def kl_grad_decompose(lm, learner, train_data, fmt, n_examples):
+    """Step-0 gradient decomposition of the KL-SFT objective on the first
+    n_examples rows: |g_CE|, |beta*g_KL|, ratio and cosine. Same protocol as
+    sft_grad_norm (per-example backward, mean over n; grad_norm0 here equals
+    its output). The KL term mirrors KLSFTLearner.compute_loss: completion
+    tokens only (labels != -100), next-token shift, mean over completion
+    tokens, scaled by kl_beta. Rescue-by-force reads as ratio >> 1 with
+    negative cosine; feedback alignment as the cosine rotating positive."""
+    kl_beta = float(getattr(learner, "kl_beta", 0.0))
+    if kl_beta <= 0:
+        return {}
+    module = lm.inner_model
+    ref = learner._ensure_ref()
+    idx = train_data["agent_idx"]
+    y = train_data["y"].squeeze(-1) if train_data["y"].ndim > 1 else train_data["y"]
+    n = min(n_examples, idx.shape[0])
+    if n == 0:
+        return {}
+    was_cache = bool(getattr(module.config, "use_cache", False))
+    module.config.use_cache = False
+    try:
+        module.zero_grad(set_to_none=True)
+        for i in range(n):
+            ids, labels = _example_ids(lm, idx[i], y[i], fmt)
+            (module(ids, labels=labels).loss / n).backward()
+        task_sq, g_task = 0.0, {}
+        for name, p in module.named_parameters():
+            if p.requires_grad and p.grad is not None:
+                g = p.grad.detach().float()
+                task_sq += float(g.pow(2).sum())
+                g_task[name] = g.cpu()
+        module.zero_grad(set_to_none=True)
+        for i in range(n):
+            ids, labels = _example_ids(lm, idx[i], y[i], fmt)
+            logits = module(ids).logits
+            with torch.no_grad():
+                ref_logits = ref(input_ids=ids).logits
+            logp = F.log_softmax(logits[:, :-1, :], dim=-1)
+            logq = F.log_softmax(ref_logits[:, :-1, :], dim=-1)
+            mask_shift = (labels != -100).float()[:, 1:]
+            kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
+            kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
+            (kl_beta * kl / n).backward()
+        kl_sq, dot = 0.0, 0.0
+        for name, p in module.named_parameters():
+            if p.requires_grad and p.grad is not None:
+                g = p.grad.detach().float()
+                kl_sq += float(g.pow(2).sum())
+                if name in g_task:
+                    dot += float((g.cpu() * g_task[name]).sum())
+        task_norm, kl_norm = float(np.sqrt(task_sq)), float(np.sqrt(kl_sq))
+        return {"grad_norm0": task_norm, "grad_kl_norm0": kl_norm,
+                "grad_ratio0": kl_norm / max(task_norm, 1e-12),
+                "grad_cos0": dot / max(task_norm * kl_norm, 1e-12)}
+    finally:
+        module.config.use_cache = was_cache
+        module.zero_grad(set_to_none=True)
+
+
 @torch.no_grad()
 def probe_predictions(lm, probe_prompts):
     """Greedy generations on the fixed probe prompts, parsed to [0,1] floats."""

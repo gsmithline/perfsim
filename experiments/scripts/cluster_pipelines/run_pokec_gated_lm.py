@@ -23,6 +23,11 @@ appended one JSON line per round to telemetry.json (crash-safe):
   l_init      SFT completion CE of the current adapter on this round's batch,
               BEFORE the gradient steps, + batch_var (target variance)
   grad_norm0  trainable-grad norm of the CE objective at step 0 (no KL term)
+  grad_kl_norm0 grad_ratio0 grad_cos0   (sft_kl runs, GRAD_DECOMP=1 default)
+              step-0 norm of the beta*KL gradient on the same probe rows,
+              ratio beta*|g_KL|/|g_CE|, and cos(g_CE, g_KL): the Q6 channel
+              decomposition (domination = ratio >> 1 at negative cos;
+              alignment = cos rotating positive as the corpus goes easy)
   probe_pred  predictions on a fixed innate-stratified probe set of N_PROBE
               real agents (chosen at round 0, saved to probe_set.json);
               displacement / leash are computed offline from these
@@ -435,6 +440,7 @@ def main() -> int:
     n_probe = _env_int("N_PROBE", 64)
     tel_eval_cap = _env_int("TEL_EVAL_CAP", 64)
     grad_norm_n = _env_int("GRAD_NORM_N", 8)
+    grad_decomp = _env_int("GRAD_DECOMP", 1)   # KL/CE gradient split, sft_kl only
     # FRESH_EACH_ROUND=1: retrain a NEW adapter from the cached base every round
     # (weights do NOT carry over) -- the model-collapse / Gerstgrasser protocol.
     # Default 0 = continual SFT (weights persist, the performative-prediction RGD).
@@ -491,6 +497,7 @@ def main() -> int:
         "pop_model": pop_model, "eps": eps, "eps_ai": eps_ai, "gamma_bias": gamma_bias,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         "run_mode": run_mode, "canary_delta": canary_delta,
+        "grad_decomp": grad_decomp,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
@@ -747,8 +754,14 @@ def main() -> int:
                 loss_block["l_init"] = gp.sft_batch_loss(lm, train_data, format_number,
                                                          tel_eval_cap)
                 loss_block["batch_var"] = float(y_flat.var(unbiased=False))
-                loss_block["grad_norm0"] = gp.sft_grad_norm(lm, train_data, format_number,
-                                                            grad_norm_n)
+                if (grad_decomp and training_style == "sft_kl"
+                        and float(getattr(learner, "kl_beta", 0.0)) > 0):
+                    # Q6 channel decomposition; includes grad_norm0 (same protocol)
+                    loss_block.update(gp.kl_grad_decompose(
+                        lm, learner, train_data, format_number, grad_norm_n))
+                else:
+                    loss_block["grad_norm0"] = gp.sft_grad_norm(lm, train_data, format_number,
+                                                                grad_norm_n)
             if fresh_adapter_snap is not None and t > 0:
                 gp.load_trainable(lm.inner_model, fresh_adapter_snap)  # reset to base: fresh model
             if training_style != "frozen" and train_data is not None:
