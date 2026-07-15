@@ -1,0 +1,11 @@
+Drama, Drama
+Romance, Romance
+Comedy, Comedy
+Action, Action
+Thriller, Thriller
+War, War
+Crime, Crime
+Sci-Fi, Sci_Fi
+Adventure, Adventure
+Mystery, Mystery
+Children's, Children_s

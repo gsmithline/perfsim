@@ -461,6 +461,16 @@ def main() -> int:
     # (profile ranks by yhat matched to user ranks by innate). Exclusive
     # with PROFILE_SHUFFLE_P.
     sort_q = _env_float("PROFILE_SORT_Q", 0.0)
+    # PROFILE_DROP_COLS (Tree-3 arm C): comma list of profile columns removed
+    # before prompt building -- build_prompt skips missing keys, so the line
+    # vanishes for every agent. Prompts only; graph/innate are already built.
+    drop_cols = [c.strip() for c in os.environ.get("PROFILE_DROP_COLS", "").split(",")
+                 if c.strip()]
+    # PROFILE_PERMUTE_COLS (Tree-3 arm D): comma list of columns jointly
+    # permuted ACROSS agents -- group counts preserved, person-feature link
+    # broken. One fixed permutation (seeded by run seed), saved to disk.
+    permute_cols = [c.strip() for c in os.environ.get("PROFILE_PERMUTE_COLS", "").split(",")
+                    if c.strip()]
     # AB_SWEEPS>1 (ab only): sweeps per round, gate blended after each sweep.
     # With POP_RESET this is the equilibrated-response protocol: predictions +
     # innate seed a Deffuant run, the population relaxes under the platform,
@@ -483,6 +493,11 @@ def main() -> int:
         raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
     if shuffle_p > 0 and sort_q > 0:
         raise ValueError("PROFILE_SHUFFLE_P and PROFILE_SORT_Q are exclusive")
+    if set(drop_cols) & set(permute_cols):
+        raise ValueError("a column cannot be in both PROFILE_DROP_COLS and "
+                         "PROFILE_PERMUTE_COLS")
+    if (drop_cols or permute_cols) and (shuffle_p > 0 or sort_q > 0):
+        raise ValueError("demographic knobs are exclusive with the feature dial")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -502,6 +517,7 @@ def main() -> int:
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
         "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
+        "profile_drop_cols": drop_cols, "profile_permute_cols": permute_cols,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -569,6 +585,30 @@ def main() -> int:
             {"q": sort_q, "users_by_y": users_by_y.tolist(),
              "profs_by_idx": profs_by_idx.tolist()}))
         print(f"[run] PROFILE_SORT_Q={sort_q}: comonotone rematch |S|={k}", flush=True)
+    if permute_cols:
+        prof_df = setup["profiles"].copy()
+        missing = [c for c in permute_cols if c not in prof_df.columns]
+        if missing:
+            raise ValueError(f"PROFILE_PERMUTE_COLS not in profiles: {missing}")
+        prng = np.random.default_rng(52000 + seed)
+        perm = prng.permutation(len(prof_df))
+        for c in permute_cols:
+            prof_df[c] = prof_df[c].values[perm]
+        setup["profiles"] = prof_df
+        (out_dir / "permute_cols.json").write_text(json.dumps(
+            {"cols": permute_cols, "seed": seed, "perm": perm.tolist()}))
+        print(f"[run] PROFILE_PERMUTE_COLS={','.join(permute_cols)}: jointly "
+              f"permuted across {len(prof_df)} agents", flush=True)
+    if drop_cols:
+        prof_df = setup["profiles"].copy()
+        missing = [c for c in drop_cols if c not in prof_df.columns]
+        if missing:
+            raise ValueError(f"PROFILE_DROP_COLS not in profiles: {missing}")
+        prof_df = prof_df.drop(columns=drop_cols)
+        setup["profiles"] = prof_df
+        (out_dir / "drop_cols.json").write_text(json.dumps({"cols": drop_cols}))
+        print(f"[run] PROFILE_DROP_COLS={','.join(drop_cols)}: prompt lines "
+              f"removed for all agents", flush=True)
     n = setup["n"]
     innate = setup["innate"]
     innate_mean = float(innate.mean())

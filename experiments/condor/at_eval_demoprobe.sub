@@ -1,0 +1,35 @@
+# Tree-2 frozen counterfactual probe: 11 GPU shards, ONE per target genre.
+# For every user of each target's world: hold the 10 taste features fixed,
+# vary ONLY demographics (age curve 20-60 x gender; occupation omitted from
+# ALL counterfactual AND bridge variants so prompts differ in nothing else;
+# natural_full keeps occupation as the loop-identical descriptive variant;
+# nodemo drops all three lines, matching Tree-3 arm C). Frozen Qwen, greedy.
+# ~13 variants x ~720 users per shard ~ 9.4k generations per job.
+# Output: runs/pokec_gated_lm/demo_probe/probe_<target>.json (SKIP_DONE=1,
+# safe to rerun any shard).
+# Age-effect definition + Tree-3 preregistration: notes/QUESTIONS.md Q7.
+# Submit: condor_submit_bid <BID> experiments/condor/at_eval_demoprobe.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_demo_probe.sh
+arguments         = $(tgt)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn BASE_MODEL=Qwen/Qwen2.5-7B-Instruct AGES=20,30,40,50,60 GEN_CHUNK=64 OUT_DIR=runs/pokec_gated_lm/demo_probe SKIP_DONE=1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/demoprobe_$(safe).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/demoprobe_$(safe).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/demoprobe_$(safe).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tgt, safe from experiments/condor/configs_demoprobe.txt
