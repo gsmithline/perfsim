@@ -1,0 +1,29 @@
+# TREE-3 nested-consistency probe, FROZEN pass (t=0): 4 models x War
+# target x 4 conditioning levels (L0 tastes / +gender / +age / +both),
+# ~2.9k gens per shard. Offline scoring computes C_root, C_level1 (both
+# tree orders) and W1 level distances. g131 fenced. 2026-07-15.
+# Submit: condor_submit_bid <BID> experiments/condor/at_tree3_consistency_frozen.sub
+#
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_tree.sh
+arguments         = $(model) $(out) $(hfhome) $(adapter) $(chunk)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 79000) && (TARGET.Machine =!= "g131.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn ML_TARGET=War HF_HUB_OFFLINE=1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue model, mtag, out, hfhome, adapter, chunk from experiments/condor/configs_tree3_frozen.txt

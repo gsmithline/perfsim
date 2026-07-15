@@ -1,0 +1,101 @@
+{
+ "Action": {
+  "n": 723,
+  "bridge_gender": 0.1164,
+  "bridge_gender_full": 0.1184,
+  "bridge_age": 0.0091,
+  "displacement": -0.1722,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Adventure": {
+  "n": 723,
+  "bridge_gender": 0.047,
+  "bridge_gender_full": 0.0466,
+  "bridge_age": -0.0235,
+  "displacement": -0.2114,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Children's": {
+  "n": 723,
+  "bridge_gender": -0.0749,
+  "bridge_gender_full": -0.11,
+  "bridge_age": 0.0598,
+  "displacement": -0.1343,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Comedy": {
+  "n": 723,
+  "bridge_gender": 0.0006,
+  "bridge_gender_full": -0.0089,
+  "bridge_age": -0.0014,
+  "displacement": -0.0436,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Crime": {
+  "n": 723,
+  "bridge_gender": 0.031,
+  "bridge_gender_full": 0.0393,
+  "bridge_age": -0.0521,
+  "displacement": -0.0571,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Drama": {
+  "n": 723,
+  "bridge_gender": -0.0543,
+  "bridge_gender_full": -0.0278,
+  "bridge_age": -0.0663,
+  "displacement": -0.1373,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Mystery": {
+  "n": 723,
+  "bridge_gender": 0.0034,
+  "bridge_gender_full": 0.0044,
+  "bridge_age": -0.0359,
+  "displacement": -0.1203,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Romance": {
+  "n": 723,
+  "bridge_gender": -0.0621,
+  "bridge_gender_full": -0.0693,
+  "bridge_age": -0.0066,
+  "displacement": -0.0612,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Sci-Fi": {
+  "n": 723,
+  "bridge_gender": 0.0096,
+  "bridge_gender_full": 0.0272,
+  "bridge_age": 0.0161,
+  "displacement": -0.3481,
+  "nF": 203,
+  "n_old": 347
+ },
+ "Thriller": {
+  "n": 723,
+  "bridge_gender": 0.0365,
+  "bridge_gender_full": 0.0491,
+  "bridge_age": -0.0656,
+  "displacement": -0.2536,
+  "nF": 203,
+  "n_old": 347
+ },
+ "War": {
+  "n": 723,
+  "bridge_gender": 0.1255,
+  "bridge_gender_full": 0.0907,
+  "bridge_age": -0.0355,
+  "displacement": -0.3003,
+  "nF": 203,
+  "n_old": 347
+ }
+}

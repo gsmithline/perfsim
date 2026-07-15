@@ -441,6 +441,11 @@ def main() -> int:
     tel_eval_cap = _env_int("TEL_EVAL_CAP", 64)
     grad_norm_n = _env_int("GRAD_NORM_N", 8)
     grad_decomp = _env_int("GRAD_DECOMP", 1)   # KL/CE gradient split, sft_kl only
+    # SAVE_ADAPTER_ROUNDS="10,30" (1-indexed): save the LoRA adapter after
+    # training in those rounds (adapter_r<k>/), for checkpointed frozen evals
+    # (Tree-3 consistency probe). Round-0 adapter is always saved anyway.
+    save_adapter_rounds = {int(x) for x in os.environ.get("SAVE_ADAPTER_ROUNDS", "").split(",")
+                           if x.strip()}
     # FRESH_EACH_ROUND=1: retrain a NEW adapter from the cached base every round
     # (weights do NOT carry over) -- the model-collapse / Gerstgrasser protocol.
     # Default 0 = continual SFT (weights persist, the performative-prediction RGD).
@@ -513,6 +518,7 @@ def main() -> int:
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         "run_mode": run_mode, "canary_delta": canary_delta,
         "grad_decomp": grad_decomp,
+        "save_adapter_rounds": sorted(save_adapter_rounds),
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
@@ -814,6 +820,9 @@ def main() -> int:
                 if use_lora:
                     lm.inner_model.save_pretrained(str(out_dir / "round0_adapter"))
                 torch.save(round0_batch, out_dir / "round0_batch.pt")
+            if use_lora and (t + 1) in save_adapter_rounds:
+                lm.inner_model.save_pretrained(str(out_dir / f"adapter_r{t + 1}"))
+                print(f"[run] saved adapter_r{t + 1}", flush=True)
             # weight-space performative-stability step ||theta_t - theta_{t-1}|| on
             # the LoRA adapter (continual = RGD convergence; fresh = fit-to-fit drift)
             if use_lora and training_style != "frozen":

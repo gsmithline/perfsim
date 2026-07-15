@@ -1,0 +1,2 @@
+mlawC_e010_a040_rep_b1_s0, sft_kl, 1.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0
+mlawC_e010_a040_rep_b1_s42, sft_kl, 1.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0

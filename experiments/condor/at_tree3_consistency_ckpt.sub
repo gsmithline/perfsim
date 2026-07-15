@@ -1,0 +1,28 @@
+# TREE-3 nested-consistency probe, CHECKPOINT pass: Qwen arm-B b1 runs
+# x adapters {round0, r10, r30} x 4 levels. DO NOT SUBMIT until the
+# at_tree3_warB batch has finished (adapter dirs must exist). 2026-07-15.
+# Submit: condor_submit_bid <BID> experiments/condor/at_tree3_consistency_ckpt.sub
+#
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_tree.sh
+arguments         = $(model) $(out) $(hfhome) $(adapter) $(chunk)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 79000) && (TARGET.Machine =!= "g131.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn ML_TARGET=War HF_HUB_OFFLINE=1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue model, mtag, out, hfhome, adapter, chunk from experiments/condor/configs_tree3_ckpt.txt
