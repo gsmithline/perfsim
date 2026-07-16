@@ -62,6 +62,15 @@ DO_SAMPLE="${DO_SAMPLE:-0}"
 GEN_TEMPERATURE="${19:-${GEN_TEMPERATURE:-1.0}}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
 
+# In-context runs with many exemplars build ~2k-token prompts; generating a
+# full GEN_BATCH_SIZE of them at once overflows the 80GB GPU KV-cache on the
+# larger models (OLMo-2-7B has no GQA, Gemma-3-12B is big). k8/d15 fit at 32;
+# k32 needs a smaller gen batch. Frozen ICL only -> slower generation is fine.
+ICL_K="${ICL_K:-0}"
+if [ "$ICL_K" -ge 16 ]; then
+  GEN_BATCH_SIZE="${GEN_BATCH_SIZE_ICL:-8}"
+fi
+
 echo "[run_one_pokec_gated] host=$(hostname) gpu=$(nvidia-smi -L 2>/dev/null | head -1 || echo none)"
 echo "[run_one_pokec_gated] tag=$RUN_TAG style=$TRAINING_STYLE beta=$KL_BETA seed=$SEED deploy_every=$DEPLOY_EVERY regime=$DATA_REGIME pscale=$PLATFORM_SUS_SCALE anchor=$ANCHOR_MODE pop=$POP_MODEL eps=$EPS gamma=$GAMMA_BIAS w=$W_PLAT mode=$RUN_MODE canary=$CANARY_DELTA lam=$INNATE_LAMBDA model=$BASE_MODEL"
 
@@ -84,6 +93,9 @@ fi
 export WANDB_DIR="${WANDB_DIR:-$REPO/wandb}"
 export HF_HOME="${HF_HOME:-/home/gsmithline/.cache/huggingface}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+# defragment the CUDA allocator: the k32 ICL OOMs were only ~700MB short with
+# ~22GB reserved-but-unallocated (fragmentation from long, variable prompts).
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 cd "$REPO"
 
