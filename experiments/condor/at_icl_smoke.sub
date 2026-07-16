@@ -27,5 +27,8 @@ notification      = Complete
 notify_user       = gabriel.smithline@tue.ellis.eu
 max_retries       = 2
 on_exit_hold      = (ExitCode =!= 0)
+# auto-release transient node/GPU-enumeration holds (bounded: <5 starts,
+# 3-min backoff) so a bad node re-rolls itself; a real bug still stops after 5.
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
 
 queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, pfrac, fresh, base, uselora, iclk, icldays, iclsel from experiments/condor/configs_icl_smoke.txt
