@@ -34,10 +34,13 @@ link act1_open_loop/I2_frozen_serve \
   qwen/frozen_attractor_dists.png qwen/crossmodel_drift.png qwen/olmo_frozen_retrain.png
 link act1_open_loop/I3_nf_train_only \
   qwen/nf_ladder.png
-# the serve x train 2x2 that ties Act I -> Act II (heatmaps + the
-# opinion-distribution companion that shows the sorting mechanism)
+# the serve x train 2x2 that ties Act I -> Act II, with companions:
+#   _2x2    = dr | ppl heatmaps (the summary)
+#   _dists  = r30 opinion histograms (the sorting mechanism)
+#   _regime = replace/accumulate/pristine robustness (damage is regime-specific)
+#   _traj   = per-round dr(t)/ppl(t) (when the corners diverge)
 link hinge/serve_x_train \
-  fig_hinge_2x2.png fig_hinge_dists.png
+  fig_hinge_2x2.png fig_hinge_dists.png fig_hinge_regime.png fig_hinge_traj.png
 
 # ---- ACT II: the closed loop ----
 link act2_closed_loop/II1_prior \
