@@ -34,6 +34,9 @@ link act1_open_loop/I2_frozen_serve \
   qwen/frozen_attractor_dists.png qwen/crossmodel_drift.png qwen/olmo_frozen_retrain.png
 link act1_open_loop/I3_nf_train_only \
   qwen/nf_ladder.png
+# the serve x train 2x2 that ties Act I -> Act II
+link hinge/serve_x_train \
+  fig_hinge_2x2.png
 
 # ---- ACT II: the closed loop ----
 link act2_closed_loop/II1_prior \
