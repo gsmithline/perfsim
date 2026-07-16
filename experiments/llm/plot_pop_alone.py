@@ -122,7 +122,5 @@ ax.set_ylabel("diversity kept  dr(30)", fontsize=10)
 ax.set_xticks(EPS)
 ax.set_ylim(0, 1.08)
 ax.legend(frameon=False, fontsize=8, loc="lower left")
-ax.set_title("With no model in the loop, heterophilic\n"
-             "populations self-collapse; homophilic stay wide", fontsize=10)
-fig.savefig(f"{OUT}/fig_pop_alone.png", dpi=140)
+fig.savefig(f"{OUT}/fig_pop_alone.png", dpi=140, bbox_inches="tight")
 print(f"saved {OUT}/fig_pop_alone.png and fig_pop_alone.json")

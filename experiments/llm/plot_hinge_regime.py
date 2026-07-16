@@ -84,7 +84,6 @@ axp.text(2.02, 2.0, "healthy ~2", color="#2980b9", fontsize=7, va="bottom", ha="
 axp.set_yscale("log")
 axp.set_xticks(x); axp.set_xticklabels(REGIMES)
 axp.set_ylabel("model perplexity  ppl (log)", fontsize=9)
-axp.set_title("model rot is a REPLACE story", fontsize=9.5)
 axp.legend(frameon=False, fontsize=7.5, loc="upper right")
 
 axd.plot(x, nf_dr, "-o", color=NF, lw=2, ms=6, label="no feedback (serve off)")
@@ -92,12 +91,8 @@ axd.plot(x, cl_dr, "-s", color=CL, lw=2, ms=6, label="closed (serve on)")
 axd.set_xticks(x); axd.set_xticklabels(REGIMES)
 axd.set_ylim(0, 1.0)
 axd.set_ylabel("population diversity  dr(30)", fontsize=9)
-axd.set_title("a healthier model also spares the population", fontsize=9.5)
 axd.legend(frameon=False, fontsize=7.5, loc="upper left")
 
-fig.suptitle("The hinge's damage is regime-specific: accumulate/pristine keep the "
-             "model healthy (ppl ~2-3)\nand — when served — leave the population "
-             "far more diverse than replace does", fontsize=10)
 fig.text(0.5, -0.03, "Qwen ML-Action, $\\epsilon$=0.4, $\\beta$=0, seed 0.  "
          "no-feedback pristine not run (serve-off pop is regime-invariant anyway).",
          ha="center", va="top", fontsize=7.5, color="#555555")

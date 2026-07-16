@@ -130,20 +130,15 @@ for i in range(2):
         ax.axvline(inn_np.mean(), color="#000000", lw=0.7, ls=":", alpha=0.5)
         serve = "serve ON" if j else "serve off"
         train = "train ON" if i else "train off"
-        ax.set_title(f"{name}   ({serve}, {train})", fontsize=9.5,
-                     color=COLOR[name], fontweight="bold")
-        ax.text(0.03, 0.92, f"dr = {dr:.2f}", transform=ax.transAxes,
-                fontsize=9, va="top")
+        ax.text(0.03, 0.95, f"{name}\n({serve}, {train})\ndr = {dr:.2f}",
+                transform=ax.transAxes, fontsize=9, va="top",
+                color=COLOR[name], fontweight="bold", linespacing=1.4)
         if i == 1:
             ax.set_xlabel("opinion (Action taste)", fontsize=9)
         if j == 0:
             ax.set_ylabel("density", fontsize=9)
         ax.set_xlim(0, 1)
 axes[0, 0].legend(frameon=False, fontsize=7.5, loc="upper right")
-fig.suptitle("Why the dr numbers look like they do: frozen SORTS the population "
-             "onto two prior\nmodes (bimodal, dr high); closed collapses it to "
-             "one spike; train alone leaves it untouched",
-             fontsize=10)
 fig.text(0.5, -0.02, "Qwen ML-Action, $\\epsilon$=0.4, replace, $\\beta$=0, "
          "seed 0.  Dotted line = innate mean; black outline = innate distribution.",
          ha="center", va="top", fontsize=7.5, color="#555555")

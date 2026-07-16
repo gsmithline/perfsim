@@ -117,7 +117,6 @@ for name, y in [("no-AI", noai), ("frozen", frz_dr), ("no feedback", nf_dr), ("c
 axd.axhline(1.0, color="#999", lw=0.8, ls="--")
 axd.set_xlabel("round", fontsize=9)
 axd.set_ylabel("population diversity  dr(t)", fontsize=9)
-axd.set_title("population: serve moves it; frozen sorts UP", fontsize=9.5)
 axd.legend(frameon=False, fontsize=7.5, loc="upper right")
 axd.set_xlim(1, 30)
 
@@ -127,13 +126,9 @@ for name, y in [("frozen", frz_ppl), ("no feedback", nf_ppl), ("closed", cl_ppl)
 axp.set_yscale("log")
 axp.set_xlabel("round", fontsize=9)
 axp.set_ylabel("model perplexity  ppl(t) (log)", fontsize=9)
-axp.set_title("model: train rots it, progressively", fontsize=9.5)
 axp.legend(frameon=False, fontsize=7.5, loc="upper left")
 axp.set_xlim(1, 30)
 
-fig.suptitle("When the corners diverge: the population departs only under SERVE "
-             "(frozen sorts up early),\nthe model rots only under TRAIN and does "
-             "so gradually as its corpus homogenizes", fontsize=10)
 fig.text(0.5, -0.03, "Qwen ML-Action, $\\epsilon$=0.4, replace, $\\beta$=0, seed 0.  "
          "no-AI has no model; frozen weights never move.",
          ha="center", va="top", fontsize=7.5, color="#555555")

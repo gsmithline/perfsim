@@ -34,7 +34,7 @@ link act1_open_loop/I2_frozen_serve \
   qwen/frozen_attractor_dists.png qwen/crossmodel_drift.png qwen/olmo_frozen_retrain.png \
   fig_frozen_mechanisms.png
 link act1_open_loop/I3_nf_train_only \
-  qwen/nf_ladder.png
+  qwen/nf_ladder.png fig_nf_homophily.png
 # the serve x train 2x2 that ties Act I -> Act II, with companions:
 #   _2x2    = dr | ppl heatmaps (the summary)
 #   _dists  = r30 opinion histograms (the sorting mechanism)

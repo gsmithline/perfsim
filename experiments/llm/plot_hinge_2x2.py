@@ -91,7 +91,7 @@ plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "stix",
 fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.6), constrained_layout=True)
 
 
-def panel(ax, M, title, cmap, norm, fmt, good_high):
+def panel(ax, M, label, cmap, norm, fmt, good_high):
     im = ax.imshow(M, cmap=cmap, norm=norm, aspect="equal")
     for i in range(2):
         for j in range(2):
@@ -104,28 +104,24 @@ def panel(ax, M, title, cmap, norm, fmt, good_high):
                     color=txt, fontsize=11)
     ax.set_xticks([0, 1]); ax.set_xticklabels(["serve off", "serve ON"])
     ax.set_yticks([0, 1]); ax.set_yticklabels(["train off", "train ON"])
-    ax.set_title(title, fontsize=10)
     for s in ax.spines.values():
         s.set_visible(False)
     ax.tick_params(length=0)
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cb.ax.tick_params(labelsize=7)
+    cb.set_label(label, fontsize=9)
     return im
 
 
 # population diversity: sequential; low dr = collapsed (bad for population)
-panel(axes[0], DR, "population diversity  dr(30)\n(serve moves it; frozen SORTS up)",
+panel(axes[0], DR, "population diversity  dr(30)",
       cmap="YlGnBu", norm=plt.Normalize(0.0, 1.0),
       fmt=lambda v: f"{v:.2f}", good_high=True)
 # model health: log ppl; high = rotted (bad for model)
-panel(axes[1], PPL, "model perplexity  ppl\n(train rots it; serve amplifies)",
+panel(axes[1], PPL, "model perplexity  ppl",
       cmap="OrRd", norm=LogNorm(vmin=10, vmax=60),
       fmt=lambda v: f"{v:.0f}", good_high=False)
 
-fig.suptitle("The hinge — each object degrades through a different wire:\n"
-             "train rots the model · serve moves the population · "
-             "only the closed loop fails both",
-             fontsize=10.5)
 fig.text(0.5, -0.02, "Qwen ML-Action, $\\epsilon$=0.4 (wide mixing), replace, "
          "$\\beta$=0, seed 0.  no-AI/frozen ppl = untrained base.",
          ha="center", va="top", fontsize=7.5, color="#555555")

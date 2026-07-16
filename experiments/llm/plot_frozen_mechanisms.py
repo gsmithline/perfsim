@@ -76,12 +76,11 @@ for c, (mkey, mname, mech, color) in enumerate(MODELS):
         ax.hist(d["op"], bins=bins, color=color, alpha=0.75, density=True)
         ax.axvline(float(d["inn"].mean()), color="#000", lw=0.6, ls=":", alpha=0.5)
         cc = "n/a" if not np.isfinite(d["corr"]) else f"{d['corr']:.2f}"
-        ax.text(0.04, 0.94, f"dr {d['dr']:.2f}\ncorr {cc}", transform=ax.transAxes,
-                fontsize=8, va="top", linespacing=1.4)
+        head = f"{mname} · {mech}\n" if r == 0 else ""
+        ax.text(0.04, 0.95, f"{head}dr {d['dr']:.2f}   corr {cc}",
+                transform=ax.transAxes, fontsize=8.5, va="top", linespacing=1.5,
+                color=color, fontweight="bold")
         ax.set_xlim(0, 1)
-        if r == 0:
-            ax.set_title(f"{mname}\n{mech}", fontsize=9.5, color=color,
-                         fontweight="bold")
         if c == 0:
             ax.set_ylabel(f"$\\epsilon$={eps}\ndensity", fontsize=9)
         if r == 1:
@@ -91,11 +90,6 @@ with open(f"{OUT}/fig_frozen_mechanisms.json", "w") as fh:
     json.dump({"cell": "frozen serve, 4 models x eps{0.4,0.1}, s0",
                "innate_mean": 0.63, "metrics": out}, fh, indent=2)
 
-fig.suptitle("Frozen serving fails three ways, set by the prior's geometry: "
-             "Llama = POINT MASS (dr→0), Qwen = SORTING onto two modes\n"
-             "(bimodal, dr high), Gemma/OLMo = NUDGING (level shifts, individual "
-             "kept: corr>0).   corr(pred,innate) grows left→right",
-             fontsize=9.5)
 fig.text(0.5, -0.02, "ML-Action, replace, seed 0.  Black outline = innate "
          "distribution; dotted = innate mean (~0.63).  Rows: wide vs slow mixing.",
          ha="center", va="top", fontsize=7.5, color="#555555")
