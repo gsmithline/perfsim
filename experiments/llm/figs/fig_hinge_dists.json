@@ -1,0 +1,12 @@
+{
+  "cell": "Qwen ML-Action e040 rep b0 s0",
+  "bins": 30,
+  "innate_mean": 0.6300539970397949,
+  "dr": {
+    "no-AI": 0.21802644431591034,
+    "frozen": 0.7131850943529181,
+    "no feedback": 0.22655637934379416,
+    "closed": 0.2680252574435199
+  },
+  "note": "no-AI regenerated via ab_sweep gamma0 eps0.4 seed0"
+}

@@ -75,7 +75,7 @@ DR = np.array([[noai_dr, frz_dr],
 PPL = np.array([[base_ppl, frz_ppl],
                 [nf_ppl,   cl_ppl]])
 NAME = np.array([["no-AI", "frozen"],
-                 ["nf", "closed"]])
+                 ["no feedback", "closed"]])
 
 data = {"cell": "Qwen ML-Action e040 rep b0 s0", "tail": TAIL,
         "rows": "train off/on", "cols": "serve off/on",
