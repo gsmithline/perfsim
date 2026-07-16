@@ -1,0 +1,10 @@
+icl_olmo_e040_a040_k8_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 8, 0, random
+icl_olmo_e040_a040_k32_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 32, 0, random
+icl_olmo_e040_a040_d15_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 0, 15, random
+icl_olmo_e040_a040_d15k8_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 8, 15, random
+icl_olmo_e040_a040_d15k32_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 32, 15, random
+icl_olmo_e010_a040_k8_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 8, 0, random
+icl_olmo_e010_a040_k32_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 32, 0, random
+icl_olmo_e010_a040_d15_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 0, 15, random
+icl_olmo_e010_a040_d15k8_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 8, 15, random
+icl_olmo_e010_a040_d15k32_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, allenai/OLMo-2-1124-7B-Instruct, 0, 32, 15, random

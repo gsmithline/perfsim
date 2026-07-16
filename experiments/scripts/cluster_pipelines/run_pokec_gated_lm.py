@@ -226,7 +226,7 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
     adj = nx.to_numpy_array(h, nodelist=range(len(Pl)))
     n = len(Pl)
 
-    def build_prompt(profile, tokenizer):
+    def build_prompt(profile, tokenizer, context_block=None):
         lines = []
         age = profile.get("age")
         if age is not None and not pd.isna(age) and int(age) > 0:
@@ -242,10 +242,11 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
             if v is not None and not pd.isna(v):
                 lines.append(f"- average rating of {gname} movies: {float(v):.1f} out of 5")
         body = "\n".join(lines) if lines else "- (no profile info)"
+        ctx = f"\n{context_block}\n" if context_block else ""
         user_msg = (
             f"Estimate how much this user likes {target} movies based on their profile.\n"
             "Profile:\n"
-            f"{body}\n\n"
+            f"{body}\n{ctx}\n"
             f"Output a single number in [0, 1] (1 = loves {target}, 0 = dislikes {target}). "
             "Respond with only the number, e.g. 0.42."
         )
@@ -441,6 +442,20 @@ def main() -> int:
     tel_eval_cap = _env_int("TEL_EVAL_CAP", 64)
     grad_norm_n = _env_int("GRAD_NORM_N", 8)
     grad_decomp = _env_int("GRAD_DECOMP", 1)   # KL/CE gradient split, sft_kl only
+    # In-context adaptation (frozen style, movielens only; no gradients):
+    # ICL_DAYS = D > 0: each agent's prompt carries their OWN opinion history
+    #   over the last D days (personal memory depth -- the primary dose knob;
+    #   D=0 == plain frozen, large D == platform that tracks your behavior).
+    # ICL_K = K > 0: prompt also carries K exemplar lines (OTHER users'
+    #   compact profiles -> current opinions from the round's buffer) --
+    #   the social-context variant, for contrast with personal memory.
+    icl_days = _env_int("ICL_DAYS", 0)
+    icl_k = _env_int("ICL_K", 0)
+    # ICL_SELECT: how the K exemplars are chosen from the round's buffer.
+    #   random = uniform draw (broadcast: same evidence distribution for all)
+    #   knn    = top-K by taste distance to the agent's own profile
+    #            (personalized feed: platform-injected homophily)
+    icl_select = os.environ.get("ICL_SELECT", "random")
     # SAVE_ADAPTER_ROUNDS="10,30" (1-indexed): save the LoRA adapter after
     # training in those rounds (adapter_r<k>/), for checkpointed frozen evals
     # (Tree-3 consistency probe). Round-0 adapter is always saved anyway.
@@ -503,6 +518,15 @@ def main() -> int:
                          "PROFILE_PERMUTE_COLS")
     if (drop_cols or permute_cols) and (shuffle_p > 0 or sort_q > 0):
         raise ValueError("demographic knobs are exclusive with the feature dial")
+    if icl_k > 0 or icl_days > 0:
+        if os.environ.get("DATASET", "pokec") != "movielens":
+            raise ValueError("ICL_K/ICL_DAYS currently require DATASET=movielens")
+        if os.environ.get("TRAINING_STYLE", "sft_kl") != "frozen":
+            raise ValueError("ICL_K/ICL_DAYS require TRAINING_STYLE=frozen (no gradients)")
+    if icl_select not in ("random", "knn"):
+        raise ValueError("ICL_SELECT must be 'random' or 'knn'")
+    if icl_select == "knn" and icl_k <= 0:
+        raise ValueError("ICL_SELECT=knn requires ICL_K > 0")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -519,6 +543,7 @@ def main() -> int:
         "run_mode": run_mode, "canary_delta": canary_delta,
         "grad_decomp": grad_decomp,
         "save_adapter_rounds": sorted(save_adapter_rounds),
+        "icl_k": icl_k, "icl_days": icl_days, "icl_select": icl_select,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
@@ -843,7 +868,71 @@ def main() -> int:
                     loss_block["l_00"] = gp.sft_batch_loss(lm, round0_batch, format_number,
                                                            tel_eval_cap)
             # model-side distribution (predictions for all agents) + health
-            preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
+            if icl_days > 0 or icl_k > 0:
+                prof_lookup = setup["profiles"]
+                # personal memory: each agent's own opinion sequence so far
+                # (day 0 = innate, then one value per completed round)
+                hist = [innate] + op_raw if icl_days > 0 else None
+                if icl_k > 0 and train_data is not None:
+                    ex_idx = train_data["agent_idx"]
+                    ex_y = train_data["y"].squeeze(-1) if train_data["y"].ndim > 1 else train_data["y"]
+                    ex_agents = ex_idx.numpy()
+                    if icl_select == "knn":
+                        # taste matrix for kNN selection: genre-rating columns,
+                        # NaN -> column mean (distance only; exemplar text still
+                        # shows only the non-NaN ratings)
+                        taste_cols = [c for c in prof_lookup.columns
+                                      if c not in ("age", "gender", "occ")]
+                        taste_mat = prof_lookup[taste_cols].to_numpy(dtype=float)
+                        col_mean = np.nanmean(taste_mat, axis=0)
+                        taste_mat = np.where(np.isnan(taste_mat), col_mean, taste_mat)
+                    def _ex_line(j):
+                        r = prof_lookup.iloc[int(ex_idx[j])]
+                        demo_bits = []
+                        if r.get("age") is not None and not pd.isna(r.get("age")) and int(r["age"]) > 0:
+                            demo_bits.append(f"age {int(r['age'])}")
+                        if isinstance(r.get("gender"), str) and r.get("gender"):
+                            demo_bits.append("male" if r["gender"] == "M" else "female")
+                        tastes = ", ".join(f"{c} {float(r[c]):.1f}" for c in prof_lookup.columns
+                                           if c not in ("age", "gender", "occ") and not pd.isna(r[c]))
+                        return (f"- {', '.join(demo_bits)}; ratings: {tastes} -> "
+                                f"opinion {float(ex_y[j]):.2f}")
+                    icl_rng = np.random.default_rng(70000 + seed * 1000 + t)
+                prompts = []
+                for i in range(n):
+                    parts = []
+                    if icl_days > 0:
+                        seq = [float(h[i]) for h in hist[-icl_days:]]
+                        days = ", ".join(f"{v:.2f}" for v in seq)
+                        parts.append("This user's own opinion of "
+                                     f"{os.environ.get('ML_TARGET', 'Action')} movies over "
+                                     f"the most recent days (oldest to newest): {days}.")
+                    if icl_k > 0 and train_data is not None:
+                        pool = np.arange(len(ex_idx))
+                        pool = pool[ex_agents[pool] != i]
+                        if icl_select == "knn":
+                            # nearest buffer entries by taste distance to agent i;
+                            # stable sort = deterministic tie-break by buffer index
+                            d = np.linalg.norm(taste_mat[ex_agents[pool]] - taste_mat[i],
+                                               axis=1)
+                            pick = pool[np.argsort(d, kind="stable")[:icl_k]]
+                        else:
+                            pick = icl_rng.choice(pool, size=min(icl_k, len(pool)),
+                                                  replace=False)
+                        parts.append("Here are the current opinions of some other users:\n" +
+                                     "\n".join(_ex_line(j) for j in pick))
+                    prompts.append(build_prompt(prof_lookup.iloc[i], lm.tokenizer,
+                                                context_block="\n\n".join(parts)))
+                if debug_gen and t <= 1:
+                    # smoke gate: one composed prompt so the log shows the
+                    # history/exemplar blocks actually reaching the model
+                    print(f"[round {t}] DEBUG_GEN icl prompt sample (agent 0):\n"
+                          f"{prompts[0]}", flush=True)
+                vals = gp.probe_predictions(lm, prompts)
+                preds = torch.tensor([v if v is not None and np.isfinite(v) else float("nan")
+                                      for v in vals], dtype=torch.float32)
+            else:
+                preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
             if debug_gen:
                 raw = [r.strip()[:24] for r in getattr(lm, "_last_raw", [])[:debug_gen_n]]
