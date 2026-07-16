@@ -1,0 +1,31 @@
+# REC-FRAMING PROBE (prompt realism, Celestine): 20-movie slate, model
+# picks 5, signal = Action fraction of picks (ML-100k's own flags = same
+# ground truth as innate). Variants: natural / nodemo / a30_M / a30_F.
+# One frozen Qwen job, ~2.9k generations (24 new tokens each). Checks to
+# score on pull (registered in Q7): parse rate, corr(frac, innate),
+# fraction distribution, gender-flip delta-frac vs the number-prompt
+# +0.123. 2026-07-16.
+# Submit: condor_submit_bid <BID> experiments/condor/at_eval_recprobe.sub
+#
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_rec_probe.sh
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn BASE_MODEL=Qwen/Qwen2.5-7B-Instruct AGES=20,30,40,50,60 GEN_CHUNK=64 OUT_DIR=runs/pokec_gated_lm/demo_probe SKIP_DONE=1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/recprobe_qwen.out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/recprobe_qwen.err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/recprobe_qwen.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1

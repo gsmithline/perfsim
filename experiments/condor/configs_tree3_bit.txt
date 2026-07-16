@@ -1,0 +1,10 @@
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_frozen, runs/pokec_gated_lm/tree3_consistency/bit_frozen.json, -, -, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s0_r0, runs/pokec_gated_lm/tree3_consistency/bit_s0_r0.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s0/round0_adapter, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s0_r10, runs/pokec_gated_lm/tree3_consistency/bit_s0_r10.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s0/adapter_r10, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s0_r30, runs/pokec_gated_lm/tree3_consistency/bit_s0_r30.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s0/adapter_r30, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s42_r0, runs/pokec_gated_lm/tree3_consistency/bit_s42_r0.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s42/round0_adapter, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s42_r10, runs/pokec_gated_lm/tree3_consistency/bit_s42_r10.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s42/adapter_r10, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s42_r30, runs/pokec_gated_lm/tree3_consistency/bit_s42_r30.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s42/adapter_r30, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s43_r0, runs/pokec_gated_lm/tree3_consistency/bit_s43_r0.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s43/round0_adapter, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s43_r10, runs/pokec_gated_lm/tree3_consistency/bit_s43_r10.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s43/adapter_r10, 64
+Qwen/Qwen2.5-7B-Instruct, qwen_bit_s43_r30, runs/pokec_gated_lm/tree3_consistency/bit_s43_r30.json, -, runs/pokec_gated_lm/mlaw_e010_a040_rep_b1_s43/adapter_r30, 64

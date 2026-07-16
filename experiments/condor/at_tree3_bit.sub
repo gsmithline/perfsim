@@ -1,0 +1,32 @@
+# IN-LOOP b_i(t) PROBE: per-user paired gender counterfactual (LgaM-LgaF,
+# real age, occ omitted) evaluated on the War arm-B adapters {r0,r10,r30}
+# x 3 seeds + frozen base (FLIP_GENDER=1 adds the two levels; also
+# refreshes the 4 consistency levels into bit_*.json, originals kept).
+# Decides diffuse-vs-targeted: does the CURRENT model's bias map predict
+# tau_i where the frozen map did not (corr -0.02)? Registered read: if
+# in-loop b_i(t) also fails, the diffuse mechanism is airtight. 2026-07-16.
+# Submit: condor_submit_bid <BID> experiments/condor/at_tree3_bit.sub
+#
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_eval_tree.sh
+arguments         = $(model) $(out) $(hfhome) $(adapter) $(chunk)
+
+request_cpus      = 4
+request_memory    = 64G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 79000) && (TARGET.Machine =!= "g131.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn ML_TARGET=War HF_HUB_OFFLINE=1 FLIP_GENDER=1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/tree3c_$(mtag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue model, mtag, out, hfhome, adapter, chunk from experiments/condor/configs_tree3_bit.txt

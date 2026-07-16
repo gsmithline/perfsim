@@ -1,0 +1,122 @@
+[
+ {
+  "iid": 50,
+  "title": "Star Wars (1977)",
+  "action": 1,
+  "n_ratings": 583
+ },
+ {
+  "iid": 181,
+  "title": "Return of the Jedi (1983)",
+  "action": 1,
+  "n_ratings": 507
+ },
+ {
+  "iid": 300,
+  "title": "Air Force One (1997)",
+  "action": 1,
+  "n_ratings": 431
+ },
+ {
+  "iid": 121,
+  "title": "Independence Day (ID4) (1996)",
+  "action": 1,
+  "n_ratings": 429
+ },
+ {
+  "iid": 174,
+  "title": "Raiders of the Lost Ark (1981)",
+  "action": 1,
+  "n_ratings": 420
+ },
+ {
+  "iid": 127,
+  "title": "Godfather, The (1972)",
+  "action": 1,
+  "n_ratings": 413
+ },
+ {
+  "iid": 117,
+  "title": "Rock, The (1996)",
+  "action": 1,
+  "n_ratings": 378
+ },
+ {
+  "iid": 172,
+  "title": "Empire Strikes Back, The (1980)",
+  "action": 1,
+  "n_ratings": 367
+ },
+ {
+  "iid": 222,
+  "title": "Star Trek: First Contact (1996)",
+  "action": 1,
+  "n_ratings": 365
+ },
+ {
+  "iid": 313,
+  "title": "Titanic (1997)",
+  "action": 1,
+  "n_ratings": 350
+ },
+ {
+  "iid": 258,
+  "title": "Contact (1997)",
+  "action": 0,
+  "n_ratings": 509
+ },
+ {
+  "iid": 100,
+  "title": "Fargo (1996)",
+  "action": 0,
+  "n_ratings": 508
+ },
+ {
+  "iid": 294,
+  "title": "Liar Liar (1997)",
+  "action": 0,
+  "n_ratings": 485
+ },
+ {
+  "iid": 286,
+  "title": "English Patient, The (1996)",
+  "action": 0,
+  "n_ratings": 481
+ },
+ {
+  "iid": 288,
+  "title": "Scream (1996)",
+  "action": 0,
+  "n_ratings": 478
+ },
+ {
+  "iid": 1,
+  "title": "Toy Story (1995)",
+  "action": 0,
+  "n_ratings": 452
+ },
+ {
+  "iid": 56,
+  "title": "Pulp Fiction (1994)",
+  "action": 0,
+  "n_ratings": 394
+ },
+ {
+  "iid": 7,
+  "title": "Twelve Monkeys (1995)",
+  "action": 0,
+  "n_ratings": 392
+ },
+ {
+  "iid": 98,
+  "title": "Silence of the Lambs, The (1991)",
+  "action": 0,
+  "n_ratings": 390
+ },
+ {
+  "iid": 237,
+  "title": "Jerry Maguire (1996)",
+  "action": 0,
+  "n_ratings": 384
+ }
+]

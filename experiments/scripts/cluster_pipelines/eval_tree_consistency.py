@@ -55,10 +55,10 @@ def main():
         lm.inner_model.eval()
     print(f"[tree] loaded in {time.time() - t0:.1f}s", flush=True)
 
-    def variant(row, gender=None, age=None):
+    def variant(row, gender=None, age=None, force_gender=None):
         p = dict(row)
         p["occ"] = "none"
-        p["gender"] = p["gender"] if gender else ""
+        p["gender"] = force_gender if force_gender else (p["gender"] if gender else "")
         p["age"] = p["age"] if age else 0
         return p
 
@@ -66,6 +66,10 @@ def main():
               "Lg": [variant(r, gender=True) for _, r in prof_df.iterrows()],
               "La": [variant(r, age=True) for _, r in prof_df.iterrows()],
               "Lga": [variant(r, gender=True, age=True) for _, r in prof_df.iterrows()]}
+    if os.environ.get("FLIP_GENDER", "0") == "1":
+        # in-loop b_i(t): per-user paired gender counterfactual at real age
+        levels["LgaM"] = [variant(r, age=True, force_gender="M") for _, r in prof_df.iterrows()]
+        levels["LgaF"] = [variant(r, age=True, force_gender="F") for _, r in prof_df.iterrows()]
     res = {"base_model": base_model, "adapter": adapter, "target": target, "n": n,
            "innate": [float(v) for v in setup["innate"]],
            "gender": [str(g) for g in prof_df["gender"]],
