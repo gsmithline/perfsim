@@ -70,7 +70,9 @@ for c, (mkey, mname, mech, color) in enumerate(MODELS):
     for r, (etag, eps) in enumerate(EPS):
         ax = axes[r, c]
         d = cell(f"frz_{mkey}_{etag}_s0")
-        out[f"{mkey}_{etag}"] = {"dr": d["dr"], "disp": d["disp"], "corr": d["corr"]}
+        out[f"{mkey}_{etag}"] = {"dr": d["dr"], "disp": d["disp"], "corr": d["corr"],
+                                 "op_r30": np.round(d["op"], 4).tolist()}
+        innate_arr = d["inn"]  # identical across cells (ML-Action innate)
         ax.hist(d["inn"], bins=bins, histtype="step", lw=0.9, color="#000",
                 alpha=0.35, density=True)
         ax.hist(d["op"], bins=bins, color=color, alpha=0.75, density=True)
@@ -88,7 +90,11 @@ for c, (mkey, mname, mech, color) in enumerate(MODELS):
 
 with open(f"{OUT}/fig_frozen_mechanisms.json", "w") as fh:
     json.dump({"cell": "frozen serve, 4 models x eps{0.4,0.1}, s0",
-               "innate_mean": 0.63, "metrics": out}, fh, indent=2)
+               "bins": bins.tolist(), "density": True,
+               "innate": np.round(innate_arr, 4).tolist(),
+               "innate_mean": float(innate_arr.mean()),
+               "note": "op_r30 = per-agent opinion at round 30 (the histogrammed data)",
+               "metrics": out}, fh, indent=2)
 
 fig.text(0.5, -0.02, "ML-Action, replace, seed 0.  Black outline = innate "
          "distribution; dotted = innate mean (~0.63).  Rows: wide vs slow mixing.",

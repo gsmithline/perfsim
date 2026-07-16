@@ -103,10 +103,14 @@ CELLS = [[("no-AI", noai_op, noai_dr), ("frozen", frz_op, frz_dr)],
          [("no feedback", nf_op, nf_dr), ("closed", cl_op, cl_dr)]]
 
 with open(f"{OUT}/fig_hinge_dists.json", "w") as fh:
-    json.dump({"cell": "Qwen ML-Action e040 rep b0 s0", "bins": 30,
+    json.dump({"cell": "Qwen ML-Action e040 rep b0 s0",
+               "bins": np.linspace(0, 1, 31).tolist(), "density": True,
+               "innate": np.round(inn_np, 4).tolist(),
                "innate_mean": float(inn_np.mean()),
                "dr": {c[0]: c[2] for row in CELLS for c in row},
-               "note": "no-AI regenerated via ab_sweep gamma0 eps0.4 seed0"}, fh, indent=2)
+               "op_r30": {c[0]: np.round(c[1], 4).tolist() for row in CELLS for c in row},
+               "note": "op_r30 = per-agent opinion at round 30 (the histogrammed "
+                       "data); no-AI regenerated via ab_sweep gamma0 eps0.4 seed0"}, fh, indent=2)
 
 # ---- figure: 2x2 of r30 opinion histograms, innate outlined --------------
 plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "stix",
