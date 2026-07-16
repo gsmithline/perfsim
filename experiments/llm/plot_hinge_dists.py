@@ -115,7 +115,9 @@ plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "stix",
 fig, axes = plt.subplots(2, 2, figsize=(7.0, 5.0), sharex=True, sharey=True,
                          constrained_layout=True)
 bins = np.linspace(0, 1, 31)
-COLOR = {"no-AI": "#7f8c8d", "no feedback": "#7f8c8d",
+# shared corner palette (matches plot_hinge_traj / _regime):
+# no-AI gray · frozen blue · no-feedback green · closed red
+COLOR = {"no-AI": "#95a5a6", "no feedback": "#27ae60",
          "frozen": "#2980b9", "closed": "#c0392b"}
 for i in range(2):
     for j in range(2):

@@ -74,7 +74,8 @@ plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "stix",
                      "axes.linewidth": 1.1, "font.size": 9})
 fig, (axp, axd) = plt.subplots(1, 2, figsize=(7.4, 3.4), constrained_layout=True)
 x = np.arange(len(REGIMES))
-NF, CL = "#7f8c8d", "#c0392b"
+# shared corner palette: no-feedback green, closed red (matches _traj/_dists)
+NF, CL = "#27ae60", "#c0392b"
 
 axp.plot(x, nf_ppl, "-o", color=NF, lw=2, ms=6, label="no feedback (serve off)")
 axp.plot(x, cl_ppl, "-s", color=CL, lw=2, ms=6, label="closed (serve on)")
