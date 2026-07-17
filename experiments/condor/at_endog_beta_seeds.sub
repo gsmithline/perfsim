@@ -1,8 +1,9 @@
 # FEATURE-ENDOGENIZATION BETA DOSE CURVE, stage 2 seed expansion
-# (2026-07-17): the same 5 new betas at seeds 42 + 43 (10 jobs). Submit
-# ONLY after the stage-1 s0 curve shows shape (any two new points
-# differing by > 0.01 in dR2_gender(30)); see at_endog_beta.sub header
-# for the registered prediction.
+# (2026-07-17): the same 10 new betas at seed 42 (10 jobs; seed 43
+# optional later for the peak region). Submit ONLY after the stage-1
+# s0 curve shows shape (any two new points differing by > 0.01 in
+# dR2_gender(30)); see at_endog_beta.sub header for the registered
+# prediction.
 # Babysit fix: idempotent executable + bounded release + self-remove.
 # Submit: condor_submit_bid 25 experiments/condor/at_endog_beta_seeds.sub
 #

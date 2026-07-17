@@ -1,7 +1,11 @@
 # FEATURE-ENDOGENIZATION BETA DOSE CURVE, stage 1 screening (2026-07-17):
-# Qwen only, e010/a040/rep/continual, seed 0, 5 NEW anchor doses
-# beta in {0.1, 0.25, 0.75, 1.5, 3.0} filling around the existing
-# {0 (flat), 0.5 (+0.030), 1 (+0.017)} dR2_gender(30) points.
+# Qwen only, e010/a040/rep/continual, seed 0, 10 NEW anchor doses
+# (owner grid: dense low, some middle, tail toward no-retraining):
+#   0-0.5 range:  {0.05, 0.1, 0.2, 0.3, 0.4}
+#   0.5-1 range:  {0.6, 0.8}
+#   1 -> frozen:  {1.5, 2.5, 5.0}
+# filling around the existing {0 (flat), 0.5 (+0.030), 1 (+0.017)}
+# dR2_gender(30) points; frozen serving is the beta -> inf endpoint.
 # REGISTERED PREDICTION (before submission; also in notes/QUESTIONS.md):
 # the dose curve is NON-MONOTONE with known endpoints -- 0 at beta=0
 # (collapse leaves nothing to predict) and ~ +0.011 (the frozen-serving
