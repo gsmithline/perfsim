@@ -3,7 +3,7 @@
 # Submit: condor_submit_bid <BID> experiments/condor/at_tree3_actD43.sub
 #
 universe          = vanilla
-executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated.sh
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
 arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
 
 request_cpus      = 4
@@ -23,5 +23,7 @@ notification      = Complete
 notify_user       = gabriel.smithline@tue.ellis.eu
 max_retries       = 2
 on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
 
 queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, pfrac, fresh from experiments/condor/configs_tree3_actD43.txt
