@@ -1,0 +1,2 @@
+frz_qwen_e010_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn
+frz_qwen_e040_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn
