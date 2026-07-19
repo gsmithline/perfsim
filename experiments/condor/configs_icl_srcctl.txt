@@ -1,0 +1,4 @@
+icl_qwen_e040_a040_k32noai_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random, noai
+icl_qwen_e040_a040_k32pri_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random, pristine
+icl_qwen_e010_a040_k32noai_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random, noai
+icl_qwen_e010_a040_k32pri_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random, pristine

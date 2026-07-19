@@ -456,6 +456,16 @@ def main() -> int:
     #   knn    = top-K by taste distance to the agent's own profile
     #            (personalized feed: platform-injected homophily)
     icl_select = os.environ.get("ICL_SELECT", "random")
+    # ICL_CTX_SOURCE: provenance of the LABEL in each exemplar line (Fig 4
+    # context-source control; Q8 addendum). Exemplar count, user identities,
+    # order, and numeric format are held identical to the live twin -- only
+    # the opinion value swaps.
+    #   live     = the round's gated buffer value (default; loop-mediated)
+    #   noai     = the same user's opinion at the same round in a matched
+    #              no-AI twin world (same graph/eps/gamma/AB seed, never
+    #              gated -- exactly this seed's no-AI run)
+    #   pristine = the same user's innate opinion
+    icl_ctx_source = os.environ.get("ICL_CTX_SOURCE", "live")
     # SAVE_ADAPTER_ROUNDS="10,30" (1-indexed): save the LoRA adapter after
     # training in those rounds (adapter_r<k>/), for checkpointed frozen evals
     # (Tree-3 consistency probe). Round-0 adapter is always saved anyway.
@@ -527,6 +537,12 @@ def main() -> int:
         raise ValueError("ICL_SELECT must be 'random' or 'knn'")
     if icl_select == "knn" and icl_k <= 0:
         raise ValueError("ICL_SELECT=knn requires ICL_K > 0")
+    if icl_ctx_source not in ("live", "noai", "pristine"):
+        raise ValueError("ICL_CTX_SOURCE must be 'live', 'noai', or 'pristine'")
+    if icl_ctx_source != "live" and icl_k <= 0:
+        raise ValueError("ICL_CTX_SOURCE control requires ICL_K > 0")
+    if icl_ctx_source == "noai" and pop_model != "ab":
+        raise ValueError("ICL_CTX_SOURCE=noai requires POP_MODEL=ab")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
@@ -544,6 +560,7 @@ def main() -> int:
         "grad_decomp": grad_decomp,
         "save_adapter_rounds": sorted(save_adapter_rounds),
         "icl_k": icl_k, "icl_days": icl_days, "icl_select": icl_select,
+        "icl_ctx_source": icl_ctx_source,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
@@ -730,6 +747,7 @@ def main() -> int:
 
     world = None
     ab_x = None
+    ab_x_cf = None
     ab_adj = None
     w_agent = None
     if run_mode != "direct":
@@ -750,6 +768,14 @@ def main() -> int:
             # own generator: the HF trainer resets the global seed every round,
             # which froze the sweep's pair pattern across rounds
             ab_gen = torch.Generator(device=ab_device).manual_seed(seed + 424243)
+            if icl_ctx_source == "noai":
+                # matched no-AI twin: same start, same AB generator seed, never
+                # gated -- reproduces this seed's no-AI world round for round;
+                # feeds exemplar labels only, never the served population
+                ab_x_cf = innate.to(ab_device).clone()
+                ab_gen_cf = torch.Generator(device=ab_device).manual_seed(seed + 424243)
+            else:
+                ab_x_cf = None
 
     canary = gp.make_canary(n, canary_delta, seed)
     if canary_delta > 0:
@@ -876,6 +902,13 @@ def main() -> int:
                 if icl_k > 0 and train_data is not None:
                     ex_idx = train_data["agent_idx"]
                     ex_y = train_data["y"].squeeze(-1) if train_data["y"].ndim > 1 else train_data["y"]
+                    if icl_ctx_source == "pristine":
+                        # same users, innate opinions (identities/order/format
+                        # identical to the live twin -- only the value swaps)
+                        ex_y = innate[ex_idx.long()]
+                    elif icl_ctx_source == "noai":
+                        # same users at the same round in the matched no-AI world
+                        ex_y = ab_x_cf.detach().cpu()[ex_idx.long()]
                     ex_agents = ex_idx.numpy()
                     if icl_select == "knn":
                         # taste matrix for kNN selection: genre-rating columns,
@@ -992,6 +1025,16 @@ def main() -> int:
             contact = float(np.mean(contacts))
             s_tag = float(ab_f.mean())
             op = ab_x.detach().cpu().float().clone()
+            if ab_x_cf is not None:
+                # advance the matched no-AI twin with the same sweep count and
+                # re-anchor, no gate; its generator mirrors ab_gen's seed so
+                # this is exactly the no-AI run of this seed
+                if pop_reset:
+                    ab_x_cf = ab_innate.clone()
+                for sw in range(ab_sweeps):
+                    gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias, gen=ab_gen_cf)
+                    if innate_lambda > 0:
+                        ab_x_cf = (1.0 - innate_lambda) * ab_x_cf + innate_lambda * ab_innate
         if op_round0 is None:
             op_round0 = op.clone()
 
