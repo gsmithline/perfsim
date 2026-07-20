@@ -1,0 +1,12 @@
+icl_qwen_e040_a040_k32_w005_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e040_a040_k32_w010_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.1, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e040_a040_k32_w020_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.2, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e040_a040_k32_w050_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.5, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w005_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w010_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.1, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w020_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.2, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w050_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e040_a040_k32_w005_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e040_a040_k32_w005_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w005_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_w005_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.05, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
