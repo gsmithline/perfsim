@@ -1,0 +1,6 @@
+icl_qwen_e010_a040_k8_gperm_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 8, 0, random
+icl_qwen_e010_a040_k8_gperm_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 8, 0, random
+icl_qwen_e010_a040_k8_gperm_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 8, 0, random
+icl_qwen_e010_a040_k32_gperm_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_gperm_s42, frozen, 0.0, 42, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
+icl_qwen_e010_a040_k32_gperm_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, 0, 32, 0, random
