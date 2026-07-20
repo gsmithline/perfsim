@@ -1,0 +1,4 @@
+ord_frz_e040_a040_pf_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn, peer_first
+ord_frz_e040_a040_pl_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn, platform_first
+ord_frz_e010_a040_pf_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn, peer_first
+ord_frz_e010_a040_pl_s43, frozen, 0.0, 43, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, Qwen/Qwen2.5-7B-Instruct, opdyn, platform_first

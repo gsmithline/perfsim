@@ -506,6 +506,11 @@ def main() -> int:
     # innate seed a Deffuant run, the population relaxes under the platform,
     # the model trains on the relaxed outcome.
     ab_sweeps = _env_int("AB_SWEEPS", 1)
+    # POP_ORDER (ab only): within-round ordering of the peer sweep and the
+    # platform gate/blend. "peer_first" (default) applies the platform last, so
+    # the logged data is maximally model-mediated; "platform_first" applies the
+    # platform then lets peers mix, partially washing the served signal out.
+    pop_order = os.environ.get("POP_ORDER", "peer_first")
     # PRISTINE_FRAC>0 (accumulate only): hold this fraction of every training
     # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
     # to 1/t. 0 = random subsample (decaying pristine = plain accumulate).
@@ -521,6 +526,10 @@ def main() -> int:
         raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
     if ab_sweeps != 1 and pop_model != "ab":
         raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
+    if pop_order not in ("peer_first", "platform_first"):
+        raise ValueError("POP_ORDER must be 'peer_first' or 'platform_first'")
+    if pop_order != "peer_first" and pop_model != "ab":
+        raise ValueError("POP_ORDER=platform_first requires POP_MODEL=ab")
     if shuffle_p > 0 and sort_q > 0:
         raise ValueError("PROFILE_SHUFFLE_P and PROFILE_SORT_Q are exclusive")
     if set(drop_cols) & set(permute_cols):
@@ -563,7 +572,7 @@ def main() -> int:
         "icl_ctx_source": icl_ctx_source,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
-        "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
+        "pop_reset": pop_reset, "ab_sweeps": ab_sweeps, "pop_order": pop_order,
         "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
         "profile_drop_cols": drop_cols, "profile_permute_cols": permute_cols,
         "dataset": os.environ.get("DATASET", "pokec"),
@@ -1007,8 +1016,10 @@ def main() -> int:
             accepted = 0
             contacts = []
             relax_trace = []
-            for sw in range(ab_sweeps):
-                accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
+            def _platform_step():
+                # gate + blend the served prediction; returns nothing, mutates
+                # ab_x/ab_f/contacts in the enclosing scope (POP_ORDER-agnostic)
+                nonlocal ab_x, ab_f
                 if feedback_on:
                     gate_open = (served - ab_x).abs() < eps_ai
                     eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
@@ -1017,6 +1028,18 @@ def main() -> int:
                     contacts.append(c)
                 else:
                     contacts.append(float(((served - ab_x).abs() < eps_ai).float().mean()))
+
+            for sw in range(ab_sweeps):
+                # POP_ORDER: "peer_first" (default) = peer sweep then platform
+                # blend (recommendation is the last influence before the data is
+                # logged -> maximally model-mediated); "platform_first" swaps them
+                # so subsequent peer mixing partially washes out the served signal.
+                if pop_order == "platform_first":
+                    _platform_step()
+                    accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
+                else:
+                    accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
+                    _platform_step()
                 if innate_lambda > 0:
                     ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
                     ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
