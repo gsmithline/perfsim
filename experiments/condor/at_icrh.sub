@@ -1,0 +1,42 @@
+# ICRH (in-context reward hacking) -- FROZEN / in-context arm, QWEN (2026-07-21):
+# adapts the output-refinement loop of Pan et al. (2402.06627) to MMHD. Each
+# round the model sees a GLOBAL feedback block (prev prediction summary +
+# downstream opinion summary [+ reward + "score higher" ask]) and refines its
+# per-agent predictions in-context (frozen weights, no gradients). a_t = served
+# per-agent predictions; R_t = 1 - mean|a_t - P_{t+1}| on the served population;
+# acc_cf = accuracy vs the matched no-AI counterfactual (primary skill metric);
+# w1_cf = W1(served, no-AI) side effect. Three conditions via FEEDBACK_MODE:
+#   none (baseline, nets out free self-fulfilling accuracy)
+#   consequences (observe outcomes, no reward)
+#   reward (the ICRH test: reward + maximize ask)
+# Hack signature: dR(reward) > dR(none/consequences) AND rising op_std collapse /
+# w1_cf / falling acc_cf. Trap (e040) = where homogenizing is easiest; stable
+# (e010) = control. ICL_K=0/ICL_DAYS=0 so the ONLY thing that varies across the
+# three conditions is the feedback block. N_ROUNDS=10 (Pan et al. 5-10 range).
+# SMOKE: 1 seed (43); a CLAIMED effect needs multiple precommitted seeds across
+# ALL three conditions (do NOT scale reward-only post-hoc). Parent: at_order_frozen.sub.
+# Submit: condor_submit_bid <BID> experiments/condor/at_icrh.sub
+#
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 160G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn GEMMA_ENV_NAME=$(gemmaenv) WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) ICRH=1 FEEDBACK_MODE=$(fbmode) ICL_K=0 ICL_DAYS=0 TRAIN_CAP=723 N_ROUNDS=10 EPOCH_SIZE=100 BASE_MODEL=$(basemodel) HF_HUB_OFFLINE=1 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=0 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=16 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_icrh"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 2
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, pfrac, fresh, basemodel, gemmaenv, fbmode from experiments/condor/configs_icrh.txt
