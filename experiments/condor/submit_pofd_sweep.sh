@@ -14,8 +14,8 @@
 # the idempotent executable makes accidental resubmits no-ops anyway).
 set -euo pipefail
 
-BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full}"
-WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full}"
+BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|full}"
+WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|full}"
 REPO="${REPO:-/home/gsmithline/perfsim}"
 cd "$REPO"
 
@@ -26,10 +26,10 @@ chmod +x experiments/condor/run_one_pokec_gated.sh \
 python3 experiments/condor/gen_pofd_sweep.py --verify
 
 case "$WHAT" in
-  smoke)                    TARGETS="smoke" ;;
-  qwen7b|gemma12b|olmo7b)   TARGETS="$WHAT" ;;
-  full)                     TARGETS="qwen7b gemma12b olmo7b" ;;
-  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full" >&2; exit 2 ;;
+  smoke)                                 TARGETS="smoke" ;;
+  qwen7b|gemma12b|olmo7b|qwen7b_pfrac)   TARGETS="$WHAT" ;;
+  full)                                  TARGETS="qwen7b gemma12b olmo7b" ;;
+  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|full" >&2; exit 2 ;;
 esac
 
 for T in $TARGETS; do

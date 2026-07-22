@@ -14,6 +14,15 @@ ACTIVE_MODELS / SEEDS control scale (2026-07-22 scope: qwen7b x seed 0 = 20
 jobs). To extend, add entries there, rerun, and clone the model's .sub from
 at_pofd_qwen7b.sub with the env deltas noted in MODELS.
 
+pofdpf_ data-regime wave (2026-07-22): the DATA-side regularization dial,
+qwen7b, beta=0 (KL off -> isolates the data knob). DATA_REGIME=accumulate +
+PRISTINE_FRAC=pf: each 723-row retrain batch pins round(pf*723) rows to the
+round-0 innate seed and draws the rest uniformly from the accumulated loop
+buffer (mix_pristine_data). pf=1 -> true pristine (every retrain sees ONLY
+innate data; the data-space analog of beta->inf), pf=0 -> plain accumulate
+(innate share decays like 1/t). The already-run replace beta=0 row is the
+no-regularization endpoint beyond pf=0.
+
 Usage:
   python3 gen_pofd_sweep.py            # write configs_pofd_<model>.txt + smoke
   python3 gen_pofd_sweep.py --verify   # assert on-disk configs match the grid
@@ -49,6 +58,13 @@ EPS_AIS = [0.05, 0.1, 0.2, 0.4]
 ROW = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
        "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}")
 
+# pofdpf_ data-regime wave: same fixed columns but regime=accumulate, beta=0
+# (-> style sft), plus a 16th column pfrac -> PRISTINE_FRAC=$(pfrac) in the .sub.
+PFRACS = [1.0, 0.75, 0.5, 0.25, 0.0]
+PFRAC_MODEL = "qwen7b"
+ROW_PF = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
+          "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {pfrac}")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -74,25 +90,41 @@ def rows_for(model, seeds, prefix="pofd"):
     return out
 
 
+def pfrac_rows():
+    out = []
+    for seed in SEEDS:
+        for pf in PFRACS:
+            for eps_ai in EPS_AIS:
+                tag = (f"pofdpf_{PFRAC_MODEL}_b0_ea{_num(eps_ai)}"
+                       f"_pf{_num(pf)}_s{seed}_fresh_data")
+                out.append(ROW_PF.format(
+                    tag=tag, seed=seed, eps_ai=f"{eps_ai:g}", pfrac=f"{pf:g}"))
+    return out
+
+
 def main():
     verify = "--verify" in sys.argv
-    files = {}
+    files, expected = {}, {}
     for model in ACTIVE_MODELS:
-        files[os.path.join(HERE, f"configs_pofd_{model}.txt")] = rows_for(model, SEEDS)
+        p = os.path.join(HERE, f"configs_pofd_{model}.txt")
+        files[p] = rows_for(model, SEEDS)
+        expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_pfrac.txt")
+    files[p] = pfrac_rows()
+    expected[p] = len(PFRACS) * len(EPS_AIS) * len(SEEDS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
         style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s, eps_ai=f"{e:g}")]
 
-    n_expected = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     ok = True
     for path, rows in files.items():
         body = "\n".join(rows) + "\n"
         tags = [r.split(",")[0] for r in rows]
         assert len(tags) == len(set(tags)), f"duplicate tags in {path}"
-        if "smoke" not in path:
-            assert len(rows) == n_expected, \
-                f"{path}: {len(rows)} rows != {n_expected} (beta x eps_ai x seed)"
+        if path in expected:
+            assert len(rows) == expected[path], \
+                f"{path}: {len(rows)} rows != {expected[path]}"
         if verify:
             on_disk = open(path).read() if os.path.exists(path) else None
             status = "OK" if on_disk == body else "MISMATCH"
@@ -102,9 +134,11 @@ def main():
             with open(path, "w") as fh:
                 fh.write(body)
             print(f"[write] {os.path.basename(path)}: {len(rows)} jobs")
-    total = sum(len(r) for p, r in files.items() if "smoke" not in p)
     print(f"[grid] {len(ACTIVE_MODELS)} model(s) x {len(BETAS)} beta x "
-          f"{len(EPS_AIS)} eps_ai x {len(SEEDS)} seed(s) = {total} sweep jobs + 1 smoke")
+          f"{len(EPS_AIS)} eps_ai x {len(SEEDS)} seed(s) = "
+          f"{len(ACTIVE_MODELS) * len(BETAS) * len(EPS_AIS) * len(SEEDS)} sweep jobs"
+          f" + {len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac (data-regime) jobs"
+          f" + 1 smoke")
     if verify and not ok:
         sys.exit(1)
 
