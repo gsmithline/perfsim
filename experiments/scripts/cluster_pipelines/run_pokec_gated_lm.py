@@ -62,6 +62,7 @@ except ImportError:
 from perfsim.core.learner import Learner
 from perfsim.core.types import SUPERVISED_SCHEMA
 from perfsim.environments.dynamics import FJWorld, normalize_adjacency
+from perfsim.learners.lm.dpo import DPOLearner
 from perfsim.learners.lm.kl_sft import KLSFTLearner
 from perfsim.learners.lm.sft import SFTLearner
 from perfsim.losses import MSELoss
@@ -380,6 +381,10 @@ def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
     training_style = _env_or("TRAINING_STYLE", "sft_kl")
+    # closed-loop RLHF (dpo) arm: where preference labels come from.
+    #   closed -> the model's own (deployment-shifted) population
+    #   open   -> the synchronized no-AI twin (ab_x_cf)
+    rlhf_feedback = _env_or("RLHF_FEEDBACK", "closed")
     base_model = _env_or("BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
     n_rounds = _env_int("N_ROUNDS", 12)
     epoch_size = _env_int("EPOCH_SIZE", 100)
@@ -614,10 +619,21 @@ def main() -> int:
             raise ValueError("ICRH=1 requires RUN_MODE=loop (needs the served signal)")
         if os.environ.get("DATASET", "pokec") != "movielens":
             raise ValueError("ICRH=1 currently requires DATASET=movielens")
+    if training_style == "dpo":
+        if rlhf_feedback not in ("closed", "open"):
+            raise ValueError("dpo requires RLHF_FEEDBACK in {closed, open}")
+        if run_mode != "loop":
+            raise ValueError("dpo requires RUN_MODE=loop (needs the served/deployed signal)")
+        if rlhf_feedback == "open" and pop_model != "ab":
+            raise ValueError("dpo + RLHF_FEEDBACK=open requires POP_MODEL=ab (needs the no-AI twin)")
+        if not use_lora:
+            raise ValueError("dpo requires USE_LORA=1 (ref_model=None uses the adapter-off "
+                             "base as the fixed anchor; no second model in memory)")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "run_tag": run_tag, "kl_beta": kl_beta, "training_style": training_style,
+        "rlhf_feedback": rlhf_feedback,
         "base_model": base_model, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "deploy_every": deploy_every, "data_regime": data_regime, "seed": seed,
         "n_labeled": n_labeled, "max_steps": max_steps, "sft_epochs": sft_epochs,
@@ -792,6 +808,10 @@ def main() -> int:
     elif training_style == "sft_kl":
         learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta,
                                anchor_mode=anchor_mode)
+    elif training_style == "dpo":
+        # closed-loop RLHF; the closed/open arm is chosen by RLHF_FEEDBACK (the
+        # pipeline builds x_judge below). ref_model=None + LoRA => fixed base anchor.
+        learner = DPOLearner(**learner_kwargs)
     elif training_style == "frozen":
         class _Frozen(Learner):
             accepted_schemas = (SUPERVISED_SCHEMA,)
@@ -938,7 +958,18 @@ def main() -> int:
             if fresh_adapter_snap is not None and t > 0:
                 gp.load_trainable(lm.inner_model, fresh_adapter_snap)  # reset to base: fresh model
             if training_style != "frozen" and train_data is not None:
-                learner.train(train_data)
+                if training_style == "dpo":
+                    # closed-loop RLHF: build the per-agent judging opinion x_judge.
+                    # closed -> own (deployed) population labels (train_data["y"]);
+                    # open   -> the synchronized no-AI twin (ab_x_cf), same agents.
+                    _idx = train_data["agent_idx"]
+                    if rlhf_feedback == "open" and ab_x_cf is not None:
+                        _xj = ab_x_cf.detach().cpu().float()[_idx.long()]
+                    else:
+                        _xj = train_data["y"].squeeze(-1).detach().cpu().float()
+                    learner.train({"agent_idx": _idx, "x_judge": _xj})
+                else:
+                    learner.train(train_data)
             cur_dep += 1
             if t == 0:
                 # round-0 adapter + batch, kept on disk for the 2x2 evals

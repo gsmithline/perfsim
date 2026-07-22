@@ -61,6 +61,13 @@ PPL_DIST_CAP="${PPL_DIST_CAP:-0}"
 DO_SAMPLE="${DO_SAMPLE:-0}"
 GEN_TEMPERATURE="${19:-${GEN_TEMPERATURE:-1.0}}"
 WANDB_RUN_SUFFIX="${WANDB_RUN_SUFFIX:-}"
+# closed-loop RLHF (TRAINING_STYLE=dpo) knobs; ignored by sft/frozen styles.
+RLHF_FEEDBACK="${RLHF_FEEDBACK:-closed}"   # closed | open
+DPO_BETA="${DPO_BETA:-0.1}"
+DPO_TAU="${DPO_TAU:-12.0}"
+DPO_GEN_TEMP="${DPO_GEN_TEMP:-0.8}"
+DPO_MAX_STEPS="${DPO_MAX_STEPS:-8}"
+DPO_N_PAIRS="${DPO_N_PAIRS:-0}"
 
 # In-context runs with many exemplars build ~2k-token prompts; generating a
 # full GEN_BATCH_SIZE of them at once overflows the 80GB GPU KV-cache on the
@@ -126,6 +133,12 @@ env \
     PPL_DIST_CAP="$PPL_DIST_CAP" \
     DO_SAMPLE="$DO_SAMPLE" \
     GEN_TEMPERATURE="$GEN_TEMPERATURE" \
+    RLHF_FEEDBACK="$RLHF_FEEDBACK" \
+    DPO_BETA="$DPO_BETA" \
+    DPO_TAU="$DPO_TAU" \
+    DPO_GEN_TEMP="$DPO_GEN_TEMP" \
+    DPO_MAX_STEPS="$DPO_MAX_STEPS" \
+    DPO_N_PAIRS="$DPO_N_PAIRS" \
     BASE_MODEL="$BASE_MODEL" \
     N_ROUNDS="$N_ROUNDS" \
     EPOCH_SIZE="$EPOCH_SIZE" \

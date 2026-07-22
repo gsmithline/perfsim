@@ -1,0 +1,3 @@
+rlhfSmoke_closed_s0, dpo,    0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 2.0, 0.0, 0, closed, 1
+rlhfSmoke_open_s0,   dpo,    0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 2.0, 0.0, 0, open,   1
+rlhfSmoke_frozen_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 2.0, 0.0, 0, closed, 0
