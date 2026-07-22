@@ -1,0 +1,9 @@
+rlhfL_closed_s0, dpo,    0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 1
+rlhfL_open_s0,   dpo,    0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, open,   1
+rlhfL_frozen_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 0
+rlhfL_closed_s1, dpo,    0.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 1
+rlhfL_open_s1,   dpo,    0.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, open,   1
+rlhfL_frozen_s1, frozen, 0.0, 1, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 0
+rlhfL_closed_s2, dpo,    0.0, 2, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 1
+rlhfL_open_s2,   dpo,    0.0, 2, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, open,   1
+rlhfL_frozen_s2, frozen, 0.0, 2, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.4, loop, 0.0, 0.6, 0.0, 0, closed, 0

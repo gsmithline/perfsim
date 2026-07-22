@@ -1248,6 +1248,23 @@ def main() -> int:
             row["s_tag"] = s_tag
             if ab_sweeps > 1:
                 row["relax_trace"] = relax_trace   # op_std at sweeps 1/3/10/30/100/k
+            if ab_x_cf is not None:
+                # no-AI twin diagnostics (ungated; the ICRH w1_cf below only fires
+                # under icrh_on). Same seed -> closed and open share this twin, so
+                # comparing these across arms is fair. twin_std/twin_bias: does the
+                # arm's deployed pop narrow/shift MORE than the untouched twin (closed
+                # below open = entrenchment-narrows-diversity). op_twin_l1: matched-
+                # agent |op_i - twin_i| = noise-amplifier magnitude (fat divergence
+                # even when the signed op_bias gap is sign-random). op_twin_w1: the
+                # distributional 1-D Wasserstein (sorted) between deployed pop and twin.
+                _tw = ab_x_cf.detach().cpu().float()
+                _op = op.detach().cpu().float()
+                row["twin_mean"] = float(_tw.mean())
+                row["twin_std"] = float(_tw.std())
+                row["twin_bias"] = float(_tw.mean()) - innate_mean
+                row["op_twin_l1"] = float((_op - _tw).abs().mean())
+                row["op_twin_w1"] = float((torch.sort(_op).values
+                                           - torch.sort(_tw).values).abs().mean())
         row.update(pred_block)
         if icrh_on:
             row["reward"] = reward
