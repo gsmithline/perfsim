@@ -3,8 +3,11 @@
 
 Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
   1. CONFIG    the run really is the pofd design: eps(social)=0, w_plat=1,
-               data_regime=replace, fresh_each_round=True, innate_lambda=0,
-               pop=ab, mode=loop, canary=0, single sweep, no pop reset.
+               fresh_each_round=True, innate_lambda=0, pop=ab, mode=loop,
+               canary=0, single sweep, no pop reset. Regime is TAG-AWARE:
+               pofd_* dirs must be data_regime=replace + pristine_frac=0;
+               pofdpf_* dirs (the data-regime wave) must be accumulate with
+               kl_beta=0, style=sft, and pristine_frac matching the _pf token.
   2. NO-PEER   row['accepted'] (peer pairs that moved) == 0 in EVERY round.
   3. EXACT-COPY per round t, with x_before = innate (t=0) or op_raw[t-1]:
                gate_i = |served_i - x_before_i| < eps_ai. Accepted agents must
@@ -12,7 +15,9 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                must be EXACTLY unchanged (no peer step, no innate anchor).
                Also cross-checks row['contact'] == gate fraction.
   4. FRESH     row['n_train'] present on every deploy round, == TRAIN_CAP=723,
-               and NEVER grows round-over-round (accumulation signature).
+               and NEVER grows round-over-round. n_train is logged POST-cap
+               (run_pokec_gated_lm.py:1256), so it must hold 723 under
+               accumulate too -- the pool grows, the batch never does.
 
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
@@ -21,6 +26,7 @@ Exit 0 iff every run passes every check.
 """
 import glob
 import os
+import re
 import sys
 
 import torch
@@ -42,13 +48,29 @@ def check_run(run_dir):
     errs = []
 
     # -- 1 CONFIG ------------------------------------------------------------
+    name = os.path.basename(run_dir.rstrip("/"))
+    is_pfrac = name.startswith("pofdpf_")
     want = {"eps": 0.0, "w_plat": 1.0, "innate_lambda": 0.0, "canary_delta": 0.0,
-            "data_regime": "replace", "fresh_each_round": True, "pop_model": "ab",
+            "data_regime": "accumulate" if is_pfrac else "replace",
+            "fresh_each_round": True, "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
             "platform_sus_scale": 1.0, "dataset": "movielens"}
+    if is_pfrac:
+        want.update({"kl_beta": 0.0, "training_style": "sft"})
+    else:
+        want["pristine_frac"] = 0.0
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
+    if is_pfrac:
+        m = re.search(r"_pf(\d+(?:p\d+)?)_", name)
+        if m is None:
+            errs.append(f"CONFIG no _pf token in dirname {name!r}")
+        else:
+            want_pf = float(m.group(1).replace("p", "."))
+            got_pf = float(cfg.get("pristine_frac", -1.0))
+            if abs(got_pf - want_pf) > 1e-9:
+                errs.append(f"CONFIG pristine_frac={got_pf!r} (tag says {want_pf!r})")
     eps_ai = float(cfg["eps_ai"])
 
     # -- 2 NO-PEER -----------------------------------------------------------
