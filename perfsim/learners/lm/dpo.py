@@ -40,9 +40,23 @@ try:
 except ImportError:
     HFDataset = None  # type: ignore[assignment,misc]
 
+# trl 1.2.0's DPOTrainer import chain does `from torch.distributed.fsdp import
+# FSDPModule`, which does not exist in torch 2.5.1 (the cluster's opdyn/opdyn_gemma
+# envs). We use LoRA on a single GPU and never FSDP, so inject a dummy symbol so the
+# import succeeds; it is never instantiated (prepare_fsdp is only called under an
+# FSDP accelerate plugin, which we do not use).
+try:  # pragma: no cover - environment shim
+    import torch.distributed.fsdp as _fsdp
+    if not hasattr(_fsdp, "FSDPModule"):
+        class FSDPModule:  # noqa: N801
+            pass
+        _fsdp.FSDPModule = FSDPModule
+except Exception:
+    pass
+
 try:
     from trl import DPOConfig, DPOTrainer
-except ImportError:
+except (ImportError, RuntimeError):
     DPOConfig = None  # type: ignore[assignment,misc]
     DPOTrainer = None  # type: ignore[assignment,misc]
 
@@ -152,12 +166,15 @@ class DPOLearner(Learner):
             per_device_train_batch_size=self._per_device_batch_size,
             learning_rate=self._learning_rate,
             max_length=self._max_seq_length,
-            max_prompt_length=max(16, self._max_seq_length - 16),
             report_to="none",
             save_strategy="no",
             logging_strategy="no",
         )
         cfg_kwargs.update(self._trainer_kwargs)
+        # keep only kwargs this trl's DPOConfig accepts (e.g. max_prompt_length is
+        # absent in trl 1.2.0); mirrors SFTLearner's signature-guarded config build.
+        _cfg_sig = inspect.signature(DPOConfig.__init__).parameters
+        cfg_kwargs = {k: v for k, v in cfg_kwargs.items() if k in _cfg_sig}
         cfg = DPOConfig(**cfg_kwargs)
 
         _sig = inspect.signature(DPOTrainer.__init__).parameters

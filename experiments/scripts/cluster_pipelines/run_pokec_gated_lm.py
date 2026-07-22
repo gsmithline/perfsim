@@ -62,7 +62,6 @@ except ImportError:
 from perfsim.core.learner import Learner
 from perfsim.core.types import SUPERVISED_SCHEMA
 from perfsim.environments.dynamics import FJWorld, normalize_adjacency
-from perfsim.learners.lm.dpo import DPOLearner
 from perfsim.learners.lm.kl_sft import KLSFTLearner
 from perfsim.learners.lm.sft import SFTLearner
 from perfsim.losses import MSELoss
@@ -809,8 +808,11 @@ def main() -> int:
         learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta,
                                anchor_mode=anchor_mode)
     elif training_style == "dpo":
-        # closed-loop RLHF; the closed/open arm is chosen by RLHF_FEEDBACK (the
-        # pipeline builds x_judge below). ref_model=None + LoRA => fixed base anchor.
+        # closed-loop RLHF; closed/open arm chosen by RLHF_FEEDBACK (pipeline builds
+        # x_judge below). ref_model=None + LoRA => fixed base anchor. Import lazily so
+        # the trl DPOTrainer import (+ its FSDPModule shim) only loads for dpo runs and
+        # never breaks the sft/kl/frozen arms on torch 2.5.1.
+        from perfsim.learners.lm.dpo import DPOLearner
         learner = DPOLearner(**learner_kwargs)
     elif training_style == "frozen":
         class _Frozen(Learner):
