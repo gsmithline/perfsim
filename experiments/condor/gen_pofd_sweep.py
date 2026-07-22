@@ -33,10 +33,14 @@ MODELS = {
                  "HF_HOME=/lustre/fast/fast/gsmithline/hf_cache "
                  "HF_HUB_OFFLINE=1 PPL_BATCH=16, request_memory 160G disk 60G"),
 }
-ACTIVE_MODELS = ["qwen7b"]
+ACTIVE_MODELS = ["qwen7b", "gemma12b", "olmo7b"]
 SEEDS = [0]
 BETAS = [0.0, 0.1, 0.2, 0.5, 1.0]
-EPS_AIS = [0.05, 0.1, 0.2, 0.4]
+# eps_ai=0.0 is the exact zero-dose anchor: the strict `< eps_ai` gate NEVER
+# opens, so the population provably stays at innate (the checker's EXACT-COPY
+# rejected-branch covers all agents); the model side still shows each beta's
+# open-loop prediction distribution against the fixed innate population.
+EPS_AIS = [0.0, 0.05, 0.1, 0.2, 0.4]
 
 # fixed columns (arg order of run_one_pokec_gated.sh):
 # deploy_every=1, regime=replace, pscale=1.0, anchor=fixed, pop=ab,

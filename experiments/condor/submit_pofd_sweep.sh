@@ -14,8 +14,8 @@
 # the idempotent executable makes accidental resubmits no-ops anyway).
 set -euo pipefail
 
-BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|full}"
-WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|full}"
+BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full}"
+WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full}"
 REPO="${REPO:-/home/gsmithline/perfsim}"
 cd "$REPO"
 
@@ -26,18 +26,22 @@ chmod +x experiments/condor/run_one_pokec_gated.sh \
 python3 experiments/condor/gen_pofd_sweep.py --verify
 
 case "$WHAT" in
-  smoke) SUB=experiments/condor/at_pofd_smoke.sub;  CFG=experiments/condor/configs_pofd_smoke.txt ;;
-  full)  SUB=experiments/condor/at_pofd_qwen7b.sub; CFG=experiments/condor/configs_pofd_qwen7b.txt ;;
-  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|full" >&2; exit 2 ;;
+  smoke)                    TARGETS="smoke" ;;
+  qwen7b|gemma12b|olmo7b)   TARGETS="$WHAT" ;;
+  full)                     TARGETS="qwen7b gemma12b olmo7b" ;;
+  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|full" >&2; exit 2 ;;
 esac
 
-done_n=0
-while IFS=, read -r tag _; do
-  if [ -f "runs/pokec_gated_lm/${tag}/trajectory.pt" ]; then
-    echo "[submit_pofd] NOTE: ${tag} already has trajectory.pt (idempotent no-op if complete)"
-    done_n=$((done_n + 1))
-  fi
-done < "$CFG"
-echo "[submit_pofd] $(wc -l < "$CFG") jobs in $CFG (${done_n} with existing results)"
-
-condor_submit_bid "$BID" "$SUB"
+for T in $TARGETS; do
+  SUB="experiments/condor/at_pofd_${T}.sub"
+  CFG="experiments/condor/configs_pofd_${T}.txt"
+  done_n=0
+  while IFS=, read -r tag _; do
+    if [ -f "runs/pokec_gated_lm/${tag}/trajectory.pt" ]; then
+      echo "[submit_pofd] NOTE: ${tag} already has trajectory.pt (idempotent no-op if complete)"
+      done_n=$((done_n + 1))
+    fi
+  done < "$CFG"
+  echo "[submit_pofd] ${T}: $(wc -l < "$CFG") jobs in $CFG (${done_n} with existing results)"
+  condor_submit_bid "$BID" "$SUB"
+done
