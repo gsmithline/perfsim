@@ -6,13 +6,14 @@
 # entrench and closed-vs-open is label noise (sign-random). Entrenchment needs a still-
 # biased policy WHILE the loop bites. This SLOWS THE POLICY (the free side of the rate
 # ratio -- stays in the non-collapse regime) so the population can move onto the bias
-# first. ONLY change vs at_rlhf_intermediate.sub is SFT_LR 5e-5 -> 1e-5 (5x slower;
+# first. ONLY change vs at_rlhf_intermediate.sub is SFT_LR 5e-5 -> 5e-6 (10x slower;
 # for dpo runs SFT_EPOCHS=0 so SFT_LR feeds ONLY the DPO learning_rate). lambda stays
 # 0.2. Run head-to-head with at_rlhf_lambda01.sub: slow-DPO tests the rate denominator,
 # lambda=0.1 tests the numerator -> together they separate "rate race" from "lever".
 # NOTE ON THE SWEET SPOT: too slow (lr -> 0) makes both arms ~frozen and the effect
-# vanishes too; 1e-5 is a moderate first guess. If correction still finishes in <3
-# rounds, go to 5e-6; if it looks frozen-like (no learning), go back toward 2e-5.
+# vanishes too; 5e-6 (10x slower) is the aggressive-slow point. If it looks frozen-like
+# (no learning at all), go back up toward 1e-5/2e-5; if correction still finishes in
+# <3 rounds even here, go lower still.
 # Twin diagnostics (twin_std / op_twin_l1 / op_twin_w1) are now logged every round.
 #   closed -> dpo, RLHF_FEEDBACK=closed | open -> dpo, RLHF_FEEDBACK=open | frozen -> frozen
 # Submit: condor_submit_bid <BID> experiments/condor/at_rlhf_slowdpo.sub
@@ -28,7 +29,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) USE_LORA=$(uselora) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_EPOCHS=0 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=128 SFT_LR=1e-5 DO_SAMPLE=0 DPO_BETA=0.1 DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=3 DPO_N_PAIRS=0 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_rlhfS"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) USE_LORA=$(uselora) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_EPOCHS=0 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=128 SFT_LR=5e-6 DO_SAMPLE=0 DPO_BETA=0.1 DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=3 DPO_N_PAIRS=0 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_rlhfS"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
