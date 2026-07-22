@@ -960,6 +960,7 @@ def main() -> int:
                 loss_block["l_init"] = gp.sft_batch_loss(lm, train_data, format_number,
                                                          tel_eval_cap)
                 loss_block["batch_var"] = float(y_flat.var(unbiased=False))
+                loss_block["n_train"] = int(y_flat.shape[0])   # rows fed to this update
                 if (grad_decomp and training_style == "sft_kl"
                         and float(getattr(learner, "kl_beta", 0.0)) > 0):
                     # Q6 channel decomposition; includes grad_norm0 (same protocol)
@@ -1250,6 +1251,9 @@ def main() -> int:
         row.update({f"op_{k}": v for k, v in cm.summary(op, bins=n_bins).items()})
         row["op_bias"] = float(op.mean()) - innate_mean
         row["op_tail_frac"] = float((op - op.mean()).abs().gt(0.15).float().mean())
+        if is_deploy and train_data is not None:
+            # dataset size of THIS round's update (fresh/replace sanity: must not grow)
+            row["n_train"] = int(train_data["y"].shape[0])
         row["jaccard_init"] = cm.jaccard_support(op, op_round0, bins=n_bins)
         if prev_op is not None:
             row["jaccard_prev"] = cm.jaccard_support(op, prev_op, bins=n_bins)

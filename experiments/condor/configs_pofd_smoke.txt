@@ -1,0 +1,1 @@
+pofdsmk_qwen7b_b0p5_ea0p1_s0_fresh_data, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.1
