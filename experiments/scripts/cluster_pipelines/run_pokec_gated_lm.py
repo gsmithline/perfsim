@@ -862,15 +862,26 @@ def main() -> int:
             # own generator: the HF trainer resets the global seed every round,
             # which froze the sweep's pair pattern across rounds
             ab_gen = torch.Generator(device=ab_device).manual_seed(seed + 424243)
-            if icl_ctx_source == "noai" or icrh_on:
+            if icl_ctx_source == "noai" or icrh_on or training_style == "dpo":
                 # matched no-AI twin: same start, same AB generator seed, never
                 # gated -- reproduces this seed's no-AI world round for round.
                 # noai feeds exemplar labels; FEEDBACK_MODE uses it as the
                 # uninfluenced skill reference (acc_cf) and the W1 side-effect base.
+                # dpo (closed-loop RLHF) REQUIRES it: the open arm grades preferences
+                # against this twin, and both arms log the twin diagnostics. Without
+                # this clause ab_x_cf was None and the open arm silently fell back to
+                # its OWN population (line ~968) == the closed arm -- so open and
+                # closed were the same experiment. Do NOT drop the dpo condition.
                 ab_x_cf = innate.to(ab_device).clone()
                 ab_gen_cf = torch.Generator(device=ab_device).manual_seed(seed + 424243)
             else:
                 ab_x_cf = None
+
+    # hard guard: the open arm is meaningless without a real twin. Fail loudly here
+    # rather than silently training open on its own population (== closed).
+    if training_style == "dpo" and rlhf_feedback == "open" and ab_x_cf is None:
+        raise ValueError("dpo + RLHF_FEEDBACK=open needs the no-AI twin (ab_x_cf) but it "
+                         "was not created -- requires POP_MODEL=ab and RUN_MODE=loop")
 
     canary = gp.make_canary(n, canary_delta, seed)
     if canary_delta > 0:
