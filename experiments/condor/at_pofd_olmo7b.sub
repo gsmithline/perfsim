@@ -1,5 +1,6 @@
 # HTCondor: PLATFORM-ONLY CLOSED LOOP, FRESH DATA (pofd_), OLMO-2-7B-Instruct, seed 0.
-# 25 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0,0.05,0.1,0.2,0.4}. Identical design
+# 20 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} (ea0 dropped 2026-07-22,
+# all 25 olmo cells incl. ea0 already ran and passed sanity). Identical design
 # to at_pofd_qwen7b.sub (see its header); model deltas only: BASE_MODEL
 # allenai/OLMo-2-1124-7B-Instruct, HF_HOME=/lustre/fast/fast/gsmithline/hf_cache
 # (OLMo lives in a SEPARATE HF cache -- without this it dies "couldn't find in

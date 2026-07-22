@@ -36,11 +36,11 @@ MODELS = {
 ACTIVE_MODELS = ["qwen7b", "gemma12b", "olmo7b"]
 SEEDS = [0]
 BETAS = [0.0, 0.1, 0.2, 0.5, 1.0]
-# eps_ai=0.0 is the exact zero-dose anchor: the strict `< eps_ai` gate NEVER
-# opens, so the population provably stays at innate (the checker's EXACT-COPY
-# rejected-branch covers all agents); the model side still shows each beta's
-# open-loop prediction distribution against the fixed innate population.
-EPS_AIS = [0.0, 0.05, 0.1, 0.2, 0.4]
+# eps_ai=0.0 (zero-dose anchor) DROPPED 2026-07-22 after the olmo7b wave
+# confirmed it fully inert -- strict `< eps_ai` gate never opens, acceptance
+# 0.00 and op_bias/op_std delta +0.000 in every beta row (see BATCHES.md).
+# The olmo ea0 runs are kept in notes/pofd/cluster/ as the control.
+EPS_AIS = [0.05, 0.1, 0.2, 0.4]
 
 # fixed columns (arg order of run_one_pokec_gated.sh):
 # deploy_every=1, regime=replace, pscale=1.0, anchor=fixed, pop=ab,

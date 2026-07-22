@@ -1,8 +1,8 @@
-# HTCondor: PLATFORM-ONLY CLOSED LOOP, FRESH DATA (pofd_), Qwen-7B, seed 0. 25 runs
-# (eps_AI=0 zero-dose column added 2026-07-22 after the first 20-run wave: gate
-# never opens -> population provably pinned at innate; resubmitting this sub
-# no-ops the 20 finished runs via the idempotent executable and runs only the
-# 5 new ea0 cells). Cross-model twins: at_pofd_gemma12b.sub / at_pofd_olmo7b.sub.
+# HTCondor: PLATFORM-ONLY CLOSED LOOP, FRESH DATA (pofd_), Qwen-7B, seed 0. 20 runs:
+# beta {0,0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4}. (eps_AI=0 zero-dose column
+# briefly added then DROPPED 2026-07-22: the olmo7b wave confirmed it fully inert,
+# gate never opens, acceptance 0.00 -- see gen_pofd_sweep.py. All 20 qwen cells are
+# done; resubmitting no-ops.) Cross-model twins: at_pofd_gemma12b.sub / at_pofd_olmo7b.sub.
 # Isolates the pure model<->population channel: eps_social=0.0 (ab_sweep accepts a
 # peer pair only if |xi-xj| < eps, so the peer step NEVER fires -- row 'accepted'
 # must be 0 every round), W_PLAT=1.0 (movielens platform_sus is all-ones, so a

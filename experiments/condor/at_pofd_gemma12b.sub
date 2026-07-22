@@ -1,5 +1,5 @@
 # HTCondor: PLATFORM-ONLY CLOSED LOOP, FRESH DATA (pofd_), GEMMA-3-12B, seed 0.
-# 25 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0,0.05,0.1,0.2,0.4}. Identical design
+# 20 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4}. Identical design
 # to at_pofd_qwen7b.sub (see its header); model deltas only: BASE_MODEL gemma-3-12b-it,
 # ENV_NAME=opdyn_gemma (torch>=2.6 for Gemma3 masking; run_one_pokec_gated.sh also
 # auto-switches on the model name), HF_HUB_OFFLINE=1 (cached in ~/.cache), PPL_BATCH=8
