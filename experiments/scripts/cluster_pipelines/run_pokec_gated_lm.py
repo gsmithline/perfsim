@@ -1289,6 +1289,11 @@ def main() -> int:
             row["w1_cf"] = w1_cf
         if "pred_eff_support" in pred_block:
             row["dissoc_gap"] = pred_block["pred_eff_support"] - row["op_eff_support"]
+        if torch.cuda.is_available():
+            # per-round peak VRAM (reset each round): sizes the CUDAGlobalMemoryMb
+            # requirement empirically instead of inheriting the 80GB floor
+            row["gpu_peak_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
+            torch.cuda.reset_peak_memory_stats()
 
         trajectory.append(row)
         # persist every round so a killed/held job keeps its partial results
@@ -1309,7 +1314,8 @@ def main() -> int:
         print(f"[round {t}] dep={cur_dep} op_mean={row['op_mean']:.4f} "
               f"op_std={row['op_std']:.4f} op_eff_sup={row['op_eff_support']:.2f} "
               f"pred_mean={pred_block.get('pred_mean', float('nan')):.4f} "
-              f"l_init={loss_block.get('l_init', float('nan')):.4f}", flush=True)
+              f"l_init={loss_block.get('l_init', float('nan')):.4f} "
+              f"gpu_peak={row.get('gpu_peak_gb', float('nan')):.1f}GB", flush=True)
         if icrh_on:
             print(f"[round {t}] ICRH kind={reward_kind} mode={feedback_mode} "
                   f"reward={reward:.4f} acc_served={acc_served:.4f} eng={engagement:.4f} "
