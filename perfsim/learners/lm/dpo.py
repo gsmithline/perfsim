@@ -95,7 +95,6 @@ class DPOLearner(Learner):
         self._gen_temp = float(os.environ.get("DPO_GEN_TEMP", "0.8"))  # candidate sampling temp
         self._max_steps = int(os.environ.get("DPO_MAX_STEPS", str(max_steps)))
         self._n_pairs = int(os.environ.get("DPO_N_PAIRS", "0"))        # 0 = all agents
-        self._printed = False
 
     # --------------------------------------------------------------- candidates
     def _sample_two(self, prompts: list[str]) -> tuple[list[str], list[str]]:
@@ -143,14 +142,15 @@ class DPOLearner(Learner):
             chosen, rejected = (ta, tb) if a_wins else (tb, ta)
             rows.append({"prompt": prompts[i], "chosen": chosen, "rejected": rejected})
 
-        if not self._printed:
-            print(f"[DPOLearner] beta={self._beta} tau={self._tau} gen_temp={self._gen_temp} "
-                  f"max_steps={self._max_steps} | pairs={len(rows)} "
-                  f"(ties={n_tie}, parse_fail={n_fail} of {len(prompts)})", flush=True)
-            self._printed = True
+        print(f"[DPOLearner] beta={self._beta} tau={self._tau} gen_temp={self._gen_temp} "
+              f"max_steps={self._max_steps} | pairs={len(rows)} "
+              f"(ties={n_tie}, parse_fail={n_fail} of {len(prompts)})", flush=True)
         if not rows:
-            raise RuntimeError("DPOLearner: 0 usable preference pairs (all ties/parse-fail). "
-                               "Raise DPO_GEN_TEMP or check generation.")
+            # No distinct candidates this round (population/policy collapsed toward a
+            # point -> two temperature samples round to the same number). No preference
+            # signal, so SKIP the update; a fatal raise would kill the whole 30-round run.
+            print("[DPOLearner] 0 usable pairs -> skipping DPO update this round", flush=True)
+            return None
         return HFDataset.from_list(rows)
 
     # --------------------------------------------------------------- train
@@ -158,6 +158,8 @@ class DPOLearner(Learner):
         if DPOConfig is None or DPOTrainer is None:
             raise ImportError("DPOLearner requires 'trl'. pip install 'perfsim[lm]'")
         ds = self._build_pref_dataset(data)
+        if ds is None or len(ds) == 0:
+            return  # no preference signal this round -> model unchanged, loop continues
 
         cfg_kwargs: dict[str, Any] = dict(
             output_dir=self._output_dir,

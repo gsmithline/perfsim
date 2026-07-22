@@ -19,7 +19,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 20000)
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) USE_LORA=$(uselora) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) TRAIN_CAP=723 N_ROUNDS=2 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_EPOCHS=0 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=64 SFT_LR=5e-5 DO_SAMPLE=0 DPO_BETA=0.1 DPO_TAU=12.0 DPO_GEN_TEMP=0.8 DPO_MAX_STEPS=4 DPO_N_PAIRS=128 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_rlhf_smoke"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) USE_LORA=$(uselora) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) TRAIN_CAP=723 N_ROUNDS=2 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SFT_EPOCHS=0 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=64 SFT_LR=5e-5 DO_SAMPLE=0 DPO_BETA=0.1 DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=4 DPO_N_PAIRS=128 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_rlhf_smoke"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
