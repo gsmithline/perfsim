@@ -10,7 +10,7 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                style=sft + pristine_frac matching the _pf token;
                pofdicl* dirs style=frozen, use_lora=0, fresh=False, and
                (icl_k, icl_days, icl_ctx_source) matching the arm token
-               (k0/k8live/k32live/k32pri/d5/d15/d30);
+               (k0/k8live/k32live/k32pri/d5/d10/d15/d30);
                pofddpo* dirs style=dpo, fresh=True, use_lora=1, and
                rlhf_feedback matching the closed/open token (DPO_BETA is
                env-only, verified via the submit configs instead).
@@ -96,8 +96,8 @@ def check_run(run_dir):
     if is_icl:
         ICL_ARM_WANT = {"k0": (0, 0, "live"), "k8live": (8, 0, "live"),
                         "k32live": (32, 0, "live"), "k32pri": (32, 0, "pristine"),
-                        "d5": (0, 5, "live"), "d15": (0, 15, "live"),
-                        "d30": (0, 30, "live")}
+                        "d5": (0, 5, "live"), "d10": (0, 10, "live"),
+                        "d15": (0, 15, "live"), "d30": (0, 30, "live")}
         m = re.search(r"_ea[\dp]+_([a-z0-9]+)_s\d", name)
         arm = m.group(1) if m else None
         if arm not in ICL_ARM_WANT:

@@ -1,13 +1,13 @@
 # HTCondor: PLATFORM-ONLY CLOSED LOOP -- IN-CONTEXT WAVE (pofdicl_), Qwen-7B,
-# seed 0. 28 runs: 7 arms x eps_AI {0.05,0.1,0.2,0.4}. Frozen weights, NO
+# seed 0. 32 runs: 8 arms x eps_AI {0.05,0.1,0.2,0.4}. Frozen weights, NO
 # gradients -- adaptation lives entirely in the prompt. Same population channel
 # as at_pofd_qwen7b.sub: eps_social=0 (no peer step ever), INNATE_LAMBDA=0 (no
 # innate pull), W_PLAT=1 (gated agents adopt the served prediction exactly).
 # Arms: k0 = frozen baseline (no context); k8live/k32live = K exemplar lines
 # (other users, labels from the LIVE loop buffer -- the moving data anchor);
 # k32pri = same K exemplars but labels are the users' INNATE opinions (fixed
-# anchor); d5/d15/d30 = the agent's OWN last-D-day history (d5 = self-replace,
-# d30 >= horizon = self-accumulate incl. the innate start). noai skipped:
+# anchor); d5/d10/d15/d30 = the agent's OWN last-D-day history (depth dial;
+# d30 >= horizon never drops the innate start = self-accumulate). noai skipped:
 # with eps_social=0 the no-AI twin never moves, so noai == pristine.
 # ICL_SELECT=random for all rows. USE_LORA=0 (nothing trains). The wrapper
 # auto-drops GEN_BATCH_SIZE to 8 for K>=16 (long prompts, KV-cache).
