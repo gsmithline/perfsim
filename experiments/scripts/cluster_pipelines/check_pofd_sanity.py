@@ -3,11 +3,17 @@
 
 Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
   1. CONFIG    the run really is the pofd design: eps(social)=0, w_plat=1,
-               fresh_each_round=True, innate_lambda=0, pop=ab, mode=loop,
-               canary=0, single sweep, no pop reset. Regime is TAG-AWARE:
+               innate_lambda=0, pop=ab, mode=loop, canary=0, single sweep,
+               no pop reset. Style/regime are TAG-AWARE:
                pofd_* dirs must be data_regime=replace + pristine_frac=0;
-               pofdpf_* dirs (the data-regime wave) must be accumulate with
-               kl_beta=0, style=sft, and pristine_frac matching the _pf token.
+               pofdpf_* dirs (data-regime wave) accumulate + kl_beta=0 +
+               style=sft + pristine_frac matching the _pf token;
+               pofdicl* dirs style=frozen, use_lora=0, fresh=False, and
+               (icl_k, icl_days, icl_ctx_source) matching the arm token
+               (k0/k8live/k32live/k32pri/d15);
+               pofddpo* dirs style=dpo, fresh=True, use_lora=1, and
+               rlhf_feedback matching the closed/open token (DPO_BETA is
+               env-only, verified via the submit configs instead).
   2. NO-PEER   row['accepted'] (peer pairs that moved) == 0 in EVERY round.
   3. EXACT-COPY per round t, with x_before = innate (t=0) or op_raw[t-1]:
                gate_i = |served_i - x_before_i| < eps_ai. Accepted agents must
@@ -18,6 +24,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                and NEVER grows round-over-round. n_train is logged POST-cap
                (run_pokec_gated_lm.py:1256), so it must hold 723 under
                accumulate too -- the pool grows, the batch never does.
+               Skipped for pofdicl* (frozen: nothing trains); optional for
+               pofddpo* (pair-based; checked only if logged).
 
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
@@ -50,15 +58,29 @@ def check_run(run_dir):
     # -- 1 CONFIG ------------------------------------------------------------
     name = os.path.basename(run_dir.rstrip("/"))
     is_pfrac = name.startswith("pofdpf_")
+    is_icl = name.startswith("pofdicl")    # covers pofdiclsmk_ too
+    is_dpo = name.startswith("pofddpo")    # covers pofddposmk_ too
     want = {"eps": 0.0, "w_plat": 1.0, "innate_lambda": 0.0, "canary_delta": 0.0,
             "data_regime": "accumulate" if is_pfrac else "replace",
-            "fresh_each_round": True, "pop_model": "ab",
+            "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
             "platform_sus_scale": 1.0, "dataset": "movielens"}
     if is_pfrac:
-        want.update({"kl_beta": 0.0, "training_style": "sft"})
+        want.update({"kl_beta": 0.0, "training_style": "sft",
+                     "fresh_each_round": True})
+    elif is_icl:
+        # frozen weights: nothing trains, FRESH_EACH_ROUND deliberately 0
+        want.update({"kl_beta": 0.0, "training_style": "frozen",
+                     "pristine_frac": 0.0, "fresh_each_round": False,
+                     "use_lora": 0, "icl_select": "random"})
+    elif is_dpo:
+        # DPO_BETA is env-only (not in config.json) -- verified via the submit
+        # configs, not here. rlhf_feedback IS recorded and tag-checked below.
+        want.update({"kl_beta": 0.0, "training_style": "dpo",
+                     "pristine_frac": 0.0, "fresh_each_round": True,
+                     "use_lora": 1})
     else:
-        want["pristine_frac"] = 0.0
+        want.update({"pristine_frac": 0.0, "fresh_each_round": True})
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
@@ -71,6 +93,27 @@ def check_run(run_dir):
             got_pf = float(cfg.get("pristine_frac", -1.0))
             if abs(got_pf - want_pf) > 1e-9:
                 errs.append(f"CONFIG pristine_frac={got_pf!r} (tag says {want_pf!r})")
+    if is_icl:
+        ICL_ARM_WANT = {"k0": (0, 0, "live"), "k8live": (8, 0, "live"),
+                        "k32live": (32, 0, "live"), "k32pri": (32, 0, "pristine"),
+                        "d15": (0, 15, "live")}
+        m = re.search(r"_ea[\dp]+_([a-z0-9]+)_s\d", name)
+        arm = m.group(1) if m else None
+        if arm not in ICL_ARM_WANT:
+            errs.append(f"CONFIG unknown icl arm token in dirname {name!r}")
+        else:
+            k_w, d_w, src_w = ICL_ARM_WANT[arm]
+            got = (cfg.get("icl_k"), cfg.get("icl_days"), cfg.get("icl_ctx_source"))
+            if got != (k_w, d_w, src_w):
+                errs.append(f"CONFIG icl (k,days,src)={got!r} (arm {arm} wants "
+                            f"{(k_w, d_w, src_w)!r})")
+    if is_dpo:
+        fb = "open" if "_open_" in name else ("closed" if "_closed_" in name else None)
+        if fb is None:
+            errs.append(f"CONFIG no closed/open token in dirname {name!r}")
+        elif cfg.get("rlhf_feedback") != fb:
+            errs.append(f"CONFIG rlhf_feedback={cfg.get('rlhf_feedback')!r} "
+                        f"(tag says {fb!r})")
     eps_ai = float(cfg["eps_ai"])
 
     # -- 2 NO-PEER -----------------------------------------------------------
@@ -100,10 +143,16 @@ def check_run(run_dir):
                         f"gate frac {float(gate.float().mean()):.6f}")
 
     # -- 4 FRESH -------------------------------------------------------------
+    # icl (frozen): nothing trains, no n_train ever -- skip. dpo: n_train is
+    # logged by the shared telemetry when present; check it if there, but its
+    # absence is not an error (the DPO learner consumes pairs, not rows).
+    if is_icl:
+        return errs
     sizes = [(r["round"], r["n_train"]) for r in traj
              if r.get("is_deploy") and "n_train" in r]
     if not sizes:
-        errs.append("FRESH no n_train logged (pipeline predates the n_train patch?)")
+        if not is_dpo:
+            errs.append("FRESH no n_train logged (pipeline predates the n_train patch?)")
     else:
         cap = int(cfg.get("train_cap") or 0) or 723
         wrong = [(t, n) for t, n in sizes if n != cap]

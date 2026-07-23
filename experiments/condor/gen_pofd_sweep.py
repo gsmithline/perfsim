@@ -65,6 +65,33 @@ PFRAC_MODELS = ["qwen7b", "olmo7b"]   # olmo added 2026-07-23, same 20-cell grid
 ROW_PF = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
           "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {pfrac}")
 
+# pofdicl_ wave (2026-07-23): adaptation via CONTEXT -- frozen weights, no
+# gradients, same pofd population channel (eps_social=0, INNATE_LAMBDA=0,
+# W_PLAT=1). Arms per eps_AI: k0 = pure frozen baseline; k8live/k32live = K
+# exemplar lines (other users, labels from the LIVE loop buffer -- the moving
+# data anchor, replace-analog); k32pri = same K but labels are the users'
+# INNATE opinions (fixed anchor, pristine-analog); d15 = agent's OWN last-15-
+# day history (personal memory, no cross-user context). noai is SKIPPED on
+# purpose: with eps_social=0 the no-AI twin never moves, so noai == pristine.
+ICL_ARMS = [("k0", 0, 0, "live"), ("k8live", 8, 0, "live"),
+            ("k32live", 32, 0, "live"), ("k32pri", 32, 0, "pristine"),
+            ("d15", 0, 15, "live")]
+ICL_MODEL = "qwen7b"
+ROW_ICL = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+           "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {iclk}, {icldays}, {iclsrc}")
+
+# pofddpo_ wave (2026-07-23): preference-based adaptation, same pofd channel,
+# INNATE_LAMBDA=0 (the old rlhf waves used 0.2 -- NOT here), FRESH_EACH_ROUND=1.
+# RLHF_FEEDBACK closed = preferences graded by the model's own deployed
+# population (moving anchor); open = graded by the no-AI twin, which under
+# eps_social=0 stays at innate forever -- the fixed data anchor. DPO_BETA is
+# the implicit-KL-to-reference strength: the DPO analog of the KL knob.
+DPO_BETAS = [0.1, 0.5]
+DPO_FEEDBACKS = ["closed", "open"]
+DPO_MODEL = "qwen7b"
+ROW_DPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+           "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -102,6 +129,31 @@ def pfrac_rows(model):
     return out
 
 
+def icl_rows():
+    out = []
+    for seed in SEEDS:
+        for arm, k, days, src in ICL_ARMS:
+            for eps_ai in EPS_AIS:
+                tag = f"pofdicl_{ICL_MODEL}_ea{_num(eps_ai)}_{arm}_s{seed}"
+                out.append(ROW_ICL.format(tag=tag, seed=seed, eps_ai=f"{eps_ai:g}",
+                                          iclk=k, icldays=days, iclsrc=src))
+    return out
+
+
+def dpo_rows():
+    out = []
+    for seed in SEEDS:
+        for db in DPO_BETAS:
+            for fb in DPO_FEEDBACKS:
+                for eps_ai in EPS_AIS:
+                    tag = (f"pofddpo_{DPO_MODEL}_db{_num(db)}_ea{_num(eps_ai)}"
+                           f"_{fb}_s{seed}_fresh")
+                    out.append(ROW_DPO.format(tag=tag, seed=seed,
+                                              eps_ai=f"{eps_ai:g}",
+                                              rlhf=fb, dpobeta=f"{db:g}"))
+    return out
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -113,6 +165,18 @@ def main():
         p = os.path.join(HERE, f"configs_pofd_{model}_pfrac.txt")
         files[p] = pfrac_rows(model)
         expected[p] = len(PFRACS) * len(EPS_AIS) * len(SEEDS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_icl.txt")
+    files[p] = icl_rows()
+    expected[p] = len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_icl_smoke.txt")] = [ROW_ICL.format(
+        tag="pofdiclsmk_qwen7b_ea0p1_k32pri_s0", seed=0, eps_ai="0.1",
+        iclk=32, icldays=0, iclsrc="pristine")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_dpo.txt")
+    files[p] = dpo_rows()
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_dpo_smoke.txt")] = [ROW_DPO.format(
+        tag="pofddposmk_qwen7b_db0p1_ea0p1_open_s0_fresh", seed=0, eps_ai="0.1",
+        rlhf="open", dpobeta="0.1")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -139,7 +203,10 @@ def main():
           f"{len(EPS_AIS)} eps_ai x {len(SEEDS)} seed(s) = "
           f"{len(ACTIVE_MODELS) * len(BETAS) * len(EPS_AIS) * len(SEEDS)} sweep jobs"
           f" + {len(PFRAC_MODELS) * len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac "
-          f"(data-regime) jobs across {len(PFRAC_MODELS)} model(s) + 1 smoke")
+          f"(data-regime) jobs across {len(PFRAC_MODELS)} model(s)"
+          f" + {len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)} icl"
+          f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} dpo"
+          f" + 3 smokes")
     if verify and not ok:
         sys.exit(1)
 
