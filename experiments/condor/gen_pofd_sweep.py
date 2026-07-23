@@ -61,7 +61,7 @@ ROW = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 # pofdpf_ data-regime wave: same fixed columns but regime=accumulate, beta=0
 # (-> style sft), plus a 16th column pfrac -> PRISTINE_FRAC=$(pfrac) in the .sub.
 PFRACS = [1.0, 0.75, 0.5, 0.25, 0.0]
-PFRAC_MODEL = "qwen7b"
+PFRAC_MODELS = ["qwen7b", "olmo7b"]   # olmo added 2026-07-23, same 20-cell grid
 ROW_PF = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
           "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {pfrac}")
 
@@ -90,12 +90,12 @@ def rows_for(model, seeds, prefix="pofd"):
     return out
 
 
-def pfrac_rows():
+def pfrac_rows(model):
     out = []
     for seed in SEEDS:
         for pf in PFRACS:
             for eps_ai in EPS_AIS:
-                tag = (f"pofdpf_{PFRAC_MODEL}_b0_ea{_num(eps_ai)}"
+                tag = (f"pofdpf_{model}_b0_ea{_num(eps_ai)}"
                        f"_pf{_num(pf)}_s{seed}_fresh_data")
                 out.append(ROW_PF.format(
                     tag=tag, seed=seed, eps_ai=f"{eps_ai:g}", pfrac=f"{pf:g}"))
@@ -109,9 +109,10 @@ def main():
         p = os.path.join(HERE, f"configs_pofd_{model}.txt")
         files[p] = rows_for(model, SEEDS)
         expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
-    p = os.path.join(HERE, "configs_pofd_qwen7b_pfrac.txt")
-    files[p] = pfrac_rows()
-    expected[p] = len(PFRACS) * len(EPS_AIS) * len(SEEDS)
+    for model in PFRAC_MODELS:
+        p = os.path.join(HERE, f"configs_pofd_{model}_pfrac.txt")
+        files[p] = pfrac_rows(model)
+        expected[p] = len(PFRACS) * len(EPS_AIS) * len(SEEDS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -137,8 +138,8 @@ def main():
     print(f"[grid] {len(ACTIVE_MODELS)} model(s) x {len(BETAS)} beta x "
           f"{len(EPS_AIS)} eps_ai x {len(SEEDS)} seed(s) = "
           f"{len(ACTIVE_MODELS) * len(BETAS) * len(EPS_AIS) * len(SEEDS)} sweep jobs"
-          f" + {len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac (data-regime) jobs"
-          f" + 1 smoke")
+          f" + {len(PFRAC_MODELS) * len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac "
+          f"(data-regime) jobs across {len(PFRAC_MODELS)} model(s) + 1 smoke")
     if verify and not ok:
         sys.exit(1)
 
