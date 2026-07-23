@@ -70,12 +70,17 @@ ROW_PF = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # W_PLAT=1). Arms per eps_AI: k0 = pure frozen baseline; k8live/k32live = K
 # exemplar lines (other users, labels from the LIVE loop buffer -- the moving
 # data anchor, replace-analog); k32pri = same K but labels are the users'
-# INNATE opinions (fixed anchor, pristine-analog); d15 = agent's OWN last-15-
-# day history (personal memory, no cross-user context). noai is SKIPPED on
+# INNATE opinions (fixed anchor, pristine-analog); d5/d15/d30 = agent's OWN
+# last-D-day history (personal memory, no cross-user context). The D dial has
+# the same moving-vs-fixed structure: history starts at innate and turns loop-
+# mediated after acceptances, so d5 shows only recent loop opinions (self-
+# replace) while d30 >= horizon always includes the innate start (self-
+# accumulate). noai is SKIPPED on
 # purpose: with eps_social=0 the no-AI twin never moves, so noai == pristine.
 ICL_ARMS = [("k0", 0, 0, "live"), ("k8live", 8, 0, "live"),
             ("k32live", 32, 0, "live"), ("k32pri", 32, 0, "pristine"),
-            ("d15", 0, 15, "live")]
+            ("d5", 0, 5, "live"), ("d15", 0, 15, "live"),
+            ("d30", 0, 30, "live")]
 ICL_MODEL = "qwen7b"
 ROW_ICL = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
            "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {iclk}, {icldays}, {iclsrc}")

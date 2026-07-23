@@ -14,7 +14,15 @@ pofdicl_qwen7b_ea0p05_k32pri_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 
 pofdicl_qwen7b_ea0p1_k32pri_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.1, 32, 0, pristine
 pofdicl_qwen7b_ea0p2_k32pri_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.2, 32, 0, pristine
 pofdicl_qwen7b_ea0p4_k32pri_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.4, 32, 0, pristine
+pofdicl_qwen7b_ea0p05_d5_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.05, 0, 5, live
+pofdicl_qwen7b_ea0p1_d5_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.1, 0, 5, live
+pofdicl_qwen7b_ea0p2_d5_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.2, 0, 5, live
+pofdicl_qwen7b_ea0p4_d5_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.4, 0, 5, live
 pofdicl_qwen7b_ea0p05_d15_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.05, 0, 15, live
 pofdicl_qwen7b_ea0p1_d15_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.1, 0, 15, live
 pofdicl_qwen7b_ea0p2_d15_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.2, 0, 15, live
 pofdicl_qwen7b_ea0p4_d15_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.4, 0, 15, live
+pofdicl_qwen7b_ea0p05_d30_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.05, 0, 30, live
+pofdicl_qwen7b_ea0p1_d30_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.1, 0, 30, live
+pofdicl_qwen7b_ea0p2_d30_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.2, 0, 30, live
+pofdicl_qwen7b_ea0p4_d30_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 1.0, loop, 0.0, 0.4, 0, 30, live
