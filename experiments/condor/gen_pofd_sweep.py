@@ -65,6 +65,19 @@ PFRAC_MODELS = ["qwen7b", "olmo7b"]   # olmo added 2026-07-23, same 20-cell grid
 ROW_PF = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
           "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {pfrac}")
 
+# pofdbp_ wave (2026-07-23): the beta x pfrac INTERIOR for the regularization
+# phase diagram. The two edges already exist -- replace row across beta (pofd_
+# grid) and beta=0 column across pf (pofdpf_ wave); this fills beta>0 x
+# accumulate/pf so displacement/error heatmaps + the low-error low-displacement
+# frontier can be drawn. Scoped to eps_AI {0.2, 0.4}: 0.2 is the data-anchor
+# figure's eps, 0.4 is where the weight anchor bifurcates qwen (prior capture).
+# beta>0 -> style sft_kl always (no beta=0 rows here; that column is pofdpf_).
+BP_BETAS = [0.1, 0.2, 0.5, 1.0]
+BP_EPS = [0.2, 0.4]
+BP_MODEL = "qwen7b"
+ROW_BP = ("{tag}, sft_kl, {beta}, {seed}, 1, accumulate, 1.0, fixed, ab, "
+          "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {pfrac}")
+
 # pofdicl_ wave (2026-07-23): adaptation via CONTEXT -- frozen weights, no
 # gradients, same pofd population channel (eps_social=0, INNATE_LAMBDA=0,
 # W_PLAT=1). Arms per eps_AI: k0 = pure frozen baseline; k8live/k32live = K
@@ -134,6 +147,19 @@ def pfrac_rows(model):
     return out
 
 
+def bp_rows():
+    out = []
+    for seed in SEEDS:
+        for beta in BP_BETAS:
+            for pf in PFRACS:
+                for eps_ai in BP_EPS:
+                    tag = (f"pofdbp_{BP_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                           f"_pf{_num(pf)}_s{seed}_fresh_data")
+                    out.append(ROW_BP.format(tag=tag, beta=f"{beta:g}", seed=seed,
+                                             eps_ai=f"{eps_ai:g}", pfrac=f"{pf:g}"))
+    return out
+
+
 def icl_rows():
     out = []
     for seed in SEEDS:
@@ -170,6 +196,12 @@ def main():
         p = os.path.join(HERE, f"configs_pofd_{model}_pfrac.txt")
         files[p] = pfrac_rows(model)
         expected[p] = len(PFRACS) * len(EPS_AIS) * len(SEEDS)
+    p = os.path.join(HERE, f"configs_pofd_{BP_MODEL}_bp.txt")
+    files[p] = bp_rows()
+    expected[p] = len(BP_BETAS) * len(PFRACS) * len(BP_EPS) * len(SEEDS)
+    files[os.path.join(HERE, f"configs_pofd_{BP_MODEL}_bp_smoke.txt")] = [ROW_BP.format(
+        tag="pofdbpsmk_qwen7b_b0p5_ea0p2_pf0p5_s0_fresh_data", beta="0.5", seed=0,
+        eps_ai="0.2", pfrac="0.5")]
     p = os.path.join(HERE, "configs_pofd_qwen7b_icl.txt")
     files[p] = icl_rows()
     expected[p] = len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)
@@ -209,9 +241,10 @@ def main():
           f"{len(ACTIVE_MODELS) * len(BETAS) * len(EPS_AIS) * len(SEEDS)} sweep jobs"
           f" + {len(PFRAC_MODELS) * len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac "
           f"(data-regime) jobs across {len(PFRAC_MODELS)} model(s)"
+          f" + {len(BP_BETAS) * len(PFRACS) * len(BP_EPS) * len(SEEDS)} bp (beta x pfrac)"
           f" + {len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)} icl"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} dpo"
-          f" + 3 smokes")
+          f" + 4 smokes")
     if verify and not ok:
         sys.exit(1)
 

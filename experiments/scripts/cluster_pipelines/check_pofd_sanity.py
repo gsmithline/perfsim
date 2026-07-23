@@ -8,6 +8,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                pofd_* dirs must be data_regime=replace + pristine_frac=0;
                pofdpf_* dirs (data-regime wave) accumulate + kl_beta=0 +
                style=sft + pristine_frac matching the _pf token;
+               pofdbp* dirs (beta x pfrac interior) accumulate + style=sft_kl
+               + kl_beta matching the _b token + pristine_frac matching _pf;
                pofdicl* dirs style=frozen, use_lora=0, fresh=False, and
                (icl_k, icl_days, icl_ctx_source) matching the arm token
                (k0/k8live/k32live/k32pri/d5/d10/d15/d30);
@@ -58,16 +60,20 @@ def check_run(run_dir):
     # -- 1 CONFIG ------------------------------------------------------------
     name = os.path.basename(run_dir.rstrip("/"))
     is_pfrac = name.startswith("pofdpf_")
+    is_bp = name.startswith("pofdbp")      # covers pofdbpsmk_ too
     is_icl = name.startswith("pofdicl")    # covers pofdiclsmk_ too
     is_dpo = name.startswith("pofddpo")    # covers pofddposmk_ too
     want = {"eps": 0.0, "w_plat": 1.0, "innate_lambda": 0.0, "canary_delta": 0.0,
-            "data_regime": "accumulate" if is_pfrac else "replace",
+            "data_regime": "accumulate" if (is_pfrac or is_bp) else "replace",
             "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
             "platform_sus_scale": 1.0, "dataset": "movielens"}
     if is_pfrac:
         want.update({"kl_beta": 0.0, "training_style": "sft",
                      "fresh_each_round": True})
+    elif is_bp:
+        # kl_beta varies per row -- checked against the _b tag token below
+        want.update({"training_style": "sft_kl", "fresh_each_round": True})
     elif is_icl:
         # frozen weights: nothing trains, FRESH_EACH_ROUND deliberately 0
         want.update({"kl_beta": 0.0, "training_style": "frozen",
@@ -84,7 +90,7 @@ def check_run(run_dir):
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
-    if is_pfrac:
+    if is_pfrac or is_bp:
         m = re.search(r"_pf(\d+(?:p\d+)?)_", name)
         if m is None:
             errs.append(f"CONFIG no _pf token in dirname {name!r}")
@@ -93,6 +99,15 @@ def check_run(run_dir):
             got_pf = float(cfg.get("pristine_frac", -1.0))
             if abs(got_pf - want_pf) > 1e-9:
                 errs.append(f"CONFIG pristine_frac={got_pf!r} (tag says {want_pf!r})")
+    if is_bp:
+        m = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
+        if m is None:
+            errs.append(f"CONFIG no _b token in dirname {name!r}")
+        else:
+            want_b = float(m.group(1).replace("p", "."))
+            got_b = float(cfg.get("kl_beta", -1.0))
+            if abs(got_b - want_b) > 1e-9:
+                errs.append(f"CONFIG kl_beta={got_b!r} (tag says {want_b!r})")
     if is_icl:
         ICL_ARM_WANT = {"k0": (0, 0, "live"), "k8live": (8, 0, "live"),
                         "k32live": (32, 0, "live"), "k32pri": (32, 0, "pristine"),
