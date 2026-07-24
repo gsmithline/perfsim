@@ -15,7 +15,9 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                (k0/k8live/k32live/k32pri/d5/d10/d15/d30);
                pofddpo* dirs style=dpo, fresh=True, use_lora=1, and
                rlhf_feedback matching the closed/open token (DPO_BETA is
-               env-only, verified via the submit configs instead).
+               env-only, verified via the submit configs instead). The prefix
+               also covers pofddpon* (noisy wave: DO_SAMPLE=1, DPO_TAU=3 --
+               both env-only, same config surface).
   2. NO-PEER   row['accepted'] (peer pairs that moved) == 0 in EVERY round.
   3. EXACT-COPY per round t, with x_before = innate (t=0) or op_raw[t-1]:
                gate_i = |served_i - x_before_i| < eps_ai. Accepted agents must

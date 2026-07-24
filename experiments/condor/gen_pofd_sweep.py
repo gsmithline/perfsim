@@ -110,6 +110,17 @@ DPO_MODEL = "qwen7b"
 ROW_DPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
            "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
 
+# pofddpon_ wave (2026-07-24): NOISY DPO -- same grid as the drift-prone half of
+# pofddpo_ (eps_AI {0.2,0.4}) but with the two determinism knobs released:
+# DO_SAMPLE=1 (serving = ONE draw from the label distribution instead of greedy
+# mode -- the finite-sampling channel) and DPO_TAU=3 (soft BT grading; a 0.1
+# accuracy gap wins p=0.57 instead of 0.77 at tau=12). Tests whether the 2-round
+# snap-to-fixed-point of pofddpo_ is intrinsic to preference learning or an
+# artifact of the sharp settings. Tag prefix pofddpon starts with "pofddpo" ON
+# PURPOSE: check_pofd_sanity's dpo branch applies unchanged (TAU/DO_SAMPLE are
+# env-only, like DPO_BETA -- verified via the submit configs).
+DPON_EPS = [0.2, 0.4]
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -185,6 +196,20 @@ def dpo_rows():
     return out
 
 
+def dpon_rows():
+    out = []
+    for seed in SEEDS:
+        for db in DPO_BETAS:
+            for fb in DPO_FEEDBACKS:
+                for eps_ai in DPON_EPS:
+                    tag = (f"pofddpon_{DPO_MODEL}_db{_num(db)}_ea{_num(eps_ai)}"
+                           f"_{fb}_s{seed}_fresh")
+                    out.append(ROW_DPO.format(tag=tag, seed=seed,
+                                              eps_ai=f"{eps_ai:g}",
+                                              rlhf=fb, dpobeta=f"{db:g}"))
+    return out
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -214,6 +239,12 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_dpo_smoke.txt")] = [ROW_DPO.format(
         tag="pofddposmk_qwen7b_db0p1_ea0p1_open_s0_fresh", seed=0, eps_ai="0.1",
         rlhf="open", dpobeta="0.1")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_dpon.txt")
+    files[p] = dpon_rows()
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_dpon_smoke.txt")] = [ROW_DPO.format(
+        tag="pofddponsmk_qwen7b_db0p1_ea0p4_closed_s0_fresh", seed=0, eps_ai="0.4",
+        rlhf="closed", dpobeta="0.1")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -244,7 +275,8 @@ def main():
           f" + {len(BP_BETAS) * len(PFRACS) * len(BP_EPS) * len(SEEDS)} bp (beta x pfrac)"
           f" + {len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)} icl"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} dpo"
-          f" + 4 smokes")
+          f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} dpon (noisy)"
+          f" + 5 smokes")
     if verify and not ok:
         sys.exit(1)
 

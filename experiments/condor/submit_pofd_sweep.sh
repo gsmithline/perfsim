@@ -29,6 +29,7 @@ case "$WHAT" in
   smoke)                                 TARGETS="smoke" ;;
   qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac)   TARGETS="$WHAT" ;;
   qwen7b_icl|qwen7b_icl_smoke|qwen7b_dpo|qwen7b_dpo_smoke)   TARGETS="$WHAT" ;;
+  qwen7b_dpon|qwen7b_dpon_smoke)         TARGETS="$WHAT" ;;
   qwen7b_bp|qwen7b_bp_smoke)             TARGETS="$WHAT" ;;
   full)                                  TARGETS="qwen7b gemma12b olmo7b" ;;
   *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|full" >&2; exit 2 ;;
