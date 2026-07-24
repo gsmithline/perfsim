@@ -874,7 +874,8 @@ def main() -> int:
             # own generator: the HF trainer resets the global seed every round,
             # which froze the sweep's pair pattern across rounds
             ab_gen = torch.Generator(device=ab_device).manual_seed(seed + 424243)
-            if icl_ctx_source == "noai" or icrh_on or training_style == "dpo":
+            if (icl_ctx_source == "noai" or icrh_on or training_style == "dpo"
+                    or eps > 0 or _env_int("WITH_TWIN", 0) == 1):
                 # matched no-AI twin: same start, same AB generator seed, never
                 # gated -- reproduces this seed's no-AI world round for round.
                 # noai feeds exemplar labels; FEEDBACK_MODE uses it as the
@@ -884,6 +885,9 @@ def main() -> int:
                 # this clause ab_x_cf was None and the open arm silently fell back to
                 # its OWN population (line ~968) == the closed arm -- so open and
                 # closed were the same experiment. Do NOT drop the dpo condition.
+                # eps > 0 also forces the twin: with the peer step live the no-AI
+                # world is NO LONGER frozen innate, so the counterfactual must be
+                # simulated (WITH_TWIN=1 forces it for any run).
                 ab_x_cf = innate.to(ab_device).clone()
                 ab_gen_cf = torch.Generator(device=ab_device).manual_seed(seed + 424243)
             else:
@@ -947,6 +951,7 @@ def main() -> int:
     ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
+    twin_raw = []    # per-round per-agent no-AI twin opinions (when ab_x_cf exists)
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
@@ -1214,6 +1219,7 @@ def main() -> int:
                     gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias, gen=ab_gen_cf)
                     if innate_lambda > 0:
                         ab_x_cf = (1.0 - innate_lambda) * ab_x_cf + innate_lambda * ab_innate
+                twin_raw.append(ab_x_cf.detach().cpu().float().clone())
         if op_round0 is None:
             op_round0 = op.clone()
 
@@ -1367,6 +1373,7 @@ def main() -> int:
             "ppl_raw": torch.stack(ppl_raw) if ppl_raw else torch.empty(0),
             "ans_raw": torch.stack(ans_raw) if ans_raw else torch.empty(0),
             "ans_idx": torch.tensor(ans_idx, dtype=torch.long),
+            "twin_raw": torch.stack(twin_raw) if twin_raw else torch.empty(0),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,

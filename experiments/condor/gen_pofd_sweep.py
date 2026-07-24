@@ -145,6 +145,20 @@ ROW_W = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 ROW_WDPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
             "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
 
+# pofdws_ wave (2026-07-24): SECOND population-realism rung -- the peer step
+# comes ON. Same (W=0.5, lam=0.2) point as pofdw_ plus EPS_SOCIAL=0.2 (queue
+# col 10; classic Deffuant bounded-confidence radius; the ab_sweep moves
+# in-radius pairs to their midpoint = mu 0.5). The no-AI twin is NO LONGER
+# frozen innate -- run_pokec_gated_lm now instantiates the simulated twin
+# whenever eps > 0 (same peer sweeps, mirrored RNG, never gated) and saves
+# its per-agent trajectory to trajectory.pt (twin_raw). Displacement is
+# measured vs twin_raw, not innate. Peer moves are RNG-pairwise, so the
+# checker CANNOT replay the exact update -- pofdws* runs get the weaker gate
+# (config + peer-alive + twin present + finiteness) in check_pofd_sanity.
+W_EPS_SOCIAL = 0.2
+ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+          "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -265,6 +279,23 @@ def wdpo_rows(eps_list, prefix):
     return out
 
 
+def ws_tok():
+    return f"{w_tok()}_es{_num(W_EPS_SOCIAL)}"
+
+
+def ws_rows():
+    out = []
+    for seed in SEEDS:
+        for beta in BETAS:
+            for eps_ai in EPS_AIS:
+                tag = (f"pofdws_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                       f"_{ws_tok()}_s{seed}_fresh_data")
+                out.append(ROW_WS.format(
+                    tag=tag, style="sft" if beta == 0 else "sft_kl",
+                    beta=f"{beta:g}", seed=seed, eps_ai=f"{eps_ai:g}"))
+    return out
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -315,6 +346,12 @@ def main():
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpon.txt")
     files[p] = wdpo_rows(DPON_EPS, "pofdwdpon")
     expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_ws.txt")
+    files[p] = ws_rows()
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_ws_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdwssmk_qwen7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -349,7 +386,8 @@ def main():
           f" + {len(BETAS) * len(EPS_AIS) * len(SEEDS)} w (W=0.5 FJ lam=0.2)"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} wdpo"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} wdpon"
-          f" + 7 smokes")
+          f" + {len(BETAS) * len(EPS_AIS) * len(SEEDS)} ws (+eps_social=0.2)"
+          f" + 8 smokes")
     if verify and not ok:
         sys.exit(1)
 

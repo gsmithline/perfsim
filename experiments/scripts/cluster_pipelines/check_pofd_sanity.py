@@ -29,6 +29,11 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                exact-copy / exactly-unchanged check. The no-AI twin stays at
                innate under the anchor, so twin==innate holds for all waves.
                Also cross-checks row['contact'] == gate fraction.
+               pofdws* (_es token, eps_social>0): peer moves are RNG-pairwise
+               and cannot be replayed offline -- these runs get the weaker
+               gate instead: peer step actually fired, finite in-range
+               opinions, twin telemetry every round, twin_raw shape ==
+               op_raw shape, plus the usual CONFIG and FRESH checks.
   4. FRESH     row['n_train'] present on every deploy round, == TRAIN_CAP=723,
                and NEVER grows round-over-round. n_train is logged POST-cap
                (run_pokec_gated_lm.py:1256), so it must hold 723 under
@@ -72,13 +77,17 @@ def check_run(run_dir):
     # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
     # pofdwdpo/pofdwdpon/pofdwdposmk (same config surface, W/lam via tokens)
     is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
-    # _w/_l tokens (pofdw* waves): W_PLAT and INNATE_LAMBDA move off their
-    # pofd defaults (1.0 / 0.0). Absent tokens keep the original W=1 design.
+    # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
+    # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
+    # tokens keep the original W=1 no-peer design.
     m_w = re.search(r"_w(\d+(?:p\d+)?)_", name)
     m_l = re.search(r"_l(\d+(?:p\d+)?)_", name)
+    m_es = re.search(r"_es(\d+(?:p\d+)?)_", name)
     want_w = float(m_w.group(1).replace("p", ".")) if m_w else 1.0
     want_l = float(m_l.group(1).replace("p", ".")) if m_l else 0.0
-    want = {"eps": 0.0, "w_plat": want_w, "innate_lambda": want_l,
+    want_es = float(m_es.group(1).replace("p", ".")) if m_es else 0.0
+    is_social = want_es > 0.0
+    want = {"eps": want_es, "w_plat": want_w, "innate_lambda": want_l,
             "canary_delta": 0.0,
             "data_regime": "accumulate" if (is_pfrac or is_bp) else "replace",
             "pop_model": "ab",
@@ -148,12 +157,39 @@ def check_run(run_dir):
                         f"(tag says {fb!r})")
     eps_ai = float(cfg["eps_ai"])
 
-    # -- 2 NO-PEER -----------------------------------------------------------
-    bad = [r["round"] for r in traj if r.get("accepted", 0) != 0]
-    if bad:
-        errs.append(f"NO-PEER accepted!=0 in rounds {bad[:5]}{'...' if len(bad) > 5 else ''}")
+    # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
+    if is_social:
+        # peer step is ON by design: require it actually fired somewhere
+        if not any(r.get("accepted", 0) > 0 for r in traj):
+            errs.append("PEER-ALIVE eps_social>0 but accepted==0 every round "
+                        "(peer step never fired?)")
+    else:
+        bad = [r["round"] for r in traj if r.get("accepted", 0) != 0]
+        if bad:
+            errs.append(f"NO-PEER accepted!=0 in rounds {bad[:5]}{'...' if len(bad) > 5 else ''}")
 
     # -- 3 EXACT-COPY (exact composed blend when W<1 or lam>0) ---------------
+    # pofdws* (eps_social>0): peer moves are RNG-pairwise and cannot be
+    # replayed offline -- swap the exact-update check for the weaker gate:
+    # finite in-range opinions/predictions, the SIMULATED twin present
+    # (twin telemetry every round + twin_raw matching op_raw in shape).
+    if is_social:
+        if not (torch.isfinite(op_raw).all() and torch.isfinite(pred_raw).all()):
+            errs.append("SOCIAL non-finite opinions or predictions")
+        if float(op_raw.min()) < -1e-6 or float(op_raw.max()) > 1 + 1e-6:
+            errs.append(f"SOCIAL opinions out of [0,1]: "
+                        f"[{float(op_raw.min()):.3f}, {float(op_raw.max()):.3f}]")
+        no_twin = [r["round"] for r in traj if "twin_mean" not in r]
+        if no_twin:
+            errs.append(f"SOCIAL twin telemetry missing in rounds {no_twin[:5]}")
+        tw = d.get("twin_raw")
+        if tw is None or tw.numel() == 0:
+            errs.append("SOCIAL twin_raw missing/empty in trajectory.pt "
+                        "(pipeline predates the twin_raw patch?)")
+        elif tuple(tw.shape) != tuple(op_raw.shape):
+            errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        return errs + _fresh_errs(cfg, traj, is_dpo)
     w = float(cfg.get("w_plat", 1.0))
     lam = float(cfg.get("innate_lambda", 0.0))
     for t in range(op_raw.shape[0]):
@@ -183,11 +219,17 @@ def check_run(run_dir):
                         f"gate frac {float(gate.float().mean()):.6f}")
 
     # -- 4 FRESH -------------------------------------------------------------
-    # icl (frozen): nothing trains, no n_train ever -- skip. dpo: n_train is
-    # logged by the shared telemetry when present; check it if there, but its
-    # absence is not an error (the DPO learner consumes pairs, not rows).
+    # icl (frozen): nothing trains, no n_train ever -- skip.
     if is_icl:
         return errs
+    return errs + _fresh_errs(cfg, traj, is_dpo)
+
+
+def _fresh_errs(cfg, traj, is_dpo):
+    """FRESH check: n_train == TRAIN_CAP on every deploy round, never grows.
+    dpo: n_train is logged by the shared telemetry when present; check it if
+    there, but its absence is not an error (the learner consumes pairs)."""
+    errs = []
     sizes = [(r["round"], r["n_train"]) for r in traj
              if r.get("is_deploy") and "n_train" in r]
     if not sizes:
@@ -220,6 +262,8 @@ def main():
             print(f"FAIL {name}")
             for e in errs:
                 print(f"     - {e}")
+        elif re.search(r"_es\d", name):
+            print(f"PASS {name}  (peer step live, twin simulated, fresh data only)")
         else:
             print(f"PASS {name}  (no peer updates, exact platform blend, fresh data only)")
     print(f"[check_pofd_sanity] {len(dirs) - n_fail}/{len(dirs)} runs pass")
