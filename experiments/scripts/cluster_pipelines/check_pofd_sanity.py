@@ -20,9 +20,14 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                both env-only, same config surface).
   2. NO-PEER   row['accepted'] (peer pairs that moved) == 0 in EVERY round.
   3. EXACT-COPY per round t, with x_before = innate (t=0) or op_raw[t-1]:
-               gate_i = |served_i - x_before_i| < eps_ai. Accepted agents must
-               land EXACTLY on the served prediction (W=1); rejected agents
-               must be EXACTLY unchanged (no peer step, no innate anchor).
+               gate_i = |served_i - x_before_i| < eps_ai. The verified update
+               is the composed Deffuant-blend + FJ-anchor step
+                 accepted: op = (1-lam)[(1-W) x_before + W served] + lam innate
+                 rejected: op = (1-lam) x_before + lam innate
+               with W/lam read from _w/_l dirname tokens (checked against the
+               config); no tokens -> W=1, lam=0, which reduces to the original
+               exact-copy / exactly-unchanged check. The no-AI twin stays at
+               innate under the anchor, so twin==innate holds for all waves.
                Also cross-checks row['contact'] == gate fraction.
   4. FRESH     row['n_train'] present on every deploy round, == TRAIN_CAP=723,
                and NEVER grows round-over-round. n_train is logged POST-cap
@@ -64,8 +69,17 @@ def check_run(run_dir):
     is_pfrac = name.startswith("pofdpf_")
     is_bp = name.startswith("pofdbp")      # covers pofdbpsmk_ too
     is_icl = name.startswith("pofdicl")    # covers pofdiclsmk_ too
-    is_dpo = name.startswith("pofddpo")    # covers pofddposmk_ too
-    want = {"eps": 0.0, "w_plat": 1.0, "innate_lambda": 0.0, "canary_delta": 0.0,
+    # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
+    # pofdwdpo/pofdwdpon/pofdwdposmk (same config surface, W/lam via tokens)
+    is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
+    # _w/_l tokens (pofdw* waves): W_PLAT and INNATE_LAMBDA move off their
+    # pofd defaults (1.0 / 0.0). Absent tokens keep the original W=1 design.
+    m_w = re.search(r"_w(\d+(?:p\d+)?)_", name)
+    m_l = re.search(r"_l(\d+(?:p\d+)?)_", name)
+    want_w = float(m_w.group(1).replace("p", ".")) if m_w else 1.0
+    want_l = float(m_l.group(1).replace("p", ".")) if m_l else 0.0
+    want = {"eps": 0.0, "w_plat": want_w, "innate_lambda": want_l,
+            "canary_delta": 0.0,
             "data_regime": "accumulate" if (is_pfrac or is_bp) else "replace",
             "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
@@ -139,7 +153,9 @@ def check_run(run_dir):
     if bad:
         errs.append(f"NO-PEER accepted!=0 in rounds {bad[:5]}{'...' if len(bad) > 5 else ''}")
 
-    # -- 3 EXACT-COPY --------------------------------------------------------
+    # -- 3 EXACT-COPY (exact composed blend when W<1 or lam>0) ---------------
+    w = float(cfg.get("w_plat", 1.0))
+    lam = float(cfg.get("innate_lambda", 0.0))
     for t in range(op_raw.shape[0]):
         served = pred_raw[t].clamp(0.0, 1.0)
         if not torch.isfinite(served).all():
@@ -147,14 +163,20 @@ def check_run(run_dir):
             continue
         x_before = innate if t == 0 else op_raw[t - 1]
         gate = (served - x_before).abs() < eps_ai
-        d_acc = (op_raw[t][gate] - served[gate]).abs()
+        # sim order (run_pokec_gated_lm): gated_blend on x_before, then the
+        # FJ innate re-anchor over everyone -- reproduce it exactly
+        x_mid = torch.where(gate, (1.0 - w) * x_before + w * served, x_before)
+        expect = (1.0 - lam) * x_mid + lam * innate if lam > 0 else x_mid
+        d_acc = (op_raw[t][gate] - expect[gate]).abs()
         if gate.any() and float(d_acc.max()) > ATOL:
-            errs.append(f"EXACT-COPY round {t}: accepted opinion != prediction "
-                        f"(max |diff| {float(d_acc.max()):.2e}, W=1 violated)")
-        d_rej = (op_raw[t][~gate] - x_before[~gate]).abs()
-        if (~gate).any() and float(d_rej.max()) > 0.0:
-            errs.append(f"EXACT-COPY round {t}: rejected agent moved "
-                        f"(max |diff| {float(d_rej.max()):.2e})")
+            errs.append(f"EXACT-COPY round {t}: accepted opinion != blend "
+                        f"(max |diff| {float(d_acc.max()):.2e}, "
+                        f"W={w:g} lam={lam:g} violated)")
+        d_rej = (op_raw[t][~gate] - expect[~gate]).abs()
+        rej_tol = ATOL if lam > 0 else 0.0   # lam=0 -> rejected untouched, exact
+        if (~gate).any() and float(d_rej.max()) > rej_tol:
+            errs.append(f"EXACT-COPY round {t}: rejected agent off the "
+                        f"anchor path (max |diff| {float(d_rej.max()):.2e})")
         logged = traj[t].get("contact")
         if logged is not None and abs(logged - float(gate.float().mean())) > 1e-6:
             errs.append(f"EXACT-COPY round {t}: contact {logged:.6f} != "
@@ -199,7 +221,7 @@ def main():
             for e in errs:
                 print(f"     - {e}")
         else:
-            print(f"PASS {name}  (no peer updates, W=1 exact copy, fresh data only)")
+            print(f"PASS {name}  (no peer updates, exact platform blend, fresh data only)")
     print(f"[check_pofd_sanity] {len(dirs) - n_fail}/{len(dirs)} runs pass")
     sys.exit(1 if n_fail else 0)
 

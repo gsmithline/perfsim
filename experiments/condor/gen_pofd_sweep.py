@@ -121,6 +121,30 @@ ROW_DPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
 # env-only, like DPO_BETA -- verified via the submit configs).
 DPON_EPS = [0.2, 0.4]
 
+# pofdw_ wave (2026-07-24): FIRST population-realism rung. Two knobs at once,
+# both textbook: W_PLAT=0.5 = canonical Deffuant mixing rate mu (the platform
+# step IS a one-sided Deffuant interaction, bound eps_AI, rate W; the whole
+# W=1 program was the mu=1 degenerate corner) + INNATE_LAMBDA=0.2 = Friedkin-
+# Johnsen stubbornness, applied AFTER the platform blend (textbook FJ order:
+# x <- (1-lam)[(1-W)x + W pred] + lam innate for gated agents; ungated agents
+# heal toward innate at rate lam). Displacement stops being absorbing: captured
+# agents equilibrate at 0.67 pred + 0.33 innate, stranded agents heal (~3-round
+# half-life). The no-AI twin stays EXACTLY innate under both knobs (the anchor
+# maps innate to innate), so the exact counterfactual survives. W rides queue
+# column 12; LAMBDA is env-only in the w-subs (runner arg 15 is never passed).
+# Tags carry _w0p5_l0p2 tokens; check_pofd_sanity reads them and verifies the
+# composed FJ update exactly. Phase 1 = the decisive W=1 batteries re-run:
+# core beta x eps grid (pofdw_) + sharp DPO (pofdwdpo_, prefix deliberately
+# NOT starting with "pofddpo" -- the checker's dpo branch matches both) +
+# noisy DPO (pofdwdpon_). ANS_SAMPLE_K=16 entropy probe ON in all w-subs.
+W_WPLAT = 0.5
+W_LAMBDA = 0.2
+W_MODEL = "qwen7b"
+ROW_W = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+         "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}")
+ROW_WDPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+            "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -210,6 +234,37 @@ def dpon_rows():
     return out
 
 
+def w_tok():
+    return f"w{_num(W_WPLAT)}_l{_num(W_LAMBDA)}"
+
+
+def w_rows():
+    out = []
+    for seed in SEEDS:
+        for beta in BETAS:
+            for eps_ai in EPS_AIS:
+                tag = (f"pofdw_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                       f"_{w_tok()}_s{seed}_fresh_data")
+                out.append(ROW_W.format(
+                    tag=tag, style="sft" if beta == 0 else "sft_kl",
+                    beta=f"{beta:g}", seed=seed, eps_ai=f"{eps_ai:g}"))
+    return out
+
+
+def wdpo_rows(eps_list, prefix):
+    out = []
+    for seed in SEEDS:
+        for db in DPO_BETAS:
+            for fb in DPO_FEEDBACKS:
+                for eps_ai in eps_list:
+                    tag = (f"{prefix}_{W_MODEL}_db{_num(db)}_ea{_num(eps_ai)}"
+                           f"_{fb}_{w_tok()}_s{seed}_fresh")
+                    out.append(ROW_WDPO.format(tag=tag, seed=seed,
+                                               eps_ai=f"{eps_ai:g}",
+                                               rlhf=fb, dpobeta=f"{db:g}"))
+    return out
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -245,6 +300,21 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_dpon_smoke.txt")] = [ROW_DPO.format(
         tag="pofddponsmk_qwen7b_db0p1_ea0p4_closed_s0_fresh", seed=0, eps_ai="0.4",
         rlhf="closed", dpobeta="0.1")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_w.txt")
+    files[p] = w_rows()
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_w_smoke.txt")] = [ROW_W.format(
+        tag=f"pofdwsmk_qwen7b_b0p5_ea0p2_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo.txt")
+    files[p] = wdpo_rows(EPS_AIS, "pofdwdpo")
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_wdpo_smoke.txt")] = [ROW_WDPO.format(
+        tag=f"pofdwdposmk_qwen7b_db0p1_ea0p4_closed_{w_tok()}_s0_fresh",
+        seed=0, eps_ai="0.4", rlhf="closed", dpobeta="0.1")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpon.txt")
+    files[p] = wdpo_rows(DPON_EPS, "pofdwdpon")
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -276,7 +346,10 @@ def main():
           f" + {len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)} icl"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} dpo"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} dpon (noisy)"
-          f" + 5 smokes")
+          f" + {len(BETAS) * len(EPS_AIS) * len(SEEDS)} w (W=0.5 FJ lam=0.2)"
+          f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} wdpo"
+          f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} wdpon"
+          f" + 7 smokes")
     if verify and not ok:
         sys.exit(1)
 

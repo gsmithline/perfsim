@@ -14,8 +14,8 @@
 # the idempotent executable makes accidental resubmits no-ops anyway).
 set -euo pipefail
 
-BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|full}"
-WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|full}"
+BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|full}"
+WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|full}"
 REPO="${REPO:-/home/gsmithline/perfsim}"
 cd "$REPO"
 
@@ -31,8 +31,9 @@ case "$WHAT" in
   qwen7b_icl|qwen7b_icl_smoke|qwen7b_dpo|qwen7b_dpo_smoke)   TARGETS="$WHAT" ;;
   qwen7b_dpon|qwen7b_dpon_smoke)         TARGETS="$WHAT" ;;
   qwen7b_bp|qwen7b_bp_smoke)             TARGETS="$WHAT" ;;
+  qwen7b_w|qwen7b_w_smoke|qwen7b_wdpo|qwen7b_wdpo_smoke|qwen7b_wdpon)   TARGETS="$WHAT" ;;
   full)                                  TARGETS="qwen7b gemma12b olmo7b" ;;
-  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|full" >&2; exit 2 ;;
+  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|full" >&2; exit 2 ;;
 esac
 
 for T in $TARGETS; do
