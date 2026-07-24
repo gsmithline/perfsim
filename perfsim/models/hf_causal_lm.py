@@ -265,6 +265,39 @@ class HFCausalLMModel(Model):
             self.inner_model.config.use_cache = was_use_cache
         return {"answer_entropy": ent_sum / count, "answer_top1": top1_sum / count}
 
+    @torch.no_grad()
+    def answer_sample_stats(
+        self, k: int, idx: list[int], temperature: float = 1.0
+    ) -> tuple[dict, Tensor]:
+        """K sampled draws of the parsed answer VALUE for the agents in `idx`.
+
+        Value-level companion to answer_distribution_stats(), which scores only
+        the first answer-token position and is trivially deterministic when
+        every answer starts "0.". Sampling end-to-end measures the entropy that
+        matters for the finite-sampling loop channel: how much the served
+        NUMBER varies under redraws. Entropy is the empirical distribution's
+        (natural log, max ln(k)); top1 is the modal draw's frequency.
+        Returns (summary means, values[k, len(idx)]).
+        """
+        self.ensure_loaded()
+        prompts = [self.build_prompt(self.profile_at(i)) for i in idx]
+        draws = []
+        for _ in range(k):
+            outs = self._generate(prompts, do_sample=True, temperature=temperature)
+            draws.append(torch.tensor([self._parse(o) for o in outs],
+                                      dtype=torch.float32))
+        vals = torch.stack(draws)                       # [k, n_sub]
+        top1, ent = [], []
+        for j in range(vals.shape[1]):
+            counts = torch.unique(vals[:, j], return_counts=True)[1].float()
+            p = counts / float(k)
+            top1.append(float(p.max()))
+            ent.append(float(-(p * p.log()).sum()))
+        summary = {"ans_sample_top1": sum(top1) / len(top1),
+                   "ans_sample_entropy": sum(ent) / len(ent),
+                   "ans_sample_std": float(vals.std(dim=0).mean())}
+        return summary, vals
+
     @staticmethod
     def _deduplicate_prompts(prompts: list[str]) -> tuple[list[str], list[int]]:
         """Deduplicate by exact equality; returns (unique, inverse_indices)."""
@@ -278,8 +311,17 @@ class HFCausalLMModel(Model):
             inverse.append(seen[p])
         return unique, inverse
 
-    def _generate(self, prompts: list[str]) -> list[str]:
+    def _generate(
+        self,
+        prompts: list[str],
+        do_sample: bool | None = None,
+        temperature: float | None = None,
+    ) -> list[str]:
         """Batched generation: greedy when do_sample is False, else sampled at temperature.
+
+        do_sample/temperature default to the instance settings; pass explicit
+        values to probe a different decoding mode (answer_sample_stats) without
+        touching the serving configuration.
 
         Toggles grad checkpointing off + KV cache on for generation (HF won't
         populate the cache under checkpointing, costing ~5-10x), restoring both
@@ -287,6 +329,10 @@ class HFCausalLMModel(Model):
         """
         assert self.inner_model is not None
         assert self.tokenizer is not None
+        if do_sample is None:
+            do_sample = self._do_sample
+        if temperature is None:
+            temperature = self._temperature
 
         was_grad_ckpt = bool(getattr(self.inner_model, "is_gradient_checkpointing", False))
         was_use_cache = bool(getattr(self.inner_model.config, "use_cache", False))
@@ -306,11 +352,11 @@ class HFCausalLMModel(Model):
                 ).to(self._target_device)
                 gen_kwargs = dict(
                     max_new_tokens=self._max_new_tokens,
-                    do_sample=self._do_sample,
+                    do_sample=do_sample,
                     pad_token_id=self.tokenizer.pad_token_id,
                 )
-                if self._do_sample:
-                    gen_kwargs["temperature"] = self._temperature
+                if do_sample:
+                    gen_kwargs["temperature"] = temperature
                 with torch.no_grad():
                     gen = self.inner_model.generate(**inputs, **gen_kwargs)
                 new_tokens = gen[:, inputs["input_ids"].shape[1] :]

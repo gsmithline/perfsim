@@ -418,6 +418,16 @@ def main() -> int:
     # full per-agent array -> trajectory.pt (ppl_raw).
     log_ppl_dist = _env_int("LOG_PPL_DIST", 0) == 1
     ppl_dist_cap = _env_int("PPL_DIST_CAP", 0)
+    # ANS_SAMPLE_K>0: once per deploy round, draw K sampled answers (T =
+    # ANS_SAMPLE_T) for ANS_SAMPLE_N evenly-strided agents and log value-level
+    # top1/entropy/std of the redraw distribution. This is the entropy probe
+    # that answer_entropy cannot be: that stat scores only the FIRST answer
+    # token, trivially certain when every answer starts "0.". Summary ->
+    # telemetry rows (ans_sample_*); raw draws -> trajectory.pt (ans_raw
+    # [rounds, K, N_sub] + ans_idx). Costs K*N_sub extra generations/round.
+    ans_sample_k = _env_int("ANS_SAMPLE_K", 0)
+    ans_sample_n = _env_int("ANS_SAMPLE_N", 64)
+    ans_sample_t = _env_float("ANS_SAMPLE_T", 1.0)
     # DEBUG_GEN=1: each round print the parse-failure fraction (agents whose
     # generation had no number, silently defaulted to 0.5) and a few raw decoded
     # strings. Sanity check that sampled generation is real numbers, not nonsense.
@@ -657,6 +667,8 @@ def main() -> int:
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
         "do_sample": do_sample, "gen_temperature": gen_temperature,
+        "ans_sample_k": ans_sample_k, "ans_sample_n": ans_sample_n,
+        "ans_sample_t": ans_sample_t,
         "host": os.uname().nodename,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -933,6 +945,8 @@ def main() -> int:
     op_raw = []      # per-round raw per-agent opinions (for subgroup / tail analysis)
     pred_raw = []    # per-round raw per-agent model predictions (current deployment)
     ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
+    ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
+    ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
@@ -1102,6 +1116,11 @@ def main() -> int:
                 pred_block["perplexity"] = lm.perplexity(ref_texts)
             if log_answer_dist:
                 pred_block.update(lm.answer_distribution_stats())
+            if ans_sample_k > 0:
+                ans_summary, ans_vals = lm.answer_sample_stats(
+                    ans_sample_k, ans_idx, ans_sample_t)
+                pred_block.update(ans_summary)
+                ans_raw.append(ans_vals)
             if log_ppl_dist:
                 pv, _ = gp.per_agent_ppl(lm, idx_all[mask], innate[mask],
                                          format_number, ppl_dist_cap, cap_gen)
@@ -1346,6 +1365,8 @@ def main() -> int:
             "op_raw": torch.stack(op_raw) if op_raw else torch.empty(0),
             "pred_raw": torch.stack(pred_raw) if pred_raw else torch.empty(0),
             "ppl_raw": torch.stack(ppl_raw) if ppl_raw else torch.empty(0),
+            "ans_raw": torch.stack(ans_raw) if ans_raw else torch.empty(0),
+            "ans_idx": torch.tensor(ans_idx, dtype=torch.long),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,
