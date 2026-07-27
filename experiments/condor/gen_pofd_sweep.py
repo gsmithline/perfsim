@@ -107,6 +107,11 @@ ROW_ICL = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
 DPO_BETAS = [0.1, 0.5]
 DPO_FEEDBACKS = ["closed", "open"]
 DPO_MODEL = "qwen7b"
+# olmo7b twin of the sharp DPO wave (2026-07-27): same grid, same pofd channel
+# (W=1, lam=0, eps_social=0 -- unaffected by the population-update correction),
+# so it is directly comparable to pofddpo_ and to the olmo7b SFT/KL wave. Model
+# deltas live in the .sub (separate HF cache, PPL_BATCH=16, 160G/60G).
+DPO_MODELS = ["qwen7b", "olmo7b"]
 ROW_DPO = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
            "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
 
@@ -237,13 +242,13 @@ def icl_rows():
     return out
 
 
-def dpo_rows():
+def dpo_rows(model=DPO_MODEL):
     out = []
     for seed in SEEDS:
         for db in DPO_BETAS:
             for fb in DPO_FEEDBACKS:
                 for eps_ai in EPS_AIS:
-                    tag = (f"pofddpo_{DPO_MODEL}_db{_num(db)}_ea{_num(eps_ai)}"
+                    tag = (f"pofddpo_{model}_db{_num(db)}_ea{_num(eps_ai)}"
                            f"_{fb}_s{seed}_fresh")
                     out.append(ROW_DPO.format(tag=tag, seed=seed,
                                               eps_ai=f"{eps_ai:g}",
@@ -341,6 +346,12 @@ def main():
     expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_dpo_smoke.txt")] = [ROW_DPO.format(
         tag="pofddposmk_qwen7b_db0p1_ea0p1_open_s0_fresh", seed=0, eps_ai="0.1",
+        rlhf="open", dpobeta="0.1")]
+    p = os.path.join(HERE, "configs_pofd_olmo7b_dpo.txt")
+    files[p] = dpo_rows("olmo7b")
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_olmo7b_dpo_smoke.txt")] = [ROW_DPO.format(
+        tag="pofddposmk_olmo7b_db0p1_ea0p1_open_s0_fresh", seed=0, eps_ai="0.1",
         rlhf="open", dpobeta="0.1")]
     p = os.path.join(HERE, "configs_pofd_qwen7b_dpon.txt")
     files[p] = dpon_rows()
