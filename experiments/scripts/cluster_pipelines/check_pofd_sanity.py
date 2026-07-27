@@ -19,21 +19,37 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                also covers pofddpon* (noisy wave: DO_SAMPLE=1, DPO_TAU=3 --
                both env-only, same config surface).
   2. NO-PEER   row['accepted'] (peer pairs that moved) == 0 in EVERY round.
-  3. EXACT-COPY per round t, with x_before = innate (t=0) or op_raw[t-1]:
-               gate_i = |served_i - x_before_i| < eps_ai. The verified update
-               is the composed Deffuant-blend + FJ-anchor step
-                 accepted: op = (1-lam)[(1-W) x_before + W served] + lam innate
-                 rejected: op = (1-lam) x_before + lam innate
-               with W/lam read from _w/_l dirname tokens (checked against the
-               config); no tokens -> W=1, lam=0, which reduces to the original
-               exact-copy / exactly-unchanged check. The no-AI twin stays at
-               innate under the anchor, so twin==innate holds for all waves.
-               Also cross-checks row['contact'] == gate fraction.
+  3. EXACT-COPY per round t, with x(t) = innate (t=0) or op_raw[t-1] -- the
+               saved opinion is post-social, so with eps_social=0 it IS the
+               state the next round starts from and the state the training
+               buffer labels carry. The replayed update depends on the run's
+               config population_update marker:
+
+               "nested_ai_then_social_v1" (runs from 2026-07-27):
+                 h = k innate + (1-k) x(t)
+                 z = (1-W) h + W m   if |m - x(t)| < eps_AI   else h
+                 x(t+1) = D_eps_social(z)
+                 -- gate on the START-OF-ROUND opinion, mixture once per round,
+                 peer sweeps last. W=1 returns z = m for every k.
+
+               marker ABSENT (archived runs): the superseded order, gated blend
+               first and the innate re-anchor over everyone after it,
+                 accepted: op = (1-lam)[(1-W) x(t) + W served] + lam innate
+                 rejected: op = (1-lam) x(t) + lam innate
+               kept so the archive stays auditable. At W=1, lam=0, eps_social=0
+               the two are identical, so those runs pass under either.
+
+               W/lam come from the _w/_l dirname tokens (checked against the
+               config); no tokens -> W=1, lam=0. Also cross-checks
+               row['contact'] == the gate fraction computed on x(t).
                pofdws* (_es token, eps_social>0): peer moves are RNG-pairwise
-               and cannot be replayed offline -- these runs get the weaker
-               gate instead: peer step actually fired, finite in-range
-               opinions, twin telemetry every round, twin_raw shape ==
-               op_raw shape, plus the usual CONFIG and FRESH checks.
+               and cannot be replayed offline -- these runs get peer-alive,
+               finite in-range opinions, twin telemetry every round and
+               twin_raw shape == op_raw shape. Marked peer runs additionally
+               get mean(op_raw[t]) == mean(z(t)): every Deffuant move sends a
+               pair to its midpoint, so the peer sweep conserves the population
+               mean exactly, and the equality fails if the mixture did not run
+               BEFORE the peer step.
   4. FRESH     row['n_train'] present on every deploy round, == TRAIN_CAP=723,
                and NEVER grows round-over-round. n_train is logged POST-cap
                (run_pokec_gated_lm.py:1256), so it must hold 723 under
@@ -173,12 +189,45 @@ def check_run(run_dir):
     # replayed offline -- swap the exact-update check for the weaker gate:
     # finite in-range opinions/predictions, the SIMULATED twin present
     # (twin telemetry every round + twin_raw matching op_raw in shape).
+    nested = cfg.get("population_update") == "nested_ai_then_social_v1"
+    w = float(cfg.get("w_plat", 1.0))
+    lam = float(cfg.get("innate_lambda", 0.0))
     if is_social:
         if not (torch.isfinite(op_raw).all() and torch.isfinite(pred_raw).all()):
             errs.append("SOCIAL non-finite opinions or predictions")
         if float(op_raw.min()) < -1e-6 or float(op_raw.max()) > 1 + 1e-6:
             errs.append(f"SOCIAL opinions out of [0,1]: "
                         f"[{float(op_raw.min()):.3f}, {float(op_raw.max()):.3f}]")
+        if nested:
+            # Peer moves are RNG-pairwise and cannot be replayed offline, but
+            # every Deffuant move sends a pair to its midpoint, so the peer
+            # sweep CONSERVES the population mean exactly. Under
+            # nested_ai_then_social_v1 the peer sweep runs LAST, on z, so
+            # mean(op_raw[t]) must equal mean(z(t)) computed from op_raw[t-1].
+            # Under the legacy order (peers first) it would not.
+            for t in range(op_raw.shape[0]):
+                served = pred_raw[t].clamp(0.0, 1.0)
+                if not torch.isfinite(served).all():
+                    errs.append(f"SOCIAL round {t}: non-finite predictions")
+                    continue
+                x0 = innate if t == 0 else op_raw[t - 1]
+                h = lam * innate + (1.0 - lam) * x0
+                gate = (served - x0).abs() < eps_ai
+                z = torch.where(gate, (1.0 - w) * h + w * served, h)
+                dmean = abs(float(op_raw[t].mean()) - float(z.mean()))
+                if dmean > 1e-4:
+                    errs.append(f"SOCIAL round {t}: mean(op_raw) differs from "
+                                f"mean(z) by {dmean:.2e} -- peer sweep is "
+                                f"mean-conserving, so the nested update did NOT "
+                                f"run before the peer step (gate on x0, "
+                                f"W={w:g} lam={lam:g})")
+                logged = traj[t].get("contact")
+                if logged is not None and \
+                        abs(logged - float(gate.float().mean())) > 1e-6:
+                    errs.append(f"SOCIAL round {t}: contact {logged:.6f} != "
+                                f"gate-on-x0 frac "
+                                f"{float(gate.float().mean()):.6f} -- the AI "
+                                f"gate must use the start-of-round opinion")
         no_twin = [r["round"] for r in traj if "twin_mean" not in r]
         if no_twin:
             errs.append(f"SOCIAL twin telemetry missing in rounds {no_twin[:5]}")
@@ -190,19 +239,29 @@ def check_run(run_dir):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
         return errs + _fresh_errs(cfg, traj, is_dpo)
-    w = float(cfg.get("w_plat", 1.0))
-    lam = float(cfg.get("innate_lambda", 0.0))
     for t in range(op_raw.shape[0]):
         served = pred_raw[t].clamp(0.0, 1.0)
         if not torch.isfinite(served).all():
             errs.append(f"EXACT-COPY round {t}: non-finite predictions")
             continue
+        # x_before is the START-OF-ROUND opinion x(t): with eps_social=0 the
+        # peer step is inert, so the saved op_raw[t-1] (post-social) IS the
+        # state the next round starts from and the state the buffer labels
+        # carry. Both versions gate on it.
         x_before = innate if t == 0 else op_raw[t - 1]
         gate = (served - x_before).abs() < eps_ai
-        # sim order (run_pokec_gated_lm): gated_blend on x_before, then the
-        # FJ innate re-anchor over everyone -- reproduce it exactly
-        x_mid = torch.where(gate, (1.0 - w) * x_before + w * served, x_before)
-        expect = (1.0 - lam) * x_mid + lam * innate if lam > 0 else x_mid
+        if nested:
+            # population_update="nested_ai_then_social_v1":
+            #   h = lam innate + (1-lam) x(t)
+            #   z = (1-W) h + W m  if |m - x(t)| < eps_AI  else h
+            #   x(t+1) = D_eps_social(z) = z here (eps_social == 0)
+            h = lam * innate + (1.0 - lam) * x_before
+            expect = torch.where(gate, (1.0 - w) * h + w * served, h)
+        else:
+            # LEGACY (marker absent): gated_blend on x_before, then the innate
+            # re-anchor over EVERYONE -- reproduce the archived runs exactly
+            x_mid = torch.where(gate, (1.0 - w) * x_before + w * served, x_before)
+            expect = (1.0 - lam) * x_mid + lam * innate if lam > 0 else x_mid
         d_acc = (op_raw[t][gate] - expect[gate]).abs()
         if gate.any() and float(d_acc.max()) > ATOL:
             errs.append(f"EXACT-COPY round {t}: accepted opinion != blend "
@@ -216,7 +275,8 @@ def check_run(run_dir):
         logged = traj[t].get("contact")
         if logged is not None and abs(logged - float(gate.float().mean())) > 1e-6:
             errs.append(f"EXACT-COPY round {t}: contact {logged:.6f} != "
-                        f"gate frac {float(gate.float().mean()):.6f}")
+                        f"gate-on-x0 frac {float(gate.float().mean()):.6f} "
+                        f"(the AI gate must use the start-of-round opinion)")
 
     # -- 4 FRESH -------------------------------------------------------------
     # icl (frozen): nothing trains, no n_train ever -- skip.

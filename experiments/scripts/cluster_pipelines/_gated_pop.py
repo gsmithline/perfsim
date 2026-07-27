@@ -65,10 +65,35 @@ def ab_sweep(x, adj, eps, gamma, gen=None):
 
 
 def gated_blend(x, served, w_agent, eps):
-    """x_i <- (1-w_i) x_i + w_i m_i where |m_i - x_i| < eps. Returns (x, contact)."""
+    """x_i <- (1-w_i) x_i + w_i m_i where |m_i - x_i| < eps. Returns (x, contact).
+
+    LEGACY pre-social operator (population_update marker absent). Kept for
+    auditing archived runs; new runs use nested_presocial_update below.
+    """
     gate = (served - x).abs() < eps
     x = torch.where(gate, (1.0 - w_agent) * x + w_agent * served, x)
     return x, float(gate.float().mean())
+
+
+def nested_presocial_update(x0, served, innate, k, w_agent, eps_ai):
+    """Pre-social round operator (population_update="nested_ai_then_social_v1").
+
+        h_i = k innate_i + (1-k) x0_i                      (human component)
+        g_i = 1{|m_i - x0_i| < eps_ai}                      (gate on x0, strict <)
+        z_i = (1-w_i) h_i + w_i m_i  if g_i else h_i        (platform mixture)
+
+    The gate is evaluated against the START-OF-ROUND opinion x0 -- not against
+    h and not against any peer-updated state -- because the platform serves
+    before the population moves. The innate pull therefore dilutes only the
+    human share: w_i = 1 on a gated agent gives z_i = m_i for every k.
+
+    Pure and side-effect free; peer (Deffuant) dynamics run AFTER this on z.
+    Returns (z, gate) with gate the boolean acceptance mask.
+    """
+    h = k * innate + (1.0 - k) * x0
+    gate = (served - x0).abs() < eps_ai
+    eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
+    return (1.0 - eff_w) * h + eff_w * served, gate
 
 
 def make_canary(n, delta, seed):

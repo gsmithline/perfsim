@@ -125,18 +125,35 @@ DPON_EPS = [0.2, 0.4]
 # both textbook: W_PLAT=0.5 = canonical Deffuant mixing rate mu (the platform
 # step IS a one-sided Deffuant interaction, bound eps_AI, rate W; the whole
 # W=1 program was the mu=1 degenerate corner) + INNATE_LAMBDA=0.2 = Friedkin-
-# Johnsen stubbornness, applied AFTER the platform blend (textbook FJ order:
-# x <- (1-lam)[(1-W)x + W pred] + lam innate for gated agents; ungated agents
-# heal toward innate at rate lam). Displacement stops being absorbing: captured
-# agents equilibrate at 0.67 pred + 0.33 innate, stranded agents heal (~3-round
-# half-life). The no-AI twin stays EXACTLY innate under both knobs (the anchor
-# maps innate to innate), so the exact counterfactual survives. W rides queue
-# column 12; LAMBDA is env-only in the w-subs (runner arg 15 is never passed).
-# Tags carry _w0p5_l0p2 tokens; check_pofd_sanity reads them and verifies the
-# composed FJ update exactly. Phase 1 = the decisive W=1 batteries re-run:
-# core beta x eps grid (pofdw_) + sharp DPO (pofdwdpo_, prefix deliberately
-# NOT starting with "pofddpo" -- the checker's dpo branch matches both) +
-# noisy DPO (pofdwdpon_). ANS_SAMPLE_K=16 entropy probe ON in all w-subs.
+# Johnsen stubbornness. Displacement stops being absorbing: captured agents
+# equilibrate between the served value and innate, stranded agents heal. W
+# rides queue column 12; LAMBDA is env-only in the w-subs (runner arg 15 is
+# never passed). Tags carry _w0p5_l0p2 tokens; check_pofd_sanity reads them and
+# verifies the update exactly.
+#
+# SUPERSEDED 2026-07-27 by the pofdw2_/pofdws2_ waves. The original pofdw_/
+# pofdws_ runs used the pre-correction round operator, which applied the innate
+# anchor AFTER the platform blend (so W m was diluted by (1-lam), and W=1 did
+# NOT recover m) and ran the peer sweep BEFORE the blend. The corrected
+# operator, config population_update="nested_ai_then_social_v1", is
+#
+#     h_i(t) = k x_innate,i + (1-k) x_i(t)
+#     z_i(t) = (1-W) h_i(t) + W m_i(t)   if |m_i(t) - x_i(t)| < eps_AI
+#            = h_i(t)                    otherwise
+#     x(t+1) = D_eps_social(z(t))
+#
+# gate on the START-OF-ROUND opinion x_i(t), mixture ONCE per round, peer
+# (Deffuant) sweeps LAST. W=1 now gives z = m for every k, so the environment
+# ladder W=1 -> W<1 -> eps_social>0 is properly nested. At W=1, k=0,
+# eps_social=0 the two operators are algebraically identical, so the pofd_,
+# pofdpf_, pofdbp_ and pofdicl_ families are UNAFFECTED and stay valid. The
+# archived pofdw_/pofdws_ runs are not, and must not be mixed with pofdw2_/
+# pofdws2_ output -- erm.is_clean_loop enforces the marker.
+#
+# Phase 1 = the decisive W=1 batteries re-run: core beta x eps grid (pofdw_) +
+# sharp DPO (pofdwdpo_, prefix deliberately NOT starting with "pofddpo" -- the
+# checker's dpo branch matches both) + noisy DPO (pofdwdpon_). ANS_SAMPLE_K=16
+# entropy probe ON in all w-subs.
 W_WPLAT = 0.5
 W_LAMBDA = 0.2
 W_MODEL = "qwen7b"
@@ -252,12 +269,12 @@ def w_tok():
     return f"w{_num(W_WPLAT)}_l{_num(W_LAMBDA)}"
 
 
-def w_rows():
+def w_rows(prefix="pofdw"):
     out = []
     for seed in SEEDS:
         for beta in BETAS:
             for eps_ai in EPS_AIS:
-                tag = (f"pofdw_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{w_tok()}_s{seed}_fresh_data")
                 out.append(ROW_W.format(
                     tag=tag, style="sft" if beta == 0 else "sft_kl",
@@ -283,12 +300,12 @@ def ws_tok():
     return f"{w_tok()}_es{_num(W_EPS_SOCIAL)}"
 
 
-def ws_rows():
+def ws_rows(prefix="pofdws"):
     out = []
     for seed in SEEDS:
         for beta in BETAS:
             for eps_ai in EPS_AIS:
-                tag = (f"pofdws_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{ws_tok()}_s{seed}_fresh_data")
                 out.append(ROW_WS.format(
                     tag=tag, style="sft" if beta == 0 else "sft_kl",
@@ -351,6 +368,23 @@ def main():
     expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_ws_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdwssmk_qwen7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+
+    # ---- corrected-dynamics re-runs (population_update=nested_ai_then_social_v1)
+    # Identical grids to pofdw_/pofdws_; ONLY the round operator differs, so the
+    # tags must differ too -- these write to new run dirs and never overwrite the
+    # superseded ones. See the pofdw_ block above for the operator.
+    p = os.path.join(HERE, "configs_pofd_qwen7b_w2.txt")
+    files[p] = w_rows("pofdw2")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_w2_smoke.txt")] = [ROW_W.format(
+        tag=f"pofdw2smk_qwen7b_b0p5_ea0p2_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_ws2.txt")
+    files[p] = ws_rows("pofdws2")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_ws2_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdws2smk_qwen7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

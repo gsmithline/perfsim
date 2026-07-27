@@ -520,10 +520,10 @@ def main() -> int:
     # innate seed a Deffuant run, the population relaxes under the platform,
     # the model trains on the relaxed outcome.
     ab_sweeps = _env_int("AB_SWEEPS", 1)
-    # POP_ORDER (ab only): within-round ordering of the peer sweep and the
-    # platform gate/blend. "peer_first" (default) applies the platform last, so
-    # the logged data is maximally model-mediated; "platform_first" applies the
-    # platform then lets peers mix, partially washing the served signal out.
+    # POP_ORDER (ab only): RETIRED by population_update="nested_ai_then_social_v1",
+    # whose order is fixed -- human/AI mixture first, peer sweeps last. Kept
+    # only so archived configs (which recorded it) stay readable; setting it to
+    # anything but the default is now an error rather than a silent no-op.
     pop_order = os.environ.get("POP_ORDER", "peer_first")
     # PRISTINE_FRAC>0 (accumulate only): hold this fraction of every training
     # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
@@ -580,10 +580,11 @@ def main() -> int:
         raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
     if ab_sweeps != 1 and pop_model != "ab":
         raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
-    if pop_order not in ("peer_first", "platform_first"):
-        raise ValueError("POP_ORDER must be 'peer_first' or 'platform_first'")
-    if pop_order != "peer_first" and pop_model != "ab":
-        raise ValueError("POP_ORDER=platform_first requires POP_MODEL=ab")
+    if pop_order != "peer_first":
+        raise ValueError(
+            "POP_ORDER is retired: population_update='nested_ai_then_social_v1' "
+            "fixes the order (human/AI mixture, then peer sweeps). Only "
+            "'peer_first' (the default) is accepted.")
     if shuffle_p > 0 and sort_q > 0:
         raise ValueError("PROFILE_SHUFFLE_P and PROFILE_SORT_Q are exclusive")
     if set(drop_cols) & set(permute_cols):
@@ -652,6 +653,10 @@ def main() -> int:
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
         "pop_model": pop_model, "eps": eps, "eps_ai": eps_ai, "gamma_bias": gamma_bias,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
+        # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
+        # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
+        # used the legacy per-sweep order (peers, gated blend, anchor over all).
+        "population_update": "nested_ai_then_social_v1",
         "run_mode": run_mode, "canary_delta": canary_delta,
         "grad_decomp": grad_decomp,
         "save_adapter_rounds": sorted(save_adapter_rounds),
@@ -1159,50 +1164,60 @@ def main() -> int:
             relax_trace = []
             def _eng_of(x, s):
                 # engagement a served vector s would cause on state x (dry, no mutate):
-                # mean|blended - x| = mean(eff_w * |s - x|). Matches plat_disps exactly.
+                # mean|blended - x| = mean(eff_w * |s - x|). Equals plat_disps when
+                # k == 0 (then h == x0); with k > 0 the logged displacement is
+                # measured from h, so the two differ by the anchor's own move.
                 gate = (s - x).abs() < eps_ai
                 eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
                 return float((eff_w * (s - x).abs()).mean())
-            def _platform_step():
-                # gate + blend the served prediction; returns nothing, mutates
-                # ab_x/ab_f/contacts in the enclosing scope (POP_ORDER-agnostic)
-                nonlocal ab_x, ab_f, ab_winner, eng_win
-                if feedback_on:
-                    if ab_retain:
-                        # Pan A/B: score the CANDIDATE and the retained WINNER on the
-                        # SAME pre-platform state ab_x (no drift confound); serve+keep
-                        # the more engaging one (winner may repeat -> sticky).
-                        win = served if ab_winner is None else ab_winner.to(ab_x.device)
-                        e_cand, e_win = _eng_of(ab_x, served), _eng_of(ab_x, win)
-                        served_now = served if e_cand >= e_win else win
-                        eng_win = max(e_cand, e_win)
-                        ab_winner = served_now.detach().clone()
-                    else:
-                        served_now = served
-                    gate_open = (served_now - ab_x).abs() < eps_ai
-                    eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
-                    x_before = ab_x.clone()
-                    ab_x, c = gp.gated_blend(ab_x, served_now, w_agent, eps_ai)
-                    ab_f = (1.0 - eff_w) * ab_f + eff_w   # platform injects tag 1 on gated agents
-                    contacts.append(c)
-                    plat_disps.append(float((ab_x - x_before).abs().mean()))
+            # POPULATION_UPDATE = "nested_ai_then_social_v1". One round is
+            #   h(t) = k innate + (1-k) x(t)                     human component
+            #   z(t) = (1-W) h(t) + W m(t)  if |m(t) - x(t)| < eps_AI else h(t)
+            #   x(t+1) = D_eps_social(z(t))                      peer sweeps last
+            # The gate is evaluated on the START-OF-ROUND opinion x(t) (the
+            # platform serves before the population moves), and the innate pull
+            # dilutes only the human share, so a gated W=1 agent lands exactly
+            # on m(t) for every k. The platform/innate mixture happens ONCE per
+            # round; the sweep loop below carries social dynamics only, and
+            # peers may move an agent after it adopts the served value.
+            # Runs written before 2026-07-27 carry no population_update marker
+            # and used the legacy order (peer sweep, gated blend, then an
+            # innate re-anchor over everyone, per sweep).
+            x0 = ab_x.clone()
+            if feedback_on:
+                if ab_retain:
+                    # Pan A/B: score the CANDIDATE and the retained WINNER on the
+                    # SAME start-of-round state x0 (no drift confound); serve+keep
+                    # the more engaging one (winner may repeat -> sticky).
+                    win = served if ab_winner is None else ab_winner.to(ab_x.device)
+                    e_cand, e_win = _eng_of(x0, served), _eng_of(x0, win)
+                    served_now = served if e_cand >= e_win else win
+                    eng_win = max(e_cand, e_win)
+                    ab_winner = served_now.detach().clone()
                 else:
-                    contacts.append(float(((served - ab_x).abs() < eps_ai).float().mean()))
+                    served_now = served
+                ab_x, gate_open = gp.nested_presocial_update(
+                    x0, served_now, ab_innate, innate_lambda, w_agent, eps_ai)
+                eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
+                # provenance: the innate share carries tag 0, the platform
+                # injects tag 1 on gated agents -- same nesting as the opinions
+                ab_f = (1.0 - eff_w) * ((1.0 - innate_lambda) * ab_f) + eff_w
+                contacts.append(float(gate_open.float().mean()))
+                plat_disps.append(float((ab_x - (innate_lambda * ab_innate
+                                                + (1.0 - innate_lambda) * x0))
+                                        .abs().mean()))
+            else:
+                # no_feedback: human component only, no AI mixture
+                ab_x = innate_lambda * ab_innate + (1.0 - innate_lambda) * x0
+                ab_f = (1.0 - innate_lambda) * ab_f
+                contacts.append(float(((served - x0).abs() < eps_ai).float().mean()))
 
             for sw in range(ab_sweeps):
-                # POP_ORDER: "peer_first" (default) = peer sweep then platform
-                # blend (recommendation is the last influence before the data is
-                # logged -> maximally model-mediated); "platform_first" swaps them
-                # so subsequent peer mixing partially washes out the served signal.
-                if pop_order == "platform_first":
-                    _platform_step()
-                    accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
-                else:
-                    accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
-                    _platform_step()
-                if innate_lambda > 0:
-                    ab_x = (1.0 - innate_lambda) * ab_x + innate_lambda * ab_innate
-                    ab_f = (1.0 - innate_lambda) * ab_f   # innate re-anchor carries tag 0
+                # social dynamics ONLY -- the platform/innate mixture above is
+                # not repeated per sweep. POP_ORDER is inert under this version:
+                # peers always run last (it is retained in the config for the
+                # legacy runs it described).
+                accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
                 if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
                     relax_trace.append(round(float(ab_x.std()), 4))
             contact = float(np.mean(contacts))
@@ -1210,15 +1225,16 @@ def main() -> int:
             s_tag = float(ab_f.mean())
             op = ab_x.detach().cpu().float().clone()
             if ab_x_cf is not None:
-                # advance the matched no-AI twin with the same sweep count and
-                # re-anchor, no gate; its generator mirrors ab_gen's seed so
-                # this is exactly the no-AI run of this seed
+                # matched no-AI twin under the SAME operator with the AI
+                # mixture skipped: human component first, then the same peer
+                # dynamics last. Its generator mirrors ab_gen's seed so this is
+                # exactly the no-AI run of this seed.
                 if pop_reset:
                     ab_x_cf = ab_innate.clone()
+                ab_x_cf = (innate_lambda * ab_innate
+                           + (1.0 - innate_lambda) * ab_x_cf)
                 for sw in range(ab_sweeps):
                     gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias, gen=ab_gen_cf)
-                    if innate_lambda > 0:
-                        ab_x_cf = (1.0 - innate_lambda) * ab_x_cf + innate_lambda * ab_innate
                 twin_raw.append(ab_x_cf.detach().cpu().float().clone())
         if op_round0 is None:
             op_round0 = op.clone()

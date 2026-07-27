@@ -77,3 +77,6 @@ CLAUDE.md
 experiments/data/semeval/
 experiments/data/snap/
 notes/
+
+paper/*
+paper/
