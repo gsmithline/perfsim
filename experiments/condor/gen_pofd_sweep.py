@@ -95,6 +95,10 @@ ICL_ARMS = [("k0", 0, 0, "live"), ("k8live", 8, 0, "live"),
             ("d5", 0, 5, "live"), ("d10", 0, 10, "live"),
             ("d15", 0, 15, "live"), ("d30", 0, 30, "live")]
 ICL_MODEL = "qwen7b"
+# olmo7b twin of the ICL wave (2026-07-27): same 8 arms x eps_AI grid.
+# Frozen weights (nothing trains), W=1/lam=0/eps_social=0 -- unaffected by
+# the population-update correction. Model deltas live in the .sub.
+ICL_MODELS = ["qwen7b", "olmo7b"]
 ROW_ICL = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
            "0.0, 0.0, 1.0, loop, 0.0, {eps_ai}, {iclk}, {icldays}, {iclsrc}")
 
@@ -231,12 +235,12 @@ def bp_rows():
     return out
 
 
-def icl_rows():
+def icl_rows(model=ICL_MODEL):
     out = []
     for seed in SEEDS:
         for arm, k, days, src in ICL_ARMS:
             for eps_ai in EPS_AIS:
-                tag = f"pofdicl_{ICL_MODEL}_ea{_num(eps_ai)}_{arm}_s{seed}"
+                tag = f"pofdicl_{model}_ea{_num(eps_ai)}_{arm}_s{seed}"
                 out.append(ROW_ICL.format(tag=tag, seed=seed, eps_ai=f"{eps_ai:g}",
                                           iclk=k, icldays=days, iclsrc=src))
     return out
@@ -340,6 +344,12 @@ def main():
     expected[p] = len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_icl_smoke.txt")] = [ROW_ICL.format(
         tag="pofdiclsmk_qwen7b_ea0p1_k32pri_s0", seed=0, eps_ai="0.1",
+        iclk=32, icldays=0, iclsrc="pristine")]
+    p = os.path.join(HERE, "configs_pofd_olmo7b_icl.txt")
+    files[p] = icl_rows("olmo7b")
+    expected[p] = len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_olmo7b_icl_smoke.txt")] = [ROW_ICL.format(
+        tag="pofdiclsmk_olmo7b_ea0p1_k32pri_s0", seed=0, eps_ai="0.1",
         iclk=32, icldays=0, iclsrc="pristine")]
     p = os.path.join(HERE, "configs_pofd_qwen7b_dpo.txt")
     files[p] = dpo_rows()
