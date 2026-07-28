@@ -14,8 +14,8 @@
 # the idempotent executable makes accidental resubmits no-ops anyway).
 set -euo pipefail
 
-BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full}"
-WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full}"
+BID="${1:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|qwen7b_w1f[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full}"
+WHAT="${2:?usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|qwen7b_w1f[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full}"
 REPO="${REPO:-/home/gsmithline/perfsim}"
 cd "$REPO"
 
@@ -35,12 +35,13 @@ case "$WHAT" in
   qwen7b_ws|qwen7b_ws_smoke)             TARGETS="$WHAT" ;;
   qwen7b_w2|qwen7b_w2_smoke)             TARGETS="$WHAT" ;;
   qwen7b_ws2|qwen7b_ws2_smoke)           TARGETS="$WHAT" ;;
+  qwen7b_w1f|qwen7b_w1f_smoke)           TARGETS="$WHAT" ;;
   olmo7b_dpo|olmo7b_dpo_smoke)           TARGETS="$WHAT" ;;
   olmo7b_icl|olmo7b_icl_smoke)           TARGETS="$WHAT" ;;
   olmo7b_w2|olmo7b_w2_smoke)             TARGETS="$WHAT" ;;
   olmo7b_ws2|olmo7b_ws2_smoke)           TARGETS="$WHAT" ;;
   full)                                  TARGETS="qwen7b gemma12b olmo7b" ;;
-  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full" >&2; exit 2 ;;
+  *) echo "usage: submit_pofd_sweep.sh <BID> smoke|qwen7b|gemma12b|olmo7b|qwen7b_pfrac|olmo7b_pfrac|qwen7b_bp[_smoke]|qwen7b_icl[_smoke]|qwen7b_dpo[_smoke]|qwen7b_w[_smoke]|qwen7b_wdpo[_smoke]|qwen7b_wdpon|qwen7b_ws[_smoke]|qwen7b_w2[_smoke]|qwen7b_ws2[_smoke]|qwen7b_w1f[_smoke]|olmo7b_dpo[_smoke]|olmo7b_icl[_smoke]|olmo7b_w2[_smoke]|olmo7b_ws2[_smoke]|full" >&2; exit 2 ;;
 esac
 
 for T in $TARGETS; do

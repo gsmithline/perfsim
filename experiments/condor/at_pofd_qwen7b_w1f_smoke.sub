@@ -1,0 +1,35 @@
+# HTCondor: pofdw1f_ SMOKE -- 1 job, 3 rounds, distinct pofdw1fsmk_ tag.
+# The sft_kl beta=0.5 ea=0.2 cell of the W=1 environment, FIRST cluster
+# exercise of the forward-KL loss path (KL_DIRECTION=forward -> KLSFTLearner
+# kl_direction="forward": KL(ref || pi), mass-covering). Gates the w1f wave,
+# which differs from the reverse-KL pofd_ wave ONLY by this env var.
+# Identical env to at_pofd_qwen7b_w1f.sub except N_ROUNDS=3 + smoke suffix.
+# Gate with check_pofd_sanity.py on
+#   runs/pokec_gated_lm/pofdw1fsmk_qwen7b_b0p5_ea0p2_s0_fresh_data
+# (eps_social=0 -> the checker replays the operator EXACTLY, every round) and
+# ALSO confirm config.json has kl_direction=forward before submitting the wave.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> qwen7b_w1f_smoke
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "DEBUG_GEN=1 DEBUG_GEN_N=12 REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) KL_DIRECTION=forward FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=3 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdw1fsmk"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai from experiments/condor/configs_pofd_qwen7b_w1f_smoke.txt

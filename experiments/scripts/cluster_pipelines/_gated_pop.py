@@ -298,9 +298,11 @@ def kl_grad_decompose(lm, learner, train_data, fmt, n_examples):
     sft_grad_norm (per-example backward, mean over n; grad_norm0 here equals
     its output). The KL term mirrors KLSFTLearner.compute_loss: completion
     tokens only (labels != -100), next-token shift, mean over completion
-    tokens, scaled by kl_beta. Rescue-by-force reads as ratio >> 1 with
-    negative cosine; feedback alignment as the cosine rotating positive."""
+    tokens, scaled by kl_beta, same kl_direction as the learner. Rescue-by-force
+    reads as ratio >> 1 with negative cosine; feedback alignment as the cosine
+    rotating positive."""
     kl_beta = float(getattr(learner, "kl_beta", 0.0))
+    kl_direction = str(getattr(learner, "kl_direction", "reverse"))
     if kl_beta <= 0:
         return {}
     module = lm.inner_model
@@ -332,7 +334,10 @@ def kl_grad_decompose(lm, learner, train_data, fmt, n_examples):
             logp = F.log_softmax(logits[:, :-1, :], dim=-1)
             logq = F.log_softmax(ref_logits[:, :-1, :], dim=-1)
             mask_shift = (labels != -100).float()[:, 1:]
-            kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
+            if kl_direction == "forward":
+                kl_per_token = (logq.exp() * (logq - logp)).sum(dim=-1)
+            else:
+                kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
             kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
             (kl_beta * kl / n).backward()
         kl_sq, dot = 0.0, 0.0

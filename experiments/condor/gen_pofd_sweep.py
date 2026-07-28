@@ -185,6 +185,17 @@ W_EPS_SOCIAL = 0.2
 ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
           "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}")
 
+# forward-KL probe (2026-07-28), W=1 ONLY: the claim-carrying qwen cells of
+# the pofd_ (W=1) wave re-run with the anchor as FORWARD KL(ref || pi) --
+# mass-covering: the policy must keep mass wherever the base does but pays
+# nothing for growing mass on the data -- instead of the default reverse
+# KL(pi || ref) (mode-seeking; the direction every earlier wave used, and the
+# term that re-injects the prior modes each round). KL_DIRECTION=forward is
+# env-only, set in the at_pofd_qwen7b_w1f*.sub files and recorded in
+# config.json. beta=0 rows are direction-independent, so only beta>0 cells
+# re-run; ea0p4 is where reverse KL bifurcates qwen onto its prior.
+FKL_BETAS = [0.2, 0.5, 1.0]
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -421,6 +432,17 @@ def main():
     expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_olmo7b_ws2_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdws2smk_olmo7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    # forward-KL probe: see the FKL_ comment block above. The pofdw1f_ prefix
+    # keeps run dirs distinct from the reverse-KL pofd_ wave; base ROW ->
+    # W=1 environment (wplat=1.0 queue col, eps_social=0, no innate anchor).
+    p = os.path.join(HERE, "configs_pofd_qwen7b_w1f.txt")
+    files[p] = [ROW.format(tag=tag_of("qwen7b", b, 0.4, 0, prefix="pofdw1f"),
+                           style="sft_kl", beta=f"{b:g}", seed=0, eps_ai="0.4")
+                for b in FKL_BETAS]
+    expected[p] = len(FKL_BETAS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_w1f_smoke.txt")] = [ROW.format(
+        tag=tag_of("qwen7b", 0.5, 0.2, 0, prefix="pofdw1fsmk"),
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

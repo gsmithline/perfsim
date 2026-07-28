@@ -379,6 +379,11 @@ def mix_pristine_data(buffer, cap, frac, gen):
 def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
+    # "reverse" = KL(pi || ref), the standard mode-seeking RLHF penalty (every
+    # wave before 2026-07-28); "forward" = KL(ref || pi), mass-covering.
+    kl_direction = _env_or("KL_DIRECTION", "reverse")
+    if kl_direction not in ("reverse", "forward"):
+        raise ValueError(f"KL_DIRECTION must be 'reverse' or 'forward'; got {kl_direction!r}")
     training_style = _env_or("TRAINING_STYLE", "sft_kl")
     # closed-loop RLHF (dpo) arm: where preference labels come from.
     #   closed -> the model's own (deployment-shifted) population
@@ -642,7 +647,8 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
-        "run_tag": run_tag, "kl_beta": kl_beta, "training_style": training_style,
+        "run_tag": run_tag, "kl_beta": kl_beta, "kl_direction": kl_direction,
+        "training_style": training_style,
         "rlhf_feedback": rlhf_feedback,
         "base_model": base_model, "n_rounds": n_rounds, "epoch_size": epoch_size,
         "deploy_every": deploy_every, "data_regime": data_regime, "seed": seed,
@@ -823,7 +829,7 @@ def main() -> int:
         learner = SFTLearner(**learner_kwargs)
     elif training_style == "sft_kl":
         learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta,
-                               anchor_mode=anchor_mode)
+                               anchor_mode=anchor_mode, kl_direction=kl_direction)
     elif training_style == "dpo":
         # closed-loop RLHF; closed/open arm chosen by RLHF_FEEDBACK (pipeline builds
         # x_judge below). ref_model=None + LoRA => fixed base anchor. Import lazily so

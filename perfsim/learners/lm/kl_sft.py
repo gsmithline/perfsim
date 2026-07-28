@@ -33,6 +33,14 @@ class KLSFTLearner(SFTLearner):
     anchor_mode "fixed" keeps the reference at ref_model_name for the whole run
     (re-anchored regime); "chained" re-freezes the reference to the just-trained
     policy after every train() call, so each round anchors to the previous round.
+
+    kl_direction "reverse" (default, the standard RLHF penalty) is
+    KL(pi || ref): mode-seeking, the policy is penalized for putting mass where
+    the reference has none. "forward" is KL(ref || pi): mass-covering -- since
+    the reference is frozen its entropy term is constant, so the gradient is
+    that of the cross-entropy of the reference distribution under the policy;
+    the policy must keep mass wherever the base does but is free to grow mass
+    elsewhere.
     """
 
     def __init__(
@@ -43,6 +51,7 @@ class KLSFTLearner(SFTLearner):
         ref_model_name: str,
         kl_beta: float = 1.0,
         anchor_mode: str = "fixed",
+        kl_direction: str = "reverse",
         target_formatter: Callable[[float], str] = _default_target_formatter,
         max_steps: int = 50,
         learning_rate: float = 1e-5,
@@ -66,9 +75,13 @@ class KLSFTLearner(SFTLearner):
         )
         if anchor_mode not in ("fixed", "chained"):
             raise ValueError(f"anchor_mode must be 'fixed' or 'chained'; got {anchor_mode!r}")
+        if kl_direction not in ("reverse", "forward"):
+            raise ValueError(
+                f"kl_direction must be 'reverse' or 'forward'; got {kl_direction!r}")
         self._ref_model_name = ref_model_name
         self._kl_beta = float(kl_beta)
         self._anchor_mode = anchor_mode
+        self._kl_direction = kl_direction
         self._ref_model: "PreTrainedModel | None" = None
 
     @property
@@ -78,6 +91,10 @@ class KLSFTLearner(SFTLearner):
     @property
     def anchor_mode(self) -> str:
         return self._anchor_mode
+
+    @property
+    def kl_direction(self) -> str:
+        return self._kl_direction
 
     def train(self, data: Any) -> None:
         super().train(data)
@@ -118,6 +135,7 @@ class KLSFTLearner(SFTLearner):
             )
         ref_model = self._ensure_ref() if self._kl_beta > 0 else None
         kl_beta = self._kl_beta
+        kl_direction = self._kl_direction
 
         class _KLSFTTrainer(SFTTrainer):
             def compute_loss(
@@ -150,7 +168,10 @@ class KLSFTLearner(SFTLearner):
                 logp = F.log_softmax(outputs.logits[:, :-1, :], dim=-1)
                 logq = F.log_softmax(ref_logits[:, :-1, :], dim=-1)
                 mask_shift = mask[:, 1:]
-                kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
+                if kl_direction == "forward":
+                    kl_per_token = (logq.exp() * (logq - logp)).sum(dim=-1)
+                else:
+                    kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
                 kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
                 total = ce + kl_beta * kl
                 return (total, outputs) if return_outputs else total
