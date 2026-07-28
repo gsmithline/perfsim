@@ -1,5 +1,5 @@
 # HTCondor: W=0.5 FJ WAVE, CORRECTED DYNAMICS (pofdw2_), Qwen-7B, seed 0.
-# 16 runs: beta {0,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the pofdw_
+# 20 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the pofdw_
 # grid re-run under the corrected population update. W_PLAT=0.5 rides queue
 # col 12; INNATE_LAMBDA=0.2 is env-only. eps_social=0, so peers never fire and
 # the saved opinion IS the pre-social state z.

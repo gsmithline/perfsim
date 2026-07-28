@@ -278,10 +278,10 @@ def w_tok():
     return f"w{_num(W_WPLAT)}_l{_num(W_LAMBDA)}"
 
 
-def w_rows(prefix="pofdw", betas=BETAS):
+def w_rows(prefix="pofdw"):
     out = []
     for seed in SEEDS:
-        for beta in betas:
+        for beta in BETAS:
             for eps_ai in EPS_AIS:
                 tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{w_tok()}_s{seed}_fresh_data")
@@ -309,10 +309,10 @@ def ws_tok():
     return f"{w_tok()}_es{_num(W_EPS_SOCIAL)}"
 
 
-def ws_rows(prefix="pofdws", betas=BETAS):
+def ws_rows(prefix="pofdws"):
     out = []
     for seed in SEEDS:
-        for beta in betas:
+        for beta in BETAS:
             for eps_ai in EPS_AIS:
                 tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{ws_tok()}_s{seed}_fresh_data")
@@ -392,20 +392,18 @@ def main():
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
 
     # ---- corrected-dynamics re-runs (population_update=nested_ai_then_social_v1)
-    # Same environments as pofdw_/pofdws_ under the corrected round operator;
-    # the tags must differ so these write to new run dirs and never overwrite
-    # the superseded ones. Start-with beta grid drops 0.1 (user 2026-07-28:
-    # beta in {0, 0.2, 0.5, 1}).
-    w2_betas = [0.0, 0.2, 0.5, 1.0]
+    # Identical grids to pofdw_/pofdws_; ONLY the round operator differs, so the
+    # tags must differ too -- these write to new run dirs and never overwrite the
+    # superseded ones. See the pofdw_ block above for the operator.
     p = os.path.join(HERE, "configs_pofd_qwen7b_w2.txt")
-    files[p] = w_rows("pofdw2", w2_betas)
-    expected[p] = len(w2_betas) * len(EPS_AIS) * len(SEEDS)
+    files[p] = w_rows("pofdw2")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_w2_smoke.txt")] = [ROW_W.format(
         tag=f"pofdw2smk_qwen7b_b0p5_ea0p2_{w_tok()}_s0_fresh_data",
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     p = os.path.join(HERE, "configs_pofd_qwen7b_ws2.txt")
-    files[p] = ws_rows("pofdws2", w2_betas)
-    expected[p] = len(w2_betas) * len(EPS_AIS) * len(SEEDS)
+    files[p] = ws_rows("pofdws2")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_ws2_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdws2smk_qwen7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
