@@ -278,12 +278,12 @@ def w_tok():
     return f"w{_num(W_WPLAT)}_l{_num(W_LAMBDA)}"
 
 
-def w_rows(prefix="pofdw"):
+def w_rows(prefix="pofdw", model=W_MODEL):
     out = []
     for seed in SEEDS:
         for beta in BETAS:
             for eps_ai in EPS_AIS:
-                tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                tag = (f"{prefix}_{model}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{w_tok()}_s{seed}_fresh_data")
                 out.append(ROW_W.format(
                     tag=tag, style="sft" if beta == 0 else "sft_kl",
@@ -309,12 +309,12 @@ def ws_tok():
     return f"{w_tok()}_es{_num(W_EPS_SOCIAL)}"
 
 
-def ws_rows(prefix="pofdws"):
+def ws_rows(prefix="pofdws", model=W_MODEL):
     out = []
     for seed in SEEDS:
         for beta in BETAS:
             for eps_ai in EPS_AIS:
-                tag = (f"{prefix}_{W_MODEL}_b{_num(beta)}_ea{_num(eps_ai)}"
+                tag = (f"{prefix}_{model}_b{_num(beta)}_ea{_num(eps_ai)}"
                        f"_{ws_tok()}_s{seed}_fresh_data")
                 out.append(ROW_WS.format(
                     tag=tag, style="sft" if beta == 0 else "sft_kl",
@@ -406,6 +406,21 @@ def main():
     expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_ws2_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdws2smk_qwen7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    # olmo7b twins of the corrected-operator W ladder (2026-07-28): identical
+    # 20-cell grids to the qwen7b w2/ws2 waves; model deltas (separate HF
+    # cache, PPL_BATCH=16, 160G/60G) live in the .sub files.
+    p = os.path.join(HERE, "configs_pofd_olmo7b_w2.txt")
+    files[p] = w_rows("pofdw2", model="olmo7b")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_olmo7b_w2_smoke.txt")] = [ROW_W.format(
+        tag=f"pofdw2smk_olmo7b_b0p5_ea0p2_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    p = os.path.join(HERE, "configs_pofd_olmo7b_ws2.txt")
+    files[p] = ws_rows("pofdws2", model="olmo7b")
+    expected[p] = len(BETAS) * len(EPS_AIS) * len(SEEDS)
+    files[os.path.join(HERE, "configs_pofd_olmo7b_ws2_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdws2smk_olmo7b_b0p5_ea0p2_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
