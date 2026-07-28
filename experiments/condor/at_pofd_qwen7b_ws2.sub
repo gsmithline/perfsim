@@ -1,5 +1,5 @@
 # HTCondor: W=0.5 FJ + PEER WAVE, CORRECTED DYNAMICS (pofdws2_), Qwen-7B,
-# seed 0. 20 runs: beta {0,0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the
+# seed 0. 16 runs: beta {0,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the
 # pofdws_ grid re-run under the corrected population update. Same
 # (W_PLAT=0.5, INNATE_LAMBDA=0.2) point as at_pofd_qwen7b_w2.sub PLUS
 # EPS_SOCIAL=0.2 (queue col 10; Deffuant bounded-confidence radius).
