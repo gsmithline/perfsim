@@ -222,7 +222,17 @@ FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 # important (w, es) cells -> regenerate -> submit qwen7b_esf_repl (s42+s43).
 ESF_W05_ES = [0.10, 0.15, 0.25]     # es=0 -> w2f, es=0.20 -> ws2f (reuse)
 ESF_W1_ES = [0.0, 0.20, 0.30, 0.40]
-ESF_REPL_POINTS = []   # fill with (w, es) tuples, e.g. [(0.5, 0.15), (1.0, 0.3)]
+# s0 scan results (2026-07-29): W=0.5 attributable 234/127/2/3/61 at es
+# 0/0.1/0.15/0.2/0.25 -- locked at 0.1, SLOW dissolution at 0.15 (camp ~130
+# for 18 rounds, gone by r29), fast at 0.2, RE-ENTRANT partial capture at
+# 0.25 (churning ~60-agent camp at mean 0.37: the wide radius also ferries
+# mainstream agents into the platform's gate). W=1: 287/347/345/309 at es
+# 0/0.2/0.3/0.4 -- no rescue at any dose, camp GROWS with peers. Repl
+# points: the locked/marginal/re-entrant W=0.5 doses + both W=1 endpoints
+# + the W=0.5 baseline (within-seed references; es=0.2 W=0.5 is covered by
+# the eventual ws2f seed gates).
+ESF_REPL_POINTS = [(0.5, 0.0), (0.5, 0.10), (0.5, 0.15), (0.5, 0.25),
+                   (1.0, 0.0), (1.0, 0.40)]
 ESF_REPL_SEEDS = [42, 43]
 ROW_ESF = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
            "{es}, 0.0, {w}, loop, 0.0, 0.4")
