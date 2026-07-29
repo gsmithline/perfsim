@@ -449,6 +449,16 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_w1f_smoke.txt")] = [ROW.format(
         tag=tag_of("qwen7b", 0.5, 0.2, 0, prefix="pofdw1fsmk"),
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    # olmo twin of the w1f wave (2026-07-29): same 4 cells, single-spike prior
+    # at 0.75 ABOVE the population -- the forward-vs-reverse threshold test on
+    # a prior whose mode overlaps the data (gate |0.75 - x| < 0.4 is open for
+    # nearly everyone, unlike qwen's 0.25 mode). Reverse twins: pofd_olmo7b_
+    # b*_ea0p4_s0. Capture analysis needs the HIGH-side mirror of <0.45.
+    p = os.path.join(HERE, "configs_pofd_olmo7b_w1f.txt")
+    files[p] = [ROW.format(tag=tag_of("olmo7b", b, 0.4, 0, prefix="pofdw1f"),
+                           style="sft_kl", beta=f"{b:g}", seed=0, eps_ai="0.4")
+                for b in FKL_BETAS]
+    expected[p] = len(FKL_BETAS)
     # w2f/ws2f: forward-KL canon for the W=0.5 environments (no smokes -- the
     # forward loss path was validated by the w1f smoke+wave, and these envs
     # are validated under reverse; the direction only touches the loss).
