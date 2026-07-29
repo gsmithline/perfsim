@@ -205,6 +205,28 @@ ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 # protective (b0p1 captures MORE, b0p5 halved-not-killed, b1 collapses anyway).
 FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 
+# eps-social dose-response at the forward-KL headline cell (2026-07-29, user):
+# qwen7b, forward KL, b=1, ea=0.4, lam=0.2 FIXED -- sweep the repair channel
+# to locate the transition where peers start beating the mass-covering anchor
+# (the ws2f b1_ea0p4 camp dissolves at es=0.2, attributable 198->3; the w2f
+# es=0 twin holds 234). W=0.5 arm: es {0, 0.10, 0.15, 0.20, 0.25}, where
+# es=0 IS pofdw2f_qwen7b_b1_ea0p4 and es=0.20 IS pofdws2f_qwen7b_b1_ea0p4 --
+# REUSED, not re-run (identical physics; WITH_TWIN only adds telemetry), so
+# only the 3 remaining doses run. W=1 arm: es {0, 0.20, 0.30, 0.40} -- ALL
+# 4 run: lam=0.2 differs from the w1f environment (lam=0, ungated agents
+# frozen) and W=1 + peers is a new combination, so nothing is reusable.
+# WITH_TWIN=1 rides the .sub env: every run (incl. es=0) saves the matched
+# no-platform twin_raw (RNG-mirrored peers; deterministic innate drift at
+# es=0).
+# Flow: seed 0 locates the transition -> fill ESF_REPL_POINTS with the
+# important (w, es) cells -> regenerate -> submit qwen7b_esf_repl (s42+s43).
+ESF_W05_ES = [0.10, 0.15, 0.25]     # es=0 -> w2f, es=0.20 -> ws2f (reuse)
+ESF_W1_ES = [0.0, 0.20, 0.30, 0.40]
+ESF_REPL_POINTS = []   # fill with (w, es) tuples, e.g. [(0.5, 0.15), (1.0, 0.3)]
+ESF_REPL_SEEDS = [42, 43]
+ROW_ESF = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
+           "{es}, 0.0, {w}, loop, 0.0, 0.4")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -228,6 +250,17 @@ def rows_for(model, seeds, prefix="pofd"):
                     style="sft" if beta == 0 else "sft_kl",
                     beta=f"{beta:g}", seed=seed, eps_ai=f"{eps_ai:g}"))
     return out
+
+
+def esf_tag(w, es, seed):
+    tok = f"w{_num(w)}_l0p2" + (f"_es{_num(es)}" if es > 0 else "")
+    return f"pofdesf_qwen7b_b1_ea0p4_{tok}_s{seed}_fresh_data"
+
+
+def esf_rows(points, seeds):
+    return [ROW_ESF.format(tag=esf_tag(w, es, s), seed=s,
+                           es=f"{es:g}", w=f"{w:.1f}")
+            for (w, es) in points for s in seeds]
 
 
 def pfrac_rows(model):
@@ -494,6 +527,17 @@ def main():
         style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
         for b in FKL_BETAS for ea in EPS_AIS]
     expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+    # eps-social dose-response (see the ESF_ comment block): seed-0 scan of
+    # the repair channel at the forward headline cell; the W=0.5 es {0, 0.2}
+    # cells are reused from w2f/ws2f, not regenerated here.
+    p = os.path.join(HERE, "configs_pofd_qwen7b_esf.txt")
+    files[p] = esf_rows([(0.5, es) for es in ESF_W05_ES]
+                        + [(1.0, es) for es in ESF_W1_ES], [0])
+    expected[p] = len(ESF_W05_ES) + len(ESF_W1_ES)
+    if ESF_REPL_POINTS:
+        p = os.path.join(HERE, "configs_pofd_qwen7b_esf_repl.txt")
+        files[p] = esf_rows(ESF_REPL_POINTS, ESF_REPL_SEEDS)
+        expected[p] = len(ESF_REPL_POINTS) * len(ESF_REPL_SEEDS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
