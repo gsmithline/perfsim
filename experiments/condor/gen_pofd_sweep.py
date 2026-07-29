@@ -586,6 +586,26 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_icls2_smoke.txt")] = [ROW_ICL2.format(
         tag=f"pofdicls2smk_qwen7b_{ws_tok()}_ea0p1_k32noai_s0",
         seed=0, es="0.2", eps_ai="0.1", iclk=32, icldays=0, iclsrc="noai")]
+    # olmo twins of icl2/icls2 (2026-07-29, user): same arms x eps_AI grids
+    # on the in-range 0.75 prior spike -- qwen showed frozen weights flip
+    # social mixing from repair to delivery (k0 198->259 with peers) and
+    # live exemplars amplify capture 1.8x; olmo asks whether the d-arm
+    # (personal memory) protection survives when the prior overlaps the
+    # data. Capture analysis: HIGH-side mirror (op>0.70). Model deltas in
+    # the .sub. No smokes: frozen x twin x peers validated by the qwen
+    # icls2 smoke + wave, olmo model path by its W=1 icl wave.
+    p = os.path.join(HERE, "configs_pofd_olmo7b_icl2.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicl2_olmo7b_{w_tok()}_ea{_num(ea)}_{arm}_s0",
+        seed=0, es="0.0", eps_ai=f"{ea:g}", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICL_ARMS for ea in EPS_AIS]
+    expected[p] = len(ICL_ARMS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_olmo7b_icls2.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_olmo7b_{ws_tok()}_ea{_num(ea)}_{arm}_s0",
+        seed=0, es="0.2", eps_ai=f"{ea:g}", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICLS2_ARMS for ea in EPS_AIS]
+    expected[p] = len(ICLS2_ARMS) * len(EPS_AIS)
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
     files[p] = [ROW_WDPO2.format(
         tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",
