@@ -1,8 +1,9 @@
 # HTCondor: FORWARD-KL WAVE (canonical 2026-07-29), W=0.5 FJ + PEER
 # ENVIRONMENT (pofdws2f_), Qwen-7B, seed 0.
-# 6 runs: beta {0.1,0.2,0.5,1} x eps_AI 0.4 plus beta {0.5,1} x eps_AI 0.2 --
-# the claim-carrying cells of the pofdws2_ wave (corrected operator,
-# W_PLAT=0.5, INNATE_LAMBDA=0.2, EPS_SOCIAL=0.2 queue col 10) re-run with
+# 16 runs: beta {0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the FULL
+# beta>0 grid of the pofdws2_ wave (corrected operator, W_PLAT=0.5,
+# INNATE_LAMBDA=0.2, EPS_SOCIAL=0.2 queue col 10; expanded from the 6 key
+# cells 2026-07-29 so the forward wave can replace ws2 in every figure) with
 # KL_DIRECTION=forward (KL(ref || pi), mass-covering; the paper's canonical
 # anchor from 2026-07-29 -- reverse pofdws2_ remains as the RLHF-practice
 # comparison; beta=0 is direction-independent, reuse pofdws2_ b0). The ea0p4

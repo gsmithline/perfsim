@@ -1,15 +1,16 @@
 # HTCondor: FORWARD-KL WAVE (canonical 2026-07-29), W=0.5 FJ ENVIRONMENT
 # (pofdw2f_), Qwen-7B, seed 0.
-# 4 runs: beta {0.1,0.2,0.5,1} x eps_AI 0.4 -- the claim-carrying cells of the
-# pofdw2_ wave (corrected operator, W_PLAT=0.5 queue col 12, INNATE_LAMBDA=0.2
-# env-only, eps_social=0) re-run with KL_DIRECTION=forward: the anchor becomes
+# 16 runs: beta {0.1,0.2,0.5,1} x eps_AI {0.05,0.1,0.2,0.4} -- the FULL
+# beta>0 grid of the pofdw2_ wave (corrected operator, W_PLAT=0.5 queue col
+# 12, INNATE_LAMBDA=0.2 env-only, eps_social=0; expanded from the 4 key cells
+# 2026-07-29 so the forward wave can replace w2 in every figure) re-run with
+# KL_DIRECTION=forward: the anchor becomes
 # KL(ref || pi) (mass-covering; SFT+KL optimum = CE to the mixture
 # (data + beta*base)/(1+beta)) instead of reverse KL(pi || ref) (mode-seeking;
 # RLHF convention, all pre-2026-07-28 waves). Forward is the paper's canonical
 # anchor from 2026-07-29; the reverse pofdw2_ wave remains as the
 # RLHF-practice comparison. beta=0 is direction-independent (reuse pofdw2_
-# b0). Cells cover the strong-beta capture ramp (b0p5/b1) and the mild-beta
-# lag-ratchet (b0p1/b0p2) at the wide gate.
+# b0 as the fifth figure column).
 # No separate smoke: the forward loss path was validated by the w1f
 # smoke+wave and this environment is validated under reverse -- the direction
 # only touches the loss term. Gate the wave itself with check_pofd_sanity.py

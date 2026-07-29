@@ -1,4 +1,16 @@
+pofdw2f_qwen7b_b0p1_ea0p05_w0p5_l0p2_s0_fresh_data, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.05
+pofdw2f_qwen7b_b0p1_ea0p1_w0p5_l0p2_s0_fresh_data, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.1
+pofdw2f_qwen7b_b0p1_ea0p2_w0p5_l0p2_s0_fresh_data, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.2
 pofdw2f_qwen7b_b0p1_ea0p4_w0p5_l0p2_s0_fresh_data, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b0p2_ea0p05_w0p5_l0p2_s0_fresh_data, sft_kl, 0.2, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.05
+pofdw2f_qwen7b_b0p2_ea0p1_w0p5_l0p2_s0_fresh_data, sft_kl, 0.2, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.1
+pofdw2f_qwen7b_b0p2_ea0p2_w0p5_l0p2_s0_fresh_data, sft_kl, 0.2, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.2
 pofdw2f_qwen7b_b0p2_ea0p4_w0p5_l0p2_s0_fresh_data, sft_kl, 0.2, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b0p5_ea0p05_w0p5_l0p2_s0_fresh_data, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.05
+pofdw2f_qwen7b_b0p5_ea0p1_w0p5_l0p2_s0_fresh_data, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.1
+pofdw2f_qwen7b_b0p5_ea0p2_w0p5_l0p2_s0_fresh_data, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.2
 pofdw2f_qwen7b_b0p5_ea0p4_w0p5_l0p2_s0_fresh_data, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b1_ea0p05_w0p5_l0p2_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.05
+pofdw2f_qwen7b_b1_ea0p1_w0p5_l0p2_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.1
+pofdw2f_qwen7b_b1_ea0p2_w0p5_l0p2_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.2
 pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4

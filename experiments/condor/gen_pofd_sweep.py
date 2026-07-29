@@ -196,11 +196,10 @@ ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 # KL_DIRECTION=forward is env-only, set in the at_pofd_qwen7b_*f.sub files and
 # recorded in config.json. beta=0 rows are direction-independent -- figures
 # reuse the reverse-wave b0 runs rather than duplicating them under new tags.
-# Key cells only for now (claim-carrying): ea0p4 across the beta dial in each
-# environment, plus the ws narrow-gate amplification pair at ea0p2.
+# 2026-07-29 (same day, user): w2f/ws2f expanded from key cells to the FULL
+# beta>0 grids (FKL_BETAS x EPS_AIS = 16 cells each), so the forward waves
+# can fully replace w2/ws2 in every figure; w1f stays at the ea0p4 dial.
 FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
-FKL_WS_CELLS = [(0.1, 0.4), (0.2, 0.4), (0.5, 0.4), (1.0, 0.4),
-                (0.5, 0.2), (1.0, 0.2)]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
@@ -455,15 +454,16 @@ def main():
     # are validated under reverse; the direction only touches the loss).
     p = os.path.join(HERE, "configs_pofd_qwen7b_w2f.txt")
     files[p] = [ROW_W.format(
-        tag=f"pofdw2f_qwen7b_b{_num(b)}_ea0p4_{w_tok()}_s0_fresh_data",
-        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai="0.4") for b in FKL_BETAS]
-    expected[p] = len(FKL_BETAS)
+        tag=f"pofdw2f_qwen7b_b{_num(b)}_ea{_num(ea)}_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
+        for b in FKL_BETAS for ea in EPS_AIS]
+    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
     p = os.path.join(HERE, "configs_pofd_qwen7b_ws2f.txt")
     files[p] = [ROW_WS.format(
         tag=f"pofdws2f_qwen7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
-        for b, ea in FKL_WS_CELLS]
-    expected[p] = len(FKL_WS_CELLS)
+        for b in FKL_BETAS for ea in EPS_AIS]
+    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
