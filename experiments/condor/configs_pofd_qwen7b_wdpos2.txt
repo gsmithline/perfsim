@@ -1,0 +1,16 @@
+pofdwdpos2_qwen7b_db0p1_ea0p05_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.05, closed, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p1_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, closed, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p2_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, closed, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p4_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, closed, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p05_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.05, open, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p1_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, open, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p2_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, open, 0.1
+pofdwdpos2_qwen7b_db0p1_ea0p4_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, open, 0.1
+pofdwdpos2_qwen7b_db0p5_ea0p05_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.05, closed, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p1_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, closed, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p2_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, closed, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p4_closed_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, closed, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p05_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.05, open, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p1_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, open, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p2_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, open, 0.5
+pofdwdpos2_qwen7b_db0p5_ea0p4_open_w0p5_l0p2_es0p2_s0_fresh, dpo, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, open, 0.5

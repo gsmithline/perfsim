@@ -152,6 +152,7 @@ def check_run(run_dir):
     if is_icl:
         ICL_ARM_WANT = {"k0": (0, 0, "live"), "k8live": (8, 0, "live"),
                         "k32live": (32, 0, "live"), "k32pri": (32, 0, "pristine"),
+                        "k32noai": (32, 0, "noai"),
                         "d5": (0, 5, "live"), "d10": (0, 10, "live"),
                         "d15": (0, 15, "live"), "d30": (0, 30, "live")}
         m = re.search(r"_ea[\dp]+_([a-z0-9]+)_s\d", name)
@@ -238,6 +239,10 @@ def check_run(run_dir):
         elif tuple(tw.shape) != tuple(op_raw.shape):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
+        if is_icl:
+            # frozen weights: nothing trains, no n_train ever (same skip as
+            # the no-peer path below) -- peer-env icl runs (pofdicls2_)
+            return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):
         served = pred_raw[t].clamp(0.0, 1.0)

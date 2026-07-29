@@ -220,6 +220,28 @@ FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 # es=0).
 # Flow: seed 0 locates the transition -> fill ESF_REPL_POINTS with the
 # important (w, es) cells -> regenerate -> submit qwen7b_esf_repl (s42+s43).
+# corrected-env ports of ICL + DPO (2026-07-29, user): the frozen in-context
+# arm and the sharp on-policy DPO arm re-based into env2 (W=0.5 FJ, lam=0.2,
+# no peers) and env3 (env2 + EPS_SOCIAL=0.2), so the adaptation-mechanism
+# comparison (SFT-KL vs ICL vs DPO) exists in the same environments as the
+# w2f/ws2f forward waves. ICL is frozen -- no loss, KL-direction-free. DPO
+# is intrinsically reverse-KL (DPO_BETA IS the implicit KL(pi||ref)
+# strength), so it sits on the RLHF-practice side by construction; its
+# forward counterpart is the w2f/ws2f SFT-KL wave. icls2 adds the k32noai
+# arm (exemplar labels from the SYNCHRONIZED no-AI twin): with peers the
+# twin MOVES, so noai != pristine for the first time (at es=0 they coincide
+# and noai is skipped, as in the W=1 wave). Tag prefixes keep the checker
+# families -- pofdicl2_/pofdicls2_ start with "pofdicl", pofdwdpo2_/
+# pofdwdpos2_ start with "pofdwdpo" -- env tokens _w0p5_l0p2[_es0p2]_ route
+# W/lam/es, and the icl arm token stays directly before _s<seed> (the
+# checker's arm regex). The prepared-but-never-submitted pofdwdpo_/pofdwdpon_
+# waves (old W-era tags) are SUPERSEDED by pofdwdpo2_ -- do not submit them.
+ICLS2_ARMS = ICL_ARMS + [("k32noai", 32, 0, "noai")]
+ROW_ICL2 = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+            "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {iclk}, {icldays}, {iclsrc}")
+ROW_WDPO2 = ("{tag}, dpo, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+             "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {rlhf}, {dpobeta}")
+
 ESF_W05_ES = [0.10, 0.15, 0.25]     # es=0 -> w2f, es=0.20 -> ws2f (reuse)
 ESF_W1_ES = [0.0, 0.20, 0.30, 0.40]
 # s0 scan results (2026-07-29): W=0.5 attributable 234/127/2/3/61 at es
@@ -548,6 +570,37 @@ def main():
         p = os.path.join(HERE, "configs_pofd_qwen7b_esf_repl.txt")
         files[p] = esf_rows(ESF_REPL_POINTS, ESF_REPL_SEEDS)
         expected[p] = len(ESF_REPL_POINTS) * len(ESF_REPL_SEEDS)
+    # corrected-env ICL + DPO ports (see the ICLS2_/ROW_ICL2 comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_icl2.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicl2_qwen7b_{w_tok()}_ea{_num(ea)}_{arm}_s0",
+        seed=0, es="0.0", eps_ai=f"{ea:g}", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICL_ARMS for ea in EPS_AIS]
+    expected[p] = len(ICL_ARMS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_icls2.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_qwen7b_{ws_tok()}_ea{_num(ea)}_{arm}_s0",
+        seed=0, es="0.2", eps_ai=f"{ea:g}", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICLS2_ARMS for ea in EPS_AIS]
+    expected[p] = len(ICLS2_ARMS) * len(EPS_AIS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_icls2_smoke.txt")] = [ROW_ICL2.format(
+        tag=f"pofdicls2smk_qwen7b_{ws_tok()}_ea0p1_k32noai_s0",
+        seed=0, es="0.2", eps_ai="0.1", iclk=32, icldays=0, iclsrc="noai")]
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
+    files[p] = [ROW_WDPO2.format(
+        tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",
+        seed=0, es="0.0", eps_ai=f"{ea:g}", rlhf=fb, dpobeta=f"{db:g}")
+        for db in DPO_BETAS for fb in DPO_FEEDBACKS for ea in EPS_AIS]
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpos2.txt")
+    files[p] = [ROW_WDPO2.format(
+        tag=f"pofdwdpos2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{ws_tok()}_s0_fresh",
+        seed=0, es="0.2", eps_ai=f"{ea:g}", rlhf=fb, dpobeta=f"{db:g}")
+        for db in DPO_BETAS for fb in DPO_FEEDBACKS for ea in EPS_AIS]
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_wdpos2_smoke.txt")] = [ROW_WDPO2.format(
+        tag=f"pofdwdpos2smk_qwen7b_db0p1_ea0p4_closed_{ws_tok()}_s0_fresh",
+        seed=0, es="0.2", eps_ai="0.4", rlhf="closed", dpobeta="0.1")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
