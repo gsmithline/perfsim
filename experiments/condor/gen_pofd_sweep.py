@@ -185,16 +185,22 @@ W_EPS_SOCIAL = 0.2
 ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
           "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}")
 
-# forward-KL probe (2026-07-28), W=1 ONLY: the claim-carrying qwen cells of
-# the pofd_ (W=1) wave re-run with the anchor as FORWARD KL(ref || pi) --
-# mass-covering: the policy must keep mass wherever the base does but pays
-# nothing for growing mass on the data -- instead of the default reverse
-# KL(pi || ref) (mode-seeking; the direction every earlier wave used, and the
-# term that re-injects the prior modes each round). KL_DIRECTION=forward is
-# env-only, set in the at_pofd_qwen7b_w1f*.sub files and recorded in
-# config.json. beta=0 rows are direction-independent, so only beta>0 cells
-# re-run; ea0p4 is where reverse KL bifurcates qwen onto its prior.
-FKL_BETAS = [0.2, 0.5, 1.0]
+# forward-KL waves (probe 2026-07-28, made CANONICAL 2026-07-29): the anchor
+# as FORWARD KL(ref || pi) -- mass-covering; the SFT+KL optimum is then CE to
+# the mixture (data + beta*base)/(1+beta) -- instead of reverse KL(pi || ref)
+# (mode-seeking; the RLHF convention, used by every wave before 2026-07-28).
+# The W=1 probe showed direction moves the capture THRESHOLD, not the
+# strong-anchor endpoint (b0p5: fwd kills the 337-agent camp; b1: same ~330
+# camp, Jaccard 0.86, either way). Decision: forward is the paper's canonical
+# anchor from here on; reverse waves remain as the RLHF-practice comparison.
+# KL_DIRECTION=forward is env-only, set in the at_pofd_qwen7b_*f.sub files and
+# recorded in config.json. beta=0 rows are direction-independent -- figures
+# reuse the reverse-wave b0 runs rather than duplicating them under new tags.
+# Key cells only for now (claim-carrying): ea0p4 across the beta dial in each
+# environment, plus the ws narrow-gate amplification pair at ea0p2.
+FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
+FKL_WS_CELLS = [(0.1, 0.4), (0.2, 0.4), (0.5, 0.4), (1.0, 0.4),
+                (0.5, 0.2), (1.0, 0.2)]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
@@ -444,6 +450,20 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_w1f_smoke.txt")] = [ROW.format(
         tag=tag_of("qwen7b", 0.5, 0.2, 0, prefix="pofdw1fsmk"),
         style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
+    # w2f/ws2f: forward-KL canon for the W=0.5 environments (no smokes -- the
+    # forward loss path was validated by the w1f smoke+wave, and these envs
+    # are validated under reverse; the direction only touches the loss).
+    p = os.path.join(HERE, "configs_pofd_qwen7b_w2f.txt")
+    files[p] = [ROW_W.format(
+        tag=f"pofdw2f_qwen7b_b{_num(b)}_ea0p4_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai="0.4") for b in FKL_BETAS]
+    expected[p] = len(FKL_BETAS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_ws2f.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2f_qwen7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
+        for b, ea in FKL_WS_CELLS]
+    expected[p] = len(FKL_WS_CELLS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),

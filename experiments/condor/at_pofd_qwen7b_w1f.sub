@@ -1,6 +1,9 @@
-# HTCondor: FORWARD-KL PROBE, W=1 ENVIRONMENT (pofdw1f_), Qwen-7B, seed 0.
-# 3 runs: beta {0.2,0.5,1} x eps_AI 0.4 -- the claim-carrying cells of the
-# pofd_ (W=1) wave re-run with KL_DIRECTION=forward: the anchor becomes
+# HTCondor: FORWARD-KL WAVE (canonical 2026-07-29), W=1 ENVIRONMENT
+# (pofdw1f_), Qwen-7B, seed 0.
+# 4 runs: beta {0.1,0.2,0.5,1} x eps_AI 0.4 -- the claim-carrying cells of the
+# pofd_ (W=1) wave re-run with KL_DIRECTION=forward (b0p1 added 2026-07-29
+# when forward became the canonical anchor; the original 3-cell probe is done
+# and resubmits no-op on the idempotent executable): the anchor becomes
 # KL(ref || pi) (mass-covering; the frozen ref's entropy is constant, so the
 # gradient is that of the cross-entropy of the base distribution under the
 # policy -- the model must keep mass wherever the base does but pays nothing
