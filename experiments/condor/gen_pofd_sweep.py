@@ -199,6 +199,10 @@ ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 # 2026-07-29 (same day, user): w2f/ws2f expanded from key cells to the FULL
 # beta>0 grids (FKL_BETAS x EPS_AIS = 16 cells each), so the forward waves
 # can fully replace w2/ws2 in every figure; w1f stays at the ea0p4 dial.
+# 2026-07-29 (later, user): olmo7b w2f/ws2f twins added -- same 16-cell grids,
+# testing the qwen headline (peers dissolve the reverse b1_ea0p4 camp under
+# forward, 198->3) on the IN-RANGE 0.75 prior where w1f showed forward is not
+# protective (b0p1 captures MORE, b0p5 halved-not-killed, b1 collapses anyway).
 FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -471,6 +475,22 @@ def main():
     p = os.path.join(HERE, "configs_pofd_qwen7b_ws2f.txt")
     files[p] = [ROW_WS.format(
         tag=f"pofdws2f_qwen7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
+        for b in FKL_BETAS for ea in EPS_AIS]
+    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+    # olmo twins of w2f/ws2f (2026-07-29): the peer-dissolution test on the
+    # in-range 0.75 prior (see the FKL_ comment block). Reverse twins:
+    # pofdw2_/pofdws2_ olmo7b. Model deltas live in the .sub files; capture
+    # analysis needs the HIGH-side mirror (op>0.70) as in the olmo w1f wave.
+    p = os.path.join(HERE, "configs_pofd_olmo7b_w2f.txt")
+    files[p] = [ROW_W.format(
+        tag=f"pofdw2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
+        for b in FKL_BETAS for ea in EPS_AIS]
+    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_olmo7b_ws2f.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
         for b in FKL_BETAS for ea in EPS_AIS]
     expected[p] = len(FKL_BETAS) * len(EPS_AIS)
