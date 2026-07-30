@@ -259,6 +259,29 @@ ESF_REPL_SEEDS = [42, 43]
 ROW_ESF = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
            "{es}, 0.0, {w}, loop, 0.0, 0.4")
 
+# corrected-env port of the DATA-side regularizer (2026-07-30, user): the
+# pfrac wave (beta=0, style sft, DATA_REGIME=accumulate + PRISTINE_FRAC)
+# re-based into env2 (W=0.5 FJ, lam=0.2, no peers) and env3 (env2 +
+# EPS_SOCIAL=0.2). NO KL term by design (user: the data regularizer runs
+# without the weight anchor) -> KL-direction-free, like the ICL waves.
+# Science: w2f/ws2f anchor to the model's PRIOR (KL_BETA); at b1_ea0p4 that
+# anchor CAUSES 234 attributable captures in env2, which peers dissolve in
+# env3 (3). This wave anchors to the ORIGINAL DATA instead -- every retrain
+# batch pins round(pf*723) rows to the round-0 innate seed
+# (mix_pristine_data) -- asking whether a data anchor prevents capture
+# rather than causing it, and how it composes with peer repair/delivery.
+# pf=0 is the plain-accumulate control: the data REGIME differs from the
+# fresh-replace w2f rows, so pf=0-accumulate (not w2f_b0) is the honest
+# no-anchor column. Tag prefixes pofdpf2_/pofdpfs2_/pofdpfs2smk_ keep the
+# checker family (is_pfrac now matches "pofdpf"); env tokens _w0p5_l0p2
+# [_es0p2]_ route W/lam/es and the _pf token is config-checked as before.
+# Smoke: accumulate buffer x pristine hold x live peer step (+forced twin)
+# is a NEW combination (pfrac/bp were W=1 no-peer) -> 1-job pfs2 smoke.
+# The no-peer pf2 side needs none (accumulate x pf proven by the W=1 pfrac
+# wave, the env2 operator by w2f/icl2).
+ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
+           "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {pfrac}")
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -621,6 +644,22 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_wdpos2_smoke.txt")] = [ROW_WDPO2.format(
         tag=f"pofdwdpos2smk_qwen7b_db0p1_ea0p4_closed_{ws_tok()}_s0_fresh",
         seed=0, es="0.2", eps_ai="0.4", rlhf="closed", dpobeta="0.1")]
+    # corrected-env data-regularizer port (see the ROW_PF2 comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_pf2.txt")
+    files[p] = [ROW_PF2.format(
+        tag=f"pofdpf2_qwen7b_{w_tok()}_b0_ea{_num(ea)}_pf{_num(pf)}_s0_fresh_data",
+        seed=0, es="0.0", eps_ai=f"{ea:g}", pfrac=f"{pf:g}")
+        for pf in PFRACS for ea in EPS_AIS]
+    expected[p] = len(PFRACS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_pfs2.txt")
+    files[p] = [ROW_PF2.format(
+        tag=f"pofdpfs2_qwen7b_{ws_tok()}_b0_ea{_num(ea)}_pf{_num(pf)}_s0_fresh_data",
+        seed=0, es="0.2", eps_ai=f"{ea:g}", pfrac=f"{pf:g}")
+        for pf in PFRACS for ea in EPS_AIS]
+    expected[p] = len(PFRACS) * len(EPS_AIS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_pfs2_smoke.txt")] = [ROW_PF2.format(
+        tag=f"pofdpfs2smk_qwen7b_{ws_tok()}_b0_ea0p4_pf0p5_s0_fresh_data",
+        seed=0, es="0.2", eps_ai="0.4", pfrac="0.5")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -649,6 +688,7 @@ def main():
           f" + {len(PFRAC_MODELS) * len(PFRACS) * len(EPS_AIS) * len(SEEDS)} pfrac "
           f"(data-regime) jobs across {len(PFRAC_MODELS)} model(s)"
           f" + {len(BP_BETAS) * len(PFRACS) * len(BP_EPS) * len(SEEDS)} bp (beta x pfrac)"
+          f" + {2 * len(PFRACS) * len(EPS_AIS)} pf2/pfs2 (env2/env3 data-regime)"
           f" + {len(ICL_ARMS) * len(EPS_AIS) * len(SEEDS)} icl"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} dpo"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} dpon (noisy)"
@@ -656,7 +696,7 @@ def main():
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS) * len(SEEDS)} wdpo"
           f" + {len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(DPON_EPS) * len(SEEDS)} wdpon"
           f" + {len(BETAS) * len(EPS_AIS) * len(SEEDS)} ws (+eps_social=0.2)"
-          f" + 8 smokes")
+          f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)
 

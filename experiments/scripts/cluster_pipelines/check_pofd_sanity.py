@@ -6,7 +6,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                innate_lambda=0, pop=ab, mode=loop, canary=0, single sweep,
                no pop reset. Style/regime are TAG-AWARE:
                pofd_* dirs must be data_regime=replace + pristine_frac=0;
-               pofdpf_* dirs (data-regime wave) accumulate + kl_beta=0 +
+               pofdpf* dirs (data-regime wave, incl. the env2/env3 ports
+               pofdpf2_/pofdpfs2_) accumulate + kl_beta=0 +
                style=sft + pristine_frac matching the _pf token;
                pofdbp* dirs (beta x pfrac interior) accumulate + style=sft_kl
                + kl_beta matching the _b token + pristine_frac matching _pf;
@@ -87,7 +88,7 @@ def check_run(run_dir):
 
     # -- 1 CONFIG ------------------------------------------------------------
     name = os.path.basename(run_dir.rstrip("/"))
-    is_pfrac = name.startswith("pofdpf_")
+    is_pfrac = name.startswith("pofdpf")   # covers pofdpf2_/pofdpfs2[smk]_ too
     is_bp = name.startswith("pofdbp")      # covers pofdbpsmk_ too
     is_icl = name.startswith("pofdicl")    # covers pofdiclsmk_ too
     # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
