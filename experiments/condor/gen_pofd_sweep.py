@@ -570,18 +570,28 @@ def main():
     # in-range 0.75 prior (see the FKL_ comment block). Reverse twins:
     # pofdw2_/pofdws2_ olmo7b. Model deltas live in the .sub files; capture
     # analysis needs the HIGH-side mirror (op>0.70) as in the olmo w1f wave.
+    # 2026-07-30 (user): trimmed from the full 16-cell grids (never
+    # submitted) to the prioritized union -- (1) wide-gate dose response
+    # ea0p4 x beta {0,0.1,0.2,0.5,1} and (2) strong-regularization gate
+    # response b1 x ea {0.05,0.1,0.2} -- 8 cells per env, 16 jobs. b0 runs
+    # HERE (style sft, direction-free): unlike qwen, the olmo reverse
+    # w2/ws2 waves never ran, so there are no b0 runs to reuse.
+    OW2F_POINTS = ([(b, 0.4) for b in [0.0] + FKL_BETAS]
+                   + [(1.0, ea) for ea in [0.05, 0.1, 0.2]])
     p = os.path.join(HERE, "configs_pofd_olmo7b_w2f.txt")
     files[p] = [ROW_W.format(
         tag=f"pofdw2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{w_tok()}_s0_fresh_data",
-        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
-        for b in FKL_BETAS for ea in EPS_AIS]
-    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=0,
+        eps_ai=f"{ea:g}")
+        for b, ea in OW2F_POINTS]
+    expected[p] = len(OW2F_POINTS)
     p = os.path.join(HERE, "configs_pofd_olmo7b_ws2f.txt")
     files[p] = [ROW_WS.format(
         tag=f"pofdws2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
-        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
-        for b in FKL_BETAS for ea in EPS_AIS]
-    expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=0,
+        eps_ai=f"{ea:g}")
+        for b, ea in OW2F_POINTS]
+    expected[p] = len(OW2F_POINTS)
     # eps-social dose-response (see the ESF_ comment block): seed-0 scan of
     # the repair channel at the forward headline cell; the W=0.5 es {0, 0.2}
     # cells are reused from w2f/ws2f, not regenerated here.
