@@ -282,6 +282,30 @@ ROW_ESF = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
 ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
            "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {pfrac}")
 
+# feature-endogenization RERUNS (2026-07-30, user): the Tree-3 gender arms
+# (natural / dropped / permuted / frozen) re-based into the CURRENT
+# corrected peer environment (W=0.5, lam=0.2, es=0.2, ea=0.4, forward KL,
+# replace + fresh adapter each round, nested operator), seeds {0, 42, 43}.
+# The old mlawD_/mlaaD_/icl_*_gdrop/gperm runs predate the corrected
+# operator -- hence reruns. AUDIT 2026-07-30: the four s0 anchors already
+# exist and are REUSED, not re-run -- natural b0 = pofdws2_qwen7b_b0_ea0p4
+# (reverse-era tag; b0 has no KL term so it is direction-free), natural
+# b0p5/b1 = pofdws2f_ s0, frozen = pofdicls2_ ea0p4_k0_s0. Only the 14
+# missing cells run:
+#   fes  (6): natural b {0, 0.5, 1} x s {42, 43} -- ws2f-family tags
+#   fegd (3): PROFILE_DROP_COLS=gender,    b1, s {0,42,43} -- pofdfegd_
+#   fegp (3): PROFILE_PERMUTE_COLS=gender, b1, s {0,42,43} -- pofdfegp_
+#   fef  (2): frozen k0 x s {42, 43} -- pofdicls2_-family tags
+# fegd/fegp prefixes match no special checker family -> generic social
+# branch (env tokens carry W/lam/es); fes/fef reuse their families'
+# branches. Twins forced everywhere (es>0). The drop/permute knobs act
+# once at profile-build time, are config-recorded (profile_drop_cols/
+# profile_permute_cols -- gate on those at pull), and permutation is
+# seeded by the run seed (saved to permute_cols.json). No smoke: both
+# knobs are proven on movielens by the old waves and touch nothing in
+# the loop.
+FE_SEEDS = [0, 42, 43]
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -670,6 +694,27 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_pfs2_smoke.txt")] = [ROW_PF2.format(
         tag=f"pofdpfs2smk_qwen7b_{ws_tok()}_b0_ea0p4_pf0p5_s0_fresh_data",
         seed=0, es="0.2", eps_ai="0.4", pfrac="0.5")]
+    # feature-endogenization reruns (see the FE_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fes.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2f_qwen7b_b{_num(b)}_ea0p4_{ws_tok()}_s{s}_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        eps_ai="0.4")
+        for b in [0.0, 0.5, 1.0] for s in FE_SEEDS[1:]]
+    expected[p] = 3 * len(FE_SEEDS[1:])
+    for key, tagpre in (("fegd", "pofdfegd"), ("fegp", "pofdfegp")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_WS.format(
+            tag=f"{tagpre}_qwen7b_b1_ea0p4_{ws_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fef.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_qwen7b_{ws_tok()}_ea0p4_k0_s{s}",
+        seed=s, es="0.2", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
+        for s in FE_SEEDS[1:]]
+    expected[p] = len(FE_SEEDS[1:])
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
