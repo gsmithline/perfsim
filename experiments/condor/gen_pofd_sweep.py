@@ -304,6 +304,18 @@ ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # seeded by the run seed (saved to permute_cols.json). No smoke: both
 # knobs are proven on movielens by the old waves and touch nothing in
 # the loop.
+# env2 mirror (2026-07-31, user): the same four arms at ES=0 (W=0.5,
+# lam=0.2, ea=0.4, NO peer step) -- does the platform loop endogenize
+# gender on its own, without the peer current? AUDIT 2026-07-31: the
+# four env2 s0 anchors exist and are REUSED -- natural b0 = pofdw2_
+# b0_ea0p4 (reverse-era tag, direction-free), natural b0p5/b1 =
+# pofdw2f_ s0, frozen = pofdicl2_ ea0p4_k0_s0. Only the 14 missing
+# cells run (fes2 6 / fegd2 3 / fegp2 3 / fef2 2), composite key
+# qwen7b_fe2. No twin at es=0 (the runner forces it only when eps>0);
+# the no-platform counterfactual is innate, as in every env2 wave.
+# es=0 -> the checker's exact-replay branch for all four subs. Same
+# fegd/fegp permutation per seed as env3 (seeded by run seed only) --
+# deliberate, keeps the env2/env3 pair matched within seed.
 FE_SEEDS = [0, 42, 43]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -713,6 +725,27 @@ def main():
     files[p] = [ROW_ICL2.format(
         tag=f"pofdicls2_qwen7b_{ws_tok()}_ea0p4_k0_s{s}",
         seed=s, es="0.2", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
+        for s in FE_SEEDS[1:]]
+    expected[p] = len(FE_SEEDS[1:])
+    # env2 mirror of the fe wave (see the FE_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fes2.txt")
+    files[p] = [ROW_W.format(
+        tag=f"pofdw2f_qwen7b_b{_num(b)}_ea0p4_{w_tok()}_s{s}_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        eps_ai="0.4")
+        for b in [0.0, 0.5, 1.0] for s in FE_SEEDS[1:]]
+    expected[p] = 3 * len(FE_SEEDS[1:])
+    for key, tagpre in (("fegd2", "pofdfegd"), ("fegp2", "pofdfegp")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_W.format(
+            tag=f"{tagpre}_qwen7b_b1_ea0p4_{w_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fef2.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicl2_qwen7b_{w_tok()}_ea0p4_k0_s{s}",
+        seed=s, es="0.0", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
         for s in FE_SEEDS[1:]]
     expected[p] = len(FE_SEEDS[1:])
     m, b, e, s = SMOKE

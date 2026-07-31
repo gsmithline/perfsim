@@ -1,0 +1,6 @@
+pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s42_fresh_data, sft, 0, 42, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s43_fresh_data, sft, 0, 43, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b0p5_ea0p4_w0p5_l0p2_s42_fresh_data, sft_kl, 0.5, 42, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b0p5_ea0p4_w0p5_l0p2_s43_fresh_data, sft_kl, 0.5, 43, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s42_fresh_data, sft_kl, 1, 42, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
+pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s43_fresh_data, sft_kl, 1, 43, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0.4
