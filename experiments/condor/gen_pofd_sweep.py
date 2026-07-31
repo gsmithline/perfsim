@@ -316,6 +316,28 @@ ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # es=0 -> the checker's exact-replay branch for all four subs. Same
 # fegd/fegp permutation per seed as env3 (seeded by run seed only) --
 # deliberate, keeps the env2/env3 pair matched within seed.
+# reverse-KL mirror of the env3 fe wave (2026-07-31, user): the peer-
+# environment fe matrix on the RLHF-practice side of the KL ledger.
+# Direction-free cells are REUSED, not re-run: natural b0 all 3 seeds
+# (pofdws2_ b0 s0 + pofdws2f_ b0 s42/s43 -- style sft, no KL term) and
+# frozen k0 all 3 seeds (pofdicls2_, never trains). AUDIT 2026-07-31:
+# reverse natural b0p5/b1 s0 anchors exist from the ws2 wave and are
+# REUSED (pofdws2_; that wave predates the kl_direction config field,
+# so those configs record kl_direction=None -- physics reverse, the
+# only implementation then; the new rows set KL_DIRECTION=reverse
+# explicitly and record 'reverse' -- same physics, gate accepts both).
+# Only 10 missing cells run, composite key qwen7b_fer:
+#   fesr  (4): natural b {0.5, 1} x s {42, 43} -- pofdws2_ replication
+#              seeds (reverse-era family, no direction token)
+#   fegdr (3): PROFILE_DROP_COLS=gender,    b1, s {0,42,43} -- pofdfegdr_
+#   fegpr (3): PROFILE_PERMUTE_COLS=gender, b1, s {0,42,43} -- pofdfegpr_
+# fegdr/fegpr permutation is seeded by the run seed ONLY -- SAME
+# per-seed permutation as forward fegp and env2 fegp2, deliberate: the
+# forward/reverse pair is matched within seed. Checker: pofdws2_ ->
+# the ws weaker gate (peer-alive + twin); pofdfegdr_/pofdfegpr_ match
+# no special family -> generic social branch via env tokens. Twins
+# forced everywhere (es>0). Never flip the runner code default
+# ('reverse') -- forward stays env-only in the *f subs.
 FE_SEEDS = [0, 42, 43]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -748,6 +770,20 @@ def main():
         seed=s, es="0.0", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
         for s in FE_SEEDS[1:]]
     expected[p] = len(FE_SEEDS[1:])
+    # reverse-KL mirror of the env3 fe wave (see the FE_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fesr.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2_qwen7b_b{_num(b)}_ea0p4_{ws_tok()}_s{s}_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=s, eps_ai="0.4")
+        for b in [0.5, 1.0] for s in FE_SEEDS[1:]]
+    expected[p] = 2 * len(FE_SEEDS[1:])
+    for key, tagpre in (("fegdr", "pofdfegdr"), ("fegpr", "pofdfegpr")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_WS.format(
+            tag=f"{tagpre}_qwen7b_b1_ea0p4_{ws_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
