@@ -94,6 +94,8 @@ def check_run(run_dir):
     # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
     # pofdwdpo/pofdwdpon/pofdwdposmk (same config surface, W/lam via tokens)
     is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
+    # continual-weights fec families (covers pofdws2fcsmk_ too)
+    is_cont = name.startswith(("pofdws2fc", "pofdfegdc", "pofdfegpc"))
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -127,6 +129,11 @@ def check_run(run_dir):
         want.update({"kl_beta": 0.0, "training_style": "dpo",
                      "pristine_frac": 0.0, "fresh_each_round": True,
                      "use_lora": 1})
+    elif is_cont:
+        # continual-weights families (fec wave): the adapter persists across
+        # rounds (FRESH_EACH_ROUND=0). Data protocol unchanged -- replace,
+        # n_train capped -- so _fresh_errs still applies below.
+        want.update({"pristine_frac": 0.0, "fresh_each_round": False})
     else:
         want.update({"pristine_frac": 0.0, "fresh_each_round": True})
     for k, v in want.items():

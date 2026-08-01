@@ -338,6 +338,31 @@ ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # no special family -> generic social branch via env tokens. Twins
 # forced everywhere (es>0). Never flip the runner code default
 # ('reverse') -- forward stays env-only in the *f subs.
+# CONTINUAL-weights mirror of the env3 forward fe wave (2026-08-01,
+# user): the same experiment with FRESH_EACH_ROUND=0 -- the adapter
+# persists and keeps training across rounds (the runner's native
+# continual-SFT default; forward KL still anchors every round to the
+# FIXED pristine base, ref_model_name=base). The archived pre-correction
+# fe runs (mlawD_/mlaaD_) were continual, which is WHY the fresh
+# protocol exists (rules out weight-drift compounding); this wave
+# re-asks the fe question with weight drift back ON, under the
+# corrected operator + forward KL, so fresh-vs-continual is a clean
+# within-environment contrast. NO anchors exist (no continual training
+# run in the corrected era) -> all cells run, seeds {0, 42, 43}:
+#   fesc  (9): natural b {0, 0.5, 1} x 3 seeds -- pofdws2fc_ (new
+#              family: env3 forward continual)
+#   fegdc (3): PROFILE_DROP_COLS=gender,    b1 x 3 seeds -- pofdfegdc_
+#   fegpc (3): PROFILE_PERMUTE_COLS=gender, b1 x 3 seeds -- pofdfegpc_
+# The frozen arm is SHARED with the fresh matrix (pofdicls2_ k0: no
+# weights, fresh/continual meaningless). The _fresh_data tag suffix
+# names the DATA protocol (replace, n_train=723 every round -- the
+# _fresh_errs gate still applies); only the WEIGHTS are continual.
+# Continual is a NEW physics combination in the corrected era -> smoke
+# first (pofdws2fcsmk_ b1_ea0p4 s0, 3 rounds, key qwen7b_fec_smoke),
+# gate with check_pofd_sanity, THEN submit qwen7b_fec (15 jobs).
+# check_pofd_sanity gained an is_cont branch (pofdws2fc_/pofdfegdc_/
+# pofdfegpc_ -> fresh_each_round=False expected); permutation seeded by
+# run seed ONLY -> same per-seed permutation as fegp/fegp2/fegpr.
 FE_SEEDS = [0, 42, 43]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -770,6 +795,24 @@ def main():
         seed=s, es="0.0", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
         for s in FE_SEEDS[1:]]
     expected[p] = len(FE_SEEDS[1:])
+    # continual-weights mirror of the env3 forward fe wave (see FE_ block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fesc.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2fc_qwen7b_b{_num(b)}_ea0p4_{ws_tok()}_s{s}_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        eps_ai="0.4")
+        for b in [0.0, 0.5, 1.0] for s in FE_SEEDS]
+    expected[p] = 3 * len(FE_SEEDS)
+    for key, tagpre in (("fegdc", "pofdfegdc"), ("fegpc", "pofdfegpc")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_WS.format(
+            tag=f"{tagpre}_qwen7b_b1_ea0p4_{ws_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_fec_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdws2fcsmk_qwen7b_b1_ea0p4_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="1", seed=0, eps_ai="0.4")]
     # reverse-KL mirror of the env3 fe wave (see the FE_ comment block)
     p = os.path.join(HERE, "configs_pofd_qwen7b_fesr.txt")
     files[p] = [ROW_WS.format(
