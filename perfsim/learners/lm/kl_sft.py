@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+import math
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 import torch
@@ -27,6 +28,25 @@ if TYPE_CHECKING:
     from transformers import PreTrainedModel
 
 
+def _anchor_divergence_per_token(
+    logp: "torch.Tensor", logq: "torch.Tensor", direction: str
+) -> "torch.Tensor":
+    """Per-token anchor divergence, summed over the vocab dim.
+
+    logp is the policy's log-softmax (grad flows through it); logq is the
+    frozen reference's log-softmax (constant). "reverse" = KL(pi || ref),
+    "forward" = KL(ref || pi), "js" = JS(pi, ref) -- the mixture m enters
+    through logaddexp so the gradient flows through both JS terms.
+    """
+    if direction == "forward":
+        return (logq.exp() * (logq - logp)).sum(dim=-1)
+    if direction == "js":
+        logm = torch.logaddexp(logp, logq) - math.log(2.0)
+        return 0.5 * ((logp.exp() * (logp - logm)).sum(dim=-1)
+                      + (logq.exp() * (logq - logm)).sum(dim=-1))
+    return (logp.exp() * (logp - logq)).sum(dim=-1)
+
+
 class KLSFTLearner(SFTLearner):
     """SFT with a beta * KL anchor against a frozen reference policy.
 
@@ -40,7 +60,10 @@ class KLSFTLearner(SFTLearner):
     the reference is frozen its entropy term is constant, so the gradient is
     that of the cross-entropy of the reference distribution under the policy;
     the policy must keep mass wherever the base does but is free to grow mass
-    elsewhere.
+    elsewhere. "js" is the Jensen-Shannon divergence JS(pi, ref) =
+    0.5*KL(pi || m) + 0.5*KL(ref || m) with m = (pi + ref)/2: symmetric,
+    bounded by log 2 per token (so at equal beta the anchor saturates --
+    weakens relative to either KL -- once the policy is far from the base).
     """
 
     def __init__(
@@ -75,9 +98,10 @@ class KLSFTLearner(SFTLearner):
         )
         if anchor_mode not in ("fixed", "chained"):
             raise ValueError(f"anchor_mode must be 'fixed' or 'chained'; got {anchor_mode!r}")
-        if kl_direction not in ("reverse", "forward"):
+        if kl_direction not in ("reverse", "forward", "js"):
             raise ValueError(
-                f"kl_direction must be 'reverse' or 'forward'; got {kl_direction!r}")
+                f"kl_direction must be 'reverse', 'forward', or 'js'; "
+                f"got {kl_direction!r}")
         self._ref_model_name = ref_model_name
         self._kl_beta = float(kl_beta)
         self._anchor_mode = anchor_mode
@@ -168,10 +192,8 @@ class KLSFTLearner(SFTLearner):
                 logp = F.log_softmax(outputs.logits[:, :-1, :], dim=-1)
                 logq = F.log_softmax(ref_logits[:, :-1, :], dim=-1)
                 mask_shift = mask[:, 1:]
-                if kl_direction == "forward":
-                    kl_per_token = (logq.exp() * (logq - logp)).sum(dim=-1)
-                else:
-                    kl_per_token = (logp.exp() * (logp - logq)).sum(dim=-1)
+                kl_per_token = _anchor_divergence_per_token(
+                    logp, logq, kl_direction)
                 kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
                 total = ce + kl_beta * kl
                 return (total, outputs) if return_outputs else total

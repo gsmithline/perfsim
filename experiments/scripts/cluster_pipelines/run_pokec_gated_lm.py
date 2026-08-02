@@ -380,10 +380,12 @@ def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
     # "reverse" = KL(pi || ref), the standard mode-seeking RLHF penalty (every
-    # wave before 2026-07-28); "forward" = KL(ref || pi), mass-covering.
+    # wave before 2026-07-28); "forward" = KL(ref || pi), mass-covering;
+    # "js" = Jensen-Shannon, symmetric and bounded by log 2 per token.
     kl_direction = _env_or("KL_DIRECTION", "reverse")
-    if kl_direction not in ("reverse", "forward"):
-        raise ValueError(f"KL_DIRECTION must be 'reverse' or 'forward'; got {kl_direction!r}")
+    if kl_direction not in ("reverse", "forward", "js"):
+        raise ValueError(
+            f"KL_DIRECTION must be 'reverse', 'forward', or 'js'; got {kl_direction!r}")
     training_style = _env_or("TRAINING_STYLE", "sft_kl")
     # closed-loop RLHF (dpo) arm: where preference labels come from.
     #   closed -> the model's own (deployment-shifted) population

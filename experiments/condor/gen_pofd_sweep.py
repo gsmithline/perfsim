@@ -363,6 +363,30 @@ ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # check_pofd_sanity gained an is_cont branch (pofdws2fc_/pofdfegdc_/
 # pofdfegpc_ -> fresh_each_round=False expected); permutation seeded by
 # run seed ONLY -> same per-seed permutation as fegp/fegp2/fegpr.
+# JENSEN-SHANNON mirror of the env3 fe wave (2026-08-02, user): the
+# same peer-environment fe matrix with KL_DIRECTION=js -- JS(pi, ref) =
+# 0.5*KL(pi||m) + 0.5*KL(ref||m), m the even mixture: the symmetric
+# midpoint between mode-seeking (reverse) and mass-covering (forward).
+# Bounded by log 2 per token, so at equal beta the anchor SATURATES
+# once the policy is far from base -- beta values are not
+# strength-comparable across divergences; the grid stays parallel
+# anyway ({0.5, 1}) for design symmetry. Direction-free cells REUSED:
+# natural b0 all 3 seeds (style sft) and frozen k0 all 3 seeds
+# (pofdicls2_). NO trained anchors exist (JS never ran anywhere) ->
+# 12 cells, composite key qwen7b_fej:
+#   fesj  (6): natural b {0.5, 1} x s {0, 42, 43} -- pofdws2j_ (new
+#              family: env3 JS)
+#   fegdj (3): PROFILE_DROP_COLS=gender,    b1 x 3 seeds -- pofdfegdj_
+#   fegpj (3): PROFILE_PERMUTE_COLS=gender, b1 x 3 seeds -- pofdfegpj_
+# Permutation seeded by the run seed ONLY -> same per-seed permutation
+# as every other fe wave. Checker: no new branch -- fresh runs, so
+# pofdws2j_/pofdfegdj_/pofdfegpj_ route to the generic social branch
+# via the _es token (no prefix collision with pofdws2fc_/pofdfegdc_/
+# pofdfegpc_). JS is NEW physics (kl_sft.py gained the 'js' branch,
+# never trained) -> smoke first (pofdws2jsmk_ b1_ea0p4 s0, 3 rounds,
+# key qwen7b_fej_smoke), gate with check_pofd_sanity, THEN qwen7b_fej.
+# KL_DIRECTION stays env-only; the runner code default ('reverse')
+# never flips.
 FE_SEEDS = [0, 42, 43]
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -827,6 +851,23 @@ def main():
             style="sft_kl", beta="1", seed=s, eps_ai="0.4")
             for s in FE_SEEDS]
         expected[p] = len(FE_SEEDS)
+    # Jensen-Shannon mirror of the env3 fe wave (see the FE_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fesj.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2j_qwen7b_b{_num(b)}_ea0p4_{ws_tok()}_s{s}_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=s, eps_ai="0.4")
+        for b in [0.5, 1.0] for s in FE_SEEDS]
+    expected[p] = 2 * len(FE_SEEDS)
+    for key, tagpre in (("fegdj", "pofdfegdj"), ("fegpj", "pofdfegpj")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_WS.format(
+            tag=f"{tagpre}_qwen7b_b1_ea0p4_{ws_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_fej_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdws2jsmk_qwen7b_b1_ea0p4_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="1", seed=0, eps_ai="0.4")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
