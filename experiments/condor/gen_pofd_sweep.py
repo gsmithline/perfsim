@@ -220,6 +220,21 @@ FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 # es=0).
 # Flow: seed 0 locates the transition -> fill ESF_REPL_POINTS with the
 # important (w, es) cells -> regenerate -> submit qwen7b_esf_repl (s42+s43).
+# targeted fe expansion (2026-08-02, user), key qwen7b_fex: 8 missing
+# cells of the natural-gender fe protocol (b1, forward KL, W=0.5,
+# lam=0.2, replace + fresh adapter, corrected operator, WITH_TWIN=1),
+# staying in the pofdesf_ family:
+#   (1) ea0p4, es {0.10, 0.15, 0.25} x s {42, 43} -- the W=0.5
+#       transition doses at replication seeds; tags BYTE-IDENTICAL to
+#       the corresponding esf_repl rows (never submitted -- if
+#       esf_repl runs later those 6 no-op via the idempotent exec)
+#   (2) ea0p2, es {0.10, 0.25} x s0 -- extends the family to a second
+#       eps_AI dial (esf_tag/esf_rows gained an ea param; ROW_ESF
+#       feeds {eps_ai}); es=0.2 counterpart exists as pofdws2f_ b1_ea0p2
+# AUDIT 2026-08-02: all 8 tags absent on cluster (no partials), no
+# other-family equivalents. No smoke: env identical to the validated
+# esf sub, only queue-fed dials differ. Checker: pofdesf_ -> generic
+# social branch (es>0, fresh), as validated for the esf s0 scan.
 # corrected-env ports of ICL + DPO (2026-07-29, user): the frozen in-context
 # arm and the sharp on-policy DPO arm re-based into env2 (W=0.5 FJ, lam=0.2,
 # no peers) and env3 (env2 + EPS_SOCIAL=0.2), so the adaptation-mechanism
@@ -257,7 +272,7 @@ ESF_REPL_POINTS = [(0.5, 0.0), (0.5, 0.10), (0.5, 0.15), (0.5, 0.25),
                    (1.0, 0.0), (1.0, 0.40)]
 ESF_REPL_SEEDS = [42, 43]
 ROW_ESF = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
-           "{es}, 0.0, {w}, loop, 0.0, 0.4")
+           "{es}, 0.0, {w}, loop, 0.0, {eps_ai}")
 
 # corrected-env port of the DATA-side regularizer (2026-07-30, user): the
 # pfrac wave (beta=0, style sft, DATA_REGIME=accumulate + PRISTINE_FRAC)
@@ -414,14 +429,14 @@ def rows_for(model, seeds, prefix="pofd"):
     return out
 
 
-def esf_tag(w, es, seed):
+def esf_tag(w, es, seed, ea=0.4):
     tok = f"w{_num(w)}_l0p2" + (f"_es{_num(es)}" if es > 0 else "")
-    return f"pofdesf_qwen7b_b1_ea0p4_{tok}_s{seed}_fresh_data"
+    return f"pofdesf_qwen7b_b1_ea{_num(ea)}_{tok}_s{seed}_fresh_data"
 
 
-def esf_rows(points, seeds):
-    return [ROW_ESF.format(tag=esf_tag(w, es, s), seed=s,
-                           es=f"{es:g}", w=f"{w:.1f}")
+def esf_rows(points, seeds, ea=0.4):
+    return [ROW_ESF.format(tag=esf_tag(w, es, s, ea), seed=s,
+                           es=f"{es:g}", w=f"{w:.1f}", eps_ai=f"{ea:g}")
             for (w, es) in points for s in seeds]
 
 
@@ -710,6 +725,11 @@ def main():
         p = os.path.join(HERE, "configs_pofd_qwen7b_esf_repl.txt")
         files[p] = esf_rows(ESF_REPL_POINTS, ESF_REPL_SEEDS)
         expected[p] = len(ESF_REPL_POINTS) * len(ESF_REPL_SEEDS)
+    # targeted fe expansion (see the qwen7b_fex note in the ESF_ block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_fex.txt")
+    files[p] = (esf_rows([(0.5, es) for es in ESF_W05_ES], [42, 43])
+                + esf_rows([(0.5, 0.10), (0.5, 0.25)], [0], ea=0.2))
+    expected[p] = 2 * len(ESF_W05_ES) + 2
     # corrected-env ICL + DPO ports (see the ICLS2_/ROW_ICL2 comment block)
     p = os.path.join(HERE, "configs_pofd_qwen7b_icl2.txt")
     files[p] = [ROW_ICL2.format(
