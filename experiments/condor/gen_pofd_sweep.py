@@ -714,6 +714,37 @@ def main():
         eps_ai=f"{ea:g}")
         for b, ea in OW2F_POINTS]
     expected[p] = len(OW2F_POINTS)
+    # regularization-excess heatmap fill (2026-08-02, user), keys
+    # olmo7b_w2fx / olmo7b_ws2fx, composite olmo7b_rex: the missing
+    # low-beta x tight-gate block of the olmo forward grids -- es
+    # {0, 0.2} x ea {0.05, 0.1, 0.2} x beta {0, 0.1, 0.2, 0.5}, seed 0,
+    # 24 jobs. Tags stay IN the pofdw2f_/pofdws2f_ families (grid-fill;
+    # the existing 8+8 cross cells untouched, separate configs so only
+    # the missing cells are queued). b0 rows style sft (direction-free;
+    # no reverse b0 to reuse -- the olmo w2/ws2 reverse waves never
+    # ran). AUDIT 2026-08-02: all 24 tags absent on cluster, no
+    # partials, no other-family equivalents. The new subs add
+    # WITH_TWIN=1 (user spec: save the matched no-platform twin;
+    # telemetry-only per the esf precedent -- es0p2 rows force the twin
+    # in the runner anyway, es=0 rows get the deterministic innate
+    # twin). No smoke: env identical to the validated olmo w2f/ws2f
+    # subs except WITH_TWIN; only queue-fed dials differ.
+    OW2FX_BETAS = [0.0, 0.1, 0.2, 0.5]
+    OW2FX_EAS = [0.05, 0.1, 0.2]
+    p = os.path.join(HERE, "configs_pofd_olmo7b_w2fx.txt")
+    files[p] = [ROW_W.format(
+        tag=f"pofdw2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{w_tok()}_s0_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=0,
+        eps_ai=f"{ea:g}")
+        for b in OW2FX_BETAS for ea in OW2FX_EAS]
+    expected[p] = len(OW2FX_BETAS) * len(OW2FX_EAS)
+    p = os.path.join(HERE, "configs_pofd_olmo7b_ws2fx.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2f_olmo7b_b{_num(b)}_ea{_num(ea)}_{ws_tok()}_s0_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=0,
+        eps_ai=f"{ea:g}")
+        for b in OW2FX_BETAS for ea in OW2FX_EAS]
+    expected[p] = len(OW2FX_BETAS) * len(OW2FX_EAS)
     # eps-social dose-response (see the ESF_ comment block): seed-0 scan of
     # the repair channel at the forward headline cell; the W=0.5 es {0, 0.2}
     # cells are reused from w2f/ws2f, not regenerated here.
