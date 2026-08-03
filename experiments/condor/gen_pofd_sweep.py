@@ -797,6 +797,28 @@ def main():
         seed=0, es="0.2", eps_ai=f"{ea:g}", iclk=k, icldays=d, iclsrc=src)
         for arm, k, d, src in ICLS2_ARMS for ea in EPS_AIS]
     expected[p] = len(ICLS2_ARMS) * len(EPS_AIS)
+    # icls2 seed replicates (2026-08-03, user): seeds 42/43 for the mixed-env
+    # ea0p4 endpoint cells still at n=1 -- qwen k32live/d5 (k0 s42/s43
+    # already ran via fef) and olmo k0/k32live/d5. Completes the 3-seed
+    # cross-seed Student-t CIs for the crossmodel ICL endpoint figure.
+    # Same ROW_ICL2 env3 rows as the icls2 wave; grid-fill configs so only
+    # the missing cells queue. AUDIT 2026-08-03: all 10 tags absent locally
+    # and on the cluster (no partials) -- nothing overwritten or resubmitted.
+    ICLX_SEEDS = FE_SEEDS[1:]
+    ICLX_QWEN_ARMS = [("k32live", 32, 0, "live"), ("d5", 0, 5, "live")]
+    ICLX_OLMO_ARMS = [("k0", 0, 0, "live")] + ICLX_QWEN_ARMS
+    p = os.path.join(HERE, "configs_pofd_qwen7b_icls2x.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_qwen7b_{ws_tok()}_ea0p4_{arm}_s{s}",
+        seed=s, es="0.2", eps_ai="0.4", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICLX_QWEN_ARMS for s in ICLX_SEEDS]
+    expected[p] = len(ICLX_QWEN_ARMS) * len(ICLX_SEEDS)
+    p = os.path.join(HERE, "configs_pofd_olmo7b_icls2x.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_olmo7b_{ws_tok()}_ea0p4_{arm}_s{s}",
+        seed=s, es="0.2", eps_ai="0.4", iclk=k, icldays=d, iclsrc=src)
+        for arm, k, d, src in ICLX_OLMO_ARMS for s in ICLX_SEEDS]
+    expected[p] = len(ICLX_OLMO_ARMS) * len(ICLX_SEEDS)
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
     files[p] = [ROW_WDPO2.format(
         tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",

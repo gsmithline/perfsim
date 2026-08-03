@@ -1,0 +1,6 @@
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_k0_s42, frozen, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 0, 0, live
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_k0_s43, frozen, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 0, 0, live
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_k32live_s42, frozen, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 32, 0, live
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_k32live_s43, frozen, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 32, 0, live
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_d5_s42, frozen, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 0, 5, live
+pofdicls2_olmo7b_w0p5_l0p2_es0p2_ea0p4_d5_s43, frozen, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, 0, 5, live
