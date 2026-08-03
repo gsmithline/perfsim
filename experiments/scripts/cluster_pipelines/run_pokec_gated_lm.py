@@ -684,6 +684,17 @@ def main() -> int:
         "ans_sample_t": ans_sample_t,
         "host": os.uname().nodename,
     }
+    if training_style == "dpo":
+        # tag<->config gate for DPO waves; defaults mirror DPOLearner's env
+        # resolution. Absent from configs written before 2026-08-03 (knobs
+        # were env-only there and verified via the submit configs).
+        config.update({
+            "dpo_beta": float(os.environ.get("DPO_BETA", "0.1")),
+            "dpo_tau": float(os.environ.get("DPO_TAU", "12.0")),
+            "dpo_gen_temp": float(os.environ.get("DPO_GEN_TEMP", "0.8")),
+            "dpo_max_steps": int(os.environ.get("DPO_MAX_STEPS", str(max_steps))),
+            "dpo_n_pairs": int(os.environ.get("DPO_N_PAIRS", "0")),
+        })
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     print(f"[run] {json.dumps(config)}", flush=True)
 

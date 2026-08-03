@@ -834,6 +834,31 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_wdpos2_smoke.txt")] = [ROW_WDPO2.format(
         tag=f"pofdwdpos2smk_qwen7b_db0p1_ea0p4_closed_{ws_tok()}_s0_fresh",
         seed=0, es="0.2", eps_ai="0.4", rlhf="closed", dpobeta="0.1")]
+    # full-epoch DPO rerun (2026-08-03, user): the wdpo2/wdpos2 wave trained on
+    # DPO_MAX_STEPS=3 x batch 4 = 12 of the ~270-320 valid pairs built each
+    # round (~4% of the preference signal; cluster logs: pairs=270-323 of 723,
+    # ties the rest). Small-budget confound -> rerun the IDENTICAL 2x2x4 grids
+    # with DPO_MAX_STEPS=0: one full epoch per round, every valid preference
+    # pair consumed exactly once (~70-80 optimizer steps/round). Tags keep the
+    # pofdwdpo prefix (checker is_dpo) with family token 2e/s2e; dpo_beta /
+    # dpo_max_steps now land in config.json (runner dump added 2026-08-03) and
+    # the checker gates them. Smoke first (3 rounds, closed db0p1 ea0p4,
+    # peers on): the new full-epoch budget path x dpo x peers combo.
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2e.txt")
+    files[p] = [ROW_WDPO2.format(
+        tag=f"pofdwdpo2e_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",
+        seed=0, es="0.0", eps_ai=f"{ea:g}", rlhf=fb, dpobeta=f"{db:g}")
+        for db in DPO_BETAS for fb in DPO_FEEDBACKS for ea in EPS_AIS]
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_wdpos2e.txt")
+    files[p] = [ROW_WDPO2.format(
+        tag=f"pofdwdpos2e_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{ws_tok()}_s0_fresh",
+        seed=0, es="0.2", eps_ai=f"{ea:g}", rlhf=fb, dpobeta=f"{db:g}")
+        for db in DPO_BETAS for fb in DPO_FEEDBACKS for ea in EPS_AIS]
+    expected[p] = len(DPO_BETAS) * len(DPO_FEEDBACKS) * len(EPS_AIS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_wdpos2e_smoke.txt")] = [ROW_WDPO2.format(
+        tag=f"pofdwdpos2esmk_qwen7b_db0p1_ea0p4_closed_{ws_tok()}_s0_fresh",
+        seed=0, es="0.2", eps_ai="0.4", rlhf="closed", dpobeta="0.1")]
     # corrected-env data-regularizer port (see the ROW_PF2 comment block)
     p = os.path.join(HERE, "configs_pofd_qwen7b_pf2.txt")
     files[p] = [ROW_PF2.format(

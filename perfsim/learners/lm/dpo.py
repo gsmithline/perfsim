@@ -15,6 +15,9 @@ One round = one iterative-DPO update on ON-POLICY preferences:
      model. (Moving anchor would need a second 7B in memory; left as an ablation.)
 
 Reads DPO knobs from env: DPO_BETA, DPO_TAU, DPO_GEN_TEMP, DPO_MAX_STEPS, DPO_N_PAIRS.
+DPO_MAX_STEPS > 0 caps the optimizer steps per round (the trainer stops mid-epoch);
+DPO_MAX_STEPS <= 0 trains ONE FULL EPOCH per round -- every valid preference pair
+is consumed exactly once (num_train_epochs=1, no step cap).
 Requires the pipeline to pass data = {"agent_idx": LongTensor, "x_judge": FloatTensor}
 and (for the cheap fixed-anchor path) USE_LORA=1 so inner_model is a PEFT model.
 """
@@ -93,7 +96,7 @@ class DPOLearner(Learner):
         self._beta = float(os.environ.get("DPO_BETA", "0.1"))
         self._tau = float(os.environ.get("DPO_TAU", "12.0"))          # BT judge sharpness
         self._gen_temp = float(os.environ.get("DPO_GEN_TEMP", "0.8"))  # candidate sampling temp
-        self._max_steps = int(os.environ.get("DPO_MAX_STEPS", str(max_steps)))
+        self._max_steps = int(os.environ.get("DPO_MAX_STEPS", str(max_steps)))  # <=0: full epoch
         self._n_pairs = int(os.environ.get("DPO_N_PAIRS", "0"))        # 0 = all agents
 
     # --------------------------------------------------------------- candidates
@@ -164,7 +167,6 @@ class DPOLearner(Learner):
         cfg_kwargs: dict[str, Any] = dict(
             output_dir=self._output_dir,
             beta=self._beta,
-            max_steps=self._max_steps,
             per_device_train_batch_size=self._per_device_batch_size,
             learning_rate=self._learning_rate,
             max_length=self._max_seq_length,
@@ -172,6 +174,12 @@ class DPOLearner(Learner):
             save_strategy="no",
             logging_strategy="no",
         )
+        if self._max_steps > 0:
+            cfg_kwargs["max_steps"] = self._max_steps
+        else:
+            # full-epoch mode: every valid pair exactly once (TrainingArguments
+            # max_steps stays -1, so num_train_epochs governs)
+            cfg_kwargs["num_train_epochs"] = 1.0
         cfg_kwargs.update(self._trainer_kwargs)
         # keep only kwargs this trl's DPOConfig accepts (e.g. max_prompt_length is
         # absent in trl 1.2.0); mirrors SFTLearner's signature-guarded config build.

@@ -180,6 +180,20 @@ def check_run(run_dir):
         elif cfg.get("rlhf_feedback") != fb:
             errs.append(f"CONFIG rlhf_feedback={cfg.get('rlhf_feedback')!r} "
                         f"(tag says {fb!r})")
+        # dpo_* keys exist only in configs written from 2026-08-03 on (the
+        # full-epoch wdpo2e wave onward); older DPO runs skip these gates.
+        if "dpo_beta" in cfg:
+            m = re.search(r"_db([0-9p]+)_", name)
+            if m:
+                want_db = float(m.group(1).replace("p", "."))
+                if abs(float(cfg["dpo_beta"]) - want_db) > 1e-9:
+                    errs.append(f"CONFIG dpo_beta={cfg['dpo_beta']!r} "
+                                f"(tag says {want_db})")
+        if "dpo_max_steps" in cfg and ("wdpo2e_" in name or "wdpos2e_" in name
+                                       or "wdpos2esmk_" in name):
+            if int(cfg["dpo_max_steps"]) > 0:
+                errs.append(f"CONFIG dpo_max_steps={cfg['dpo_max_steps']!r} "
+                            f"(full-epoch family wants <=0)")
     eps_ai = float(cfg["eps_ai"])
 
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
