@@ -436,6 +436,16 @@ def main() -> int:
     teacher_label_delta = _env_float("TEACHER_LABEL_DELTA", 0.0)
     teacher_label_col = os.environ.get("TEACHER_LABEL_COL", "gender")
     teacher_label_fav = os.environ.get("TEACHER_LABEL_FAV", "M")
+    # TEACHER_LABEL_COL=random_even: the favored set is a SYNTHETIC balanced
+    # random split (groups "A"/"B"), not a profile column -- no prompt
+    # feature marks membership, so a teacher can only carry the signal by
+    # memorizing individual profiles. Seeded by TEACHER_GROUP_SEED ONLY
+    # (run-seed-independent): every run in a wave shares one split, because
+    # the group definition lives in the teacher's weights.
+    teacher_group_seed = _env_int("TEACHER_GROUP_SEED", 0)
+    if teacher_label_col == "random_even" and teacher_label_fav not in ("A", "B"):
+        raise ValueError("TEACHER_LABEL_COL=random_even uses groups A/B; set "
+                         f"TEACHER_LABEL_FAV to one (got {teacher_label_fav!r})")
     if teacher_label_delta != 0.0 and training_style != "sft":
         raise ValueError("TEACHER_LABEL_DELTA requires TRAINING_STYLE=sft "
                          "(teacher training runs only)")
@@ -745,6 +755,7 @@ def main() -> int:
         "teacher_label_delta": teacher_label_delta,
         "teacher_label_col": teacher_label_col,
         "teacher_label_fav": teacher_label_fav,
+        "teacher_group_seed": teacher_group_seed,
         "log_gender_gaps": log_gender_gaps,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
@@ -832,8 +843,29 @@ def main() -> int:
     # matrix so the non-gender covariates are the real ones in every arm.
     gcol = teacher_label_col
     profiles_true = setup["profiles"].copy()
-    gender_true = ([str(g) for g in setup["profiles"][gcol]]
-                   if gcol in setup["profiles"].columns else None)
+    if gcol == "random_even":
+        # synthetic balanced split (A/B), invisible to every prompt. Seeded
+        # by TEACHER_GROUP_SEED only -- identical across all runs of a wave
+        # regardless of run seed. Saved for audit; the checker verifies the
+        # transformed labels against this vector via trajectory.pt.
+        _np_ = len(profiles_true)
+        _gperm = np.random.default_rng(52100 + teacher_group_seed).permutation(_np_)
+        gender_true = ["A"] * _np_
+        for _i in _gperm[_np_ // 2:]:
+            gender_true[int(_i)] = "B"
+        (out_dir / "random_group.json").write_text(json.dumps(
+            {"col": gcol, "group_seed": teacher_group_seed,
+             "favored": teacher_label_fav,
+             "n_A": gender_true.count("A"), "n_B": gender_true.count("B"),
+             "group": gender_true}))
+        print(f"[run] TEACHER_LABEL_COL=random_even: balanced synthetic split "
+              f"A={gender_true.count('A')} B={gender_true.count('B')} "
+              f"(group_seed {teacher_group_seed}, run-seed-independent)",
+              flush=True)
+    elif gcol in setup["profiles"].columns:
+        gender_true = [str(g) for g in setup["profiles"][gcol]]
+    else:
+        gender_true = None
     if permute_cols:
         prof_df = setup["profiles"].copy()
         missing = [c for c in permute_cols if c not in prof_df.columns]
@@ -1110,10 +1142,20 @@ def main() -> int:
         if "occ" in profiles_true.columns:
             _occ = pd.get_dummies(profiles_true["occ"].astype(str), drop_first=True)
             _cols.append(torch.tensor(_occ.to_numpy(dtype=float)).float())
-        _taste_cols = [c for c in profiles_true.columns
-                       if c not in ("age", gcol, "occ")]
-        if _taste_cols:
-            _tm = profiles_true[_taste_cols].to_numpy(dtype=float)
+        _rest = [c for c in profiles_true.columns
+                 if c not in ("age", gcol, "occ")]
+        _num_cols = [c for c in _rest
+                     if pd.api.types.is_numeric_dtype(profiles_true[c])]
+        _cat_cols = [c for c in _rest if c not in _num_cols]
+        if _cat_cols:
+            # non-numeric leftovers (e.g. real gender when gcol is the
+            # random_even sentinel) enter as one-hots -- the increment then
+            # measures group info beyond ALL real features
+            _cd = pd.get_dummies(profiles_true[_cat_cols].astype(str),
+                                 drop_first=True)
+            _cols.append(torch.tensor(_cd.to_numpy(dtype=float)).float())
+        if _num_cols:
+            _tm = profiles_true[_num_cols].to_numpy(dtype=float)
             _cm = np.nanmean(_tm, axis=0)
             _tm = np.where(np.isnan(_tm), _cm, _tm)
             _cols.append(torch.tensor(_tm).float())

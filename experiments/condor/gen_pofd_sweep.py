@@ -470,6 +470,35 @@ TFE_REFS = {
     "tneu": f"{TFE_RUNS}/pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
     "tneg": f"{TFE_RUNS}/pofdtch_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
 }
+# RANDOM-EVEN-SPLIT twin of the controlled-teacher wave (2026-08-04, user):
+# same two-stage design with the favored set a SYNTHETIC balanced random
+# split (A/B, 361/362 of 723) instead of gender. No prompt feature marks
+# membership, so a teacher can carry the signal ONLY by memorizing
+# individual profiles -- separating feature-mediated endogenization (the
+# gender wave) from instance-memorization transfer, with the group-size
+# asymmetry (520/203) removed. TEACHER_LABEL_COL=random_even, FAV=A,
+# TEACHER_GROUP_SEED=0: split seeded 52100+group_seed, run-seed-INDEPENDENT
+# (one split per wave; it lives in the teacher weights), saved to
+# random_group.json + trajectory.pt gender_true in every run.
+#   Stage 1 (qwen7b_tchr, 2 jobs): +/-0.08 teachers keyed on the split.
+#   GATE: signs opposite + no collapse + neutral between are HARD gates;
+#   the magnitude here is stage 1's MEASUREMENT (a small gap = the
+#   memorization limit, a result, not a pipeline failure). Proceed to
+#   stage 2 only if |gap| >= 0.05 (else report and stop).
+#   Stage 2 (qwen7b_tfer, 6 jobs after tfer_smoke): tpos/tneg x seeds
+#   {0,42,43}. tneu is NOT re-run -- the pofdtfe_ tneu trajectories are
+#   physics-identical (same neutral teacher, seeds, env; telemetry grouping
+#   does not touch dynamics) and their random-group gaps are recomputed
+#   offline from saved op/pred/twin_raw + the deterministic split. No
+#   gdrop/gperm arms: nothing displayed marks the group.
+# Tags: pofdtchr_qwen7b_d{p,m}0p08_ea0p4_w0p5_l0p2_s0;
+# pofdtfer_qwen7b_b1_ea0p4_{tpos,tneg}_w0p5_l0p2_es0p2_s<seed>_fresh_data.
+# Checker: pofdtchr/pofdtfer prefixes ride the is_tch/is_tfe branches with
+# col=random_even, fav=A, tchr ref paths, and no _disp key requirement.
+TFER_REFS = {
+    "tpos": f"{TFE_RUNS}/pofdtchr_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+    "tneg": f"{TFE_RUNS}/pofdtchr_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+}
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
@@ -955,6 +984,22 @@ def main():
     files[os.path.join(HERE, "configs_pofd_qwen7b_tfe_smoke.txt")] = [ROW_TFE.format(
         tag=f"pofdtfesmk_qwen7b_b1_ea0p4_tpos_{ws_tok()}_s0_fresh_data",
         seed=0, eps_ai="0.4", refadapter=TFE_REFS["tpos"])]
+    # random-even-split twin (see the TFER_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_tchr.txt")
+    files[p] = [ROW_TCH.format(
+        tag=f"pofdtchr_qwen7b_{tok}_ea0p4_{w_tok()}_s0",
+        seed=0, eps_ai="0.4", tdelta=dv)
+        for tok, dv in TCH_DELTAS]
+    expected[p] = len(TCH_DELTAS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_tfer.txt")
+    files[p] = [ROW_TFE.format(
+        tag=f"pofdtfer_qwen7b_b1_ea0p4_{arm}_{ws_tok()}_s{s}_fresh_data",
+        seed=s, eps_ai="0.4", refadapter=TFER_REFS[arm])
+        for arm in ("tpos", "tneg") for s in FE_SEEDS]
+    expected[p] = 2 * len(FE_SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_tfer_smoke.txt")] = [ROW_TFE.format(
+        tag=f"pofdtfersmk_qwen7b_b1_ea0p4_tpos_{ws_tok()}_s0_fresh_data",
+        seed=0, eps_ai="0.4", refadapter=TFER_REFS["tpos"])]
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
     files[p] = [ROW_WDPO2.format(
         tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",

@@ -141,20 +141,33 @@ def check_run(run_dir):
         want.update({"pristine_frac": 0.0, "fresh_each_round": False})
     elif is_tch:
         # one-round teacher training on transformed labels: plain SFT, no
-        # KL, natural profiles; delta itself is gated against the tag below
+        # KL, natural profiles; delta itself is gated against the tag below.
+        # pofdtchr_ = the random-even-split twin (synthetic groups A/B, no
+        # prompt feature -- memorization-only carrier).
         want.update({"kl_beta": 0.0, "training_style": "sft",
                      "pristine_frac": 0.0, "fresh_each_round": True,
-                     "n_rounds": 1, "teacher_label_col": "gender",
-                     "teacher_label_fav": "M", "log_gender_gaps": True,
+                     "n_rounds": 1, "log_gender_gaps": True,
                      "profile_drop_cols": [], "profile_permute_cols": []})
+        if name.startswith("pofdtchr"):
+            want.update({"teacher_label_col": "random_even",
+                         "teacher_label_fav": "A"})
+        else:
+            want.update({"teacher_label_col": "gender",
+                         "teacher_label_fav": "M"})
     elif is_tfe:
         # teacher-referenced env3 loops: forward SFT-KL b1, the delta must
-        # be OFF (the gender signal lives only in the reference weights);
-        # ref path + profile controls are arm-gated below
+        # be OFF (the group signal lives only in the reference weights);
+        # ref path + profile controls are arm-gated below. pofdtfer_ = the
+        # random-even-split twin.
         want.update({"kl_beta": 1.0, "training_style": "sft_kl",
                      "kl_direction": "forward", "pristine_frac": 0.0,
                      "fresh_each_round": True, "teacher_label_delta": 0.0,
                      "log_gender_gaps": True})
+        if name.startswith("pofdtfer"):
+            want.update({"teacher_label_col": "random_even",
+                         "teacher_label_fav": "A"})
+        else:
+            want.update({"teacher_label_col": "gender"})
     else:
         want.update({"pristine_frac": 0.0, "fresh_each_round": True})
     for k, v in want.items():
@@ -251,7 +264,8 @@ def check_run(run_dir):
             else:
                 b0 = torch.load(b0p, map_location="cpu", weights_only=False)
                 idx = b0["agent_idx"].long()
-                sign = torch.tensor([1.0 if g == "M" else -1.0 for g in gt])
+                fav = cfg.get("teacher_label_fav", "M")
+                sign = torch.tensor([1.0 if g == fav else -1.0 for g in gt])
                 want_y = (innate + want_delta * sign).clamp(0.0, 1.0)[idx]
                 got_y = b0["y"].squeeze(-1).float()
                 dmax = float((got_y - want_y).abs().max())
@@ -265,12 +279,23 @@ def check_run(run_dir):
         if any("gg_pred_true" not in r for r in traj):
             errs.append("TEACHER gg_pred_true missing from trajectory rows")
     if is_tfe:
-        TFE_REF_SUFFIX = {
-            "tpos": "pofdtch_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
-            "tneu": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
-            "tneg": "pofdtch_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
-        }
-        TFE_REF_SUFFIX["tposgd"] = TFE_REF_SUFFIX["tposgp"] = TFE_REF_SUFFIX["tpos"]
+        if name.startswith("pofdtfer"):
+            # random-even-split wave: refs are the pofdtchr_ teachers; the
+            # neutral arm is REUSED from pofdtfe_ (identical physics), so
+            # tneu appears here only if someone runs it anyway. No profile
+            # controls exist (nothing displayed marks the synthetic group).
+            TFE_REF_SUFFIX = {
+                "tpos": "pofdtchr_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+                "tneu": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
+                "tneg": "pofdtchr_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+            }
+        else:
+            TFE_REF_SUFFIX = {
+                "tpos": "pofdtch_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+                "tneu": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
+                "tneg": "pofdtch_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+            }
+            TFE_REF_SUFFIX["tposgd"] = TFE_REF_SUFFIX["tposgp"] = TFE_REF_SUFFIX["tpos"]
         TFE_PROF = {"tposgd": (["gender"], []), "tposgp": ([], ["gender"])}
         m = re.search(r"_ea[\dp]+_(t[a-z]+)_w", name)
         arm = m.group(1) if m else None
@@ -290,11 +315,12 @@ def check_run(run_dir):
                 errs.append(f"CONFIG profile_permute_cols="
                             f"{cfg.get('profile_permute_cols')!r} (arm {arm} "
                             f"wants {want_perm!r})")
-            # gg telemetry every round; displayed-gender keys exist in every
-            # arm except the drop arm (no displayed gender to group by)
+            # gg telemetry every round; displayed-group keys exist except in
+            # the drop arm and the random-split wave (nothing displayed
+            # marks the group in either)
             need = ["gg_pred_true", "gg_op_true", "gg_twin_true",
                     "gg_teacher", "gg_r2_inc_true"]
-            if arm != "tposgd":
+            if arm != "tposgd" and not name.startswith("pofdtfer"):
                 need += ["gg_pred_disp", "gg_op_disp", "gg_r2_inc_disp"]
             bad = [r["round"] for r in traj if any(k not in r for k in need)]
             if bad:
