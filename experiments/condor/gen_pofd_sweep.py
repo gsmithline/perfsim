@@ -434,8 +434,12 @@ FE_SEEDS = [0, 42, 43]
 #   (1 epoch, LoRA r512, lr 5e-5, batch 4, 723 rows, seed 0, N_ROUNDS=1).
 #   The delta-0 (neutral) teacher is REUSED: pofdw2_ b0 ea0p4 round0_adapter
 #   (the w2fpt pristine teacher; corr(pred, innate) 0.879).
-#   GATE before stage 2: the +/- teachers must show signed gender prediction
-#   gaps of OPPOSITE direction (gg_pred_true in their single-round traj).
+#   GATE before stage 2 (registered; full thresholds in the tch sub header):
+#   opposite signs, |gap| >= 0.05 each, magnitude ratio <= 2, no collapsed
+#   prediction distribution (pred_std/corr/eff_support floors), and the
+#   neutral teacher's gap BETWEEN the signed pair. Innate gender gap is
+#   +0.0021 (~zero, measured 2026-08-04), so the +/-0.08 label gaps are
+#   near-symmetric (+0.162/-0.158) and teacher gaps are pure injection.
 #   Stage 2 (qwen7b_tfe, 15 jobs): env3 forward SFT-KL loops (b1, ea0p4,
 #   W=0.5, lam=0.2, es=0.2, fresh + replace, 30 rounds) x seeds {0,42,43},
 #   five arms, the teacher entering ONLY through KL_REF_ADAPTER:
