@@ -386,7 +386,18 @@ def main() -> int:
     if kl_direction not in ("reverse", "forward", "js"):
         raise ValueError(
             f"KL_DIRECTION must be 'reverse', 'forward', or 'js'; got {kl_direction!r}")
+    # KL_REF_ADAPTER: path to a PEFT adapter merged onto BASE_MODEL to form the
+    # KL reference -- a pristine-TRAINED teacher (base fitted once on innate
+    # data, e.g. a b0 run's round0_adapter) instead of the raw base. Separates
+    # the CONTENT of the anchor from the presence of the penalty: base ref =
+    # pretrained prior, trained ref = model representation of the original
+    # population, PRISTINE_FRAC = the same anchor in data space.
+    kl_ref_adapter = os.environ.get("KL_REF_ADAPTER", "")
     training_style = _env_or("TRAINING_STYLE", "sft_kl")
+    if kl_ref_adapter and training_style != "sft_kl":
+        raise ValueError("KL_REF_ADAPTER requires TRAINING_STYLE=sft_kl")
+    if kl_ref_adapter and not Path(kl_ref_adapter).is_dir():
+        raise ValueError(f"KL_REF_ADAPTER dir not found: {kl_ref_adapter!r}")
     # closed-loop RLHF (dpo) arm: where preference labels come from.
     #   closed -> the model's own (deployment-shifted) population
     #   open   -> the synchronized no-AI twin (ab_x_cf)
@@ -650,6 +661,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "run_tag": run_tag, "kl_beta": kl_beta, "kl_direction": kl_direction,
+        "kl_ref_adapter": kl_ref_adapter,
         "training_style": training_style,
         "rlhf_feedback": rlhf_feedback,
         "base_model": base_model, "n_rounds": n_rounds, "epoch_size": epoch_size,
@@ -841,7 +853,8 @@ def main() -> int:
     if training_style == "sft":
         learner = SFTLearner(**learner_kwargs)
     elif training_style == "sft_kl":
-        learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model, kl_beta=kl_beta,
+        learner = KLSFTLearner(**learner_kwargs, ref_model_name=base_model,
+                               ref_adapter_path=kl_ref_adapter or None, kl_beta=kl_beta,
                                anchor_mode=anchor_mode, kl_direction=kl_direction)
     elif training_style == "dpo":
         # closed-loop RLHF; closed/open arm chosen by RLHF_FEEDBACK (pipeline builds

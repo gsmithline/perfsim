@@ -205,6 +205,24 @@ ROW_WS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
 # protective (b0p1 captures MORE, b0p5 halved-not-killed, b1 collapses anyway).
 FKL_BETAS = [0.1, 0.2, 0.5, 1.0]
 
+# pofdw2fpt_ pristine-TEACHER wave (2026-08-04, user/reviewer): same forward-
+# KL W=0.5 environment as w2f, but the KL reference is Train(base, D_pristine)
+# -- the w2 b0 run's round0_adapter (base + one SFT epoch on the 723 innate
+# labels; measured corr(pred, innate) 0.879, mae 0.046, mean 0.643, vs the
+# raw base prior's bimodal 0.25/0.65 with corr 0.04) merged onto the base via
+# KL_REF_ADAPTER (env-only, set in the .sub, recorded in config.json). Claim
+# under test: the population effect depends on the CONTENT of the reference
+# distribution, not only on the presence of a KL penalty. The triangle: w2f =
+# same beta, base ref (pretrained prior); THIS = same beta, population ref (a
+# model representation of the original population); pf2 = the same anchor
+# content in DATA space (hard labels, ordinary SFT rows -- a dataset cannot
+# be a token-level KL teacher, it has no next-token distribution). Scoped to
+# ea {0.2, 0.4} (pf2 precedent: the data-anchor figure's eps + the qwen
+# bifurcation eps) x FKL_BETAS = 8 jobs, seed 0. b0 is anchor-free (no KL
+# term) -- reuse the pofdw2_ b0 runs. Smoke REQUIRED before the wave:
+# KL_REF_ADAPTER is a new code path (peft merge into the frozen ref).
+PT_EPS = [0.2, 0.4]
+
 # eps-social dose-response at the forward-KL headline cell (2026-07-29, user):
 # qwen7b, forward KL, b=1, ea=0.4, lam=0.2 FIXED -- sweep the repair channel
 # to locate the transition where peers start beating the mass-covering anchor
@@ -688,6 +706,16 @@ def main():
         style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
         for b in FKL_BETAS for ea in EPS_AIS]
     expected[p] = len(FKL_BETAS) * len(EPS_AIS)
+    # pristine-teacher KL reference (see the PT_ comment block above)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_w2fpt.txt")
+    files[p] = [ROW_W.format(
+        tag=f"pofdw2fpt_qwen7b_b{_num(b)}_ea{_num(ea)}_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta=f"{b:g}", seed=0, eps_ai=f"{ea:g}")
+        for b in FKL_BETAS for ea in PT_EPS]
+    expected[p] = len(FKL_BETAS) * len(PT_EPS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_w2fpt_smoke.txt")] = [ROW_W.format(
+        tag=f"pofdw2fptsmk_qwen7b_b0p5_ea0p2_{w_tok()}_s0_fresh_data",
+        style="sft_kl", beta="0.5", seed=0, eps_ai="0.2")]
     # olmo twins of w2f/ws2f (2026-07-29): the peer-dissolution test on the
     # in-range 0.75 prior (see the FKL_ comment block). Reverse twins:
     # pofdw2_/pofdws2_ olmo7b. Model deltas live in the .sub files; capture

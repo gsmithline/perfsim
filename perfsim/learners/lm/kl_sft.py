@@ -64,6 +64,11 @@ class KLSFTLearner(SFTLearner):
     0.5*KL(pi || m) + 0.5*KL(ref || m) with m = (pi + ref)/2: symmetric,
     bounded by log 2 per token (so at equal beta the anchor saturates --
     weakens relative to either KL -- once the policy is far from the base).
+
+    ref_adapter_path, when set, loads that PEFT adapter on top of
+    ref_model_name and merges it, so the frozen reference is a TRAINED policy
+    (e.g. base fine-tuned once on pristine data) rather than the raw base --
+    the anchor's content changes, the penalty machinery does not.
     """
 
     def __init__(
@@ -72,6 +77,7 @@ class KLSFTLearner(SFTLearner):
         loss: Loss,
         *,
         ref_model_name: str,
+        ref_adapter_path: str | None = None,
         kl_beta: float = 1.0,
         anchor_mode: str = "fixed",
         kl_direction: str = "reverse",
@@ -103,6 +109,7 @@ class KLSFTLearner(SFTLearner):
                 f"kl_direction must be 'reverse', 'forward', or 'js'; "
                 f"got {kl_direction!r}")
         self._ref_model_name = ref_model_name
+        self._ref_adapter_path = ref_adapter_path
         self._kl_beta = float(kl_beta)
         self._anchor_mode = anchor_mode
         self._kl_direction = kl_direction
@@ -144,6 +151,10 @@ class KLSFTLearner(SFTLearner):
                 self._ref_model_name,
                 torch_dtype=self.model._target_dtype,  # type: ignore[attr-defined]
             ).to(self.model._target_device)  # type: ignore[attr-defined]
+            if self._ref_adapter_path:
+                from peft import PeftModel
+                ref = PeftModel.from_pretrained(
+                    ref, self._ref_adapter_path).merge_and_unload()
             ref.config.pad_token_id = self.model.tokenizer.pad_token_id  # type: ignore[union-attr]
             ref.eval()
             for p in ref.parameters():
