@@ -96,6 +96,11 @@ def check_run(run_dir):
     is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
     # continual-weights fec families (covers pofdws2fcsmk_ too)
     is_cont = name.startswith(("pofdws2fc", "pofdfegdc", "pofdfegpc"))
+    # controlled-teacher fe wave: pofdtch_ = one-round transformed-label
+    # teacher training runs; pofdtfe_ = the env3 loop arms whose KL ref is a
+    # teacher adapter (covers pofdtfesmk_ too)
+    is_tch = name.startswith("pofdtch")
+    is_tfe = name.startswith("pofdtfe")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -134,6 +139,22 @@ def check_run(run_dir):
         # rounds (FRESH_EACH_ROUND=0). Data protocol unchanged -- replace,
         # n_train capped -- so _fresh_errs still applies below.
         want.update({"pristine_frac": 0.0, "fresh_each_round": False})
+    elif is_tch:
+        # one-round teacher training on transformed labels: plain SFT, no
+        # KL, natural profiles; delta itself is gated against the tag below
+        want.update({"kl_beta": 0.0, "training_style": "sft",
+                     "pristine_frac": 0.0, "fresh_each_round": True,
+                     "n_rounds": 1, "teacher_label_col": "gender",
+                     "teacher_label_fav": "M", "log_gender_gaps": True,
+                     "profile_drop_cols": [], "profile_permute_cols": []})
+    elif is_tfe:
+        # teacher-referenced env3 loops: forward SFT-KL b1, the delta must
+        # be OFF (the gender signal lives only in the reference weights);
+        # ref path + profile controls are arm-gated below
+        want.update({"kl_beta": 1.0, "training_style": "sft_kl",
+                     "kl_direction": "forward", "pristine_frac": 0.0,
+                     "fresh_each_round": True, "teacher_label_delta": 0.0,
+                     "log_gender_gaps": True})
     else:
         want.update({"pristine_frac": 0.0, "fresh_each_round": True})
     for k, v in want.items():
@@ -208,6 +229,82 @@ def check_run(run_dir):
             if int(cfg["dpo_max_steps"]) > 0:
                 errs.append(f"CONFIG dpo_max_steps={cfg['dpo_max_steps']!r} "
                             f"(full-epoch family wants <=0)")
+    if is_tch:
+        m = re.search(r"_d([pm])0p08_", name)
+        if m is None:
+            errs.append(f"CONFIG no _dp0p08/_dm0p08 token in dirname {name!r}")
+        else:
+            want_delta = 0.08 if m.group(1) == "p" else -0.08
+            got_delta = float(cfg.get("teacher_label_delta", 0.0))
+            if abs(got_delta - want_delta) > 1e-9:
+                errs.append(f"CONFIG teacher_label_delta={got_delta!r} "
+                            f"(tag says {want_delta!r})")
+            # transformed-label gate: the saved round-0 training batch must
+            # equal clip(innate + delta * (2*1[gender==M] - 1), 0, 1); the x
+            # side must stay pristine innate (the transform is label-only)
+            gt = d.get("gender_true")
+            b0p = os.path.join(run_dir, "round0_batch.pt")
+            if gt is None:
+                errs.append("TEACHER gender_true missing from trajectory.pt")
+            elif not os.path.exists(b0p):
+                errs.append("TEACHER round0_batch.pt missing")
+            else:
+                b0 = torch.load(b0p, map_location="cpu", weights_only=False)
+                idx = b0["agent_idx"].long()
+                sign = torch.tensor([1.0 if g == "M" else -1.0 for g in gt])
+                want_y = (innate + want_delta * sign).clamp(0.0, 1.0)[idx]
+                got_y = b0["y"].squeeze(-1).float()
+                dmax = float((got_y - want_y).abs().max())
+                if dmax > 1e-6:
+                    errs.append(f"TEACHER round-0 labels differ from "
+                                f"clip(innate + delta*sign) by max {dmax:.2e}")
+                dx = float((b0["x"].squeeze(-1).float() - innate[idx]).abs().max())
+                if dx > 0:
+                    errs.append(f"TEACHER round-0 x differs from innate "
+                                f"(max {dx:.2e}) -- transform must be label-only")
+        if any("gg_pred_true" not in r for r in traj):
+            errs.append("TEACHER gg_pred_true missing from trajectory rows")
+    if is_tfe:
+        TFE_REF_SUFFIX = {
+            "tpos": "pofdtch_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+            "tneu": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
+            "tneg": "pofdtch_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+        }
+        TFE_REF_SUFFIX["tposgd"] = TFE_REF_SUFFIX["tposgp"] = TFE_REF_SUFFIX["tpos"]
+        TFE_PROF = {"tposgd": (["gender"], []), "tposgp": ([], ["gender"])}
+        m = re.search(r"_ea[\dp]+_(t[a-z]+)_w", name)
+        arm = m.group(1) if m else None
+        if arm not in TFE_REF_SUFFIX:
+            errs.append(f"CONFIG unknown tfe arm token in dirname {name!r}")
+        else:
+            ref = cfg.get("kl_ref_adapter") or ""
+            if not ref.endswith(TFE_REF_SUFFIX[arm]):
+                errs.append(f"CONFIG kl_ref_adapter={ref!r} (arm {arm} wants "
+                            f"...{TFE_REF_SUFFIX[arm]!r})")
+            want_drop, want_perm = TFE_PROF.get(arm, ([], []))
+            if cfg.get("profile_drop_cols") != want_drop:
+                errs.append(f"CONFIG profile_drop_cols="
+                            f"{cfg.get('profile_drop_cols')!r} (arm {arm} "
+                            f"wants {want_drop!r})")
+            if cfg.get("profile_permute_cols") != want_perm:
+                errs.append(f"CONFIG profile_permute_cols="
+                            f"{cfg.get('profile_permute_cols')!r} (arm {arm} "
+                            f"wants {want_perm!r})")
+            # gg telemetry every round; displayed-gender keys exist in every
+            # arm except the drop arm (no displayed gender to group by)
+            need = ["gg_pred_true", "gg_op_true", "gg_twin_true",
+                    "gg_teacher", "gg_r2_inc_true"]
+            if arm != "tposgd":
+                need += ["gg_pred_disp", "gg_op_disp", "gg_r2_inc_disp"]
+            bad = [r["round"] for r in traj if any(k not in r for k in need)]
+            if bad:
+                errs.append(f"CONFIG gg telemetry keys missing in rounds "
+                            f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
+    if is_tch or is_tfe:
+        m_s = re.search(r"_s(\d+)(?:_|$)", name)
+        if m_s and cfg.get("seed") != int(m_s.group(1)):
+            errs.append(f"CONFIG seed={cfg.get('seed')!r} "
+                        f"(tag says {m_s.group(1)})")
     eps_ai = float(cfg["eps_ai"])
 
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------

@@ -376,6 +376,32 @@ def mix_pristine_data(buffer, cap, frac, gen):
     return {k: torch.cat([p[k], r[k]], 0) for k in ("x", "y", "agent_idx")}
 
 
+def _gender_gap(v, fav_mask):
+    """Group-mean gap mean(v[favored]) - mean(v[others]), NaN-filtered."""
+    v = v.float()
+    fin = torch.isfinite(v)
+    a = fin & fav_mask
+    b = fin & ~fav_mask
+    if a.any() and b.any():
+        return float(v[a].mean() - v[b].mean())
+    return float("nan")
+
+
+def _r2_lstsq(X, y):
+    """OLS R^2 of y ~ [1, X] via lstsq, NaN rows of y dropped."""
+    fin = torch.isfinite(y)
+    if int(fin.sum()) <= X.shape[1] + 2:
+        return float("nan")
+    Xf = torch.cat([torch.ones(int(fin.sum()), 1), X[fin]], dim=1).double()
+    yf = y[fin].double()
+    sol = torch.linalg.lstsq(Xf, yf.unsqueeze(-1)).solution
+    resid = yf - (Xf @ sol).squeeze(-1)
+    ss_tot = float(((yf - yf.mean()) ** 2).sum())
+    if ss_tot <= 0:
+        return float("nan")
+    return 1.0 - float((resid ** 2).sum()) / ss_tot
+
+
 def main() -> int:
     run_tag = _env_or("RUN_TAG")
     kl_beta = _env_float("KL_BETA", 0.0)
@@ -398,6 +424,30 @@ def main() -> int:
         raise ValueError("KL_REF_ADAPTER requires TRAINING_STYLE=sft_kl")
     if kl_ref_adapter and not Path(kl_ref_adapter).is_dir():
         raise ValueError(f"KL_REF_ADAPTER dir not found: {kl_ref_adapter!r}")
+    # TEACHER-ONLY label transformation (controlled teacher fe wave): the
+    # one-round teacher SFT labels become
+    #   y_i_teacher = clip(y_i + delta * (2*1[gender_i == fav] - 1), 0, 1)
+    # applied to initial_data["y"] ONLY -- innate opinions, population
+    # states, twins, and every later round's training labels stay untouched
+    # (t>0 labels come from the buffer, which never sees the delta; the
+    # buffer's seed row is a separate tensor built from innate directly).
+    # Restricted to plain-SFT runs so a student loop can never train on
+    # transformed labels: loops inherit the teacher through KL_REF_ADAPTER.
+    teacher_label_delta = _env_float("TEACHER_LABEL_DELTA", 0.0)
+    teacher_label_col = os.environ.get("TEACHER_LABEL_COL", "gender")
+    teacher_label_fav = os.environ.get("TEACHER_LABEL_FAV", "M")
+    if teacher_label_delta != 0.0 and training_style != "sft":
+        raise ValueError("TEACHER_LABEL_DELTA requires TRAINING_STYLE=sft "
+                         "(teacher training runs only)")
+    if teacher_label_delta != 0.0 and kl_ref_adapter:
+        raise ValueError("TEACHER_LABEL_DELTA is exclusive with KL_REF_ADAPTER")
+    # LOG_GENDER_GAPS=1: per-round group-mean gaps (favored - other) of the
+    # served predictions / population / no-AI twin by TRUE and DISPLAYED
+    # gender, the fixed teacher's prediction gap (from the KL_REF_ADAPTER
+    # run's trajectory), and the incremental R^2 of gender on the served
+    # predictions beyond the other profile columns. Default 0: telemetry
+    # surface of every existing wave unchanged.
+    log_gender_gaps = _env_int("LOG_GENDER_GAPS", 0) == 1
     # closed-loop RLHF (dpo) arm: where preference labels come from.
     #   closed -> the model's own (deployment-shifted) population
     #   open   -> the synchronized no-AI twin (ab_x_cf)
@@ -610,6 +660,10 @@ def main() -> int:
                          "PROFILE_PERMUTE_COLS")
     if (drop_cols or permute_cols) and (shuffle_p > 0 or sort_q > 0):
         raise ValueError("demographic knobs are exclusive with the feature dial")
+    if teacher_label_delta != 0.0 and (drop_cols or permute_cols
+                                       or shuffle_p > 0 or sort_q > 0):
+        raise ValueError("TEACHER_LABEL_DELTA requires natural profiles (no "
+                         "PROFILE_DROP/PERMUTE/SHUFFLE/SORT)")
     if icl_k > 0 or icl_days > 0:
         if os.environ.get("DATASET", "pokec") != "movielens":
             raise ValueError("ICL_K/ICL_DAYS currently require DATASET=movielens")
@@ -688,6 +742,10 @@ def main() -> int:
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps, "pop_order": pop_order,
         "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
         "profile_drop_cols": drop_cols, "profile_permute_cols": permute_cols,
+        "teacher_label_delta": teacher_label_delta,
+        "teacher_label_col": teacher_label_col,
+        "teacher_label_fav": teacher_label_fav,
+        "log_gender_gaps": log_gender_gaps,
         "dataset": os.environ.get("DATASET", "pokec"),
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
@@ -768,6 +826,14 @@ def main() -> int:
             {"q": sort_q, "users_by_y": users_by_y.tolist(),
              "profs_by_idx": profs_by_idx.tolist()}))
         print(f"[run] PROFILE_SORT_Q={sort_q}: comonotone rematch |S|={k}", flush=True)
+    # TRUE gender = the pre-treatment column (the agent's real attribute);
+    # DISPLAYED (captured after the permute/drop blocks below) = what the
+    # prompts actually show. profiles_true feeds the incremental-R^2 design
+    # matrix so the non-gender covariates are the real ones in every arm.
+    gcol = teacher_label_col
+    profiles_true = setup["profiles"].copy()
+    gender_true = ([str(g) for g in setup["profiles"][gcol]]
+                   if gcol in setup["profiles"].columns else None)
     if permute_cols:
         prof_df = setup["profiles"].copy()
         missing = [c for c in permute_cols if c not in prof_df.columns]
@@ -792,6 +858,10 @@ def main() -> int:
         (out_dir / "drop_cols.json").write_text(json.dumps({"cols": drop_cols}))
         print(f"[run] PROFILE_DROP_COLS={','.join(drop_cols)}: prompt lines "
               f"removed for all agents", flush=True)
+    gender_disp = ([str(g) for g in setup["profiles"][gcol]]
+                   if gcol in setup["profiles"].columns else None)
+    if teacher_label_delta != 0.0 and gender_true is None:
+        raise ValueError(f"TEACHER_LABEL_DELTA: column {gcol!r} not in profiles")
     n = setup["n"]
     innate = setup["innate"]
     innate_mean = float(innate.mean())
@@ -960,6 +1030,18 @@ def main() -> int:
         "y": innate[mask].unsqueeze(-1),
         "agent_idx": idx_all[mask],
     }
+    if teacher_label_delta != 0.0:
+        # teacher-only: shift the round-0 SFT labels by the gender column.
+        # New tensor -- innate, the buffer's seed row, and every later
+        # round's labels are untouched by construction.
+        _sign = torch.tensor([1.0 if g == teacher_label_fav else -1.0
+                              for g in gender_true])
+        _y_teacher = (innate + teacher_label_delta * _sign).clamp(0.0, 1.0)
+        initial_data["y"] = _y_teacher[mask].unsqueeze(-1)
+        print(f"[run] TEACHER_LABEL_DELTA={teacher_label_delta:+g} on "
+              f"{gcol}=={teacher_label_fav!r}: round-0 teacher labels shifted "
+              f"({int((_sign > 0).sum())} favored / {int((_sign < 0).sum())} "
+              f"others); innate/buffer untouched", flush=True)
 
     buffer = []
     cap_gen = torch.Generator().manual_seed(seed)
@@ -989,6 +1071,57 @@ def main() -> int:
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
     twin_raw = []    # per-round per-agent no-AI twin opinions (when ab_x_cf exists)
+
+    # gender-gap telemetry (LOG_GENDER_GAPS=1): masks + the fixed teacher's
+    # prediction gap + the incremental-R^2 design matrices, all built once.
+    gg_true_mask = gg_disp_mask = None
+    gg_teacher_gap = None
+    teacher_pred = None
+    gg_X_other = gg_x_gender_true = gg_x_gender_disp = None
+    if log_gender_gaps:
+        if gender_true is None:
+            raise ValueError(f"LOG_GENDER_GAPS=1 needs the {gcol!r} column in profiles")
+        gg_true_mask = torch.tensor([g == teacher_label_fav for g in gender_true])
+        if gender_disp is not None:
+            gg_disp_mask = torch.tensor([g == teacher_label_fav for g in gender_disp])
+        if kl_ref_adapter:
+            # the FIXED teacher's own predictions: round-0 deployment of the
+            # run that trained the reference adapter (sits next to it on disk)
+            _ref_traj = Path(kl_ref_adapter).parent / "trajectory.pt"
+            if not _ref_traj.exists():
+                raise ValueError(
+                    f"LOG_GENDER_GAPS: teacher trajectory not found: {_ref_traj}")
+            _ref_d = torch.load(_ref_traj, map_location="cpu")
+            teacher_pred = _ref_d["pred_raw"][0].float()
+            if teacher_pred.shape[0] != n:
+                raise ValueError("LOG_GENDER_GAPS: teacher pred length "
+                                 f"{teacher_pred.shape[0]} != n {n}")
+            gg_teacher_gap = _gender_gap(teacher_pred, gg_true_mask)
+            print(f"[run] LOG_GENDER_GAPS: teacher gap "
+                  f"{gg_teacher_gap:+.4f} from {_ref_traj}", flush=True)
+        # incremental-R^2 design: TRUE non-gender covariates (age, occ
+        # one-hot, taste columns with NaN -> column mean) + a gender
+        # indicator column (true, and displayed where it exists)
+        _cols = []
+        if "age" in profiles_true.columns:
+            _age = pd.to_numeric(profiles_true["age"], errors="coerce")
+            _cols.append(torch.tensor(_age.fillna(0.0).to_numpy(dtype=float))
+                         .float().unsqueeze(-1))
+        if "occ" in profiles_true.columns:
+            _occ = pd.get_dummies(profiles_true["occ"].astype(str), drop_first=True)
+            _cols.append(torch.tensor(_occ.to_numpy(dtype=float)).float())
+        _taste_cols = [c for c in profiles_true.columns
+                       if c not in ("age", gcol, "occ")]
+        if _taste_cols:
+            _tm = profiles_true[_taste_cols].to_numpy(dtype=float)
+            _cm = np.nanmean(_tm, axis=0)
+            _tm = np.where(np.isnan(_tm), _cm, _tm)
+            _cols.append(torch.tensor(_tm).float())
+        gg_X_other = (torch.cat(_cols, dim=1) if _cols
+                      else torch.zeros(n, 0))
+        gg_x_gender_true = gg_true_mask.float().unsqueeze(-1)
+        if gg_disp_mask is not None:
+            gg_x_gender_disp = gg_disp_mask.float().unsqueeze(-1)
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
@@ -1354,6 +1487,33 @@ def main() -> int:
                 row["op_twin_w1"] = float((torch.sort(_op).values
                                            - torch.sort(_tw).values).abs().mean())
         row.update(pred_block)
+        if log_gender_gaps:
+            # favored-minus-others group means; _true = real gender, _disp =
+            # the gender the prompts showed (permuted arm: they differ; drop
+            # arm: no displayed gender -> keys absent). gg_teacher is the
+            # FIXED reference model's gap, constant by construction --
+            # repeated per row so every round is self-contained.
+            _gp_ = (last_preds.detach().cpu().float() if last_preds is not None
+                    else torch.full((n,), float("nan")))
+            _go_ = op.detach().cpu().float()
+            row["gg_pred_true"] = _gender_gap(_gp_, gg_true_mask)
+            row["gg_op_true"] = _gender_gap(_go_, gg_true_mask)
+            if gg_disp_mask is not None:
+                row["gg_pred_disp"] = _gender_gap(_gp_, gg_disp_mask)
+                row["gg_op_disp"] = _gender_gap(_go_, gg_disp_mask)
+            if twin_raw:
+                row["gg_twin_true"] = _gender_gap(twin_raw[-1], gg_true_mask)
+            if gg_teacher_gap is not None:
+                row["gg_teacher"] = gg_teacher_gap
+            _r2o = _r2_lstsq(gg_X_other, _gp_)
+            _r2t = _r2_lstsq(torch.cat([gg_X_other, gg_x_gender_true], 1), _gp_)
+            row["gg_r2_inc_true"] = (_r2t - _r2o if np.isfinite(_r2t)
+                                     and np.isfinite(_r2o) else float("nan"))
+            if gg_x_gender_disp is not None:
+                _r2d = _r2_lstsq(torch.cat([gg_X_other, gg_x_gender_disp], 1),
+                                 _gp_)
+                row["gg_r2_inc_disp"] = (_r2d - _r2o if np.isfinite(_r2d)
+                                         and np.isfinite(_r2o) else float("nan"))
         if icrh_on:
             row["reward"] = reward
             row["acc_served"] = acc_served
@@ -1426,6 +1586,10 @@ def main() -> int:
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,
             "canary": canary,
+            "gender_true": gender_true,
+            "gender_disp": gender_disp,
+            "teacher_pred": (teacher_pred if teacher_pred is not None
+                             else torch.empty(0)),
         },
         out_dir / "trajectory.pt",
     )

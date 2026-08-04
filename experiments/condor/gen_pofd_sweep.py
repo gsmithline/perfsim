@@ -422,6 +422,51 @@ ROW_PF2 = ("{tag}, sft, 0, {seed}, 1, accumulate, 1.0, fixed, ab, "
 # never flips.
 FE_SEEDS = [0, 42, 43]
 
+# controlled TEACHER feature-endogenization wave (2026-08-04, user): does a
+# gender signal that lives ONLY in the KL teacher's weights transfer into
+# the population? Two-stage design.
+#   Stage 1 (qwen7b_tch, 2 jobs): train two fixed teachers by one-round SFT
+#   on TRANSFORMED pristine labels
+#     y_i_teacher = clip(y_i + delta * (2*1[gender_i == M] - 1), 0, 1)
+#   at delta {+0.08, -0.08} (runner knob TEACHER_LABEL_DELTA, sft-only,
+#   touches initial_data["y"] ONLY -- innate/population/twin/buffer
+#   untouched; recorded in config). Same budget as every round-0 teacher
+#   (1 epoch, LoRA r512, lr 5e-5, batch 4, 723 rows, seed 0, N_ROUNDS=1).
+#   The delta-0 (neutral) teacher is REUSED: pofdw2_ b0 ea0p4 round0_adapter
+#   (the w2fpt pristine teacher; corr(pred, innate) 0.879).
+#   GATE before stage 2: the +/- teachers must show signed gender prediction
+#   gaps of OPPOSITE direction (gg_pred_true in their single-round traj).
+#   Stage 2 (qwen7b_tfe, 15 jobs): env3 forward SFT-KL loops (b1, ea0p4,
+#   W=0.5, lam=0.2, es=0.2, fresh + replace, 30 rounds) x seeds {0,42,43},
+#   five arms, the teacher entering ONLY through KL_REF_ADAPTER:
+#     tpos    KL ref = +0.08 teacher
+#     tneu    KL ref = neutral teacher      (reused pofdw2_ b0 adapter)
+#     tneg    KL ref = -0.08 teacher
+#     tposgd  +0.08 teacher, PROFILE_DROP_COLS=gender    (student prompts)
+#     tposgp  +0.08 teacher, PROFILE_PERMUTE_COLS=gender (randomized-feature
+#             test: does the association follow the DISPLAYED feature?)
+#   Teacher prompts are never changed (token-level KL needs identical
+#   teacher/student prompts); only the student-side profile controls move.
+#   LOG_GENDER_GAPS=1 everywhere: per-round gg_pred/op/twin gaps by true +
+#   displayed gender, the fixed teacher's gap (gg_teacher), and incremental
+#   gender R^2 (gg_r2_inc_*) land in trajectory rows. check_pofd_sanity
+#   gained is_tch (delta/label/round0_batch gates) and is_tfe (ref-adapter
+#   path, profile controls, forward b1, gg telemetry) branches. Smoke first:
+#   pofdtfesmk_ tpos s0, 3 rounds (new teacher adapter x peers x gg keys),
+#   then the wave. Tags: pofdtch_qwen7b_d{p,m}0p08_ea0p4_w0p5_l0p2_s0;
+#   pofdtfe_qwen7b_b1_ea0p4_<arm>_w0p5_l0p2_es0p2_s<seed>_fresh_data.
+TCH_DELTAS = [("dp0p08", "0.08"), ("dm0p08", "-0.08")]
+ROW_TCH = ("{tag}, sft, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+           "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {tdelta}")
+ROW_TFE = ("{tag}, sft_kl, 1, {seed}, 1, replace, 1.0, fixed, ab, "
+           "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}, {refadapter}")
+TFE_RUNS = "/home/gsmithline/perfsim/runs/pokec_gated_lm"
+TFE_REFS = {
+    "tpos": f"{TFE_RUNS}/pofdtch_qwen7b_dp0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+    "tneu": f"{TFE_RUNS}/pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data/round0_adapter",
+    "tneg": f"{TFE_RUNS}/pofdtch_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
+}
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -883,6 +928,29 @@ def main():
             seed=s, es="0.2", eps_ai="0.4", iclk=8, icldays=0, iclsrc="live")
             for s in FE_SEEDS]
         expected[p] = len(FE_SEEDS)
+    # controlled teacher fe wave (see the TCH_/TFE_ comment block)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_tch.txt")
+    files[p] = [ROW_TCH.format(
+        tag=f"pofdtch_qwen7b_{tok}_ea0p4_{w_tok()}_s0",
+        seed=0, eps_ai="0.4", tdelta=dv)
+        for tok, dv in TCH_DELTAS]
+    expected[p] = len(TCH_DELTAS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_tfem.txt")
+    files[p] = [ROW_TFE.format(
+        tag=f"pofdtfe_qwen7b_b1_ea0p4_{arm}_{ws_tok()}_s{s}_fresh_data",
+        seed=s, eps_ai="0.4", refadapter=TFE_REFS[arm])
+        for arm in ("tpos", "tneu", "tneg") for s in FE_SEEDS]
+    expected[p] = 3 * len(FE_SEEDS)
+    for key, arm in (("tfegd", "tposgd"), ("tfegp", "tposgp")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_WS.format(
+            tag=f"pofdtfe_qwen7b_b1_ea0p4_{arm}_{ws_tok()}_s{s}_fresh_data",
+            style="sft_kl", beta="1", seed=s, eps_ai="0.4")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_tfe_smoke.txt")] = [ROW_TFE.format(
+        tag=f"pofdtfesmk_qwen7b_b1_ea0p4_tpos_{ws_tok()}_s0_fresh_data",
+        seed=0, eps_ai="0.4", refadapter=TFE_REFS["tpos"])]
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
     files[p] = [ROW_WDPO2.format(
         tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",
