@@ -173,6 +173,20 @@ def check_run(run_dir):
             if got != (k_w, d_w, src_w):
                 errs.append(f"CONFIG icl (k,days,src)={got!r} (arm {arm} wants "
                             f"{(k_w, d_w, src_w)!r})")
+        # icl endogenization families (2026-08-04, fei wave): the profile
+        # treatment is the ONLY delta vs pofdicls2_ -- gate it. Every other
+        # icl family must run with untouched profiles (key absent in configs
+        # that predate the profile knobs -> treated as empty).
+        want_drop = ["gender"] if name.startswith("pofdicls2gd") else []
+        want_perm = ["gender"] if name.startswith("pofdicls2gp") else []
+        got_drop = cfg.get("profile_drop_cols") or []
+        got_perm = cfg.get("profile_permute_cols") or []
+        if got_drop != want_drop:
+            errs.append(f"CONFIG profile_drop_cols={got_drop!r} "
+                        f"(want {want_drop!r})")
+        if got_perm != want_perm:
+            errs.append(f"CONFIG profile_permute_cols={got_perm!r} "
+                        f"(want {want_perm!r})")
     if is_dpo:
         fb = "open" if "_open_" in name else ("closed" if "_closed_" in name else None)
         if fb is None:

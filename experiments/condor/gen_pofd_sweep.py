@@ -847,6 +847,42 @@ def main():
         seed=s, es="0.2", eps_ai="0.4", iclk=k, icldays=d, iclsrc=src)
         for arm, k, d, src in ICLX_OLMO_ARMS for s in ICLX_SEEDS]
     expected[p] = len(ICLX_OLMO_ARMS) * len(ICLX_SEEDS)
+    # ICL feature endogenization (2026-08-04, user): the fe gender matrix at
+    # the IN-CONTEXT mechanism -- does the k8live exemplar channel endogenize
+    # gender under the corrected env3 dynamics (W=0.5, lam=0.2, es=0.2,
+    # ea=0.4, 30 rounds, frozen weights)? Mirrors fegd/fegp (SFT-KL b1) with
+    # adaptation running through the prompt instead of the weights.
+    # PROFILE_DROP_COLS removes gender from the served profile AND every
+    # exemplar line; PROFILE_PERMUTE_COLS shuffles displayed gender jointly,
+    # seeded by the run seed ONLY -- same per-seed permutation as every fe
+    # wave, deliberate. Natural s0 anchor = pofdicls2_ ea0p4_k8live_s0
+    # (icls2 wave; REUSED, not re-run). Only the 8 missing cells run,
+    # composite key qwen7b_fei:
+    #   feik  (2): natural k8live x s {42, 43} -- pofdicls2_-family tags
+    #   feigd (3): PROFILE_DROP_COLS=gender,    k8live x s {0, 42, 43}
+    #              -- pofdicls2gd_
+    #   feigp (3): PROFILE_PERMUTE_COLS=gender, k8live x s {0, 42, 43}
+    #              -- pofdicls2gp_
+    # gd/gp prefixes keep the "pofdicl" checker family (frozen + arm gates;
+    # the arm token stays directly before _s<seed>); check_pofd_sanity
+    # gained profile_drop/permute gates keyed on the new prefixes. No smoke:
+    # gdrop/gperm x ICL exemplars proven by the old icl_endog waves (the
+    # knobs act once at profile build, before the loop); frozen x twin x
+    # peers by the icls2 smoke + wave. AUDIT 2026-08-04: all 8 tags absent
+    # on cluster (no partials); the s0 k8live anchor has trajectory.pt.
+    p = os.path.join(HERE, "configs_pofd_qwen7b_feik.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_qwen7b_{ws_tok()}_ea0p4_k8live_s{s}",
+        seed=s, es="0.2", eps_ai="0.4", iclk=8, icldays=0, iclsrc="live")
+        for s in FE_SEEDS[1:]]
+    expected[p] = len(FE_SEEDS[1:])
+    for key, tagpre in (("feigd", "pofdicls2gd"), ("feigp", "pofdicls2gp")):
+        p = os.path.join(HERE, f"configs_pofd_qwen7b_{key}.txt")
+        files[p] = [ROW_ICL2.format(
+            tag=f"{tagpre}_qwen7b_{ws_tok()}_ea0p4_k8live_s{s}",
+            seed=s, es="0.2", eps_ai="0.4", iclk=8, icldays=0, iclsrc="live")
+            for s in FE_SEEDS]
+        expected[p] = len(FE_SEEDS)
     p = os.path.join(HERE, "configs_pofd_qwen7b_wdpo2.txt")
     files[p] = [ROW_WDPO2.format(
         tag=f"pofdwdpo2_qwen7b_db{_num(db)}_ea{_num(ea)}_{fb}_{w_tok()}_s0_fresh",
