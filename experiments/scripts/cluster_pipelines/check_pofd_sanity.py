@@ -170,6 +170,15 @@ def check_run(run_dir):
             want.update({"teacher_label_col": "gender"})
     else:
         want.update({"pristine_frac": 0.0, "fresh_each_round": True})
+    # olmo7brom model-slot token (2026-08-05, OLMo Romance fe mirror): the
+    # first non-Action ML_TARGET in any wave -- gate the dataset dial and
+    # the base model on the token. Non-rom runs keep the original surface
+    # (no ml_target gate; older configs predate the key).
+    if "_olmo7brom_" in name:
+        want["ml_target"] = "Romance"
+        if "OLMo-2" not in str(cfg.get("base_model", "")):
+            errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
+                        f"(olmo7brom tag wants an OLMo-2 model)")
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")

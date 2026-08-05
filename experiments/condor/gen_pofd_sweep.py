@@ -500,6 +500,37 @@ TFER_REFS = {
     "tneg": f"{TFE_RUNS}/pofdtchr_qwen7b_dm0p08_ea0p4_w0p5_l0p2_s0/round0_adapter",
 }
 
+# OLMo ROMANCE mirror of the env3 fe wave (2026-08-05, user): the corrected
+# feature-endogenization experiment (natural gender, W=0.5, lam=0.2, es=0.2,
+# ea=0.4, forward KL, replace + fresh adapter, 30 rounds, seeds {0,42,43})
+# re-run with BASE_MODEL=allenai/OLMo-2-1124-7B-Instruct and
+# ML_TARGET=Romance -- a second-model x second-target replication of the
+# qwen/Action fes+fef matrix. Same movielens LCC population (measured
+# 2026-08-05: the Romance kNN graph keeps the same n=723, 520 M / 203 F),
+# so TRAIN_CAP/N_LABELED stay 723. Romance flips the baseline: innate M-F
+# gap -0.0149 (women rate Romance higher; Action was +0.0021), innate mean
+# 0.6641 std 0.1243. Profiles/prompts exclude Romance and include Action
+# (loader feats = core minus target -- automatic). NO controlled teachers /
+# transformed labels / gdrop / gperm arms in this wave.
+# Arms x seeds {0,42,43} (12 jobs, composite key olmo7brom_fe = fes + fef):
+#   fes (9): natural b {0, 0.5, 1} -- pofdws2f_-family tags, b0 style sft
+#            (direction-free), b>0 sft_kl + KL_DIRECTION=forward
+#   fef (3): frozen no-context k0 -- pofdicls2_-family tags
+# Matched no-platform twins ride es>0 (twin_raw in every run; within-seed
+# twins identical across trained arms, as in the qwen wave). AUDIT
+# 2026-08-05: no Romance-target run exists anywhere -- ML_TARGET has never
+# left Action in any wave, and these tags are newly minted -- so ALL 12
+# cells run; nothing is reusable (the qwen fes-style s0 anchors are Action
+# runs). The MODEL SLOT carries the target token (olmo7brom): the _w/_l/
+# _es and icl-arm regexes parse unchanged, and check_pofd_sanity gates
+# ml_target=Romance + an OLMo-2 base_model on that token. Smoke FIRST
+# (key olmo7brom_fe_smoke: ws2f b1_ea0p4 s0, 3 rounds, DEBUG_GEN):
+# ML_TARGET=Romance is a new production dial (the loader is generic but
+# never ran off Action) and OLMo's zero-shot Romance behavior is
+# unmeasured; everything else is validated (env3 operator + forward KL on
+# olmo by its ws2f wave, frozen k0 + peers by olmo icls2, the seed
+# protocol by qwen fes/fef).
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1146,6 +1177,23 @@ def main():
         expected[p] = len(FE_SEEDS)
     files[os.path.join(HERE, "configs_pofd_qwen7b_fej_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdws2jsmk_qwen7b_b1_ea0p4_{ws_tok()}_s0_fresh_data",
+        style="sft_kl", beta="1", seed=0, eps_ai="0.4")]
+    # OLMo Romance mirror of the env3 fe wave (see the OLMo ROMANCE block)
+    p = os.path.join(HERE, "configs_pofd_olmo7brom_fes.txt")
+    files[p] = [ROW_WS.format(
+        tag=f"pofdws2f_olmo7brom_b{_num(b)}_ea0p4_{ws_tok()}_s{s}_fresh_data",
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        eps_ai="0.4")
+        for b in [0.0, 0.5, 1.0] for s in FE_SEEDS]
+    expected[p] = 3 * len(FE_SEEDS)
+    p = os.path.join(HERE, "configs_pofd_olmo7brom_fef.txt")
+    files[p] = [ROW_ICL2.format(
+        tag=f"pofdicls2_olmo7brom_{ws_tok()}_ea0p4_k0_s{s}",
+        seed=s, es="0.2", eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
+        for s in FE_SEEDS]
+    expected[p] = len(FE_SEEDS)
+    files[os.path.join(HERE, "configs_pofd_olmo7brom_fe_smoke.txt")] = [ROW_WS.format(
+        tag=f"pofdws2fsmk_olmo7brom_b1_ea0p4_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta="1", seed=0, eps_ai="0.4")]
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
