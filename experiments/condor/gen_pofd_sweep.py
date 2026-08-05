@@ -531,6 +531,44 @@ TFER_REFS = {
 # olmo by its ws2f wave, frozen k0 + peers by olmo icls2, the seed
 # protocol by qwen fes/fef).
 
+# NARROW-GATE SOCIAL-DOSE matrix (2026-08-05, user), keys qwen7b_esfn /
+# olmo7b_esfn: the eps-social dose-response at NARROW AI gates, matched
+# across models. Forward SFT-KL b1, W=0.5, lam=0.2, gamma=0, corrected
+# nested operator, fresh + replace, 30 rounds, WITH_TWIN=1 everywhere:
+#   ea {0.05, 0.10} x es {0, 0.10, 0.15, 0.20, 0.25} x s {0, 42, 43}
+#   x models {qwen7b, olmo7b} on movielens Action = 60 cells.
+# The esf wave swept es at the WIDE gate (ea0p4, where the anchor's camp
+# is large); this matrix asks how peer repair composes with a NARROW gate
+# that rarely opens -- the low-contact corner of the (ea, es) surface --
+# and whether the answer is model-general (qwen's out-of-range 0.25 prior
+# vs olmo's in-range 0.75 spike). Tags stay in the per-dose HOME families
+# (fes/fex convention -- each (es, ea) series is family-uniform across
+# seeds): es=0 -> pofdw2f_, es=0.2 -> pofdws2f_, mid doses -> pofdesf_
+# (first olmo7b tags in the esf family; the checker is model-agnostic and
+# routes by the _w/_l/_es tokens: es=0 exact replay, es>0 peer gate +
+# twin). AUDIT 2026-08-05 (on-cluster, all 60 tags): exactly 8 EXIST --
+# both models' b1_ea0p05/b1_ea0p1 s0 at es=0 (w2f) and es=0.2 (ws2f),
+# the validated gate cells -- REUSED, not re-run. 52 cells run (26 per
+# model). The reused es=0 s0 runs predate WITH_TWIN (their no-platform
+# twin is the deterministic innate drift, computable offline -- esf
+# precedent); new es=0 rows save it via WITH_TWIN=1. No smoke: env
+# identical to the validated esf sub (qwen) / esf env + olmo deltas
+# validated by olmo w2f/ws2f/w2fx (olmo); only queue-fed dials differ.
+NDS_EAS = [0.05, 0.1]
+NDS_ESS = [0.0, 0.10, 0.15, 0.20, 0.25]
+NDS_MODELS = ["qwen7b", "olmo7b"]
+
+
+def nds_tag(model, ea, es, seed):
+    if es == 0.0:
+        return f"pofdw2f_{model}_b1_ea{_num(ea)}_{w_tok()}_s{seed}_fresh_data"
+    if es == 0.20:
+        return (f"pofdws2f_{model}_b1_ea{_num(ea)}_{ws_tok()}"
+                f"_s{seed}_fresh_data")
+    return (f"pofdesf_{model}_b1_ea{_num(ea)}_{w_tok()}_es{_num(es)}"
+            f"_s{seed}_fresh_data")
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1195,6 +1233,17 @@ def main():
     files[os.path.join(HERE, "configs_pofd_olmo7brom_fe_smoke.txt")] = [ROW_WS.format(
         tag=f"pofdws2fsmk_olmo7brom_b1_ea0p4_{ws_tok()}_s0_fresh_data",
         style="sft_kl", beta="1", seed=0, eps_ai="0.4")]
+    # narrow-gate social-dose matrix (see the NDS_ comment block): only the
+    # 26 audited-missing cells per model -- the es {0, 0.2} s0 gate cells
+    # exist (w2f/ws2f, both models) and are REUSED, not re-run.
+    for model in NDS_MODELS:
+        p = os.path.join(HERE, f"configs_pofd_{model}_esfn.txt")
+        files[p] = [ROW_ESF.format(
+            tag=nds_tag(model, ea, es, s), seed=s, es=f"{es:g}", w="0.5",
+            eps_ai=f"{ea:g}")
+            for ea in NDS_EAS for es in NDS_ESS for s in FE_SEEDS
+            if not (es in (0.0, 0.20) and s == 0)]
+        expected[p] = 26
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
