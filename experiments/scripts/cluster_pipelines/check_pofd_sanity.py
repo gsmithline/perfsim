@@ -58,6 +58,16 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                Skipped for pofdicl* (frozen: nothing trains); optional for
                pofddpo* (pair-based; checked only if logged).
 
+  GATE-MASK   runs that carry gate_raw (runner 2026-08-05, cube wave on):
+              per-round per-agent AI contact mask must be bit-equal to
+              |served - x(t)| < eps_AI on the start-of-round opinion, with
+              shape == op_raw and per-round mean == row['contact']. Older
+              runs (key absent/empty) skip it -- the mask reconstructs
+              offline from pred_raw/op_raw the same way. Cube-family tags
+              (pofdw2f_/pofdws2f_/pofdesf_) additionally cross-check the _b
+              token against kl_beta, style (sft iff b==0), and
+              kl_direction=forward at b>0.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -179,6 +189,25 @@ def check_run(run_dir):
         if "OLMo-2" not in str(cfg.get("base_model", "")):
             errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
                         f"(olmo7brom tag wants an OLMo-2 model)")
+    # cube families (2026-08-05, full-parameter-cube wave): pofdw2f_/
+    # pofdws2f_/pofdesf_ tags carry a _b token -- kl_beta must match it,
+    # style follows it (sft iff b==0), and every trained b>0 cell is
+    # forward-KL by construction (these are the forward-era families; the
+    # reverse counterparts are pofdw2_/pofdws2_). b0 rows are
+    # direction-free, so no direction gate there. The trailing underscore
+    # keeps pofdw2fpt_/pofdws2fc_/pofdws2fsmk_ on their own branches.
+    if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_")):
+        m_b = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
+        if m_b is None:
+            errs.append(f"CONFIG no _b token in dirname {name!r}")
+        else:
+            want_b = float(m_b.group(1).replace("p", "."))
+            got_b = float(cfg.get("kl_beta", -1.0))
+            if abs(got_b - want_b) > 1e-9:
+                errs.append(f"CONFIG kl_beta={got_b!r} (tag says {want_b!r})")
+            want["training_style"] = "sft" if want_b == 0 else "sft_kl"
+            if want_b > 0:
+                want["kl_direction"] = "forward"
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
@@ -341,6 +370,35 @@ def check_run(run_dir):
             errs.append(f"CONFIG seed={cfg.get('seed')!r} "
                         f"(tag says {m_s.group(1)})")
     eps_ai = float(cfg["eps_ai"])
+
+    # -- 1b GATE-MASK (gate_raw, runner 2026-08-05) --------------------------
+    # When present, the saved per-agent AI gate/contact mask must be exactly
+    # the gate on the start-of-round opinion: shape == op_raw, per-round mean
+    # == row['contact'], and bit-equal to |served - x(t)| < eps_ai (canary is
+    # config-gated to 0 in every family here; ab_retain serves the retained
+    # winner instead, so it is exempt from the replay). Absent / empty ->
+    # older run, skipped -- the mask reconstructs offline the same way.
+    gr = d.get("gate_raw")
+    if gr is not None and gr.numel() > 0 and not cfg.get("ab_retain"):
+        if tuple(gr.shape) != tuple(op_raw.shape):
+            errs.append(f"GATE gate_raw shape {tuple(gr.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        else:
+            gr = gr.bool()
+            for t in range(op_raw.shape[0]):
+                x0 = innate if t == 0 else op_raw[t - 1]
+                served = pred_raw[t].clamp(0.0, 1.0)
+                expect_g = (served - x0).abs() < eps_ai
+                if not torch.equal(gr[t], expect_g):
+                    errs.append(f"GATE round {t}: gate_raw != gate on the "
+                                f"start-of-round opinion "
+                                f"({int((gr[t] ^ expect_g).sum())} agents off)")
+                logged = traj[t].get("contact")
+                if logged is not None and \
+                        abs(logged - float(gr[t].float().mean())) > 1e-6:
+                    errs.append(f"GATE round {t}: contact {logged:.6f} != "
+                                f"mean(gate_raw) "
+                                f"{float(gr[t].float().mean()):.6f}")
 
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:

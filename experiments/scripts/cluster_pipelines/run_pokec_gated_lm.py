@@ -34,6 +34,11 @@ appended one JSON line per round to telemetry.json (crash-safe):
   l_cc l_c0 l_0c l_00   the 2x2: {current, round-0} adapter x {current batch,
               round-0 archive batch}; round-0 adapter + batch kept on disk
               (round0_adapter/, round0_batch.pt)
+  gate_raw    trajectory.pt, [rounds, n] bool: the per-agent AI gate/contact
+              mask (|m_i - x_i(t)| < eps_AI on the start-of-round opinion) --
+              direct platform contact per agent per round, so direct-contact
+              vs peer-transmitted effects separate offline. Empty tensor in
+              runs written before 2026-08-05.
 """
 
 from __future__ import annotations
@@ -1103,6 +1108,13 @@ def main() -> int:
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
     twin_raw = []    # per-round per-agent no-AI twin opinions (when ab_x_cf exists)
+    gate_raw = []    # per-round per-agent AI gate/contact mask (bool; ab loops only).
+                     # In loop mode this IS direct platform contact: gated agents
+                     # adopt weight W of the served value, ungated agents can move
+                     # only through peers. In no_feedback mode it is the
+                     # counterfactual gate (nothing is adopted); rows mirror the
+                     # scalar row['contact'] either way. Absent (empty tensor) in
+                     # runs written before 2026-08-05.
 
     # gender-gap telemetry (LOG_GENDER_GAPS=1): masks + the fixed teacher's
     # prediction gap + the incremental-R^2 design matrices, all built once.
@@ -1410,14 +1422,18 @@ def main() -> int:
                 # injects tag 1 on gated agents -- same nesting as the opinions
                 ab_f = (1.0 - eff_w) * ((1.0 - innate_lambda) * ab_f) + eff_w
                 contacts.append(float(gate_open.float().mean()))
+                gate_raw.append(gate_open.detach().cpu().bool().clone())
                 plat_disps.append(float((ab_x - (innate_lambda * ab_innate
                                                 + (1.0 - innate_lambda) * x0))
                                         .abs().mean()))
             else:
-                # no_feedback: human component only, no AI mixture
+                # no_feedback: human component only, no AI mixture; the saved
+                # mask is the counterfactual gate the contact scalar reports
+                gate_nf = (served - x0).abs() < eps_ai
                 ab_x = innate_lambda * ab_innate + (1.0 - innate_lambda) * x0
                 ab_f = (1.0 - innate_lambda) * ab_f
-                contacts.append(float(((served - x0).abs() < eps_ai).float().mean()))
+                contacts.append(float(gate_nf.float().mean()))
+                gate_raw.append(gate_nf.detach().cpu().bool().clone())
 
             for sw in range(ab_sweeps):
                 # social dynamics ONLY -- the platform/innate mixture above is
@@ -1624,6 +1640,7 @@ def main() -> int:
             "ans_raw": torch.stack(ans_raw) if ans_raw else torch.empty(0),
             "ans_idx": torch.tensor(ans_idx, dtype=torch.long),
             "twin_raw": torch.stack(twin_raw) if twin_raw else torch.empty(0),
+            "gate_raw": torch.stack(gate_raw) if gate_raw else torch.empty(0),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,

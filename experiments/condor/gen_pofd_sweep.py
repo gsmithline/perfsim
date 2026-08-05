@@ -560,13 +560,174 @@ NDS_MODELS = ["qwen7b", "olmo7b"]
 
 
 def nds_tag(model, ea, es, seed):
+    # b=1 slice of the cube tag map (kept so the superseded esfn configs
+    # stay byte-identical; cube_tag is defined in the CUBE block below)
+    return cube_tag(model, 1.0, ea, es, seed)
+
+
+# FULL PARAMETER-CUBE (2026-08-05, user), keys qwen7b_cube / olmo7b_cube:
+# every corrected-loop dial crossed on movielens Action --
+#   beta {0, 0.1, 0.2, 0.5, 1} x ea {0.05, 0.1, 0.2, 0.4}
+#   x es {0, 0.10, 0.15, 0.20, 0.25, 0.30} x s {0, 42, 43}
+#   x models {qwen7b, olmo7b} = 720 cells.
+# Fixed dials: W=0.5, lam=0.2, gamma=0, corrected nested operator
+# (population_update=nested_ai_then_social_v1), 30 rounds, fresh adapter
+# each round + replace data, WITH_TWIN=1 (matched no-platform twin in
+# every run), b0 -> ordinary sft (direction-free), b>0 -> forward SFT-KL.
+# es=0.30 is a NEW dose (the esf s0 scan found re-entrant capture at
+# 0.25 -- the wide radius ferries mainstream agents into the gate; 0.30
+# extends the axis one step); b {0.1, 0.2} at mid doses are the first
+# non-b1 pofdesf_ cells.
+# AUDIT 2026-08-05 (on-cluster, BY CONFIG FIELDS, not tags): every
+# config.json under runs/pokec_gated_lm scanned and matched on the full
+# dial surface (dataset/target/base_model/population_update/W/lam/gamma/
+# regime/fresh/pristine/canary/sweeps/eps/ea/beta/seed/style + LoRA-512
+# budget; kl_direction=forward required at b>0; kl_ref_adapter, profile
+# drop/permute/shuffle/sort, teacher deltas all absent; completeness =
+# trajectory.pt present + 30 trajectory rounds). Legacy reverse-KL,
+# continual-adapter and feature-ablation runs are NOT counted, by those
+# same fields. EXACTLY 103 cells exist -- qwen7b 63, olmo7b 40 --
+# enumerated wave-by-wave in CUBE_EXISTING; the qwen b0 s0 cells live
+# under reverse-era pofdw2_/pofdws2_ tags (b0 has no KL term, the
+# fes/fesr reuse precedent), everything else under pofdw2f_/pofdws2f_/
+# pofdesf_ tags. 617 cells queue (qwen 297, olmo 320); nothing existing
+# is ever overwritten (grid-minus-existing configs + the idempotent
+# executable). The 57 zero-byte shells left by the 2026-08-05 cluster
+# incident hold no results and re-run.
+# Tags stay in the per-dose HOME families (fes/fex/esfn convention):
+# es=0 -> pofdw2f_, es=0.2 -> pofdws2f_, every other dose -> pofdesf_.
+# SUPERSEDES qwen7b_esfn / olmo7b_esfn (never ran -- the incident killed
+# all 52 before round 1): every esfn cell is a cube cell with a
+# BYTE-IDENTICAL tag, so co-submission would double-queue 52 tags into
+# the same run dirs -- submit_pofd_sweep.sh refuses the esfn keys and
+# points here.
+# The .sub files are GENERATED from CUBE_MODELS: one spec per model
+# (slug -> base model + resource/env deltas). Adding a registered model
+# = adding ONE entry and rerunning this script; do not hand-edit the
+# generated at_pofd_<slug>_cube.sub.
+# gate_raw telemetry (runner, 2026-08-05): every new run saves the
+# per-round per-agent AI gate/contact mask to trajectory.pt (direct
+# contact vs indirect peer transmission separate offline). The 103
+# reused cells predate the key; their masks reconstruct exactly as
+# |pred_raw[t] - x(t)| < ea on x(t) = innate / op_raw[t-1] -- the same
+# derivation check_pofd_sanity now verifies on runs that carry gate_raw.
+# No smoke: the sub env is byte-identical to the validated esfn subs but
+# for the config filename + wandb suffix, every moving dial is
+# queue-fed over combinations validated by the w2f/ws2f/w2fx/ws2fx/esf/
+# fes waves, and the gate_raw runner change is telemetry-only (validated
+# by the local pure-torch mock + the checker fixture suite).
+CUBE_BETAS = [0.0, 0.1, 0.2, 0.5, 1.0]
+CUBE_EAS = [0.05, 0.1, 0.2, 0.4]
+CUBE_ESS = [0.0, 0.10, 0.15, 0.20, 0.25, 0.30]
+CUBE_SEEDS = [0, 42, 43]
+# slug -> spec: ONE entry drives configs_pofd_<slug>_cube.txt AND
+# at_pofd_<slug>_cube.sub. extra_env sits between ML_TARGET and EPS_AI
+# in the environment line (olmo: lustre HF cache, offline hub).
+CUBE_MODELS = {
+    "qwen7b": {"base_model": "Qwen/Qwen2.5-7B-Instruct",
+               "mem": "128G", "disk": "40G", "ppl_batch": 64,
+               "extra_env": ""},
+    "olmo7b": {"base_model": "allenai/OLMo-2-1124-7B-Instruct",
+               "mem": "160G", "disk": "60G", "ppl_batch": 16,
+               "extra_env": "HF_HOME=/lustre/fast/fast/gsmithline/hf_cache "
+                            "HF_HUB_OFFLINE=1 "},
+}
+ROW_CUBE = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+            "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}")
+
+
+def cube_tag(model, b, ea, es, seed):
+    """Per-dose HOME family: es=0 -> pofdw2f_, es=0.2 -> pofdws2f_,
+    every other dose -> pofdesf_ (fes/fex/esfn convention)."""
     if es == 0.0:
-        return f"pofdw2f_{model}_b1_ea{_num(ea)}_{w_tok()}_s{seed}_fresh_data"
-    if es == 0.20:
-        return (f"pofdws2f_{model}_b1_ea{_num(ea)}_{ws_tok()}"
+        return (f"pofdw2f_{model}_b{_num(b)}_ea{_num(ea)}_{w_tok()}"
                 f"_s{seed}_fresh_data")
-    return (f"pofdesf_{model}_b1_ea{_num(ea)}_{w_tok()}_es{_num(es)}"
+    if es == 0.20:
+        return (f"pofdws2f_{model}_b{_num(b)}_ea{_num(ea)}_{ws_tok()}"
+                f"_s{seed}_fresh_data")
+    return (f"pofdesf_{model}_b{_num(b)}_ea{_num(ea)}_{w_tok()}_es{_num(es)}"
             f"_s{seed}_fresh_data")
+
+
+# AUDIT 2026-08-05: the 103 complete config-matching cells, wave by wave.
+CUBE_EXISTING = set()
+# qwen es {0, 0.2} s0 planes, full beta x ea: b>0 = w2f/ws2f forward
+# waves; b0 = the reverse-era pofdw2_/pofdws2_ sft runs (direction-free)
+CUBE_EXISTING |= {("qwen7b", b, ea, es, 0) for b in CUBE_BETAS
+                  for ea in CUBE_EAS for es in (0.0, 0.20)}
+# qwen fes2/fes replication seeds: natural b {0, 0.5, 1} at ea0p4,
+# es 0 (pofdw2f_) and 0.2 (pofdws2f_)
+CUBE_EXISTING |= {("qwen7b", b, 0.4, es, s) for b in (0.0, 0.5, 1.0)
+                  for es in (0.0, 0.20) for s in (42, 43)}
+# qwen esf/fex mid doses: b1 ea0p4 es {0.1, 0.15, 0.25} x all seeds +
+# b1 ea0p2 es {0.1, 0.25} s0 (pofdesf_)
+CUBE_EXISTING |= {("qwen7b", 1.0, 0.4, es, s)
+                  for es in (0.10, 0.15, 0.25) for s in CUBE_SEEDS}
+CUBE_EXISTING |= {("qwen7b", 1.0, 0.2, es, 0) for es in (0.10, 0.25)}
+# olmo es {0, 0.2} s0 planes, full beta x ea (w2f/ws2f + w2fx/ws2fx fill)
+CUBE_EXISTING |= {("olmo7b", b, ea, es, 0) for b in CUBE_BETAS
+                  for ea in CUBE_EAS for es in (0.0, 0.20)}
+assert len(CUBE_EXISTING) == 103, len(CUBE_EXISTING)
+
+
+def cube_rows(model):
+    return [ROW_CUBE.format(
+        tag=cube_tag(model, b, ea, es, s),
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        es=f"{es:g}", eps_ai=f"{ea:g}")
+        for b in CUBE_BETAS for ea in CUBE_EAS for es in CUBE_ESS
+        for s in CUBE_SEEDS if (model, b, ea, es, s) not in CUBE_EXISTING]
+
+
+CUBE_SUB_TEMPLATE = """\
+# HTCondor: FULL PARAMETER-CUBE, {model} half -- GENERATED by
+# gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-05). Never edit
+# this file by hand: edit the spec / CUBE_EXISTING and rerun the script.
+# {n_jobs} audited-missing cells of beta {{0,0.1,0.2,0.5,1}} x
+# ea {{0.05,0.1,0.2,0.4}} x es {{0,0.10,0.15,0.20,0.25,0.30}} x
+# s {{0,42,43}} -- forward SFT-KL (b0 rows ordinary sft), W_PLAT=0.5,
+# INNATE_LAMBDA=0.2, gamma=0, corrected nested operator, fresh +
+# replace, 30 rounds, movielens Action, WITH_TWIN=1. beta/style/es/ea/
+# seed all ride the queue (es col 10, eps_AI col 15); tags stay in the
+# per-dose home families (es=0 -> pofdw2f_, es=0.2 -> pofdws2f_, else
+# pofdesf_). The 103 cells the 2026-08-05 config-field audit found
+# complete are NOT queued (CUBE_EXISTING in gen_pofd_sweep.py).
+# SUPERSEDES at_pofd_{model}_esfn.sub -- byte-identical tags; never
+# co-submit both. Every run saves twin_raw + the per-agent gate_raw
+# contact mask (runner 2026-08-05). Gate every pull with
+# check_pofd_sanity (es=0 exact replay, es>0 peer gate + twin; _b token,
+# forward direction at b>0, and gate_raw are cross-checked).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {model}_cube
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdcube"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai from experiments/condor/configs_pofd_{model}_cube.txt
+"""
+
+
+def cube_sub(model):
+    return CUBE_SUB_TEMPLATE.format(model=model, n_jobs=len(cube_rows(model)),
+                                    **CUBE_MODELS[model])
 
 
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
@@ -1244,6 +1405,17 @@ def main():
             for ea in NDS_EAS for es in NDS_ESS for s in FE_SEEDS
             if not (es in (0.0, 0.20) and s == 0)]
         expected[p] = 26
+    # full parameter cube (see the CUBE_ comment block): grid minus the 103
+    # audited-existing cells; the .sub files are generated from CUBE_MODELS
+    cube_subs = {}
+    for model in CUBE_MODELS:
+        p = os.path.join(HERE, f"configs_pofd_{model}_cube.txt")
+        files[p] = cube_rows(model)
+        expected[p] = (len(CUBE_BETAS) * len(CUBE_EAS) * len(CUBE_ESS)
+                       * len(CUBE_SEEDS)
+                       - sum(1 for c in CUBE_EXISTING if c[0] == model))
+        cube_subs[os.path.join(HERE, f"at_pofd_{model}_cube.sub")] = \
+            cube_sub(model)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -1266,6 +1438,16 @@ def main():
             with open(path, "w") as fh:
                 fh.write(body)
             print(f"[write] {os.path.basename(path)}: {len(rows)} jobs")
+    for path, body in cube_subs.items():
+        if verify:
+            on_disk = open(path).read() if os.path.exists(path) else None
+            status = "OK" if on_disk == body else "MISMATCH"
+            ok &= status == "OK"
+            print(f"[verify] {os.path.basename(path)}: generated sub, {status}")
+        else:
+            with open(path, "w") as fh:
+                fh.write(body)
+            print(f"[write] {os.path.basename(path)}: generated sub")
     print(f"[grid] {len(ACTIVE_MODELS)} model(s) x {len(BETAS)} beta x "
           f"{len(EPS_AIS)} eps_ai x {len(SEEDS)} seed(s) = "
           f"{len(ACTIVE_MODELS) * len(BETAS) * len(EPS_AIS) * len(SEEDS)} sweep jobs"
