@@ -568,8 +568,14 @@ def nds_tag(model, ea, es, seed):
 # FULL PARAMETER-CUBE (2026-08-05, user), keys qwen7b_cube / olmo7b_cube:
 # every corrected-loop dial crossed on movielens Action --
 #   beta {0, 0.1, 0.2, 0.5, 1} x ea {0.05, 0.1, 0.2, 0.4}
-#   x es {0, 0.10, 0.15, 0.20, 0.25, 0.30} x s {0, 42, 43}
-#   x models {qwen7b, olmo7b} = 720 cells.
+#   x es {0, 0.10, 0.15, 0.20, 0.25, 0.30} x seed 0
+#   x models {qwen7b, olmo7b} = 240 cells.
+# RESCOPED 2026-08-05 (user, same day): ONE seed per cell -- the original
+# 3-seed spec (s {0, 42, 43} = 720 cells / 617 jobs) was too many jobs.
+# Seed 0 is the project's canonical scan seed and maximizes reuse (every
+# existing s0 plane counts). To add replicates later: extend CUBE_SEEDS
+# and rerun -- the grid-minus-existing logic and the audit set below
+# already carry the s42/s43 cells.
 # Fixed dials: W=0.5, lam=0.2, gamma=0, corrected nested operator
 # (population_update=nested_ai_then_social_v1), 30 rounds, fresh adapter
 # each round + replace data, WITH_TWIN=1 (matched no-platform twin in
@@ -587,20 +593,25 @@ def nds_tag(model, ea, es, seed):
 # trajectory.pt present + 30 trajectory rounds). Legacy reverse-KL,
 # continual-adapter and feature-ablation runs are NOT counted, by those
 # same fields. EXACTLY 103 cells exist -- qwen7b 63, olmo7b 40 --
-# enumerated wave-by-wave in CUBE_EXISTING; the qwen b0 s0 cells live
-# under reverse-era pofdw2_/pofdws2_ tags (b0 has no KL term, the
+# enumerated wave-by-wave in CUBE_EXISTING (kept COMPLETE, including the
+# s42/s43 cells now outside the rescoped grid: it is the audit record,
+# and the replicate extension reuses it as-is); the qwen b0 s0 cells
+# live under reverse-era pofdw2_/pofdws2_ tags (b0 has no KL term, the
 # fes/fesr reuse precedent), everything else under pofdw2f_/pofdws2f_/
-# pofdesf_ tags. 617 cells queue (qwen 297, olmo 320); nothing existing
-# is ever overwritten (grid-minus-existing configs + the idempotent
-# executable). The 57 zero-byte shells left by the 2026-08-05 cluster
-# incident hold no results and re-run.
+# pofdesf_ tags. Inside the 1-seed grid 45 qwen / 40 olmo cells exist,
+# so 155 cells queue (qwen 75, olmo 80); nothing existing is ever
+# overwritten (grid-minus-existing configs + the idempotent executable).
+# Of the 57 zero-byte shells left by the 2026-08-05 cluster incident
+# (no results in any), the 12 s0 esfn shells are cube tags and re-run;
+# the 40 s42/s43 shells wait for the replicate extension.
 # Tags stay in the per-dose HOME families (fes/fex/esfn convention):
 # es=0 -> pofdw2f_, es=0.2 -> pofdws2f_, every other dose -> pofdesf_.
 # SUPERSEDES qwen7b_esfn / olmo7b_esfn (never ran -- the incident killed
-# all 52 before round 1): every esfn cell is a cube cell with a
-# BYTE-IDENTICAL tag, so co-submission would double-queue 52 tags into
-# the same run dirs -- submit_pofd_sweep.sh refuses the esfn keys and
-# points here.
+# all 52 before round 1): the cube owns the (ea, es) matrix now, its s0
+# slice queues here with BYTE-IDENTICAL tags (6 per model), and the esfn
+# s42/s43 cells are descoped with every other replicate --
+# submit_pofd_sweep.sh refuses the esfn keys and points here
+# (co-submission would double-queue tags into the same run dirs).
 # The .sub files are GENERATED from CUBE_MODELS: one spec per model
 # (slug -> base model + resource/env deltas). Adding a registered model
 # = adding ONE entry and rerunning this script; do not hand-edit the
@@ -619,7 +630,8 @@ def nds_tag(model, ea, es, seed):
 CUBE_BETAS = [0.0, 0.1, 0.2, 0.5, 1.0]
 CUBE_EAS = [0.05, 0.1, 0.2, 0.4]
 CUBE_ESS = [0.0, 0.10, 0.15, 0.20, 0.25, 0.30]
-CUBE_SEEDS = [0, 42, 43]
+# rescoped 2026-08-05: one seed per cell (extend + rerun for replicates)
+CUBE_SEEDS = [0]
 # slug -> spec: ONE entry drives configs_pofd_<slug>_cube.txt AND
 # at_pofd_<slug>_cube.sub. extra_env sits between ML_TARGET and EPS_AI
 # in the environment line (olmo: lustre HF cache, offline hub).
@@ -659,10 +671,11 @@ CUBE_EXISTING |= {("qwen7b", b, ea, es, 0) for b in CUBE_BETAS
 # es 0 (pofdw2f_) and 0.2 (pofdws2f_)
 CUBE_EXISTING |= {("qwen7b", b, 0.4, es, s) for b in (0.0, 0.5, 1.0)
                   for es in (0.0, 0.20) for s in (42, 43)}
-# qwen esf/fex mid doses: b1 ea0p4 es {0.1, 0.15, 0.25} x all seeds +
-# b1 ea0p2 es {0.1, 0.25} s0 (pofdesf_)
+# qwen esf/fex mid doses: b1 ea0p4 es {0.1, 0.15, 0.25} x s {0, 42, 43}
+# + b1 ea0p2 es {0.1, 0.25} s0 (pofdesf_). Seeds literal on purpose --
+# this is the audit record, independent of the rescoped CUBE_SEEDS.
 CUBE_EXISTING |= {("qwen7b", 1.0, 0.4, es, s)
-                  for es in (0.10, 0.15, 0.25) for s in CUBE_SEEDS}
+                  for es in (0.10, 0.15, 0.25) for s in (0, 42, 43)}
 CUBE_EXISTING |= {("qwen7b", 1.0, 0.2, es, 0) for es in (0.10, 0.25)}
 # olmo es {0, 0.2} s0 planes, full beta x ea (w2f/ws2f + w2fx/ws2fx fill)
 CUBE_EXISTING |= {("olmo7b", b, ea, es, 0) for b in CUBE_BETAS
@@ -684,8 +697,9 @@ CUBE_SUB_TEMPLATE = """\
 # gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-05). Never edit
 # this file by hand: edit the spec / CUBE_EXISTING and rerun the script.
 # {n_jobs} audited-missing cells of beta {{0,0.1,0.2,0.5,1}} x
-# ea {{0.05,0.1,0.2,0.4}} x es {{0,0.10,0.15,0.20,0.25,0.30}} x
-# s {{0,42,43}} -- forward SFT-KL (b0 rows ordinary sft), W_PLAT=0.5,
+# ea {{0.05,0.1,0.2,0.4}} x es {{0,0.10,0.15,0.20,0.25,0.30}} at seed 0
+# (replicates descoped 2026-08-05: extend CUBE_SEEDS + rerun to add
+# them) -- forward SFT-KL (b0 rows ordinary sft), W_PLAT=0.5,
 # INNATE_LAMBDA=0.2, gamma=0, corrected nested operator, fresh +
 # replace, 30 rounds, movielens Action, WITH_TWIN=1. beta/style/es/ea/
 # seed all ride the queue (es col 10, eps_AI col 15); tags stay in the
@@ -1413,7 +1427,8 @@ def main():
         files[p] = cube_rows(model)
         expected[p] = (len(CUBE_BETAS) * len(CUBE_EAS) * len(CUBE_ESS)
                        * len(CUBE_SEEDS)
-                       - sum(1 for c in CUBE_EXISTING if c[0] == model))
+                       - sum(1 for c in CUBE_EXISTING
+                             if c[0] == model and c[4] in CUBE_SEEDS))
         cube_subs[os.path.join(HERE, f"at_pofd_{model}_cube.sub")] = \
             cube_sub(model)
     m, b, e, s = SMOKE
