@@ -79,6 +79,15 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               error (that path must not exist -- alpha=0 runs are the plain
               replace runs).
 
+  BUDGET      pofdbud_ runs (training-budget wave, incl. pofdbudsmk_):
+              ordinary SFT at b0 with a per-round optimizer-step cap --
+              config must show training_style=sft, kl_beta=0, sft_epochs=0,
+              max_steps matching the _st token, the base model matching the
+              model slug, movielens Action, natural labels. Environment/twin/
+              gate-mask/fresh checks ride the shared sections (es token ->
+              peer gate + twin + mean conservation, gate_raw bit-replay,
+              n_train fixed at TRAIN_CAP on every deploy round).
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -125,6 +134,9 @@ def check_run(run_dir):
     # exact initial-data replay wave (2026-08-06): replace-regime loops whose
     # per-round batch holds an exact _rf fraction of ORIGINAL round-0 labels
     is_rpl = name.startswith("pofdrpl_")
+    # ordinary-SFT training-budget wave (2026-08-06): per-round step cap via
+    # SFT_EPOCHS=0 + SFT_MAX_STEPS (_st token); covers pofdbudsmk_ too
+    is_bud = name.startswith("pofdbud")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -237,6 +249,30 @@ def check_run(run_dir):
             if abs(got_rf - want_rf) > 1e-9:
                 errs.append(f"CONFIG replay_frac={got_rf!r} "
                             f"(tag says {want_rf!r})")
+    if is_bud:
+        # training-budget family: ordinary SFT at b0 with a per-round
+        # optimizer-step cap (SFT_EPOCHS=0 hands control to SFT_MAX_STEPS,
+        # recorded as config max_steps). _st token pins the step count, the
+        # model slug pins the base checkpoint. Labels natural, movielens
+        # Action only. Smoke tags (pofdbudsmk_) share the branch -- they
+        # differ only in n_rounds, which is not gated here.
+        want.update({"kl_beta": 0.0, "training_style": "sft",
+                     "sft_epochs": 0, "ml_target": "Action",
+                     "teacher_label_delta": 0.0})
+        m_st = re.search(r"_st(\d+)_", name)
+        if m_st is None:
+            errs.append(f"CONFIG no _st token in dirname {name!r}")
+        elif int(cfg.get("max_steps") or -1) != int(m_st.group(1)):
+            errs.append(f"CONFIG max_steps={cfg.get('max_steps')!r} "
+                        f"(tag says {m_st.group(1)})")
+        BUD_BASE = {"qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+                    "olmo7b": "allenai/OLMo-2-1124-7B-Instruct"}
+        slug = next((s for s in BUD_BASE if f"_{s}_" in name), None)
+        if slug is None:
+            errs.append(f"CONFIG unknown model slug in dirname {name!r}")
+        elif cfg.get("base_model") != BUD_BASE[slug]:
+            errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
+                        f"({slug} wants {BUD_BASE[slug]!r})")
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
@@ -393,7 +429,7 @@ def check_run(run_dir):
             if bad:
                 errs.append(f"CONFIG gg telemetry keys missing in rounds "
                             f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
-    if is_tch or is_tfe or is_rpl:
+    if is_tch or is_tfe or is_rpl or is_bud:
         m_s = re.search(r"_s(\d+)(?:_|$)", name)
         if m_s and cfg.get("seed") != int(m_s.group(1)):
             errs.append(f"CONFIG seed={cfg.get('seed')!r} "
