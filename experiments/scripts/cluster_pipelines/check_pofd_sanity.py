@@ -64,9 +64,20 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               shape == op_raw and per-round mean == row['contact']. Older
               runs (key absent/empty) skip it -- the mask reconstructs
               offline from pred_raw/op_raw the same way. Cube-family tags
-              (pofdw2f_/pofdws2f_/pofdesf_) additionally cross-check the _b
-              token against kl_beta, style (sft iff b==0), and
-              kl_direction=forward at b>0.
+              (pofdw2f_/pofdws2f_/pofdesf_, plus the replay wave pofdrpl_)
+              additionally cross-check the _b token against kl_beta, style
+              (sft iff b==0), and kl_direction=forward at b>0.
+
+  REPLAY      pofdrpl_ runs (replay_frac>0, runner 2026-08-06): the _rf token
+              must match config replay_frac, and the saved replay_raw /
+              train_y_raw must show, per deploy round, a fixed-size batch with
+              EXACTLY round(rf*n) rows carrying their original round-0 labels
+              (raw innate; teacher shift config-gated to 0) and the rest the
+              LATEST round's labels (op_raw[t-1]) -- bit-exact, never
+              accumulated history; round 0 all-original; row n_replay must
+              match the mask. replay_raw present at replay_frac==0 is an
+              error (that path must not exist -- alpha=0 runs are the plain
+              replace runs).
 
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
@@ -111,6 +122,9 @@ def check_run(run_dir):
     # teacher adapter (covers pofdtfesmk_ too)
     is_tch = name.startswith("pofdtch")
     is_tfe = name.startswith("pofdtfe")
+    # exact initial-data replay wave (2026-08-06): replace-regime loops whose
+    # per-round batch holds an exact _rf fraction of ORIGINAL round-0 labels
+    is_rpl = name.startswith("pofdrpl_")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -196,7 +210,9 @@ def check_run(run_dir):
     # reverse counterparts are pofdw2_/pofdws2_). b0 rows are
     # direction-free, so no direction gate there. The trailing underscore
     # keeps pofdw2fpt_/pofdws2fc_/pofdws2fsmk_ on their own branches.
-    if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_")):
+    # pofdrpl_ (replay wave) shares the token grammar (_b before _ea), so it
+    # rides the same gate.
+    if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_", "pofdrpl_")):
         m_b = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
         if m_b is None:
             errs.append(f"CONFIG no _b token in dirname {name!r}")
@@ -208,6 +224,19 @@ def check_run(run_dir):
             want["training_style"] = "sft" if want_b == 0 else "sft_kl"
             if want_b > 0:
                 want["kl_direction"] = "forward"
+    if is_rpl:
+        # replay family: _rf token vs config replay_frac; labels are compared
+        # to raw innate in section 1c, so the teacher shift must be OFF
+        want["teacher_label_delta"] = 0.0
+        m_rf = re.search(r"_rf(\d+(?:p\d+)?)_", name)
+        if m_rf is None:
+            errs.append(f"CONFIG no _rf token in dirname {name!r}")
+        else:
+            want_rf = float(m_rf.group(1).replace("p", "."))
+            got_rf = float(cfg.get("replay_frac", -1.0))
+            if abs(got_rf - want_rf) > 1e-9:
+                errs.append(f"CONFIG replay_frac={got_rf!r} "
+                            f"(tag says {want_rf!r})")
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
@@ -364,7 +393,7 @@ def check_run(run_dir):
             if bad:
                 errs.append(f"CONFIG gg telemetry keys missing in rounds "
                             f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
-    if is_tch or is_tfe:
+    if is_tch or is_tfe or is_rpl:
         m_s = re.search(r"_s(\d+)(?:_|$)", name)
         if m_s and cfg.get("seed") != int(m_s.group(1)):
             errs.append(f"CONFIG seed={cfg.get('seed')!r} "
@@ -399,6 +428,54 @@ def check_run(run_dir):
                     errs.append(f"GATE round {t}: contact {logged:.6f} != "
                                 f"mean(gate_raw) "
                                 f"{float(gr[t].float().mean()):.6f}")
+
+    # -- 1c REPLAY (replay_raw/train_y_raw, runner 2026-08-06) ---------------
+    # replay_frac>0 (exact initial-data replay, replace regime): the saved
+    # label-source mask and the ACTUAL labels fed to the learner must show a
+    # fixed-size batch of exactly round(rf*n) ORIGINAL round-0 labels (raw
+    # innate; the teacher shift is config-gated to 0) and n - round(rf*n)
+    # labels from the LATEST round only (op_raw[t-1] -- never accumulated
+    # history). Round 0 is all-original by definition. Bit-exact: the runner
+    # saves the very tensors it trains on.
+    rr = d.get("replay_raw")
+    ty = d.get("train_y_raw")
+    rf = float(cfg.get("replay_frac") or 0.0)
+    if rf > 0:
+        n_lab = int(cfg.get("train_cap") or 0) or int(op_raw.shape[1])
+        dep_rounds = [r["round"] for r in traj if r.get("is_deploy")]
+        if rr is None or rr.numel() == 0 or ty is None or ty.numel() == 0:
+            errs.append("REPLAY replay_frac>0 but replay_raw/train_y_raw "
+                        "missing from trajectory.pt")
+        elif (tuple(rr.shape) != (len(dep_rounds), n_lab)
+              or tuple(ty.shape) != (len(dep_rounds), n_lab)):
+            errs.append(f"REPLAY shapes replay_raw={tuple(rr.shape)} "
+                        f"train_y_raw={tuple(ty.shape)} (want "
+                        f"{(len(dep_rounds), n_lab)!r} -- one fixed-size "
+                        f"batch per deploy round)")
+        else:
+            rr = rr.bool()
+            ty = ty.float()
+            innate_lab = innate[:n_lab]
+            for di, t in enumerate(dep_rounds):
+                n_rep = int(rr[di].sum())
+                want_rep = n_lab if t == 0 else int(round(rf * n_lab))
+                if n_rep != want_rep:
+                    errs.append(f"REPLAY round {t}: {n_rep} original-label "
+                                f"rows (want exactly {want_rep})")
+                want_y = (innate_lab if t == 0 else
+                          torch.where(rr[di], innate_lab,
+                                      op_raw[t - 1][:n_lab]))
+                if not torch.equal(ty[di], want_y):
+                    errs.append(f"REPLAY round {t}: trained labels differ "
+                                f"from where(mask, round-0, latest) by max "
+                                f"{float((ty[di] - want_y).abs().max()):.2e}")
+                logged = traj[t].get("n_replay")
+                if logged is not None and int(logged) != n_rep:
+                    errs.append(f"REPLAY round {t}: row n_replay={logged} != "
+                                f"mask sum {n_rep}")
+    elif rr is not None and rr.numel() > 0:
+        errs.append("REPLAY replay_raw present but config replay_frac is "
+                    "0/absent")
 
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:

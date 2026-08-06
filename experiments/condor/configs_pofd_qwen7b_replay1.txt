@@ -1,0 +1,8 @@
+pofdrpl_qwen7b_b0_ea0p4_rf0p25_w0p5_l0p2_es0p1_s0_fresh_data, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.25
+pofdrpl_qwen7b_b0_ea0p4_rf0p5_w0p5_l0p2_es0p1_s0_fresh_data, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.5
+pofdrpl_qwen7b_b0_ea0p4_rf0p75_w0p5_l0p2_es0p1_s0_fresh_data, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.75
+pofdrpl_qwen7b_b0_ea0p4_rf1_w0p5_l0p2_es0p1_s0_fresh_data, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 1
+pofdrpl_qwen7b_b1_ea0p4_rf0p25_w0p5_l0p2_es0p1_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.25
+pofdrpl_qwen7b_b1_ea0p4_rf0p5_w0p5_l0p2_es0p1_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.5
+pofdrpl_qwen7b_b1_ea0p4_rf0p75_w0p5_l0p2_es0p1_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 0.75
+pofdrpl_qwen7b_b1_ea0p4_rf1_w0p5_l0p2_es0p1_s0_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 0.4, 1

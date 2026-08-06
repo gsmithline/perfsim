@@ -39,6 +39,13 @@ appended one JSON line per round to telemetry.json (crash-safe):
               direct platform contact per agent per round, so direct-contact
               vs peer-transmitted effects separate offline. Empty tensor in
               runs written before 2026-08-05.
+  replay_raw / train_y_raw   trajectory.pt, REPLAY_FRAC>0 runs only
+              (exact initial-data replay, replace regime): per deploy round
+              the [n_labeled] bool label-source mask (True = row kept its
+              ORIGINAL round-0 label, exactly round(REPLAY_FRAC*n) rows;
+              round 0 all True) and the ACTUAL labels fed to the learner, so
+              batch composition is verifiable end-to-end offline. Empty
+              tensors everywhere else.
 """
 
 from __future__ import annotations
@@ -381,6 +388,33 @@ def mix_pristine_data(buffer, cap, frac, gen):
     return {k: torch.cat([p[k], r[k]], 0) for k in ("x", "y", "agent_idx")}
 
 
+def mix_replay_data(initial, current, frac, gen):
+    """EXACT initial-data replay (REPLAY_FRAC, replace regime only): keep the
+    current round's fixed-size one-row-per-agent batch, but flip an exactly
+    round(frac*n)-row random subset back to its ORIGINAL round-0 labels
+    (initial_data). Both blocks index the same agents in the same order under
+    replace, so the result is a per-row label-source partition -- fixed size,
+    no duplicate agents, and never accumulated history. `gen` is a dedicated
+    generator (only advanced on this path) so frac=0 runs, which skip this
+    entirely, stay RNG-identical to pre-replay runs.
+    Returns (train_data, replay_mask); replay_mask[i]=True -> row i carries
+    its original label."""
+    n = current["y"].shape[0]
+    if initial["y"].shape[0] != n or not torch.equal(
+            initial["agent_idx"], current["agent_idx"]):
+        raise ValueError(
+            f"replay: initial/current row sets differ (n_init="
+            f"{initial['y'].shape[0]}, n_cur={n}) -- replay assumes the "
+            "replace-regime one-row-per-agent batch")
+    n_rep = int(round(frac * n))
+    sel = torch.randperm(n, generator=gen)[:n_rep]
+    rep_mask = torch.zeros(n, dtype=torch.bool)
+    rep_mask[sel] = True
+    y = torch.where(rep_mask.unsqueeze(-1), initial["y"], current["y"])
+    return ({"x": current["x"], "y": y, "agent_idx": current["agent_idx"]},
+            rep_mask)
+
+
 def _gender_gap(v, fav_mask):
     """Group-mean gap mean(v[favored]) - mean(v[others]), NaN-filtered."""
     v = v.float()
@@ -612,6 +646,15 @@ def main() -> int:
     # subsample as round-0 real data (dep=-1), so the real fraction does NOT decay
     # to 1/t. 0 = random subsample (decaying pristine = plain accumulate).
     pristine_frac = _env_float("PRISTINE_FRAC", 0.0)
+    # REPLAY_FRAC>0 (replace only): EXACT initial-data replay. Every deploy
+    # round's fixed-size training set holds exactly round(frac*n) rows with
+    # their ORIGINAL round-0 labels (initial_data) and the rest with the
+    # LATEST round's population labels -- a per-row label-source partition of
+    # the same one-row-per-agent batch, never accumulated history. Distinct
+    # from PRISTINE_FRAC (accumulate-only, pool-level resampling), whose
+    # behavior is untouched. 0 = off (byte-identical to pre-replay runs: the
+    # whole path, including its dedicated RNG, is guarded by frac > 0).
+    replay_frac = _env_float("REPLAY_FRAC", 0.0)
     # FEEDBACK_MODE (in-context reward-hacking probe, Pan et al. 2402.06627;
     # frozen + ab only). Each round's prompt carries a GLOBAL feedback block
     # summarizing the PREVIOUS round so the model can refine its output in-context:
@@ -698,6 +741,14 @@ def main() -> int:
         raise ValueError("FEEDBACK_MODE must be 'none', 'consequences', or 'reward'")
     if feedback_mode != "none" and not icrh_on:
         raise ValueError("FEEDBACK_MODE != none requires ICRH=1")
+    if not (0.0 <= replay_frac <= 1.0):
+        raise ValueError("REPLAY_FRAC must be in [0, 1]")
+    if replay_frac > 0 and data_regime != "replace":
+        raise ValueError("REPLAY_FRAC>0 mixes round-0 originals with the LATEST "
+                         "round only -- requires DATA_REGIME=replace, never "
+                         "accumulated history")
+    if replay_frac > 0 and pristine_frac > 0:
+        raise ValueError("REPLAY_FRAC and PRISTINE_FRAC are mutually exclusive")
     if reward_kind not in ("accuracy", "engagement"):
         raise ValueError("REWARD_KIND must be 'accuracy' or 'engagement'")
     if ab_retain:
@@ -754,6 +805,7 @@ def main() -> int:
         "icrh": icrh_on, "reward_kind": reward_kind, "ab_retain": ab_retain,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
+        "replay_frac": replay_frac,
         "pop_reset": pop_reset, "ab_sweeps": ab_sweeps, "pop_order": pop_order,
         "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
         "profile_drop_cols": drop_cols, "profile_permute_cols": permute_cols,
@@ -1082,6 +1134,10 @@ def main() -> int:
 
     buffer = []
     cap_gen = torch.Generator().manual_seed(seed)
+    # replay subset RNG: separate stream so cap_gen (and every other draw) is
+    # untouched -- REPLAY_FRAC=0 runs are bitwise-identical to pre-replay code
+    replay_gen = (torch.Generator().manual_seed(seed + 202_608)
+                  if replay_frac > 0 else None)
     if seed_base_data:
         buffer.append({
             "t": -1, "dep": -1,
@@ -1115,6 +1171,12 @@ def main() -> int:
                      # counterfactual gate (nothing is adopted); rows mirror the
                      # scalar row['contact'] either way. Absent (empty tensor) in
                      # runs written before 2026-08-05.
+    replay_raw = []  # REPLAY_FRAC>0 only: per-deploy-round [n_labeled] bool,
+                     # True where the row carried its ORIGINAL round-0 label
+                     # (round 0 itself: all True -- the batch IS initial_data)
+    train_y_raw = [] # REPLAY_FRAC>0 only: the ACTUAL labels fed to the learner
+                     # each deploy round ([n_labeled] float), so the batch
+                     # composition is checkable end-to-end offline
 
     # gender-gap telemetry (LOG_GENDER_GAPS=1): masks + the fixed teacher's
     # prediction gap + the incremental-R^2 design matrices, all built once.
@@ -1186,6 +1248,12 @@ def main() -> int:
         if is_deploy:
             if t == 0:
                 train_data = initial_data
+                if replay_frac > 0:
+                    # round 0 trains on the full original dataset by definition
+                    replay_raw.append(
+                        torch.ones(initial_data["y"].shape[0], dtype=torch.bool))
+                    train_y_raw.append(
+                        initial_data["y"].squeeze(-1).detach().cpu().clone())
             elif data_regime == "accumulate" and pristine_frac > 0:
                 cap = train_cap if train_cap > 0 else n_labeled
                 train_data = mix_pristine_data(buffer, cap, pristine_frac, cap_gen)
@@ -1195,6 +1263,12 @@ def main() -> int:
             else:
                 train_data = select_train_data(buffer, data_regime, cur_dep)
                 train_data = subsample_train_data(train_data, train_cap, cap_gen)
+                if replay_frac > 0 and train_data is not None:
+                    train_data, rep_mask = mix_replay_data(
+                        initial_data, train_data, replay_frac, replay_gen)
+                    replay_raw.append(rep_mask)
+                    train_y_raw.append(
+                        train_data["y"].squeeze(-1).detach().cpu().clone())
             loss_block = {}
             if train_data is not None:
                 # platform-seat pre-train telemetry: current adapter on the
@@ -1518,6 +1592,9 @@ def main() -> int:
         if is_deploy and train_data is not None:
             # dataset size of THIS round's update (fresh/replace sanity: must not grow)
             row["n_train"] = int(train_data["y"].shape[0])
+            if replay_frac > 0 and replay_raw:
+                # rows of THIS round's batch that carried original round-0 labels
+                row["n_replay"] = int(replay_raw[-1].sum())
         row["jaccard_init"] = cm.jaccard_support(op, op_round0, bins=n_bins)
         if prev_op is not None:
             row["jaccard_prev"] = cm.jaccard_support(op, prev_op, bins=n_bins)
@@ -1641,6 +1718,8 @@ def main() -> int:
             "ans_idx": torch.tensor(ans_idx, dtype=torch.long),
             "twin_raw": torch.stack(twin_raw) if twin_raw else torch.empty(0),
             "gate_raw": torch.stack(gate_raw) if gate_raw else torch.empty(0),
+            "replay_raw": torch.stack(replay_raw) if replay_raw else torch.empty(0),
+            "train_y_raw": torch.stack(train_y_raw) if train_y_raw else torch.empty(0),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,
