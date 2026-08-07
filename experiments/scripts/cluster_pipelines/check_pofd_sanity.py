@@ -118,6 +118,25 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               peer gate + twin + mean conservation, gate_raw bit-replay,
               n_train fixed at TRAIN_CAP on every deploy round).
 
+  SEEDCORE    the 2026-08-07 seed-replication wave adds three gate groups:
+              (a) RETENTION -- pofdret_ runs (incl. pofdretsmk_): the
+              project's first 1-round loops (one deploy+train+update in the
+              Figure-1b environment). Config must show n_rounds=1, movielens
+              Action, sft_epochs=1, natural labels, the _b token grammar
+              (forward SFT-KL at b>0) and the trajectory must hold exactly
+              one round. Twin/peer/fresh ride the shared SOCIAL sections
+              (es=0.1 -> peer-alive on round 0, twin_raw mandatory).
+              (b) DIRECT -- pofd_/pofdw1f_ tags now get the _b token gate
+              (kl_beta + style sft iff b==0) and n_rounds=30; pofdw1f_ b>0
+              additionally requires kl_direction=forward (pofd_ b>0 is the
+              reverse-era wave, which predates the key -- no direction gate).
+              W=1/lam=0/es=0 exact-copy replay + NO-PEER already applied.
+              (c) EVERY family: the _s seed token, the _ea dose token and
+              the model slug (_qwen7b_/_olmo7b_/_llama8b_/_gemma12b_) are
+              checked against config seed/eps_ai/base_model, and
+              pofd_/pofdw1f_/pofdesf_/pofdret trajectories must hold exactly
+              config n_rounds rounds (completeness).
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -143,6 +162,18 @@ def _bit_eq(a, b):
 
 ATOL = 2e-6   # float32 blend arithmetic; W=1 makes the copy exact but the
               # stored tensors round-trip through cpu float32
+
+# model slug -> base checkpoint (seedcore wave, 2026-08-07): the slug is
+# tag-encoded in every family, so the pairing is gated universally.
+# _olmo7brom_ never matches _olmo7b_ (the token match requires the
+# trailing underscore right after the slug).
+SLUG_BASE = {
+    "qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+    "olmo7b": "allenai/OLMo-2-1124-7B-Instruct",
+    "olmo7brom": "allenai/OLMo-2-1124-7B-Instruct",
+    "llama8b": "meta-llama/Llama-3.1-8B-Instruct",
+    "gemma12b": "google/gemma-3-12b-it",
+}
 
 
 def check_run(run_dir):
@@ -187,6 +218,13 @@ def check_run(run_dir):
     # ordinary-SFT training-budget wave (2026-08-06): per-round step cap via
     # SFT_EPOCHS=0 + SFT_MAX_STEPS (_st token); covers pofdbudsmk_ too
     is_bud = name.startswith("pofdbud")
+    # one-update retention family (2026-08-07, seedcore wave): the project's
+    # first 1-round loops -- one deploy+train+population update in the
+    # Figure-1b environment (W=0.5, lam=0.2, es=0.1, ea=0.4, forward KL at
+    # b>0). Covers pofdretsmk_ too. NEW prefix on purpose: a 1-round
+    # trajectory under a pofdesf_ tag would collide with future 30-round
+    # runs of the same cell (the idempotent exec skips on presence).
+    is_ret = name.startswith("pofdret")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -333,8 +371,11 @@ def check_run(run_dir):
     # direction-free, so no direction gate there. The trailing underscore
     # keeps pofdw2fpt_/pofdws2fc_/pofdws2fsmk_ on their own branches.
     # pofdrpl_ (replay wave) shares the token grammar (_b before _ea), so it
-    # rides the same gate.
-    if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_", "pofdrpl_")):
+    # rides the same gate. pofdret (no trailing underscore: covers
+    # pofdretsmk_ too) is the seedcore retention family -- same grammar,
+    # forward at b>0 by construction.
+    if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_", "pofdrpl_",
+                        "pofdret")):
         m_b = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
         if m_b is None:
             errs.append(f"CONFIG no _b token in dirname {name!r}")
@@ -383,6 +424,43 @@ def check_run(run_dir):
         elif cfg.get("base_model") != BUD_BASE[slug]:
             errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
                         f"({slug} wants {BUD_BASE[slug]!r})")
+    if is_ret:
+        # retention family (seedcore): exactly one round, epoch-trained,
+        # natural labels, movielens Action; the _b grammar (style + forward
+        # at b>0) rides the cube-prefix gate above, W/lam/es the tokens,
+        # twin/peer/fresh the shared SOCIAL sections.
+        want.update({"n_rounds": 1, "ml_target": "Action", "sft_epochs": 1,
+                     "teacher_label_delta": 0.0})
+    if name.startswith(("pofd_", "pofdw1f_")):
+        # direct-transmission families (seedcore, 2026-08-07): the base
+        # pofd_ wave and its forward twin pofdw1f_ carry the same _b
+        # grammar as the cube families -- gate kl_beta + style against the
+        # token. pofdw1f_ b>0 is forward-KL by construction; pofd_ b>0 is
+        # the reverse-era wave (predates the KL_DIRECTION key), so only
+        # style is gated there. Both are 30-round families.
+        m_b = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
+        if m_b is None:
+            errs.append(f"CONFIG no _b token in dirname {name!r}")
+        else:
+            want_b = float(m_b.group(1).replace("p", "."))
+            got_b = float(cfg.get("kl_beta", -1.0))
+            if abs(got_b - want_b) > 1e-9:
+                errs.append(f"CONFIG kl_beta={got_b!r} (tag says {want_b!r})")
+            want["training_style"] = "sft" if want_b == 0 else "sft_kl"
+            if want_b > 0 and name.startswith("pofdw1f_"):
+                want["kl_direction"] = "forward"
+        want["n_rounds"] = 30
+    if name.startswith("pofdesf_"):
+        # main-peer home family: 30-round loops without exception
+        want["n_rounds"] = 30
+    if is_ret or name.startswith(("pofd_", "pofdw1f_", "pofdesf_")):
+        # completeness: the trajectory must hold exactly config n_rounds
+        # rounds (a partial pull or an over-run both fail)
+        nr = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr or int(op_raw.shape[0]) != nr:
+            errs.append(f"CONFIG trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config n_rounds="
+                        f"{nr} -- incomplete or over-run)")
     for k, v in want.items():
         if cfg.get(k) != v:
             errs.append(f"CONFIG {k}={cfg.get(k)!r} (want {v!r})")
@@ -539,11 +617,25 @@ def check_run(run_dir):
             if bad:
                 errs.append(f"CONFIG gg telemetry keys missing in rounds "
                             f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
-    if is_tch or is_tfe or is_rpl or is_bud or is_iclf or is_ctf:
-        m_s = re.search(r"_s(\d+)(?:_|$)", name)
-        if m_s and cfg.get("seed") != int(m_s.group(1)):
-            errs.append(f"CONFIG seed={cfg.get('seed')!r} "
-                        f"(tag says {m_s.group(1)})")
+    # universal tag-token gates (2026-08-07, seedcore wave -- previously
+    # only the tch/tfe/rpl/bud/iclf/ctf families checked the seed): every
+    # family tag-encodes the seed, the eps_AI dose and the model slug, and
+    # the configs are queue-generated from the tags, so all three must
+    # match on every run. Validated against the full local corpus (895
+    # pulled run dirs) before adoption.
+    m_s = re.search(r"_s(\d+)(?:_|$)", name)
+    if m_s and cfg.get("seed") != int(m_s.group(1)):
+        errs.append(f"CONFIG seed={cfg.get('seed')!r} "
+                    f"(tag says {m_s.group(1)})")
+    m_ea_t = re.search(r"_ea(\d+(?:p\d+)?)_", name)
+    if m_ea_t and abs(float(cfg.get("eps_ai", -1.0))
+                      - float(m_ea_t.group(1).replace("p", "."))) > 1e-9:
+        errs.append(f"CONFIG eps_ai={cfg.get('eps_ai')!r} "
+                    f"(tag says {m_ea_t.group(1)})")
+    for _slug, _bm in SLUG_BASE.items():
+        if f"_{_slug}_" in name and cfg.get("base_model") != _bm:
+            errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
+                        f"({_slug} wants {_bm!r})")
     eps_ai = float(cfg["eps_ai"])
 
     # -- 1b GATE-MASK (gate_raw, runner 2026-08-05) --------------------------

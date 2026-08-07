@@ -1216,6 +1216,172 @@ def iclx_retry_sub(which):
         **CUBE_MODELS["qwen7b"])
 
 
+# QWEN/OLMO SEED-REPLICATION CORE (2026-08-07, user), umbrella key
+# qwen_olmo_seedcore = qwen7b_seedcore + olmo7b_seedcore (+ the 1-job
+# qwen7b_seedcore_smoke): seed replicates for the three headline
+# surfaces, so the key claims carry across-seed means/CIs instead of
+# single-seed curves. EXACTLY 34 audited-missing jobs (qwen 16 + olmo
+# 18); one config file + generated .sub per model, with N_ROUNDS /
+# INNATE_LAMBDA / WITH_TWIN / ANS_SAMPLE_K queue-fed (cols 16-19) so the
+# three sub-families share a sub. AUDIT 2026-08-07 (local corpus, BY
+# CONFIG FIELDS -- all 895 pulled run dirs scanned on model/beta/kdir/
+# seed/rounds/W/lam/ea/es/style/epochs/regime):
+#   1) ONE-UPDATE RETENTION (12): both models x b {0.1,0.2,0.5} x
+#      s {42,43}, N_ROUNDS=1, in the Figure-1b environment (ea=0.4,
+#      W=0.5, lam=0.2, es=0.1, forward KL, fresh + replace, sft_kl,
+#      same training settings as the cube). NO 1-round run exists
+#      anywhere (audit: zero configs with n_rounds=1 besides pofdtch_
+#      teachers, a different protocol) -> all 12 queue. The seed-0
+#      endpoints are REUSED, not re-run: op_raw[0] of the 30-round
+#      pofdesf_{model}_b{0p1,0p2,0p5}_ea0p4_w0p5_l0p2_es0p1_s0 runs
+#      (round 0 of a 30-round run IS the one-update state -- trajectory
+#      prefix property, validated by the iclf fz8/dyn bit-identity).
+#      The b0/b1 retention endpoints at s42-45 come free the same way
+#      from the main-peer replicates below. NEW prefix pofdret_ (not
+#      pofdesf_): a 1-round trajectory under an esf tag would collide
+#      with any future 30-round run of the same cell (the idempotent
+#      exec skips on trajectory presence, so the full run would no-op
+#      against the stub). _rt is not a token -- n_rounds=1 is pinned by
+#      the prefix + config and gated by the checker's RETENTION branch.
+#   2) DIRECT TRANSMISSION (8): both models x b {0,1} x s {42,43},
+#      30 rounds, W=1, lam=0, es=0 (no peer step ever), ea=0.4, b0 ->
+#      ordinary sft (direction-free), b1 -> forward SFT-KL. Tags join
+#      the existing HOME families at new seeds (fes convention):
+#      b0 -> pofd_ (anchors pofd_{model}_b0_ea0p4_s0_fresh_data), b1 ->
+#      pofdw1f_ (anchors pofdw1f_{model}_b1_ea0p4_s0_fresh_data).
+#      Anchor-matching env: ANS_SAMPLE_K=0 (probe off in the w1f wave;
+#      predates the probe in the b0 wave) and WITH_TWIN=0 (both anchors
+#      carry no twin -- at W=1/lam=0/es=0 the no-AI twin is frozen
+#      innate, reconstructible offline). KL_DIRECTION=forward rides the
+#      shared env; b0 rows ignore it (no KL term -- cube precedent, the
+#      config records it either way).
+#   3) MAIN PEER ENVIRONMENT (14): W=0.5, lam=0.2, ea=0.4, es=0.1,
+#      30 rounds -- every model x b {0,1} cell brought to seeds
+#      {0,42,43,44,45}. On-disk audit: qwen b1 has s0 (esf) + s42/s43
+#      (fex wave), qwen b0 / olmo b0 / olmo b1 have s0 only (cube wave)
+#      -> missing = qwen b1 {44,45}, qwen b0 {42..45}, olmo b0 {42..45},
+#      olmo b1 {42..45}. Tags stay pofdesf_ via cube_tag (the es=0.1
+#      home family); seeds 44/45 are FIRST USE project-wide.
+# Statistical use (logged in BATCHES.md): (1) per-beta one-update
+# retention mean +/- CI over 3 seeds per model; (2)/(3) across-seed
+# means and paired within-seed contrasts (b1 - b0) for the direct and
+# main-peer drift/gap endpoints, n=3 (direct) / n=5 (main peer) seeds.
+# No smoke for sub-families 2/3 (every dial combination re-runs a
+# validated env at a new seed); sub-family 1 needs one: N_ROUNDS=1 has
+# NEVER run on the cluster -- the 1-round pofdretsmk_ smoke doubles as
+# a physics check, since its round 0 should match op_raw[0] of the
+# existing 30-round b0p5 s0 esf run (same seed/env; bit-exact only on
+# matching GPU hardware, the 2026-08-07 iclf finding).
+SC_MODELS = ["qwen7b", "olmo7b"]    # slugs into the CUBE_MODELS registry
+SC_RET_BETAS = [0.1, 0.2, 0.5]
+SC_RET_SEEDS = [42, 43]
+SC_DIR_BETAS = [0.0, 1.0]
+SC_DIR_SEEDS = [42, 43]
+SC_MAIN_SEEDS = [0, 42, 43, 44, 45]
+# main-peer cells already complete on disk (audit 2026-08-07, config
+# fields + 30 trajectory rounds): (model, beta, seed)
+SC_MAIN_EXISTING = {("qwen7b", 1.0, 0), ("qwen7b", 1.0, 42),
+                    ("qwen7b", 1.0, 43), ("qwen7b", 0.0, 0),
+                    ("olmo7b", 0.0, 0), ("olmo7b", 1.0, 0)}
+ROW_SC = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+          "{es}, 0.0, {w}, loop, 0.0, {eps_ai}, {nrounds}, {lam}, "
+          "{wtwin}, {ansk}")
+
+
+def sc_ret_tag(model, b, seed, prefix="pofdret"):
+    return (f"{prefix}_{model}_b{_num(b)}_ea0p4_{w_tok()}_es0p1_s{seed}"
+            f"_fresh_data")
+
+
+def sc_rows(model):
+    rows = []
+    # 1) one-update retention curve (N_ROUNDS=1, Figure-1b environment)
+    for b in SC_RET_BETAS:
+        for s in SC_RET_SEEDS:
+            rows.append(ROW_SC.format(
+                tag=sc_ret_tag(model, b, s), style="sft_kl", beta=f"{b:g}",
+                seed=s, es="0.1", w="0.5", eps_ai="0.4", nrounds=1,
+                lam="0.2", wtwin=1, ansk=16))
+    # 2) direct transmission (W=1, lam=0, es=0 -- anchor-matching env)
+    for b in SC_DIR_BETAS:
+        for s in SC_DIR_SEEDS:
+            rows.append(ROW_SC.format(
+                tag=tag_of(model, b, 0.4, s,
+                           prefix="pofd" if b == 0 else "pofdw1f"),
+                style="sft" if b == 0 else "sft_kl", beta=f"{b:g}",
+                seed=s, es="0", w="1.0", eps_ai="0.4", nrounds=30,
+                lam="0.0", wtwin=0, ansk=0))
+    # 3) main peer environment replicates (cube env, es=0.1 home family)
+    for b in SC_DIR_BETAS:
+        for s in SC_MAIN_SEEDS:
+            if (model, b, s) in SC_MAIN_EXISTING:
+                continue
+            rows.append(ROW_SC.format(
+                tag=cube_tag(model, b, 0.4, 0.1, s),
+                style="sft" if b == 0 else "sft_kl", beta=f"{b:g}",
+                seed=s, es="0.1", w="0.5", eps_ai="0.4", nrounds=30,
+                lam="0.2", wtwin=1, ansk=16))
+    return rows
+
+
+SC_SUB_TEMPLATE = """\
+# HTCondor: QWEN/OLMO SEED-REPLICATION CORE, {model}{smk_note} --
+# GENERATED by gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-07).
+# Never edit this file by hand: edit the SC_ block and rerun the script.
+# {n_jobs} job(s) in three sub-families sharing this sub via queue-fed
+# N_ROUNDS/INNATE_LAMBDA/WITH_TWIN/ANS_SAMPLE_K (cols 16-19):
+#   1) one-update retention: b {{0.1,0.2,0.5}} x s {{42,43}}, N_ROUNDS=1,
+#      Figure-1b env (ea0p4, W=0.5, lam=0.2, es=0.1, forward KL) --
+#      pofdret_ tags; seed-0 endpoints reused from the 30-round esf runs
+#   2) direct transmission: b {{0,1}} x s {{42,43}}, 30 rounds, W=1,
+#      lam=0, es=0, ea0p4, twin/probe OFF (anchor-matching) -- tags join
+#      pofd_ (b0, ordinary sft) / pofdw1f_ (b1, forward SFT-KL)
+#   3) main peer env: b {{0,1}} to seeds {{0,42,43,44,45}}, 30 rounds,
+#      ea0p4/es0p1 cube env -- pofdesf_ tags; existing cells not queued
+# Every trained row: fresh adapter + replace data, movielens Action,
+# LoRA-512, SFT_EPOCHS=1. Gate every pull with check_pofd_sanity
+# (RETENTION branch: n_rounds=1 + slug/beta/style/env; DIRECT: W=1
+# exact-copy replay + b-token style gate; main peer: cube _b gate +
+# SOCIAL twin/peer-alive; seed + ea tokens and base-model slug are now
+# gated on every family).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=$(wtwin) INNATE_LAMBDA=$(lam) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdseedcore"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, nrounds, lam, wtwin, ansk from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+def sc_sub(model, smoke=False):
+    key = f"{model}_seedcore_smoke" if smoke else f"{model}_seedcore"
+    n_jobs = 1 if smoke else len(sc_rows(model))
+    return SC_SUB_TEMPLATE.format(
+        model=model, key=key, n_jobs=n_jobs,
+        smk_note=(" SMOKE (1-round pofdretsmk_ cell; round 0 comparable "
+                  "to the 30-round esf b0p5 s0 run)" if smoke else ""),
+        **CUBE_MODELS[model])
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1967,6 +2133,26 @@ def main():
         iclx_retry_sub("iclf")
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_ctf_retry.sub")] = \
         iclx_retry_sub("ctf")
+    # qwen/olmo seed-replication core (see the SC_ comment block): exactly
+    # the 34 audited-missing cells (retention 12 + direct 8 + main peer
+    # 14); smoke = the 1-round path, never exercised on the cluster
+    assert sum(len(sc_rows(m)) for m in SC_MODELS) == 34, \
+        [len(sc_rows(m)) for m in SC_MODELS]
+    for model in SC_MODELS:
+        p = os.path.join(HERE, f"configs_pofd_{model}_seedcore.txt")
+        files[p] = sc_rows(model)
+        expected[p] = (len(SC_RET_BETAS) * len(SC_RET_SEEDS)
+                       + len(SC_DIR_BETAS) * len(SC_DIR_SEEDS)
+                       + len(SC_DIR_BETAS) * len(SC_MAIN_SEEDS)
+                       - sum(1 for c in SC_MAIN_EXISTING if c[0] == model))
+        cube_subs[os.path.join(HERE, f"at_pofd_{model}_seedcore.sub")] = \
+            sc_sub(model)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_seedcore_smoke.txt")] = [
+        ROW_SC.format(tag=sc_ret_tag("qwen7b", 0.5, 0, prefix="pofdretsmk"),
+                      style="sft_kl", beta="0.5", seed=0, es="0.1", w="0.5",
+                      eps_ai="0.4", nrounds=1, lam="0.2", wtwin=1, ansk=16)]
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_seedcore_smoke.sub")] = \
+        sc_sub("qwen7b", smoke=True)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -2020,6 +2206,8 @@ def main():
           f" + {sum(len(iclf_rows(m)) for m in ICLF_MODELS)} iclf "
           f"(frozen-context icl; audit reused 0)"
           f" + {len(ctf_rows())} ctf (SFT-to-ICL context transfer)"
+          f" + {sum(len(sc_rows(m)) for m in SC_MODELS)} seedcore "
+          f"(seed replicates: retention 12 + direct 8 + main peer 14)"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)
