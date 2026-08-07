@@ -1174,6 +1174,48 @@ def ctf_sub(smoke=False):
         **CUBE_MODELS["qwen7b"])
 
 
+# ICLX RETRY (2026-08-07): the 11 cells the g106 black hole killed in the
+# first iclx submission (each burned 5 starts alternating between broken
+# g106 and transient failures, then periodic_remove deleted it; g106 is
+# now hard-excluded from every generated sub). The user did not want the
+# 40 completed cells to re-queue even as idempotent no-ops, so these keys
+# queue EXACTLY the missing cells: qwen7b_iclf_retry (10) +
+# qwen7b_ctf_retry (1), umbrella qwen7b_iclx_retry. Rows are FILTERED
+# from the canonical generators, so dials stay byte-identical to the
+# main wave; once the cells complete, resubmitting is a pure no-op.
+ICLX_RETRY_TAGS = frozenset({
+    "pofdiclf_qwen7b_k0_ea0p1_w0p5_l0p2_es0p2_s0",
+    "pofdiclf_qwen7b_k0_ea0p4_w0p5_l0p2_es0p1_s0",
+    "pofdiclf_qwen7b_fz0_ea0p1_w0p5_l0p2_es0_s0",
+    "pofdiclf_qwen7b_fz0_ea0p1_w0p5_l0p2_es0p2_s0",
+    "pofdiclf_qwen7b_fz0_ea0p1_w0p5_l0p2_es0p3_s0",
+    "pofdiclf_qwen7b_fz0_ea0p4_w0p5_l0p2_es0p2_s0",
+    "pofdiclf_qwen7b_fz8_ea0p2_w0p5_l0p2_es0_s0",
+    "pofdiclf_qwen7b_dyn_ea0p1_w0p5_l0p2_es0p2_s0",
+    "pofdiclf_qwen7b_dyn_ea0p2_w0p5_l0p2_es0p3_s0",
+    "pofdiclf_qwen7b_dyn_ea0p4_w0p5_l0p2_es0p2_s0",
+    "pofdctf_qwen7b_b0r9_ea0p4_w0p5_l0p2_es0p2_s0",
+})
+
+
+def iclx_retry_rows(which):
+    rows = iclf_rows("qwen7b") if which == "iclf" else ctf_rows()
+    return [r for r in rows if r.split(",")[0] in ICLX_RETRY_TAGS]
+
+
+def iclx_retry_sub(which):
+    if which == "iclf":
+        return ICLF_SUB_TEMPLATE.format(
+            model="qwen7b", key="qwen7b_iclf_retry",
+            n_jobs=len(iclx_retry_rows("iclf")), n_rounds=30,
+            smk_note=" RETRY (g106 casualties only)",
+            **CUBE_MODELS["qwen7b"])
+    return CTF_SUB_TEMPLATE.format(
+        key="qwen7b_ctf_retry", n_jobs=len(iclx_retry_rows("ctf")),
+        n_rounds=30, smk_note=" RETRY (g106 casualties only)",
+        **CUBE_MODELS["qwen7b"])
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1914,6 +1956,17 @@ def main():
         ctf_rows(prefix="pofdctfsmk")
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_ctf_smoke.sub")] = \
         ctf_sub(smoke=True)
+    # iclx retry: exactly the 11 g106-killed cells (see ICLX_RETRY_TAGS)
+    p = os.path.join(HERE, "configs_pofd_qwen7b_iclf_retry.txt")
+    files[p] = iclx_retry_rows("iclf")
+    expected[p] = 10
+    p = os.path.join(HERE, "configs_pofd_qwen7b_ctf_retry.txt")
+    files[p] = iclx_retry_rows("ctf")
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_iclf_retry.sub")] = \
+        iclx_retry_sub("iclf")
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_ctf_retry.sub")] = \
+        iclx_retry_sub("ctf")
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
