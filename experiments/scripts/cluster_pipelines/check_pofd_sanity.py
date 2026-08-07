@@ -87,8 +87,13 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               snapshot round the cached (ids, vals) AND the rendered text
               never change; fixed-text perplexity constant every round
               (weights frozen); gg telemetry + matched twin present; a fz8
-              run must be bit-identical (NaN-aware) to its _dyn_ sibling
-              through round 8 when the sibling run dir exists.
+              run's SELECTION stream (icl_idx_raw, model-free RNG) must be
+              bit-identical to its _dyn_ sibling through round 8 when the
+              sibling run dir exists -- divergence there is a code bug.
+              Generated values (pred/op/icl_val) are bit-identical only on
+              matching GPU models; across heterogeneous hardware they can
+              flip borderline generations from round 0, so value divergence
+              is reported as a WARN with stats, never a failure.
 
   CTF-DONOR   pofdctf_ runs (SFT-to-ICL context transfer, incl.
               pofdctfsmk_): frozen recipient whose frozen-at-round-0 K=8
@@ -705,7 +710,16 @@ def check_run(run_dir):
             if os.path.exists(sib_pt):
                 ds = torch.load(sib_pt, map_location="cpu", weights_only=False)
                 hi = snap + 1
-                for key in ("icl_idx_raw", "icl_val_raw", "op_raw", "pred_raw"):
+                # icl_idx_raw is pure RNG (no model in the loop): divergence
+                # there is a CODE bug -> hard error. The generated VALUES
+                # (pred_raw -> op_raw -> icl_val_raw) are bit-identical only
+                # when both jobs ran on the same GPU model -- across
+                # heterogeneous hardware, fp-kernel differences flip
+                # borderline generations from round 0 (observed 2026-08-07:
+                # g204-vs-g145 pairs diverge, g146-vs-g128 pairs are
+                # bit-equal). Value divergence is therefore reported as a
+                # WARN with stats, not a failure.
+                for key in ("icl_idx_raw",):
                     a, b = d.get(key), ds.get(key)
                     if (a is None or b is None or a.numel() == 0
                             or b.numel() == 0 or a.shape[0] < hi
@@ -714,8 +728,28 @@ def check_run(run_dir):
                                     f"missing/short in one of the pair")
                     elif not _bit_eq(a[:hi].float(), b[:hi].float()):
                         errs.append(f"ICL-CTX {key} differs from the _dyn_ "
-                                    f"twin inside rounds 0..{snap} (matched "
-                                    f"seeds must be bit-identical)")
+                                    f"twin inside rounds 0..{snap} (the "
+                                    f"selection stream is model-free -- "
+                                    f"this is an RNG/code bug)")
+                for key in ("pred_raw", "op_raw", "icl_val_raw"):
+                    a, b = d.get(key), ds.get(key)
+                    if (a is None or b is None or a.numel() == 0
+                            or b.numel() == 0 or a.shape[0] < hi
+                            or b.shape[0] < hi):
+                        continue
+                    a, b = a[:hi].float(), b[:hi].float()
+                    if not _bit_eq(a, b):
+                        neq = ~((a == b) | (torch.isnan(a) & torch.isnan(b)))
+                        t0 = int(neq.reshape(hi, -1).any(dim=1).nonzero()[0])
+                        dd = (a - b).abs()
+                        mx = float(dd[neq & torch.isfinite(dd)].max()) \
+                            if bool((neq & torch.isfinite(dd)).any()) else 0.0
+                        print(f"WARN {name}: {key} differs from the _dyn_ "
+                              f"twin from round {t0} "
+                              f"({int(neq.reshape(hi, -1)[t0].sum())} entries"
+                              f", max |diff| {mx:.4f}) -- expected across "
+                              f"heterogeneous GPUs; selection stream is "
+                              f"bit-identical")
 
     # -- 1e CTF-DONOR (icl_ctx_source=donor, runner 2026-08-07) --------------
     # Context-transfer provenance: the saved donor vector must hash to the
