@@ -962,8 +962,11 @@ def bud_sub(model, smoke=False):
 #               profiles, displayed values; rounds <= 8 replay the
 #               dynamic selection stream exactly, so fz8 and dyn are
 #               bit-identical through round 8 at matched seeds)
-#   x ea {0.1, 0.2, 0.4} x es {0, 0.1, 0.2, 0.3} x seeds {0, 42, 43}
-#   = 144 cells; W=0.5, lam=0.2, gamma=0, K=8 random live exemplars,
+#   x ea {0.1, 0.2, 0.4} x es {0, 0.1, 0.2, 0.3} x seeds
+#   (RESCOPED 2026-08-07, user: "144 jobs?" -> one seed; the original
+#   3-seed spec {0, 42, 43} = 144 cells was too many jobs. Seed 0 =
+#   48 cells; extend ICLF_SEEDS + rerun for replicates)
+#   W=0.5, lam=0.2, gamma=0, K=8 random live exemplars,
 #   30 rounds, frozen weights (nothing trains), LOG_GENDER_GAPS=1,
 #   WITH_TWIN=1. Every ICL_K>0 run saves icl_idx_raw/icl_val_raw
 #   (exact exemplar ids + displayed values) and icl_ctx_log.json.gz
@@ -983,7 +986,8 @@ def bud_sub(model, smoke=False):
 ICLF_ARMS = [("k0", 0, -1), ("fz0", 8, 0), ("fz8", 8, 8), ("dyn", 8, -1)]
 ICLF_EAS = [0.1, 0.2, 0.4]
 ICLF_ESS = [0.0, 0.1, 0.2, 0.3]
-ICLF_SEEDS = [0, 42, 43]
+# rescoped 2026-08-07: one seed per cell (extend + rerun for replicates)
+ICLF_SEEDS = [0]
 ICLF_MODELS = ["qwen7b"]        # slugs into the CUBE_MODELS registry
 ROW_ICLF = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
             "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {iclk}, {snap}")

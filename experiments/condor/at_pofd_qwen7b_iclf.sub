@@ -1,7 +1,7 @@
 # HTCondor: PER-AGENT FROZEN-CONTEXT ICL, qwen7b -- GENERATED
 # by gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-07). Never
 # edit this file by hand: edit the ICLF_ block and rerun the script.
-# 144 job(s): frozen-weights loops, arms k0 (no context) / dyn
+# 48 job(s): frozen-weights loops, arms k0 (no context) / dyn
 # (rebuilt every round) / fz0 / fz8 (context frozen verbatim at the
 # snapshot round), K=8 random live exemplars, 30 rounds,
 # W_PLAT=0.5, INNATE_LAMBDA=0.2, gamma=0, movielens Action,
