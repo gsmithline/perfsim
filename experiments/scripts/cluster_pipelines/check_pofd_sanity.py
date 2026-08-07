@@ -90,6 +90,20 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               run must be bit-identical (NaN-aware) to its _dyn_ sibling
               through round 8 when the sibling run dir exists.
 
+  CTF-DONOR   pofdctf_ runs (SFT-to-ICL context transfer, incl.
+              pofdctfsmk_): frozen recipient whose frozen-at-round-0 K=8
+              context displays a DONOR run's opinions (arm pri = donor
+              innate; b0r9/b1r9 = the b0/b1 fes donor's op_raw[9]; donor
+              tag+round+sha256 in config). Checks: saved donor vector
+              hashes to the config hash; displayed values == donor[ids]
+              exactly every round; pri donor == recipient innate; vector
+              re-derives bit-exactly from the donor run when pulled
+              alongside; matched arms share exemplar identities; donor
+              gg / incremental-R^2 / realized-context-gap diagnostics and
+              per-row gg_ctx_true present. Shares the ICL-CTX section's
+              frozen-context checks (self-exclusion, cache immutability,
+              constant perplexity, gg + twin).
+
   BUDGET      pofdbud_ runs (training-budget wave, incl. pofdbudsmk_):
               ordinary SFT at b0 with a per-round optimizer-step cap --
               config must show training_style=sft, kl_beta=0, sft_epochs=0,
@@ -106,6 +120,7 @@ Exit 0 iff every run passes every check.
 """
 import glob
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -146,6 +161,11 @@ def check_run(run_dir):
     is_iclf = name.startswith("pofdiclf")
     is_icl = (name.startswith("pofdicl")   # covers pofdiclsmk_ too
               and not is_iclf)
+    # SFT-to-ICL context-transfer wave (2026-08-07, pofdctf_/pofdctfsmk_):
+    # frozen recipient whose K=8 context displays a DONOR run's opinions
+    is_ctf = name.startswith("pofdctf")
+    # families sharing the frozen-context mandatory checks in section 1d
+    is_ctx_fam = is_iclf or is_ctf
     # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
     # pofdwdpo/pofdwdpon/pofdwdposmk (same config surface, W/lam via tokens)
     is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
@@ -213,6 +233,42 @@ def check_run(run_dir):
             if got != (k_w, snap_w):
                 errs.append(f"CONFIG icl (k, snapshot)={got!r} (arm "
                             f"{m_arm.group(1)} wants {(k_w, snap_w)!r})")
+    elif is_ctf:
+        # context-transfer: frozen recipient, donor-valued context frozen at
+        # round 0, canonical peer dose. Arm token maps to (donor round,
+        # donor tag): pri = donor innate (round -1) read from the b1 donor;
+        # b0r9 / b1r9 = the b0 / b1 fes donor's op_raw[9] (round 9 fixed for
+        # every seed -- the three-seed mean population incremental gender
+        # R^2 peak under the paper's cross-fitted taste protocol, verified
+        # 2026-08-07). The b0 s0 donor lives under the reverse-era pofdws2_
+        # tag (b0 = sft, direction-free -- the fes reuse precedent).
+        want.update({"kl_beta": 0.0, "training_style": "frozen",
+                     "pristine_frac": 0.0, "fresh_each_round": False,
+                     "use_lora": 0, "icl_select": "random", "icl_days": 0,
+                     "icl_ctx_source": "donor", "icl_k": 8,
+                     "icl_snapshot_round": 0, "ml_target": "Action",
+                     "log_gender_gaps": True, "teacher_label_delta": 0.0,
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct"})
+        m_arm = re.search(r"_(pri|b0r9|b1r9)_ea", name)
+        m_sd = re.search(r"_s(\d+)(?:_|$)", name)
+        if m_arm is None or m_sd is None:
+            errs.append(f"CONFIG no ctf arm/seed token in dirname {name!r}")
+        else:
+            sd = int(m_sd.group(1))
+            b1_tag = (f"pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s{sd}"
+                      f"_fresh_data")
+            b0_fam = "pofdws2_" if sd == 0 else "pofdws2f_"
+            b0_tag = (f"{b0_fam}qwen7b_b0_ea0p4_w0p5_l0p2_es0p2_s{sd}"
+                      f"_fresh_data")
+            CTF_ARM_WANT = {"pri": (b1_tag, -1), "b0r9": (b0_tag, 9),
+                            "b1r9": (b1_tag, 9)}
+            tag_w, rnd_w = CTF_ARM_WANT[m_arm.group(1)]
+            got = (cfg.get("icl_ctx_donor_tag"),
+                   cfg.get("icl_ctx_donor_round"))
+            if got != (tag_w, rnd_w):
+                errs.append(f"CONFIG donor (tag, round)={got!r} (arm "
+                            f"{m_arm.group(1)} s{sd} wants "
+                            f"{(tag_w, rnd_w)!r})")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
         # configs, not here. rlhf_feedback IS recorded and tag-checked below.
@@ -478,7 +534,7 @@ def check_run(run_dir):
             if bad:
                 errs.append(f"CONFIG gg telemetry keys missing in rounds "
                             f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
-    if is_tch or is_tfe or is_rpl or is_bud or is_iclf:
+    if is_tch or is_tfe or is_rpl or is_bud or is_iclf or is_ctf:
         m_s = re.search(r"_s(\d+)(?:_|$)", name)
         if m_s and cfg.get("seed") != int(m_s.group(1)):
             errs.append(f"CONFIG seed={cfg.get('seed')!r} "
@@ -576,7 +632,7 @@ def check_run(run_dir):
     icl_k_cfg = int(cfg.get("icl_k") or 0)
     snap = cfg.get("icl_snapshot_round")
     snap = -1 if snap is None else int(snap)
-    if is_iclf and icl_k_cfg > 0 and (ii is None or ii.numel() == 0):
+    if is_ctx_fam and icl_k_cfg > 0 and (ii is None or ii.numel() == 0):
         errs.append("ICL-CTX icl_k>0 but icl_idx_raw missing/empty (runner "
                     "predates the snapshot patch?)")
     if ii is not None and ii.numel() > 0:
@@ -624,9 +680,9 @@ def check_run(run_dir):
                             errs.append(f"ICL-CTX round {r['round']}: rendered "
                                         f"context TEXT changed after snapshot")
                             break
-            elif is_iclf:
+            elif is_ctx_fam:
                 errs.append("ICL-CTX icl_ctx_log.json.gz missing")
-    if is_iclf:
+    if is_ctx_fam:
         ppls = [r["perplexity"] for r in traj if "perplexity" in r]
         if ppls and len(set(ppls)) != 1:
             errs.append(f"ICL-CTX fixed-text perplexity varies across rounds "
@@ -660,6 +716,77 @@ def check_run(run_dir):
                         errs.append(f"ICL-CTX {key} differs from the _dyn_ "
                                     f"twin inside rounds 0..{snap} (matched "
                                     f"seeds must be bit-identical)")
+
+    # -- 1e CTF-DONOR (icl_ctx_source=donor, runner 2026-08-07) --------------
+    # Context-transfer provenance: the saved donor vector must hash to the
+    # config hash, the displayed context values must equal donor[ids] EXACTLY
+    # in every round, a pri arm's donor vector must BE the recipient innate,
+    # the vector must re-derive bit-exactly from the donor run when it is
+    # pulled alongside, matched arms must share exemplar identities, and the
+    # donor gg / realized-context-gap diagnostics must be present.
+    if cfg.get("icl_ctx_source") == "donor":
+        dv = d.get("icl_donor_vec")
+        if dv is None or dv.numel() == 0:
+            errs.append("CTF icl_donor_vec missing from trajectory.pt")
+        else:
+            dv = dv.float()
+            h = hashlib.sha256(
+                dv.contiguous().numpy().tobytes()).hexdigest()
+            if h != cfg.get("icl_ctx_donor_hash"):
+                errs.append("CTF donor vector sha256 != config "
+                            "icl_ctx_donor_hash")
+            d_rnd = cfg.get("icl_ctx_donor_round")
+            d_rnd = -1 if d_rnd is None else int(d_rnd)
+            if d_rnd < 0 and not torch.equal(dv, innate):
+                errs.append("CTF pri arm: donor vector != recipient innate "
+                            "(round -1 must display pristine round-0 "
+                            "opinions)")
+            ii_c = d.get("icl_idx_raw")
+            iv_c = d.get("icl_val_raw")
+            if (ii_c is not None and ii_c.numel() > 0 and iv_c is not None
+                    and iv_c.shape == ii_c.shape):
+                want_v = dv[ii_c.long()]
+                if not torch.equal(iv_c.float(), want_v):
+                    errs.append("CTF displayed context values != donor "
+                                "vector at the logged exemplar ids")
+            # provenance re-derivation from the donor run, when pulled
+            parent = os.path.dirname(run_dir.rstrip("/")) or "."
+            d_tag = cfg.get("icl_ctx_donor_tag") or ""
+            d_pt = os.path.join(parent, d_tag, "trajectory.pt")
+            if d_tag and os.path.exists(d_pt):
+                dd = torch.load(d_pt, map_location="cpu", weights_only=False)
+                src = (dd["innate"] if d_rnd < 0 else dd["op_raw"][d_rnd])
+                if not torch.equal(dv, src.float()):
+                    errs.append(f"CTF donor vector != {d_tag}"
+                                f"{' innate' if d_rnd < 0 else f' op_raw[{d_rnd}]'}"
+                                f" (provenance re-derivation failed)")
+            # matched arms share exemplar identities (values-only manipulation)
+            m_arm_c = re.search(r"_(pri|b0r9|b1r9)_ea", name)
+            if m_arm_c and ii_c is not None and ii_c.numel() > 0:
+                for other in ("pri", "b0r9", "b1r9"):
+                    if other == m_arm_c.group(1):
+                        continue
+                    sib_pt = os.path.join(
+                        parent, name.replace(f"_{m_arm_c.group(1)}_",
+                                             f"_{other}_"), "trajectory.pt")
+                    if os.path.exists(sib_pt):
+                        ds = torch.load(sib_pt, map_location="cpu",
+                                        weights_only=False)
+                        ii_s = ds.get("icl_idx_raw")
+                        if (ii_s is None or ii_s.numel() == 0
+                                or not torch.equal(ii_c.long(), ii_s.long())):
+                            errs.append(f"CTF exemplar identities differ "
+                                        f"from the _{other}_ arm (matched "
+                                        f"arms must differ ONLY in "
+                                        f"displayed values)")
+        if (d.get("icl_donor_gg") is None or d.get("icl_donor_r2_inc") is None
+                or d.get("icl_ctx_gg") is None):
+            errs.append("CTF donor gg / r2 / realized-context-gap "
+                        "diagnostics missing")
+        elif any("gg_ctx_true" not in r for r in traj):
+            errs.append("CTF gg_ctx_true missing from trajectory rows")
+    elif d.get("icl_donor_vec") is not None and d["icl_donor_vec"].numel():
+        errs.append("CTF icl_donor_vec present but icl_ctx_source != donor")
 
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
@@ -726,7 +853,7 @@ def check_run(run_dir):
         elif tuple(tw.shape) != tuple(op_raw.shape):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
-        if is_icl or is_iclf:
+        if is_icl or is_iclf or is_ctf:
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_)
             return errs
@@ -772,7 +899,7 @@ def check_run(run_dir):
 
     # -- 4 FRESH -------------------------------------------------------------
     # icl (frozen): nothing trains, no n_train ever -- skip.
-    if is_icl or is_iclf:
+    if is_icl or is_iclf or is_ctf:
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
 

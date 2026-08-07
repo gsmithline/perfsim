@@ -48,6 +48,15 @@ appended one JSON line per round to telemetry.json (crash-safe):
               each agent's round-R context verbatim (ids, order, profiles,
               displayed values; no RNG drawn on frozen rounds), so freeze-R
               and dynamic twins are bit-identical through round R.
+              ICL_CTX_SOURCE=donor (2026-08-07): exemplar VALUES come from a
+              donor run's saved population (ICL_CTX_DONOR dir +
+              ICL_CTX_DONOR_ROUND; -1 = donor innate). config.json records
+              the donor tag/round/sha256; trajectory.pt stores the full
+              donor vector (icl_donor_vec) plus donor gg / incremental-R^2
+              diagnostics and the realized displayed-context gap
+              (icl_ctx_gg, also per-row as gg_ctx_true). Identities still
+              come from the recipient's selection stream; the recipient
+              population never starts from donor opinions.
   replay_raw / train_y_raw   trajectory.pt, REPLAY_FRAC>0 runs only
               (exact initial-data replay, replace regime): per deploy round
               the [n_labeled] bool label-source mask (True = row kept its
@@ -60,6 +69,7 @@ appended one JSON line per round to telemetry.json (crash-safe):
 from __future__ import annotations
 
 import gzip
+import hashlib
 import importlib.util
 import json
 import os
@@ -616,6 +626,17 @@ def main() -> int:
     # rounds, and rounds <= R replay the legacy selection stream exactly, so
     # a frozen run is bit-identical to its dynamic twin through round R).
     icl_snapshot_round = _env_int("ICL_SNAPSHOT_ROUND", -1)
+    # ICL_CTX_SOURCE=donor (context-transfer wave, 2026-08-07): exemplar
+    # VALUES come from another run's saved population. ICL_CTX_DONOR is the
+    # donor run dir; ICL_CTX_DONOR_ROUND selects op_raw[round], -1 = the
+    # donor's innate (pristine round-0 opinions). Exemplar identities/order
+    # still come from the recipient's own selection stream, so matched arms
+    # that differ only in the donor show IDENTICAL exemplar ids. The donor
+    # vector, its sha256, tag and round are recorded for provenance; the
+    # recipient population NEVER starts from donor opinions (only the
+    # displayed context values change).
+    icl_ctx_donor = os.environ.get("ICL_CTX_DONOR", "")
+    icl_ctx_donor_round = _env_int("ICL_CTX_DONOR_ROUND", -1)
     # SAVE_ADAPTER_ROUNDS="10,30" (1-indexed): save the LoRA adapter after
     # training in those rounds (adapter_r<k>/), for checkpointed frozen evals
     # (Tree-3 consistency probe). Round-0 adapter is always saved anyway.
@@ -750,12 +771,26 @@ def main() -> int:
         raise ValueError("ICL_SELECT must be 'random' or 'knn'")
     if icl_select == "knn" and icl_k <= 0:
         raise ValueError("ICL_SELECT=knn requires ICL_K > 0")
-    if icl_ctx_source not in ("live", "noai", "pristine"):
-        raise ValueError("ICL_CTX_SOURCE must be 'live', 'noai', or 'pristine'")
+    if icl_ctx_source not in ("live", "noai", "pristine", "donor"):
+        raise ValueError("ICL_CTX_SOURCE must be 'live', 'noai', 'pristine', "
+                         "or 'donor'")
     if icl_ctx_source != "live" and icl_k <= 0:
         raise ValueError("ICL_CTX_SOURCE control requires ICL_K > 0")
     if icl_ctx_source == "noai" and pop_model != "ab":
         raise ValueError("ICL_CTX_SOURCE=noai requires POP_MODEL=ab")
+    if icl_ctx_source == "donor":
+        if icl_k <= 0:
+            raise ValueError("ICL_CTX_SOURCE=donor requires ICL_K > 0")
+        if not icl_ctx_donor or not os.path.exists(
+                os.path.join(icl_ctx_donor, "trajectory.pt")):
+            raise ValueError(f"ICL_CTX_DONOR trajectory not found: "
+                             f"{icl_ctx_donor!r}")
+        if icl_snapshot_round < 0:
+            raise ValueError("ICL_CTX_SOURCE=donor is a FROZEN-context "
+                             "design: set ICL_SNAPSHOT_ROUND (0 for the "
+                             "context-transfer wave)")
+    elif icl_ctx_donor:
+        raise ValueError("ICL_CTX_DONOR set but ICL_CTX_SOURCE != 'donor'")
     if icl_snapshot_round >= 0 and icl_k <= 0:
         raise ValueError("ICL_SNAPSHOT_ROUND requires ICL_K > 0 (there is no "
                          "exemplar context to freeze)")
@@ -804,6 +839,29 @@ def main() -> int:
                              "base as the fixed anchor; no second model in memory)")
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    # donor context load (ICL_CTX_SOURCE=donor): the exact opinion vector the
+    # exemplar lines will display, hashed for provenance. Loaded BEFORE the
+    # config write so tag/round/hash land in config.json.
+    icl_donor_vec = None
+    icl_donor_hash = None
+    icl_donor_tag = None
+    if icl_ctx_source == "donor":
+        _dd = torch.load(Path(icl_ctx_donor) / "trajectory.pt",
+                         map_location="cpu", weights_only=False)
+        if icl_ctx_donor_round >= 0 and \
+                icl_ctx_donor_round >= _dd["op_raw"].shape[0]:
+            raise ValueError(f"ICL_CTX_DONOR_ROUND={icl_ctx_donor_round} "
+                             f"beyond donor rounds {_dd['op_raw'].shape[0]}")
+        _src = (_dd["innate"] if icl_ctx_donor_round < 0
+                else _dd["op_raw"][icl_ctx_donor_round])
+        icl_donor_vec = _src.detach().float().cpu().contiguous().clone()
+        icl_donor_hash = hashlib.sha256(
+            icl_donor_vec.numpy().tobytes()).hexdigest()
+        icl_donor_tag = _dd["config"].get("run_tag")
+        del _dd
+        print(f"[run] ICL donor context: {icl_donor_tag!r} round "
+              f"{icl_ctx_donor_round} (n={icl_donor_vec.shape[0]}, "
+              f"sha256={icl_donor_hash[:12]}...)", flush=True)
     config = {
         "run_tag": run_tag, "kl_beta": kl_beta, "kl_direction": kl_direction,
         "kl_ref_adapter": kl_ref_adapter,
@@ -828,6 +886,11 @@ def main() -> int:
         "icl_k": icl_k, "icl_days": icl_days, "icl_select": icl_select,
         "icl_ctx_source": icl_ctx_source,
         "icl_snapshot_round": icl_snapshot_round,
+        "icl_ctx_donor": icl_ctx_donor or None,
+        "icl_ctx_donor_tag": icl_donor_tag,
+        "icl_ctx_donor_round": (icl_ctx_donor_round
+                                if icl_ctx_source == "donor" else None),
+        "icl_ctx_donor_hash": icl_donor_hash,
         "feedback_mode": feedback_mode,
         "icrh": icrh_on, "reward_kind": reward_kind, "ab_retain": ab_retain,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
@@ -1138,6 +1201,9 @@ def main() -> int:
     tel_path = out_dir / "telemetry.json"
     tel_path.write_text("")  # truncate any stale rows from a previous attempt
 
+    if icl_donor_vec is not None and icl_donor_vec.shape[0] != n:
+        raise ValueError(f"ICL donor vector has {icl_donor_vec.shape[0]} "
+                         f"agents, recipient population has {n}")
     mask = torch.zeros(n, dtype=torch.bool)
     mask[:n_labeled] = True
     idx_all = torch.arange(n)
@@ -1211,6 +1277,9 @@ def main() -> int:
                       # (floats; the prompt renders them as {v:.2f})
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
+    icl_ctx_gg = None   # realized displayed-context gender gap, computed once
+                        # at the snapshot freeze (repeated per row as
+                        # gg_ctx_true when gg telemetry is on)
 
     # gender-gap telemetry (LOG_GENDER_GAPS=1): masks + the fixed teacher's
     # prediction gap + the incremental-R^2 design matrices, all built once.
@@ -1272,6 +1341,20 @@ def main() -> int:
         gg_x_gender_true = gg_true_mask.float().unsqueeze(-1)
         if gg_disp_mask is not None:
             gg_x_gender_disp = gg_disp_mask.float().unsqueeze(-1)
+    # donor-vector diagnostics (context-transfer wave): the donor's gender
+    # gap and incremental gender R^2 under the runner's OLS protocol (the
+    # paper's cross-fitted taste-only protocol lives in the plot scripts) --
+    # saved to trajectory.pt so the transfer dose is auditable per run
+    icl_donor_gg = icl_donor_r2 = None
+    if icl_donor_vec is not None and log_gender_gaps:
+        icl_donor_gg = _gender_gap(icl_donor_vec, gg_true_mask)
+        _r2o_d = _r2_lstsq(gg_X_other, icl_donor_vec)
+        _r2t_d = _r2_lstsq(
+            torch.cat([gg_X_other, gg_x_gender_true], 1), icl_donor_vec)
+        icl_donor_r2 = (_r2t_d - _r2o_d if np.isfinite(_r2t_d)
+                        and np.isfinite(_r2o_d) else float("nan"))
+        print(f"[run] donor context diagnostics: gg={icl_donor_gg:+.4f} "
+              f"r2_inc={icl_donor_r2:+.5f}", flush=True)
 
     print(f"[run] loop: n_rounds={n_rounds} epoch_size={epoch_size} "
           f"deploy_every={deploy_every} regime={data_regime} pop={pop_model} "
@@ -1381,6 +1464,10 @@ def main() -> int:
                     elif icl_ctx_source == "noai":
                         # same users at the same round in the matched no-AI world
                         ex_y = ab_x_cf.detach().cpu()[ex_idx.long()]
+                    elif icl_ctx_source == "donor":
+                        # donor VALUES, recipient identities/order (matched
+                        # arms differ only in what the exemplars display)
+                        ex_y = icl_donor_vec[ex_idx.long()]
                     ex_agents = ex_idx.numpy()
                     if icl_select == "knn":
                         # taste matrix for kNN selection: genre-rating columns,
@@ -1458,6 +1545,13 @@ def main() -> int:
                     if (icl_snapshot_round >= 0 and icl_ctx_cache is None
                             and t == icl_snapshot_round):
                         icl_ctx_cache = (ids_t.clone(), vals_t.clone())
+                        if log_gender_gaps and gg_true_mask is not None:
+                            # realized context gap: displayed values grouped
+                            # by the EXEMPLAR's true gender, over every
+                            # (agent, slot) in the frozen contexts
+                            icl_ctx_gg = _gender_gap(
+                                vals_t.flatten(),
+                                gg_true_mask[ids_t.flatten()])
                         print(f"[round {t}] ICL context FROZEN for all {n} "
                               f"agents (K={icl_k}); later rounds reuse it "
                               f"verbatim", flush=True)
@@ -1708,6 +1802,19 @@ def main() -> int:
             _r2t = _r2_lstsq(torch.cat([gg_X_other, gg_x_gender_true], 1), _gp_)
             row["gg_r2_inc_true"] = (_r2t - _r2o if np.isfinite(_r2t)
                                      and np.isfinite(_r2o) else float("nan"))
+            # POPULATION incremental R^2 (2026-08-07): same protocol on the
+            # opinions themselves -- the context-transfer wave reports this
+            # alongside the prediction-based key above
+            _r2oo = _r2_lstsq(gg_X_other, _go_)
+            _r2ot = _r2_lstsq(torch.cat([gg_X_other, gg_x_gender_true], 1),
+                              _go_)
+            row["gg_r2_inc_op_true"] = (_r2ot - _r2oo if np.isfinite(_r2ot)
+                                        and np.isfinite(_r2oo)
+                                        else float("nan"))
+            if icl_ctx_gg is not None:
+                # constant by construction (frozen context) -- repeated per
+                # row so every round is self-contained, like gg_teacher
+                row["gg_ctx_true"] = icl_ctx_gg
             if gg_x_gender_disp is not None:
                 _r2d = _r2_lstsq(torch.cat([gg_X_other, gg_x_gender_disp], 1),
                                  _gp_)
@@ -1793,6 +1900,11 @@ def main() -> int:
             "train_y_raw": torch.stack(train_y_raw) if train_y_raw else torch.empty(0),
             "icl_idx_raw": torch.stack(icl_idx_raw) if icl_idx_raw else torch.empty(0),
             "icl_val_raw": torch.stack(icl_val_raw) if icl_val_raw else torch.empty(0),
+            "icl_donor_vec": (icl_donor_vec if icl_donor_vec is not None
+                              else torch.empty(0)),
+            "icl_donor_gg": icl_donor_gg,
+            "icl_donor_r2_inc": icl_donor_r2,
+            "icl_ctx_gg": icl_ctx_gg,
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,

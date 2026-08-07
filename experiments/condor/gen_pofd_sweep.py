@@ -1059,6 +1059,121 @@ def iclf_sub(model, smoke=False):
         **CUBE_MODELS[model])
 
 
+# SFT-TO-ICL CONTEXT TRANSFER (2026-08-07, user), key qwen7b_ctf
+# (+ qwen7b_ctf_smoke): does a FROZEN model transported into an SFT-
+# shaped information environment reproduce the drift channel? Frozen
+# Qwen recipients whose K=8 random exemplar context (frozen verbatim at
+# round 0, ICL_CTX_SOURCE=donor) displays a DONOR population's
+# opinions; the recipient population always starts from its own innate
+# opinions. Canonical peer dose: ea=0.4, es=0.2, W=0.5, lam=0.2, 30
+# rounds, gg telemetry + matched twin on. Matched arms differ ONLY in
+# the displayed values (identities ride the recipient's own selection
+# stream -- identical across arms at a matched seed, checker-enforced):
+#   pri  = donor innate (pristine round-0 opinions; round -1)
+#   b0r9 = the b0 (ordinary-SFT) fes donor's op_raw[9]
+#   b1r9 = the b1 (forward SFT-KL) fes donor's op_raw[9]
+# DONOR ROUND 9, FIXED FOR EVERY SEED (user spec): the three-seed mean
+# population incremental gender R^2 of the b1 fes donors peaks at round
+# 9 under the paper's cross-fitted taste-only protocol
+# (plot_feature_endogenization_beta_final.incremental_r2; VERIFIED
+# 2026-08-07: mean argmax = 9, per-seed argmaxes 9/15/23 -- no
+# per-seed peak selection). NOTE the runner-protocol OLS full-design
+# variant peaks at 13; the paper protocol is canonical for this
+# quantity. Donors (audited complete on cluster + locally):
+#   b1: pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s{seed}_fresh_data
+#   b0: s0 under the reverse-era pofdws2_ tag (b0 = sft,
+#       direction-free -- the fes reuse precedent); s42/43 pofdws2f_.
+# RESCOPED AT BIRTH (user: "only do 1 seed for this as well"): the
+# 3-seed spec (9 jobs) runs at seed 0 only -> 3 full jobs; extend
+# CTF_SEEDS + rerun for replicates. Smoke = the same 3 arms at seed 0,
+# 10 rounds (gates the donor-load path + cross-arm identity check).
+# Provenance saved per run: donor tag/round/sha256 in config.json, the
+# full donor vector + donor gg/incremental-R^2 + realized context gap
+# in trajectory.pt, per-agent ids/values/rendered text as in the iclf
+# wave. check_pofd_sanity CTF-DONOR section verifies hash, exact
+# value-indexing, pri==innate, donor re-derivation, cross-arm
+# identity, and diagnostics.
+CTF_ARMS = [("pri", "b1", -1), ("b0r9", "b0", 9), ("b1r9", "b1", 9)]
+CTF_SEEDS = [0]   # rescoped at birth; spec grid was {0, 42, 43}
+CTF_EA = 0.4
+CTF_ES = 0.2
+ROW_CTF = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+           "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, 8, 0, {donor}, {dround}")
+
+
+def ctf_donor_tag(which, seed):
+    if which == "b1":
+        return (f"pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s{seed}"
+                f"_fresh_data")
+    fam = "pofdws2_" if seed == 0 else "pofdws2f_"
+    return f"{fam}qwen7b_b0_ea0p4_w0p5_l0p2_es0p2_s{seed}_fresh_data"
+
+
+def ctf_tag(arm, seed, prefix="pofdctf"):
+    return (f"{prefix}_qwen7b_{arm}_ea{_num(CTF_EA)}_{w_tok()}"
+            f"_es{_num(CTF_ES)}_s{seed}")
+
+
+def ctf_rows(prefix="pofdctf"):
+    return [ROW_CTF.format(
+        tag=ctf_tag(arm, s, prefix), seed=s, es=f"{CTF_ES:g}",
+        eps_ai=f"{CTF_EA:g}", donor=ctf_donor_tag(which, s), dround=dr)
+        for arm, which, dr in CTF_ARMS for s in CTF_SEEDS]
+
+
+CTF_SUB_TEMPLATE = """\
+# HTCondor: SFT-TO-ICL CONTEXT TRANSFER, qwen7b{smk_note} -- GENERATED
+# by gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-07). Never
+# edit this file by hand: edit the CTF_ block and rerun the script.
+# {n_jobs} job(s): frozen Qwen recipients, K=8 random context FROZEN at
+# round 0 displaying DONOR opinions (ICL_CTX_SOURCE=donor; arms pri =
+# donor innate, b0r9/b1r9 = the b0/b1 fes donor's op_raw[9] -- round 9
+# = the verified three-seed-mean peak of population incremental gender
+# R^2, fixed for every seed). ea=0.4, es=0.2, W=0.5, lam=0.2,
+# {n_rounds} rounds, movielens Action, LOG_GENDER_GAPS=1, WITH_TWIN=1.
+# Donor dir + round ride the queue (cols 18-19); donor tag/round/sha256
+# land in config.json, the donor vector + gg diagnostics in
+# trajectory.pt. Recipient populations start from their OWN innate
+# opinions -- only the displayed context values change across arms.
+# Gate every pull with check_pofd_sanity (CTF-DONOR + ICL-CTX
+# sections); pull all three arms side by side so the cross-arm
+# identity check runs.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_CTX_DONOR=/home/gsmithline/perfsim/runs/pokec_gated_lm/$(donor) ICL_CTX_DONOR_ROUND=$(dround) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=donor LOG_GENDER_GAPS=1 WITH_TWIN=1 INNATE_LAMBDA=0.2 USE_LORA=0 FRESH_EACH_ROUND=0 TRAIN_CAP=723 N_ROUNDS={n_rounds} EPOCH_SIZE=100 BASE_MODEL={base_model} GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofdctf"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, iclk, snap, donor, dround from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+def ctf_sub(smoke=False):
+    key = "qwen7b_ctf_smoke" if smoke else "qwen7b_ctf"
+    return CTF_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(ctf_rows()), n_rounds=10 if smoke else 30,
+        smk_note=" SMOKE (3 arms, 10 rounds)" if smoke else "",
+        **CUBE_MODELS["qwen7b"])
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1789,6 +1904,16 @@ def main():
         for arm, k, snap in ICLF_ARMS if arm in ("dyn", "fz8")]
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_iclf_smoke.sub")] = \
         iclf_sub("qwen7b", smoke=True)
+    # SFT-to-ICL context transfer (see the CTF_ comment block): 3 arms x
+    # seed 0; donor dirs ride the queue
+    p = os.path.join(HERE, "configs_pofd_qwen7b_ctf.txt")
+    files[p] = ctf_rows()
+    expected[p] = len(CTF_ARMS) * len(CTF_SEEDS)
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_ctf.sub")] = ctf_sub()
+    files[os.path.join(HERE, "configs_pofd_qwen7b_ctf_smoke.txt")] = \
+        ctf_rows(prefix="pofdctfsmk")
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_ctf_smoke.sub")] = \
+        ctf_sub(smoke=True)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -1841,6 +1966,7 @@ def main():
           f"(SFT step cap; full epoch reused)"
           f" + {sum(len(iclf_rows(m)) for m in ICLF_MODELS)} iclf "
           f"(frozen-context icl; audit reused 0)"
+          f" + {len(ctf_rows())} ctf (SFT-to-ICL context transfer)"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)
