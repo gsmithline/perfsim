@@ -948,6 +948,113 @@ def bud_sub(model, smoke=False):
         **CUBE_MODELS[model])
 
 
+# PER-AGENT FROZEN-CONTEXT ICL (2026-08-07, user), key qwen7b_iclf
+# (+ qwen7b_iclf_smoke): is the context-mediated drift channel driven by
+# the exemplars UPDATING, or by their mere presence? Qwen-only frozen
+# loops on movielens Action with the runner's new ICL_SNAPSHOT_ROUND:
+#   arms  k0  = no context        (ICL_K=0, snapshot unset)
+#         dyn = dynamic context   (ICL_K=8, snapshot -1: legacy rebuild
+#               every round, code path byte-identical to icl2/icls2)
+#         fz0 = freeze at round 0 (ICL_K=8, ICL_SNAPSHOT_ROUND=0)
+#         fz8 = freeze at round 8 (ICL_K=8, ICL_SNAPSHOT_ROUND=8:
+#               dynamic through round 8, then each agent's round-8
+#               context is reused VERBATIM -- identities, order,
+#               profiles, displayed values; rounds <= 8 replay the
+#               dynamic selection stream exactly, so fz8 and dyn are
+#               bit-identical through round 8 at matched seeds)
+#   x ea {0.1, 0.2, 0.4} x es {0, 0.1, 0.2, 0.3} x seeds {0, 42, 43}
+#   = 144 cells; W=0.5, lam=0.2, gamma=0, K=8 random live exemplars,
+#   30 rounds, frozen weights (nothing trains), LOG_GENDER_GAPS=1,
+#   WITH_TWIN=1. Every ICL_K>0 run saves icl_idx_raw/icl_val_raw
+#   (exact exemplar ids + displayed values) and icl_ctx_log.json.gz
+#   (the rendered context text), so the freeze guarantee is audited on
+#   the actual prompt text.
+# AUDIT 2026-08-07 (on-cluster, BY CONFIG FIELDS): 18 complete cells
+# match the dial surface (icl2/icls2 k0+k8live at es {0, 0.2},
+# ea {0.1,0.2,0.4}, seeds mostly 0) -- but ALL 18 lack the gender-gap
+# telemetry this wave requires (LOG_GENDER_GAPS was never set in any
+# icl wave) and the es=0 ones also lack the twin. NOT equivalent (the
+# replay-wave exact-equivalence standard), so NOTHING is reused: all
+# 144 cells queue. The old runs stay untouched under their own tags.
+# SMOKE (2 jobs, 10 rounds, ea0.2 es0.2 s0): dyn + fz8 -- gates the
+# never-run snapshot path AND the cross-run bit-identity-through-
+# round-8 check (check_pofd_sanity compares a fz8 run to its _dyn_
+# sibling automatically when both dirs are pulled side by side).
+ICLF_ARMS = [("k0", 0, -1), ("fz0", 8, 0), ("fz8", 8, 8), ("dyn", 8, -1)]
+ICLF_EAS = [0.1, 0.2, 0.4]
+ICLF_ESS = [0.0, 0.1, 0.2, 0.3]
+ICLF_SEEDS = [0, 42, 43]
+ICLF_MODELS = ["qwen7b"]        # slugs into the CUBE_MODELS registry
+ROW_ICLF = ("{tag}, frozen, 0, {seed}, 1, replace, 1.0, fixed, ab, "
+            "{es}, 0.0, 0.5, loop, 0.0, {eps_ai}, {iclk}, {snap}")
+
+
+def iclf_tag(model, arm, ea, es, seed, prefix="pofdiclf"):
+    return (f"{prefix}_{model}_{arm}_ea{_num(ea)}_{w_tok()}_es{_num(es)}"
+            f"_s{seed}")
+
+
+def iclf_rows(model):
+    return [ROW_ICLF.format(
+        tag=iclf_tag(model, arm, ea, es, s), seed=s, es=f"{es:g}",
+        eps_ai=f"{ea:g}", iclk=k, snap=snap)
+        for arm, k, snap in ICLF_ARMS for ea in ICLF_EAS
+        for es in ICLF_ESS for s in ICLF_SEEDS]
+
+
+ICLF_SUB_TEMPLATE = """\
+# HTCondor: PER-AGENT FROZEN-CONTEXT ICL, {model}{smk_note} -- GENERATED
+# by gen_pofd_sweep.py from the CUBE_MODELS spec (2026-08-07). Never
+# edit this file by hand: edit the ICLF_ block and rerun the script.
+# {n_jobs} job(s): frozen-weights loops, arms k0 (no context) / dyn
+# (rebuilt every round) / fz0 / fz8 (context frozen verbatim at the
+# snapshot round), K=8 random live exemplars, {n_rounds} rounds,
+# W_PLAT=0.5, INNATE_LAMBDA=0.2, gamma=0, movielens Action,
+# LOG_GENDER_GAPS=1, WITH_TWIN=1. ICL_K and ICL_SNAPSHOT_ROUND ride
+# the queue (cols 16-17). Saves icl_idx_raw/icl_val_raw +
+# icl_ctx_log.json.gz. The 2026-08-07 audit found 18 dial-matching
+# icl2/icls2 cells but NONE carry the required gg telemetry -- nothing
+# reused, the full grid queues. Gate every pull with check_pofd_sanity
+# (ICL-CTX section: self-exclusion, frozen-cache immutability on ids/
+# vals AND rendered text, constant perplexity, gg + twin, fz8-vs-dyn
+# prefix bit-identity).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live LOG_GENDER_GAPS=1 WITH_TWIN=1 INNATE_LAMBDA=0.2 USE_LORA=0 FRESH_EACH_ROUND=0 TRAIN_CAP=723 N_ROUNDS={n_rounds} EPOCH_SIZE=100 BASE_MODEL={base_model} GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_pofdiclf"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, iclk, snap from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+def iclf_sub(model, smoke=False):
+    key = f"{model}_iclf_smoke" if smoke else f"{model}_iclf"
+    n_jobs = 2 if smoke else len(iclf_rows(model))
+    return ICLF_SUB_TEMPLATE.format(
+        model=model, key=key, n_jobs=n_jobs, n_rounds=10 if smoke else 30,
+        smk_note=" SMOKE (dyn vs fz8, 10 rounds)" if smoke else "",
+        **CUBE_MODELS[model])
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -1661,6 +1768,23 @@ def main():
                        steps=18)]
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_budget_smoke.sub")] = \
         bud_sub("qwen7b", smoke=True)
+    # frozen-context icl wave (see the ICLF_ comment block): audit found
+    # ZERO equivalent existing cells (18 dial matches, none with gg
+    # telemetry) -- full grid; smoke = dyn + fz8 at the mid dose.
+    for model in ICLF_MODELS:
+        p = os.path.join(HERE, f"configs_pofd_{model}_iclf.txt")
+        files[p] = iclf_rows(model)
+        expected[p] = (len(ICLF_ARMS) * len(ICLF_EAS) * len(ICLF_ESS)
+                       * len(ICLF_SEEDS))
+        cube_subs[os.path.join(HERE, f"at_pofd_{model}_iclf.sub")] = \
+            iclf_sub(model)
+    files[os.path.join(HERE, "configs_pofd_qwen7b_iclf_smoke.txt")] = [
+        ROW_ICLF.format(tag=iclf_tag("qwen7b", arm, 0.2, 0.2, 0,
+                                     prefix="pofdiclfsmk"),
+                        seed=0, es="0.2", eps_ai="0.2", iclk=k, snap=snap)
+        for arm, k, snap in ICLF_ARMS if arm in ("dyn", "fz8")]
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_iclf_smoke.sub")] = \
+        iclf_sub("qwen7b", smoke=True)
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -1711,6 +1835,8 @@ def main():
           f"(exact initial-data replay; rf=0 reused)"
           f" + {sum(len(bud_rows(m)) for m in BUD_MODELS)} budget "
           f"(SFT step cap; full epoch reused)"
+          f" + {sum(len(iclf_rows(m)) for m in ICLF_MODELS)} iclf "
+          f"(frozen-context icl; audit reused 0)"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)

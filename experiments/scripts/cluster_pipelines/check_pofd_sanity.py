@@ -79,6 +79,17 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               error (that path must not exist -- alpha=0 runs are the plain
               replace runs).
 
+  ICL-CTX     pofdiclf_ runs (frozen-context icl wave, incl. pofdiclfsmk_):
+              arm token (k0/fz0/fz8/dyn) must match (icl_k,
+              icl_snapshot_round); icl_idx_raw/icl_val_raw log the exact
+              exemplar ids + displayed values, icl_ctx_log.json.gz the
+              rendered text. Checks: no agent in its own context; after the
+              snapshot round the cached (ids, vals) AND the rendered text
+              never change; fixed-text perplexity constant every round
+              (weights frozen); gg telemetry + matched twin present; a fz8
+              run must be bit-identical (NaN-aware) to its _dyn_ sibling
+              through round 8 when the sibling run dir exists.
+
   BUDGET      pofdbud_ runs (training-budget wave, incl. pofdbudsmk_):
               ordinary SFT at b0 with a per-round optimizer-step cap --
               config must show training_style=sft, kl_beta=0, sft_epochs=0,
@@ -94,11 +105,21 @@ Usage:
 Exit 0 iff every run passes every check.
 """
 import glob
+import gzip
+import json
 import os
 import re
 import sys
 
 import torch
+
+
+def _bit_eq(a, b):
+    """Elementwise bit-identity that treats NaN == NaN (pred_raw carries NaN
+    for parse-fail agents; two identical runs share the NaN pattern)."""
+    if a.shape != b.shape:
+        return False
+    return bool(((a == b) | (torch.isnan(a) & torch.isnan(b))).all())
 
 ATOL = 2e-6   # float32 blend arithmetic; W=1 makes the copy exact but the
               # stored tensors round-trip through cpu float32
@@ -120,7 +141,11 @@ def check_run(run_dir):
     name = os.path.basename(run_dir.rstrip("/"))
     is_pfrac = name.startswith("pofdpf")   # covers pofdpf2_/pofdpfs2[smk]_ too
     is_bp = name.startswith("pofdbp")      # covers pofdbpsmk_ too
-    is_icl = name.startswith("pofdicl")    # covers pofdiclsmk_ too
+    # frozen-CONTEXT icl wave (2026-08-07, pofdiclf_/pofdiclfsmk_) gets its
+    # own branch -- exclude it from the legacy icl arm-token gate
+    is_iclf = name.startswith("pofdiclf")
+    is_icl = (name.startswith("pofdicl")   # covers pofdiclsmk_ too
+              and not is_iclf)
     # dpo branch covers pofddpo/pofddpon/pofddposmk AND the W-wave twins
     # pofdwdpo/pofdwdpon/pofdwdposmk (same config surface, W/lam via tokens)
     is_dpo = name.startswith(("pofddpo", "pofdwdpo"))
@@ -164,6 +189,30 @@ def check_run(run_dir):
         want.update({"kl_beta": 0.0, "training_style": "frozen",
                      "pristine_frac": 0.0, "fresh_each_round": False,
                      "use_lora": 0, "icl_select": "random"})
+    elif is_iclf:
+        # frozen-context wave: same frozen surface as icl, plus live ctx,
+        # exemplar-only (no days), qwen-only, gg telemetry + twin mandatory.
+        # The arm token maps to (icl_k, icl_snapshot_round):
+        #   k0 = no context; dyn = rebuilt every round; fz0/fz8 = dynamic
+        #   through round 0/8 then each agent's context frozen verbatim.
+        want.update({"kl_beta": 0.0, "training_style": "frozen",
+                     "pristine_frac": 0.0, "fresh_each_round": False,
+                     "use_lora": 0, "icl_select": "random", "icl_days": 0,
+                     "icl_ctx_source": "live", "ml_target": "Action",
+                     "log_gender_gaps": True, "teacher_label_delta": 0.0,
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct"})
+        ICLF_ARM_WANT = {"k0": (0, -1), "fz0": (8, 0),
+                         "fz8": (8, 8), "dyn": (8, -1)}
+        m_arm = re.search(r"_(k0|fz0|fz8|dyn)_ea", name)
+        if m_arm is None:
+            errs.append(f"CONFIG unknown iclf arm token in dirname {name!r}")
+        else:
+            k_w, snap_w = ICLF_ARM_WANT[m_arm.group(1)]
+            got = (cfg.get("icl_k"),
+                   cfg.get("icl_snapshot_round", -1))
+            if got != (k_w, snap_w):
+                errs.append(f"CONFIG icl (k, snapshot)={got!r} (arm "
+                            f"{m_arm.group(1)} wants {(k_w, snap_w)!r})")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
         # configs, not here. rlhf_feedback IS recorded and tag-checked below.
@@ -429,7 +478,7 @@ def check_run(run_dir):
             if bad:
                 errs.append(f"CONFIG gg telemetry keys missing in rounds "
                             f"{bad[:5]}{'...' if len(bad) > 5 else ''}")
-    if is_tch or is_tfe or is_rpl or is_bud:
+    if is_tch or is_tfe or is_rpl or is_bud or is_iclf:
         m_s = re.search(r"_s(\d+)(?:_|$)", name)
         if m_s and cfg.get("seed") != int(m_s.group(1)):
             errs.append(f"CONFIG seed={cfg.get('seed')!r} "
@@ -513,6 +562,105 @@ def check_run(run_dir):
         errs.append("REPLAY replay_raw present but config replay_frac is "
                     "0/absent")
 
+    # -- 1d ICL-CTX (icl_idx_raw/icl_val_raw + icl_ctx_log.json.gz, runner
+    # 2026-08-07) ------------------------------------------------------------
+    # ICL_K>0 runs log the exact exemplar (agent-id, displayed-value) pairs
+    # each agent's context carried, plus the rendered text blocks. Checks:
+    # no agent in its own context; with ICL_SNAPSHOT_ROUND=R the (ids, vals)
+    # AND the rendered text never change after round R; iclf runs must carry
+    # constant fixed-text perplexity (weights frozen), gg telemetry, the
+    # matched twin, and a freeze-8 run must be bit-identical to its _dyn_
+    # sibling through round R when the sibling exists on disk.
+    ii = d.get("icl_idx_raw")
+    iv = d.get("icl_val_raw")
+    icl_k_cfg = int(cfg.get("icl_k") or 0)
+    snap = cfg.get("icl_snapshot_round")
+    snap = -1 if snap is None else int(snap)
+    if is_iclf and icl_k_cfg > 0 and (ii is None or ii.numel() == 0):
+        errs.append("ICL-CTX icl_k>0 but icl_idx_raw missing/empty (runner "
+                    "predates the snapshot patch?)")
+    if ii is not None and ii.numel() > 0:
+        n_ag = op_raw.shape[1]
+        n_dep = len([r for r in traj if r.get("is_deploy")])
+        if (iv is None or tuple(ii.shape) != (n_dep, n_ag, icl_k_cfg)
+                or tuple(iv.shape) != tuple(ii.shape)):
+            errs.append(f"ICL-CTX shapes idx={tuple(ii.shape)} "
+                        f"val={None if iv is None else tuple(iv.shape)} "
+                        f"(want {(n_dep, n_ag, icl_k_cfg)!r})")
+        else:
+            ii = ii.long()
+            iv = iv.float()
+            own = torch.arange(n_ag).view(1, n_ag, 1)
+            if bool((ii == own).any()):
+                bad_t = int((ii == own).flatten(1).any(dim=1).nonzero()[0])
+                errs.append(f"ICL-CTX round {bad_t}: an agent appears in its "
+                            f"OWN context (self-exclusion violated)")
+            if (not torch.isfinite(iv).all() or float(iv.min()) < -1e-6
+                    or float(iv.max()) > 1 + 1e-6):
+                errs.append("ICL-CTX displayed values non-finite or out of "
+                            "[0,1]")
+            if snap >= 0:
+                if snap >= ii.shape[0]:
+                    errs.append(f"ICL-CTX snapshot round {snap} was never "
+                                f"reached ({ii.shape[0]} logged rounds)")
+                else:
+                    for tt in range(snap + 1, ii.shape[0]):
+                        if not (torch.equal(ii[tt], ii[snap])
+                                and torch.equal(iv[tt], iv[snap])):
+                            errs.append(f"ICL-CTX round {tt}: cached context "
+                                        f"CHANGED after snapshot round {snap}")
+                            break
+            gzp = os.path.join(run_dir, "icl_ctx_log.json.gz")
+            if os.path.exists(gzp):
+                rows_ctx = [json.loads(l) for l in gzip.open(gzp, "rt")]
+                if (len(rows_ctx) != ii.shape[0]
+                        or any(len(r["ctx"]) != n_ag for r in rows_ctx)):
+                    errs.append("ICL-CTX icl_ctx_log rows do not match "
+                                "icl_idx_raw shape")
+                elif snap >= 0 and snap < len(rows_ctx):
+                    ref = rows_ctx[snap]["ctx"]
+                    for r in rows_ctx[snap + 1:]:
+                        if r["ctx"] != ref:
+                            errs.append(f"ICL-CTX round {r['round']}: rendered "
+                                        f"context TEXT changed after snapshot")
+                            break
+            elif is_iclf:
+                errs.append("ICL-CTX icl_ctx_log.json.gz missing")
+    if is_iclf:
+        ppls = [r["perplexity"] for r in traj if "perplexity" in r]
+        if ppls and len(set(ppls)) != 1:
+            errs.append(f"ICL-CTX fixed-text perplexity varies across rounds "
+                        f"({len(set(ppls))} distinct values) -- weights not "
+                        f"frozen?")
+        need_gg = ["gg_pred_true", "gg_op_true", "gg_r2_inc_true"]
+        bad = [r["round"] for r in traj if any(k not in r for k in need_gg)]
+        if bad:
+            errs.append(f"ICL-CTX gg telemetry missing in rounds {bad[:5]}")
+        tw = d.get("twin_raw")
+        if tw is None or tw.numel() == 0 or tuple(tw.shape) != tuple(op_raw.shape):
+            errs.append("ICL-CTX twin_raw missing/short (WITH_TWIN=1 is "
+                        "mandatory in this family)")
+        elif any("gg_twin_true" not in r for r in traj):
+            errs.append("ICL-CTX gg_twin_true missing from trajectory rows")
+        if "_fz8_" in name and snap >= 0:
+            sib = os.path.join(os.path.dirname(run_dir.rstrip("/")) or ".",
+                               name.replace("_fz8_", "_dyn_"))
+            sib_pt = os.path.join(sib, "trajectory.pt")
+            if os.path.exists(sib_pt):
+                ds = torch.load(sib_pt, map_location="cpu", weights_only=False)
+                hi = snap + 1
+                for key in ("icl_idx_raw", "icl_val_raw", "op_raw", "pred_raw"):
+                    a, b = d.get(key), ds.get(key)
+                    if (a is None or b is None or a.numel() == 0
+                            or b.numel() == 0 or a.shape[0] < hi
+                            or b.shape[0] < hi):
+                        errs.append(f"ICL-CTX dyn-twin prefix: {key} "
+                                    f"missing/short in one of the pair")
+                    elif not _bit_eq(a[:hi].float(), b[:hi].float()):
+                        errs.append(f"ICL-CTX {key} differs from the _dyn_ "
+                                    f"twin inside rounds 0..{snap} (matched "
+                                    f"seeds must be bit-identical)")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -578,7 +726,7 @@ def check_run(run_dir):
         elif tuple(tw.shape) != tuple(op_raw.shape):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
-        if is_icl:
+        if is_icl or is_iclf:
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_)
             return errs
@@ -624,7 +772,7 @@ def check_run(run_dir):
 
     # -- 4 FRESH -------------------------------------------------------------
     # icl (frozen): nothing trains, no n_train ever -- skip.
-    if is_icl:
+    if is_icl or is_iclf:
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
 

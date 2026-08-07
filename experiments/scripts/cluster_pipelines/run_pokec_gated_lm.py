@@ -39,6 +39,15 @@ appended one JSON line per round to telemetry.json (crash-safe):
               direct platform contact per agent per round, so direct-contact
               vs peer-transmitted effects separate offline. Empty tensor in
               runs written before 2026-08-05.
+  icl_idx_raw / icl_val_raw / icl_ctx_log.json.gz   ICL_K>0 runs (2026-08-07):
+              per round the [n, K] exemplar agent ids and displayed opinion
+              values each agent's context carried, plus the rendered exemplar
+              text blocks (gzip JSONL, one line per round). With
+              ICL_SNAPSHOT_ROUND=R >= 0 the context is built dynamically
+              through round R and then FROZEN -- every later round replays
+              each agent's round-R context verbatim (ids, order, profiles,
+              displayed values; no RNG drawn on frozen rounds), so freeze-R
+              and dynamic twins are bit-identical through round R.
   replay_raw / train_y_raw   trajectory.pt, REPLAY_FRAC>0 runs only
               (exact initial-data replay, replace regime): per deploy round
               the [n_labeled] bool label-source mask (True = row kept its
@@ -50,6 +59,7 @@ appended one JSON line per round to telemetry.json (crash-safe):
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import json
 import os
@@ -597,6 +607,15 @@ def main() -> int:
     #              gated -- exactly this seed's no-AI run)
     #   pristine = the same user's innate opinion
     icl_ctx_source = os.environ.get("ICL_CTX_SOURCE", "live")
+    # ICL_SNAPSHOT_ROUND (frozen-context ICL, 2026-08-07): -1/unset = rebuild
+    # the K-exemplar context dynamically every round (legacy behavior, bit-
+    # identical code path); R >= 0 = dynamic through round R, then FREEZE --
+    # every later round reuses each agent's round-R context verbatim: same
+    # exemplar identities, same order, same profiles, same displayed opinion
+    # values (cached per agent for ALL n agents; no RNG is drawn on frozen
+    # rounds, and rounds <= R replay the legacy selection stream exactly, so
+    # a frozen run is bit-identical to its dynamic twin through round R).
+    icl_snapshot_round = _env_int("ICL_SNAPSHOT_ROUND", -1)
     # SAVE_ADAPTER_ROUNDS="10,30" (1-indexed): save the LoRA adapter after
     # training in those rounds (adapter_r<k>/), for checkpointed frozen evals
     # (Tree-3 consistency probe). Round-0 adapter is always saved anyway.
@@ -737,6 +756,12 @@ def main() -> int:
         raise ValueError("ICL_CTX_SOURCE control requires ICL_K > 0")
     if icl_ctx_source == "noai" and pop_model != "ab":
         raise ValueError("ICL_CTX_SOURCE=noai requires POP_MODEL=ab")
+    if icl_snapshot_round >= 0 and icl_k <= 0:
+        raise ValueError("ICL_SNAPSHOT_ROUND requires ICL_K > 0 (there is no "
+                         "exemplar context to freeze)")
+    if icl_snapshot_round >= 0 and icl_days > 0:
+        raise ValueError("ICL_SNAPSHOT_ROUND is exemplar-only: ICL_DAYS must "
+                         "be 0 (personal history is inherently dynamic)")
     if feedback_mode not in ("none", "consequences", "reward"):
         raise ValueError("FEEDBACK_MODE must be 'none', 'consequences', or 'reward'")
     if feedback_mode != "none" and not icrh_on:
@@ -801,7 +826,9 @@ def main() -> int:
         "grad_decomp": grad_decomp,
         "save_adapter_rounds": sorted(save_adapter_rounds),
         "icl_k": icl_k, "icl_days": icl_days, "icl_select": icl_select,
-        "icl_ctx_source": icl_ctx_source, "feedback_mode": feedback_mode,
+        "icl_ctx_source": icl_ctx_source,
+        "icl_snapshot_round": icl_snapshot_round,
+        "feedback_mode": feedback_mode,
         "icrh": icrh_on, "reward_kind": reward_kind, "ab_retain": ab_retain,
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
@@ -1177,6 +1204,13 @@ def main() -> int:
     train_y_raw = [] # REPLAY_FRAC>0 only: the ACTUAL labels fed to the learner
                      # each deploy round ([n_labeled] float), so the batch
                      # composition is checkable end-to-end offline
+    icl_ctx_cache = None  # ICL_SNAPSHOT_ROUND >= 0: (ids [n,K], vals [n,K])
+                          # frozen at the snapshot round, reused verbatim after
+    icl_idx_raw = []  # ICL_K>0: per round [n, K] exemplar AGENT ids shown
+    icl_val_raw = []  # ICL_K>0: per round [n, K] displayed opinion values
+                      # (floats; the prompt renders them as {v:.2f})
+    icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
+                        # written to icl_ctx_log.json.gz next to trajectory.pt
 
     # gender-gap telemetry (LOG_GENDER_GAPS=1): masks + the fixed teacher's
     # prediction gap + the incremental-R^2 design matrices, all built once.
@@ -1357,8 +1391,11 @@ def main() -> int:
                         taste_mat = prof_lookup[taste_cols].to_numpy(dtype=float)
                         col_mean = np.nanmean(taste_mat, axis=0)
                         taste_mat = np.where(np.isnan(taste_mat), col_mean, taste_mat)
-                    def _ex_line(j):
-                        r = prof_lookup.iloc[int(ex_idx[j])]
+                    def _ex_line(aid, val):
+                        # renders from (agent id, float value) so a FROZEN
+                        # context reproduces the exact displayed line: profiles
+                        # are static and the value re-formats identically
+                        r = prof_lookup.iloc[int(aid)]
                         demo_bits = []
                         if r.get("age") is not None and not pd.isna(r.get("age")) and int(r["age"]) > 0:
                             demo_bits.append(f"age {int(r['age'])}")
@@ -1367,8 +1404,9 @@ def main() -> int:
                         tastes = ", ".join(f"{c} {float(r[c]):.1f}" for c in prof_lookup.columns
                                            if c not in ("age", "gender", "occ") and not pd.isna(r[c]))
                         return (f"- {', '.join(demo_bits)}; ratings: {tastes} -> "
-                                f"opinion {float(ex_y[j]):.2f}")
+                                f"opinion {float(val):.2f}")
                     icl_rng = np.random.default_rng(70000 + seed * 1000 + t)
+                    icl_ids_t, icl_vals_t, icl_txt_t = [], [], []
                 prompts = []
                 for i in range(n):
                     parts = []
@@ -1382,21 +1420,47 @@ def main() -> int:
                                      f"{os.environ.get('ML_TARGET', 'Action')} movies over "
                                      f"the most recent days (oldest to newest): {days}.")
                     if icl_k > 0 and train_data is not None:
-                        pool = np.arange(len(ex_idx))
-                        pool = pool[ex_agents[pool] != i]
-                        if icl_select == "knn":
-                            # nearest buffer entries by taste distance to agent i;
-                            # stable sort = deterministic tie-break by buffer index
-                            d = np.linalg.norm(taste_mat[ex_agents[pool]] - taste_mat[i],
-                                               axis=1)
-                            pick = pool[np.argsort(d, kind="stable")[:icl_k]]
+                        if icl_ctx_cache is not None:
+                            # FROZEN: replay agent i's snapshot context verbatim
+                            # (identities, order, values); no RNG is drawn here
+                            ids_i = icl_ctx_cache[0][i]
+                            vals_i = icl_ctx_cache[1][i]
                         else:
-                            pick = icl_rng.choice(pool, size=min(icl_k, len(pool)),
-                                                  replace=False)
-                        parts.append("Here are the current opinions of some other users:\n" +
-                                     "\n".join(_ex_line(j) for j in pick))
+                            pool = np.arange(len(ex_idx))
+                            pool = pool[ex_agents[pool] != i]
+                            if icl_select == "knn":
+                                # nearest buffer entries by taste distance to agent i;
+                                # stable sort = deterministic tie-break by buffer index
+                                d = np.linalg.norm(taste_mat[ex_agents[pool]] - taste_mat[i],
+                                                   axis=1)
+                                pick = pool[np.argsort(d, kind="stable")[:icl_k]]
+                            else:
+                                pick = icl_rng.choice(pool, size=min(icl_k, len(pool)),
+                                                      replace=False)
+                            ids_i = torch.as_tensor(ex_agents[pick], dtype=torch.long)
+                            vals_i = ex_y[torch.as_tensor(pick, dtype=torch.long)] \
+                                .detach().float().cpu()
+                        block = ("Here are the current opinions of some other users:\n" +
+                                 "\n".join(_ex_line(int(a), float(v))
+                                           for a, v in zip(ids_i, vals_i)))
+                        parts.append(block)
+                        icl_ids_t.append(ids_i)
+                        icl_vals_t.append(vals_i)
+                        icl_txt_t.append(block)
                     prompts.append(build_prompt(prof_lookup.iloc[i], lm.tokenizer,
                                                 context_block="\n\n".join(parts)))
+                if icl_k > 0 and train_data is not None:
+                    ids_t = torch.stack(icl_ids_t)
+                    vals_t = torch.stack(icl_vals_t)
+                    icl_idx_raw.append(ids_t)
+                    icl_val_raw.append(vals_t)
+                    icl_ctx_texts.append((t, icl_txt_t))
+                    if (icl_snapshot_round >= 0 and icl_ctx_cache is None
+                            and t == icl_snapshot_round):
+                        icl_ctx_cache = (ids_t.clone(), vals_t.clone())
+                        print(f"[round {t}] ICL context FROZEN for all {n} "
+                              f"agents (K={icl_k}); later rounds reuse it "
+                              f"verbatim", flush=True)
                 if debug_gen and t <= 1:
                     # smoke gate: one composed prompt so the log shows the
                     # history/exemplar blocks actually reaching the model
@@ -1706,6 +1770,13 @@ def main() -> int:
         })
 
     print(f"[run] loop done in {time.time() - t_loop:.1f}s", flush=True)
+    if icl_ctx_texts:
+        # the ACTUAL rendered exemplar blocks each agent saw, one JSON line
+        # per round -- lets the frozen-context guarantee be audited on the
+        # exact prompt text, not just the (ids, vals) that generated it
+        with gzip.open(out_dir / "icl_ctx_log.json.gz", "wt") as fh:
+            for t_ctx, ctxs in icl_ctx_texts:
+                fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
     torch.save(
         {
@@ -1720,6 +1791,8 @@ def main() -> int:
             "gate_raw": torch.stack(gate_raw) if gate_raw else torch.empty(0),
             "replay_raw": torch.stack(replay_raw) if replay_raw else torch.empty(0),
             "train_y_raw": torch.stack(train_y_raw) if train_y_raw else torch.empty(0),
+            "icl_idx_raw": torch.stack(icl_idx_raw) if icl_idx_raw else torch.empty(0),
+            "icl_val_raw": torch.stack(icl_val_raw) if icl_val_raw else torch.empty(0),
             "innate": innate.detach().cpu(),
             "profiles": setup["profiles"].to_dict(orient="list"),
             "probe_idx": probe_idx,
