@@ -1382,6 +1382,227 @@ def sc_sub(model, smoke=False):
         **CUBE_MODELS[model])
 
 
+# FINAL REPLICATION WAVE (2026-08-07, user), umbrella key
+# qwen_olmo_finalfill = qwen7b_finalfill_sfticl (18) +
+# qwen7b_finalfill_replay (16) + qwen7b_finalfill_corners (8) +
+# the UNCHANGED olmo7brom_fe wave (olmo7brom_fes 9 + olmo7brom_fef 3)
+# = 54 queued jobs. CONFIG-FIELD AUDIT 2026-08-07 (local corpus 902
+# dirs + on-cluster tag/trajectory scan): 46 of the 54 are genuinely
+# missing; 8 queue as instant idempotent no-ops BY USER DECISION
+# (2026-08-07): the 2 corner cells pofdw2f_qwen7b_b1_ea0p4_..._s{42,43}
+# (complete since the fes wave, gated) and the 6 complete Romance cells
+# (b0 x3 + k0 x3, found complete on cluster, pulled + gated 7/7 with
+# their smoke). NO DPO replication in this wave by design.
+#   1) qwen7b_finalfill_sfticl (18): the SFT-vs-ICL gate-dose overlay
+#      (plot_sft_icl_gate_overlay.py) at replication seeds {42,43} --
+#      env3 (W=0.5, lam=0.2, es=0.2, 30 rounds, movielens Action):
+#      6 forward SFT-KL b1 cells at ea {0.05,0.1,0.2} (pofdws2f_ tags,
+#      fes env: LoRA-512 fresh+replace, ANS_SAMPLE_K=16) + 12 frozen
+#      live-ICL cells k {8,32} x ea {0.05,0.1,0.2} (pofdicls2_ tags,
+#      icls2 env: USE_LORA=0, FRESH_EACH_ROUND=0, dynamic context,
+#      ICL_SELECT=random, probe off). ea=0.4 cells REUSED at both
+#      seeds: ws2f b1 = fes wave (the ctf donors), k8live = feik wave,
+#      k32live = icls2x wave -- all audited config-equivalent + gated.
+#      One sub serves both families: USE_LORA / FRESH_EACH_ROUND /
+#      ICL_K / ICL_DAYS / ICL_CTX_SOURCE / ANS_SAMPLE_K ride the queue
+#      (cols 16-21). eps>0 instantiates the matched twin in every run.
+#   2) qwen7b_finalfill_replay (16): the replay1 grid at seeds {42,43}
+#      -- b {0,1} x rf {0.25,0.5,0.75,1}, ea=0.4, es=0.1, byte-identical
+#      dials to the seed-0 wave (rows share ROW_RPL/rpl_tag; env copies
+#      the replay1 sub). rf=0 cells REUSED: at s42/43 they are the
+#      seedcore pofdesf_ replicates (completed + gated 2026-08-07),
+#      at s0 the cube/esf cells -- rf=0 is byte-identical to the plain
+#      replace loop (replay path guarded by replay_frac > 0).
+#   3) qwen7b_finalfill_corners (8): the (ea, es) corner cells of the
+#      b1 forward surface at seeds {42,43} -- ea {0.05,0.4} x
+#      es {0,0.3}, cube-family tags via cube_tag (es=0 -> pofdw2f_,
+#      es=0.3 -> pofdesf_), cube env (WITH_TWIN=1). The two
+#      (ea0p4, es0) tags already hold complete runs -- queued anyway
+#      per user decision; the idempotent exec no-ops them.
+#   4) olmo7brom_fe: NOT modified, NOT duplicated -- the umbrella
+#      expands to the same olmo7brom_fes/olmo7brom_fef targets, whose
+#      configs/tags/validation stay byte-identical. AUDIT: 6/12 cells
+#      complete on cluster (b0 s{0,42,43} + k0 s{0,42,43}) + the smoke,
+#      all pulled + gated 7/7 PASS 2026-08-07; the b0p5/b1 trios are
+#      6-file shells with no trajectory (they re-run; the idempotent
+#      exec fills the shells). Romance smoke ALREADY PASSED -- the
+#      smoke-first step is satisfied; resubmitting it is a no-op.
+# Statistical use (BATCHES.md): across-seed (n=3) means/CIs for the
+# gate-dose overlay curves (SFT vs live-ICL K8/K32), the replay-dose
+# displacement curves with paired within-seed b1-b0 contrasts, the
+# corner cells of the (ea, es) surface, and the Romance fe beta axis
+# (b {0,0.5,1} + frozen control); no per-seed selection anywhere.
+# Checker: NO new logic needed -- every cell lands in a fully-gated
+# existing family (cube-prefix _b gates, icl arm gates, REPLAY section,
+# Romance branch, universal seed/ea/slug gates); validated by fresh
+# fixtures exercising the NEW tag shapes + the full-corpus re-gate.
+FF_SEEDS = [42, 43]
+FF_SFT_EAS = [0.05, 0.1, 0.2]     # ea=0.4 reused (fes / feik / icls2x)
+FF_ICL_KS = [8, 32]
+FF_CORNER_EAS = [0.05, 0.4]
+FF_CORNER_ESS = [0.0, 0.3]
+ROW_FFSI = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+            "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}, {iclk}, {icldays}, "
+            "{iclsrc}, {uselora}, {fresh}, {ansk}")
+
+
+def ffsi_rows():
+    rows = []
+    for ea in FF_SFT_EAS:
+        for s in FF_SEEDS:
+            rows.append(ROW_FFSI.format(
+                tag=(f"pofdws2f_qwen7b_b1_ea{_num(ea)}_{ws_tok()}"
+                     f"_s{s}_fresh_data"),
+                style="sft_kl", beta="1", seed=s, eps_ai=f"{ea:g}",
+                iclk=0, icldays=0, iclsrc="live", uselora=1, fresh=1,
+                ansk=16))
+    for ea in FF_SFT_EAS:
+        for k in FF_ICL_KS:
+            for s in FF_SEEDS:
+                rows.append(ROW_FFSI.format(
+                    tag=f"pofdicls2_qwen7b_{ws_tok()}_ea{_num(ea)}_k{k}live_s{s}",
+                    style="frozen", beta="0", seed=s, eps_ai=f"{ea:g}",
+                    iclk=k, icldays=0, iclsrc="live", uselora=0, fresh=0,
+                    ansk=0))
+    return rows
+
+
+def ffrp_rows():
+    return [ROW_RPL.format(
+        tag=rpl_tag("qwen7b", b, rf, s),
+        style="sft" if b == 0 else "sft_kl", beta=f"{b:g}", seed=s,
+        es=f"{RPL_ES:g}", eps_ai=f"{RPL_EA:g}", rfrac=f"{rf:g}")
+        for b in RPL_BETAS for rf in RPL_FRACS for s in FF_SEEDS if rf > 0]
+
+
+def ffc_rows():
+    return [ROW_CUBE.format(
+        tag=cube_tag("qwen7b", 1.0, ea, es, s), style="sft_kl", beta="1",
+        seed=s, es=f"{es:g}", eps_ai=f"{ea:g}")
+        for ea in FF_CORNER_EAS for es in FF_CORNER_ESS for s in FF_SEEDS]
+
+
+FFSI_SUB_TEMPLATE = """\
+# HTCondor: FINAL-FILL SFT-vs-ICL GATE-DOSE REPLICATES, qwen7b --
+# GENERATED by gen_pofd_sweep.py from the FF_ block (2026-08-07). Never
+# edit this file by hand: edit the FF_ block and rerun the script.
+# {n_jobs} jobs at seeds {{42,43}} in env3 (W=0.5, lam=0.2, es=0.2,
+# 30 rounds): 6 forward SFT-KL b1 cells at ea {{0.05,0.1,0.2}}
+# (pofdws2f_ tags, fes env) + 12 frozen live-ICL cells k {{8,32}} x the
+# same gates (pofdicls2_ tags, icls2 env). The ea=0.4 cells at both
+# seeds are REUSED (fes / feik / icls2x waves), never re-queued. One
+# sub serves both families: USE_LORA / FRESH_EACH_ROUND / ICL_K /
+# ICL_DAYS / ICL_CTX_SOURCE / ANS_SAMPLE_K ride the queue (cols 16-21).
+# These cells complete the plot_sft_icl_gate_overlay.py dose curves at
+# 3 seeds per point. Gate every pull with check_pofd_sanity (ws2f: cube
+# _b gate + SOCIAL twin/peer-alive; icls2: frozen + arm gates).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> qwen7b_finalfill_sfticl
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=$(iclsrc) KL_DIRECTION=forward USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofdffill"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, iclk, icldays, iclsrc, uselora, fresh, ansk from experiments/condor/configs_pofd_qwen7b_finalfill_sfticl.txt
+"""
+
+FFRP_SUB_TEMPLATE = """\
+# HTCondor: FINAL-FILL REPLAY REPLICATES, qwen7b -- GENERATED by
+# gen_pofd_sweep.py from the FF_ block (2026-08-07). Never edit this
+# file by hand: edit the FF_ block and rerun the script.
+# {n_jobs} cells: the replay1 grid (beta {{0,1}} x replay_frac
+# {{0.25,0.5,0.75,1}}, ea=0.4, es=0.1, W=0.5, lam=0.2, 30 rounds,
+# fresh + replace, WITH_TWIN=1) at replication seeds {{42,43}} --
+# dials byte-identical to the seed-0 wave (shared ROW_RPL/rpl_tag; env
+# copies the replay1 sub). The rf=0 cells are REUSED: at s42/43 the
+# seedcore pofdesf_ replicates (complete + gated 2026-08-07), at s0
+# the cube/esf cells. Gate every pull with check_pofd_sanity (REPLAY
+# section: bit-exact batch composition; _b/_rf tokens, style, forward
+# direction and seed cross-checked).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> qwen7b_finalfill_replay
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) REPLAY_FRAC=$(rfrac) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdreplay1"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, rfrac from experiments/condor/configs_pofd_qwen7b_finalfill_replay.txt
+"""
+
+FFC_SUB_TEMPLATE = """\
+# HTCondor: FINAL-FILL (ea, es) CORNER REPLICATES, qwen7b -- GENERATED
+# by gen_pofd_sweep.py from the FF_ block (2026-08-07). Never edit this
+# file by hand: edit the FF_ block and rerun the script.
+# {n_jobs} cells: forward SFT-KL b1 at ea {{0.05,0.4}} x es {{0,0.3}} x
+# seeds {{42,43}} -- W=0.5, lam=0.2, 30 rounds, fresh + replace,
+# WITH_TWIN=1, cube env and cube-family tags (es=0 -> pofdw2f_,
+# es=0.3 -> pofdesf_). The two (ea0p4, es0) tags already hold complete
+# fes-wave runs -- queued anyway per user decision 2026-08-07; the
+# idempotent exec no-ops them in seconds. Gate every pull with
+# check_pofd_sanity (cube _b gate; es=0 exact replay, es>0 peer gate +
+# twin).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> qwen7b_finalfill_corners
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdffcorners"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai from experiments/condor/configs_pofd_qwen7b_finalfill_corners.txt
+"""
+
+
 SMOKE = ("qwen7b", 0.5, 0.1, 0)   # model, beta, eps_ai, seed -- exercises sft_kl
 
 
@@ -2153,6 +2374,35 @@ def main():
                       eps_ai="0.4", nrounds=1, lam="0.2", wtwin=1, ansk=16)]
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_seedcore_smoke.sub")] = \
         sc_sub("qwen7b", smoke=True)
+    # final replication wave (see the FF_ comment block): three qwen keys
+    # + the untouched olmo7brom_fe wave under the qwen_olmo_finalfill
+    # umbrella. HARD job-count asserts: 18 + 16 + 8 here, 9 + 3 in the
+    # olmo7brom_fes/fef files above -> the umbrella queues exactly 54.
+    assert len(ffsi_rows()) == 18, len(ffsi_rows())
+    assert len(ffrp_rows()) == 16, len(ffrp_rows())
+    assert len(ffc_rows()) == 8, len(ffc_rows())
+    assert len(ffsi_rows()) + len(ffrp_rows()) + len(ffc_rows()) \
+        + 3 * len(FE_SEEDS) + len(FE_SEEDS) == 54
+    p = os.path.join(HERE, "configs_pofd_qwen7b_finalfill_sfticl.txt")
+    files[p] = ffsi_rows()
+    expected[p] = (len(FF_SFT_EAS) * len(FF_SEEDS)
+                   + len(FF_SFT_EAS) * len(FF_ICL_KS) * len(FF_SEEDS))
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_finalfill_sfticl.sub")] = \
+        FFSI_SUB_TEMPLATE.format(n_jobs=len(ffsi_rows()),
+                                 **CUBE_MODELS["qwen7b"])
+    p = os.path.join(HERE, "configs_pofd_qwen7b_finalfill_replay.txt")
+    files[p] = ffrp_rows()
+    expected[p] = (len(RPL_BETAS) * len(RPL_FRACS) * len(FF_SEEDS)
+                   - len(RPL_BETAS) * len(FF_SEEDS))   # minus rf=0
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_finalfill_replay.sub")] = \
+        FFRP_SUB_TEMPLATE.format(n_jobs=len(ffrp_rows()),
+                                 **CUBE_MODELS["qwen7b"])
+    p = os.path.join(HERE, "configs_pofd_qwen7b_finalfill_corners.txt")
+    files[p] = ffc_rows()
+    expected[p] = len(FF_CORNER_EAS) * len(FF_CORNER_ESS) * len(FF_SEEDS)
+    cube_subs[os.path.join(HERE, "at_pofd_qwen7b_finalfill_corners.sub")] = \
+        FFC_SUB_TEMPLATE.format(n_jobs=len(ffc_rows()),
+                                **CUBE_MODELS["qwen7b"])
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -2208,6 +2458,9 @@ def main():
           f" + {len(ctf_rows())} ctf (SFT-to-ICL context transfer)"
           f" + {sum(len(sc_rows(m)) for m in SC_MODELS)} seedcore "
           f"(seed replicates: retention 12 + direct 8 + main peer 14)"
+          f" + {len(ffsi_rows()) + len(ffrp_rows()) + len(ffc_rows())} "
+          f"finalfill (sfticl 18 + replay 16 + corners 8; umbrella adds "
+          f"the untouched 12-job olmo7brom_fe wave -> 54 queued)"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)
