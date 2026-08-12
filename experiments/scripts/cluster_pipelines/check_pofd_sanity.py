@@ -173,6 +173,8 @@ SLUG_BASE = {
     "olmo7brom": "allenai/OLMo-2-1124-7B-Instruct",
     "llama8b": "meta-llama/Llama-3.1-8B-Instruct",
     "gemma12b": "google/gemma-3-12b-it",
+    # 4th model, promoted 2026-08-12 off the mlatZ_cand prior screen
+    "mistral7b": "mistralai/Mistral-7B-Instruct-v0.3",
 }
 
 
