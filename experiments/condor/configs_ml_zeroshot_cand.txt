@@ -1,0 +1,2 @@
+mlatZ_mistral7b_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, mistralai/Mistral-7B-Instruct-v0.3
+mlatZ_granite8b_s0, frozen, 0.0, 0, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.3, loop, 0.0, 0.4, 0.0, 0, ibm-granite/granite-3.1-8b-instruct

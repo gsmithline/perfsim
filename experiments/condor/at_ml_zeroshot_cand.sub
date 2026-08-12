@@ -1,0 +1,44 @@
+# HTCondor: 4TH-MODEL CANDIDATE SCREEN -- zero-shot prior pass (mlatZ_), 2 runs:
+#   mistralai/Mistral-7B-Instruct-v0.3   (the reserved "mlatM optional 4th", Apache 2.0)
+#   ibm-granite/granite-3.1-8b-instruct  (IBM curated data mix, Apache 2.0)
+# Mirrors at_ml_zeroshot_olmo.sub: style=frozen (no training; USE_LORA=0 = pure
+# base behavior), N_ROUNDS=1 -> the base model predicts all 723 ML-Action
+# profiles once. pred_raw in trajectory.pt is the prior output distribution.
+# PROMOTION GATES before any closed-loop wave: (a) non-constant predictions
+# (the Llama failure mode: constant 0.50), (b) parseable [0,1] numbers,
+# (c) corr(pred, innate) meaningfully > 0 or a distinctive mode structure
+# (yardsticks: Qwen mode 0.75; Gemma modes 0.75/0.65, corr 0.51).
+# ENV: opdyn serves both -- Mistral-7B is an old native arch; Granite needs
+# transformers>=4.45 and opdyn already runs OLMo-2 (which needs >=4.47).
+# TRAINING NOTE: the runner's SFT assistant-marker map covers mistral
+# ("[/INST]") but has NO granite entry (falls through to the Qwen marker) --
+# add one BEFORE any Granite training run. Frozen runs never touch it.
+# PRE-DOWNLOAD on the login node (compute jobs run HF_HUB_OFFLINE=1):
+#   export HF_HOME=/lustre/fast/fast/gsmithline/hf_cache
+#   huggingface-cli download mistralai/Mistral-7B-Instruct-v0.3
+#   huggingface-cli download ibm-granite/granite-3.1-8b-instruct
+# Submit: condor_submit_bid <BID> experiments/condor/at_ml_zeroshot_cand.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) PRISTINE_FRAC=$(pfrac) FRESH_EACH_ROUND=$(fresh) TRAIN_CAP=723 N_ROUNDS=1 EPOCH_SIZE=100 BASE_MODEL=$(base) SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=0 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=16 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mlatZ_cand"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, pfrac, fresh, base from experiments/condor/configs_ml_zeroshot_cand.txt
