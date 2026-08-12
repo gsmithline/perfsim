@@ -922,6 +922,9 @@ def main() -> int:
             "dpo_gen_temp": float(os.environ.get("DPO_GEN_TEMP", "0.8")),
             "dpo_max_steps": int(os.environ.get("DPO_MAX_STEPS", str(max_steps))),
             "dpo_n_pairs": int(os.environ.get("DPO_N_PAIRS", "0")),
+            # marks runs whose trajectory rows carry the counterfactual
+            # preference-flip telemetry (2026-08-12); the checker keys on it
+            "dpo_flip_telemetry": True,
         })
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     print(f"[run] {json.dumps(config)}", flush=True)
@@ -1415,7 +1418,17 @@ def main() -> int:
                         _xj = ab_x_cf.detach().cpu().float()[_idx.long()]
                     else:
                         _xj = train_data["y"].squeeze(-1).detach().cpu().float()
-                    learner.train({"agent_idx": _idx, "x_judge": _xj})
+                    # counterfactual judges for the flip telemetry: innate =
+                    # the fixed pre-loop baseline (always); twin = the live
+                    # no-AI population when instantiated. Downstream use is
+                    # arithmetic only (no RNG), so seeded runs stay replay-
+                    # identical to the pre-telemetry code path.
+                    _dpo_data = {"agent_idx": _idx, "x_judge": _xj,
+                                 "x_ref": innate.detach().cpu().float()[_idx.long()]}
+                    if ab_x_cf is not None:
+                        _dpo_data["x_ref_twin"] = (
+                            ab_x_cf.detach().cpu().float()[_idx.long()])
+                    learner.train(_dpo_data)
                 else:
                     learner.train(train_data)
             cur_dep += 1
@@ -1826,6 +1839,14 @@ def main() -> int:
             row["engagement"] = engagement
             row["acc_cf"] = acc_cf
             row["w1_cf"] = w1_cf
+        if training_style == "dpo":
+            # per-round preference-flip telemetry from the learner: how often
+            # the actual judge's candidate ranking reversed the innate/twin
+            # counterfactual ranking this round (pairs=0 rounds keep the keys
+            # with frac None). Consumed on read so a round without a train
+            # step can never inherit the previous round's numbers.
+            row.update(getattr(learner, "last_flip_stats", {}) or {})
+            learner.last_flip_stats = {}
         if "pred_eff_support" in pred_block:
             row["dissoc_gap"] = pred_block["pred_eff_support"] - row["op_eff_support"]
         if torch.cuda.is_available():

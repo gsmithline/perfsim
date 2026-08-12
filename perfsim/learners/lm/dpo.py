@@ -20,6 +20,16 @@ DPO_MAX_STEPS <= 0 trains ONE FULL EPOCH per round -- every valid preference pai
 is consumed exactly once (num_train_epochs=1, no step cap).
 Requires the pipeline to pass data = {"agent_idx": LongTensor, "x_judge": FloatTensor}
 and (for the cheap fixed-anchor path) USE_LORA=1 so inner_model is a PEFT model.
+
+Counterfactual preference-flip telemetry (2026-08-12): if the pipeline also passes
+data["x_ref"] (per-agent counterfactual judges, e.g. innate) and optionally
+data["x_ref_twin"] (the live no-AI twin), each round records how often the ACTUAL
+judge's deterministic closer-wins ranking of the two candidates REVERSES the
+ranking under the counterfactual judge -- direct evidence that population
+displacement is rewriting the preference signal. Pure arithmetic on already-
+sampled candidates: no extra RNG draws, so seeded runs stay bit-identical to the
+pre-telemetry code path. Results land in self.last_flip_stats for the pipeline
+to merge into its trajectory rows.
 """
 
 from __future__ import annotations
@@ -98,6 +108,8 @@ class DPOLearner(Learner):
         self._gen_temp = float(os.environ.get("DPO_GEN_TEMP", "0.8"))  # candidate sampling temp
         self._max_steps = int(os.environ.get("DPO_MAX_STEPS", str(max_steps)))  # <=0: full epoch
         self._n_pairs = int(os.environ.get("DPO_N_PAIRS", "0"))        # 0 = all agents
+        # per-round pair/flip telemetry, refreshed by _build_pref_dataset
+        self.last_flip_stats: dict[str, Any] = {}
 
     # --------------------------------------------------------------- candidates
     def _sample_two(self, prompts: list[str]) -> tuple[list[str], list[str]]:
@@ -120,15 +132,22 @@ class DPOLearner(Learner):
         self.model.ensure_loaded()
         idx = data["agent_idx"].long().view(-1)
         xj = data["x_judge"].float().view(-1)
+        xr = data.get("x_ref")           # counterfactual judge (flip telemetry)
+        xr = None if xr is None else xr.float().view(-1)
+        xt = data.get("x_ref_twin")      # live no-AI twin judge, when present
+        xt = None if xt is None else xt.float().view(-1)
         if self._n_pairs and self._n_pairs < idx.shape[0]:
             sel = torch.randperm(idx.shape[0])[: self._n_pairs]
             idx, xj = idx[sel], xj[sel]
+            xr = xr if xr is None else xr[sel]
+            xt = xt if xt is None else xt[sel]
 
         prompts = [self.model.build_prompt(self.model.profile_at(int(i))) for i in idx]
         candA, candB = self._sample_two(prompts)
 
         rows: list[dict[str, str]] = []
-        n_tie = n_fail = 0
+        n_tie = n_fail = n_flip = n_flip_twin = 0
+        disp_sum = 0.0
         for i in range(len(prompts)):
             ta, tb = candA[i].strip(), candB[i].strip()
             if re.search(r"\d", ta) is None or re.search(r"\d", tb) is None:
@@ -140,14 +159,38 @@ class DPOLearner(Learner):
                 continue
             xji = float(xj[i])
             ua, ub = -abs(ya - xji), -abs(yb - xji)
+            # flip telemetry: deterministic closer-wins ranking under the actual
+            # judge vs under the counterfactual judges. Arithmetic only -- the BT
+            # draw below stays the sole RNG consumer, preserving seeded replays.
+            du = ua - ub
+            if xr is not None:
+                xri = float(xr[i])
+                if du * (abs(yb - xri) - abs(ya - xri)) < 0:
+                    n_flip += 1
+                disp_sum += abs(xji - xri)
+            if xt is not None:
+                xti = float(xt[i])
+                if du * (abs(yb - xti) - abs(ya - xti)) < 0:
+                    n_flip_twin += 1
             p_a = 1.0 / (1.0 + math.exp(-self._tau * (ua - ub)))   # P(A preferred)
             a_wins = torch.rand(1).item() < p_a
             chosen, rejected = (ta, tb) if a_wins else (tb, ta)
             rows.append({"prompt": prompts[i], "chosen": chosen, "rejected": rejected})
 
+        stats: dict[str, Any] = {"dpo_pairs": len(rows), "dpo_ties": n_tie,
+                                 "dpo_parse_fail": n_fail}
+        if xr is not None:
+            stats["dpo_flip_n"] = n_flip
+            stats["dpo_flip_frac"] = (n_flip / len(rows)) if rows else None
+            stats["dpo_judge_disp_mean"] = (disp_sum / len(rows)) if rows else None
+        if xt is not None:
+            stats["dpo_flip_frac_twin"] = (n_flip_twin / len(rows)) if rows else None
+        self.last_flip_stats = stats
+
         print(f"[DPOLearner] beta={self._beta} tau={self._tau} gen_temp={self._gen_temp} "
               f"max_steps={self._max_steps} | pairs={len(rows)} "
-              f"(ties={n_tie}, parse_fail={n_fail} of {len(prompts)})", flush=True)
+              f"(ties={n_tie}, parse_fail={n_fail} of {len(prompts)})"
+              + (f" | flips={n_flip}" if xr is not None else ""), flush=True)
         if not rows:
             # No distinct candidates this round (population/policy collapsed toward a
             # point -> two temperature samples round to the same number). No preference

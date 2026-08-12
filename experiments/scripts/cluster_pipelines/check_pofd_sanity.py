@@ -533,6 +533,28 @@ def check_run(run_dir):
             if int(cfg["dpo_max_steps"]) > 0:
                 errs.append(f"CONFIG dpo_max_steps={cfg['dpo_max_steps']!r} "
                             f"(full-epoch family wants <=0)")
+        # counterfactual preference-flip telemetry (2026-08-12, dpo CI waves
+        # onward): the runner marks dpo_flip_telemetry in config; every round
+        # row must then carry the pair/flip keys (a 0-pair round keeps the
+        # keys, frac None). Older DPO runs lack the marker and skip this gate.
+        if cfg.get("dpo_flip_telemetry"):
+            for r_ in traj:
+                miss = [k for k in ("dpo_pairs", "dpo_ties", "dpo_parse_fail",
+                                    "dpo_flip_n", "dpo_flip_frac",
+                                    "dpo_judge_disp_mean") if k not in r_]
+                if miss:
+                    errs.append(f"TRAJ round {r_.get('round')} missing dpo "
+                                f"flip telemetry keys {miss}")
+                    break
+                ff = r_["dpo_flip_frac"]
+                if ff is None and int(r_["dpo_pairs"]) > 0:
+                    errs.append(f"TRAJ round {r_.get('round')} dpo_flip_frac "
+                                f"None with dpo_pairs>0")
+                    break
+                if ff is not None and not 0.0 <= float(ff) <= 1.0:
+                    errs.append(f"TRAJ round {r_.get('round')} "
+                                f"dpo_flip_frac={ff!r} outside [0,1]")
+                    break
     if is_tch:
         m = re.search(r"_d([pm])0p08_", name)
         if m is None:
