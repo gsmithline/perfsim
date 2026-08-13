@@ -169,6 +169,9 @@ def main():
         tw, tw_src = twin_of(d)
         hw = cfg.get("hardware") or {}
 
+        base_pre = bases.get((c["model"], c["seed"]))
+        m_base_v = base_pre["m_base"] if base_pre is not None else None
+
         ever = torch.zeros(n, dtype=torch.bool)
         first = torch.full((n,), -1, dtype=torch.long)
         first_own = torch.full((n,), -1, dtype=torch.long)
@@ -193,7 +196,17 @@ def main():
                   "w1_twin": w1(op[t], tw[t]),
                   "mean_shift_twin": float(op[t].mean() - tw[t].mean()),
                   "op_std": std_t,
-                  "std_ratio_twin": (std_t / tw_std if tw_std > 0 else NA)}
+                  "std_ratio_twin": (std_t / tw_std if tw_std > 0 else NA),
+                  # model-side change (scout Q: does greater model change
+                  # correspond to greater population change?) + model-side
+                  # dispersion (does SFT compress while ICL preserves
+                  # heterogeneity?). All descriptive.
+                  "pred_std": float(pred[t].std()),
+                  "pred_disp_from_r0": float(
+                      (pred[t] - pred[0]).abs().mean()),
+                  "pred_disp_from_base": (
+                      float((pred[t] - m_base_v).abs().mean())
+                      if m_base_v is not None else NA)}
             if (cfg.get("ai_gate_mode") or "threshold") == "threshold":
                 x0 = innate if t == 0 else op[t - 1]
                 margin = float(cfg["eps_ai"]) - \
@@ -256,7 +269,13 @@ def main():
                "final_op_std": float(op[-1].std()),
                "final_std_ratio_twin": (
                    float(op[-1].std() / tw[-1].std())
-                   if float(tw[-1].std()) > 0 else NA)}
+                   if float(tw[-1].std()) > 0 else NA),
+               "final_pred_std": float(pred[-1].std()),
+               "final_pred_disp_from_r0": float(
+                   (pred[-1] - pred[0]).abs().mean()),
+               "final_pred_disp_from_base": (
+                   float((pred[-1] - m_base_v).abs().mean())
+                   if m_base_v is not None else NA)}
         runs_rows.append(row)
 
         for i in range(n):
