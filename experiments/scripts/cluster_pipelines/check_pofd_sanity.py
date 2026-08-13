@@ -137,6 +137,30 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               pofd_/pofdw1f_/pofdesf_/pofdret trajectories must hold exactly
               config n_rounds rounds (completeness).
 
+  REACH       pofdreach_ runs (SFT-ICL reach wave 2026-08-13; incl.
+              pofdreachsmk_ 3-round smokes and pofdreachbase_ 1-round
+              frozen K=0 baseline probes at eps_ai=0): no-peer (_es0_)
+              reach study over arms b0 (sft) / b1 (forward SFT-KL) /
+              fz0 (frozen round-0 K=8 context) / dyn (live refreshed
+              K=8 context) x gates ea {0.05,0.1,0.2,0.4,0.7} + the
+              explicit all-open gate (_eaopen_ <-> AI_GATE_MODE=
+              all_open, never a numeric threshold). Gate replays go
+              through the SHARED gp.ai_gate (one definition for runner
+              + checker). Mandatory per run: exact n_rounds
+              completeness, twin_raw == innate (<= 1 float32 ulp, bit-
+              stable from round 1 -- lam*v+(1-lam)*v rounds 1 ulp off
+              v, so literal bit-identity is unattainable), gate_raw
+              present + bit-replayed, finite in-range op/pred (no
+              parse-fail NaN), hardware provenance in config, model
+              slug/seed/ea/arm tokens vs config. all_open: every gate
+              bit true + contact exactly 1.0. fz0: constant gate_raw
+              AND constant pred_raw within the run; matched fz0/dyn
+              siblings share bit-identical round-0 context ids+values
+              (CPU-derived -- never weakened for GPU heterogeneity).
+              Baseline probes cross-check innate identity when pulled
+              alongside. NO expected scientific outcome is a validity
+              condition (no arm must recruit anyone).
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -145,12 +169,22 @@ Exit 0 iff every run passes every check.
 import glob
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import sys
 
 import torch
+
+# the ONE AI-gate definition (gp.ai_gate) is shared with the runner via
+# _gated_pop.py so the deployed update and this replay can never diverge
+# (sft_icl_reach wave, 2026-08-13). Loaded like the runner loads it.
+_GP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "_gated_pop.py")
+_spec_gp = importlib.util.spec_from_file_location("_gated_pop_check", _GP_PATH)
+gp = importlib.util.module_from_spec(_spec_gp)
+_spec_gp.loader.exec_module(gp)
 
 
 def _bit_eq(a, b):
@@ -227,6 +261,18 @@ def check_run(run_dir):
     # trajectory under a pofdesf_ tag would collide with future 30-round
     # runs of the same cell (the idempotent exec skips on presence).
     is_ret = name.startswith("pofdret")
+    # SFT-ICL REACH family (2026-08-13): no-peer reach study -- shared
+    # weight updates (b0/b1) vs fixed round-0 ICL context (fz0) vs live
+    # refreshed ICL context (dyn) at gates ea {0.05..0.7} + the explicit
+    # all-open gate (_eaopen_, AI_GATE_MODE=all_open). pofdreachbase_ =
+    # the one-round frozen no-context K=0 baseline probe (eps_ai=0: the
+    # strict threshold gate never opens, so the probe cannot update
+    # opinions); pofdreachsmk_ = the 3-round smoke. NOTE "pofdreach" and
+    # "pofdret" share only the "pofdre" prefix -- neither startswith
+    # check can capture the other family.
+    is_reach = name.startswith("pofdreach")
+    is_reach_base = name.startswith("pofdreachbase")
+    is_reach_smk = name.startswith("pofdreachsmk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -314,6 +360,77 @@ def check_run(run_dir):
                 errs.append(f"CONFIG donor (tag, round)={got!r} (arm "
                             f"{m_arm.group(1)} s{sd} wants "
                             f"{(tag_w, rnd_w)!r})")
+    elif is_reach:
+        # shared surface: movielens Action, greedy serving, natural labels,
+        # no replay/pristine anchors, gamma off. eps=0 rides the _es0_
+        # token (mandatory below); W/lam ride the _w/_l tokens.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none"})
+        if m_es is None or want_es != 0.0:
+            errs.append(f"CONFIG reach tag must carry the _es0_ token "
+                        f"(got {name!r})")
+        REACH_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
+                   "lora_r": 512, "sft_epochs": 1, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0, "train_cap": 723},
+            "b1": {"training_style": "sft_kl", "kl_beta": 1.0,
+                   "kl_direction": "forward", "use_lora": 1, "lora_r": 512,
+                   "sft_epochs": 1, "fresh_each_round": True, "icl_k": 0,
+                   "icl_days": 0, "train_cap": 723},
+            "fz0": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": 0},
+            "dyn": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+        }
+        if is_reach_base:
+            # one-round frozen K=0 probe: eps_ai=0 under the strict
+            # threshold gate -> no agent is ever contacted, opinions
+            # cannot update; pred_raw[0] is the frozen no-context
+            # prediction vector m_base the common cohorts derive from.
+            want.update({"training_style": "frozen", "kl_beta": 0.0,
+                         "use_lora": 0, "fresh_each_round": False,
+                         "icl_k": 0, "icl_days": 0, "n_rounds": 1,
+                         "eps_ai": 0.0, "ai_gate_mode": "threshold"})
+        else:
+            m_arm = re.search(r"_(b0|b1|fz0|dyn)_ea", name)
+            if m_arm is None:
+                errs.append(f"CONFIG unknown reach arm token in dirname "
+                            f"{name!r}")
+            else:
+                want.update(REACH_ARM_WANT[m_arm.group(1)])
+            want["n_rounds"] = 3 if is_reach_smk else 30
+            # gate token <-> gate mode: _eaopen_ is the explicit all-open
+            # condition and must NEVER be disguised as a numeric
+            # threshold; numeric _ea tokens require threshold mode (the
+            # value itself rides the universal _ea gate below).
+            if "_eaopen_" in name:
+                want["ai_gate_mode"] = "all_open"
+            else:
+                want["ai_gate_mode"] = "threshold"
+                if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+                    errs.append(f"CONFIG reach tag carries neither a "
+                                f"numeric _ea token nor _eaopen_ ({name!r})")
+        if not any(f"_{s}_" in name for s in
+                   ("qwen7b", "olmo7b", "mistral7b")):
+            errs.append(f"CONFIG no known reach model slug in {name!r}")
+        # hardware provenance is mandatory in this family (GPU-dependent
+        # borderline generations, 2026-08-07 finding)
+        hw = cfg.get("hardware") or {}
+        hw_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                  "cuda_version", "torch_version",
+                                  "transformers_version") if k not in hw]
+        if hw_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw_missing}")
+        elif not (hw.get("hostname") and hw.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
         # configs, not here. rlhf_feedback IS recorded and tag-checked below.
@@ -680,6 +797,10 @@ def check_run(run_dir):
             errs.append(f"CONFIG base_model={cfg.get('base_model')!r} "
                         f"({_slug} wants {_bm!r})")
     eps_ai = float(cfg["eps_ai"])
+    # AI gate mode (2026-08-13): absent in older configs -> "threshold",
+    # which reproduces the pre-mode inline gate expression byte-for-byte.
+    # Every gate replay below goes through the SHARED gp.ai_gate definition.
+    gate_mode = cfg.get("ai_gate_mode") or "threshold"
 
     # -- 1b GATE-MASK (gate_raw, runner 2026-08-05) --------------------------
     # When present, the saved per-agent AI gate/contact mask must be exactly
@@ -698,7 +819,7 @@ def check_run(run_dir):
             for t in range(op_raw.shape[0]):
                 x0 = innate if t == 0 else op_raw[t - 1]
                 served = pred_raw[t].clamp(0.0, 1.0)
-                expect_g = (served - x0).abs() < eps_ai
+                expect_g = gp.ai_gate(served, x0, eps_ai, gate_mode)
                 if not torch.equal(gr[t], expect_g):
                     errs.append(f"GATE round {t}: gate_raw != gate on the "
                                 f"start-of-round opinion "
@@ -957,6 +1078,164 @@ def check_run(run_dir):
     elif d.get("icl_donor_vec") is not None and d["icl_donor_vec"].numel():
         errs.append("CTF icl_donor_vec present but icl_ctx_source != donor")
 
+    # -- 1f REACH (sft_icl_reach wave, 2026-08-13) ---------------------------
+    # Mandatory artifacts + invariants for every pofdreach* run. The gate
+    # bit-replay itself rides section 1b (gate_raw is REQUIRED here, so 1b
+    # always fires) through the SHARED gp.ai_gate; the exact per-agent
+    # opinion replay rides section 3. Nothing here encodes an expected
+    # scientific outcome -- no arm is required to recruit anyone.
+    if is_reach:
+        # completeness: exactly config n_rounds rounds
+        nr_r = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_r or int(op_raw.shape[0]) != nr_r:
+            errs.append(f"REACH trajectory holds {len(traj)} rows / op_raw "
+                        f"{tuple(op_raw.shape)} (config n_rounds={nr_r} -- "
+                        f"incomplete or over-run)")
+        # matched no-platform twin: with no peers and an initially innate
+        # twin, x_cf(t+1) = lam*innate + (1-lam)*x_cf(t) has innate as its
+        # fixed point -- but float32 rounding of lam*v + (1-lam)*v sits up
+        # to ONE ULP off v (max 5.96e-8, verified on the archive), so the
+        # spec's "bit-exact" is enforced as <= 1 float32 ulp PLUS bit-
+        # stability from round 1 on (the iterate is bit-stationary).
+        tw_r = d.get("twin_raw")
+        if tw_r is None or tw_r.numel() == 0:
+            errs.append("REACH twin_raw missing/empty (WITH_TWIN=1 is "
+                        "mandatory in this family)")
+        elif tuple(tw_r.shape) != tuple(op_raw.shape):
+            errs.append(f"REACH twin_raw shape {tuple(tw_r.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        else:
+            tw_r = tw_r.float()
+            dtw = float((tw_r - innate).abs().max())
+            if dtw > 6.0e-8:
+                errs.append(f"REACH twin drifts off innate (max |diff| "
+                            f"{dtw:.2e} > 1 float32 ulp; no-peer twin must "
+                            f"stay innate)")
+            for tt in range(2, tw_r.shape[0]):
+                if not torch.equal(tw_r[tt], tw_r[1]):
+                    errs.append(f"REACH twin_raw round {tt} not bit-stable "
+                                f"(differs from round 1)")
+                    break
+        if any("twin_mean" not in r for r in traj):
+            errs.append("REACH twin telemetry missing from trajectory rows")
+        # gate mask: REQUIRED (never skip-if-absent in this family)
+        gr_r = d.get("gate_raw")
+        if gr_r is None or gr_r.numel() == 0:
+            errs.append("REACH gate_raw missing/empty (mandatory in this "
+                        "family)")
+        elif tuple(gr_r.shape) != tuple(op_raw.shape):
+            errs.append(f"REACH gate_raw shape {tuple(gr_r.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        else:
+            gr_r = gr_r.bool()
+            if gate_mode == "all_open":
+                if not bool(gr_r.all()):
+                    bad_t = int((~gr_r).flatten(1).any(dim=1)
+                                .nonzero()[0])
+                    errs.append(f"REACH all_open: gate_raw has False bits "
+                                f"(first at round {bad_t})")
+                bad_c = [r["round"] for r in traj
+                         if r.get("contact") != 1.0]
+                if bad_c:
+                    errs.append(f"REACH all_open: contact != 1.0 exactly "
+                                f"in rounds {bad_c[:5]}")
+            if "_fz0_" in name:
+                # frozen round-0 context + frozen weights + greedy serving:
+                # the gate mask and the served predictions must be constant
+                # (entrants/exits exactly zero). Within one run the GPU is
+                # fixed, so hardware nondeterminism cannot explain drift.
+                for tt in range(1, gr_r.shape[0]):
+                    if not torch.equal(gr_r[tt], gr_r[0]):
+                        errs.append(f"REACH fz0: gate_raw round {tt} != "
+                                    f"round 0 ({int((gr_r[tt] ^ gr_r[0]).sum())} "
+                                    f"agents flipped; frozen context must "
+                                    f"freeze the gate set)")
+                        break
+                for tt in range(1, pred_raw.shape[0]):
+                    if not _bit_eq(pred_raw[tt], pred_raw[0]):
+                        neq = ~((pred_raw[tt] == pred_raw[0])
+                                | (torch.isnan(pred_raw[tt])
+                                   & torch.isnan(pred_raw[0])))
+                        errs.append(f"REACH fz0: pred_raw round {tt} != "
+                                    f"round 0 ({int(neq.sum())} agents, max "
+                                    f"|diff| {float((pred_raw[tt] - pred_raw[0])[neq].abs().max()):.2e}) "
+                                    f"-- deterministic serving of a frozen "
+                                    f"context must be constant within a run")
+                        break
+        # finite, in-range opinions AND predictions (parse-fail NaN is not
+        # acceptable in this family -- it would silently shrink the gate)
+        if not torch.isfinite(op_raw).all():
+            errs.append("REACH non-finite opinions")
+        elif float(op_raw.min()) < -1e-6 or float(op_raw.max()) > 1 + 1e-6:
+            errs.append(f"REACH opinions outside [0,1]: "
+                        f"[{float(op_raw.min()):.4f}, {float(op_raw.max()):.4f}]")
+        if not torch.isfinite(pred_raw).all():
+            errs.append("REACH non-finite predictions (parse-fail NaN)")
+        elif float(pred_raw.min()) < -1e-6 or float(pred_raw.max()) > 1 + 1e-6:
+            errs.append(f"REACH predictions outside [0,1]: "
+                        f"[{float(pred_raw.min()):.4f}, "
+                        f"{float(pred_raw.max()):.4f}]")
+        # ICL arms: exemplar artifacts + rendered log + constant fixed-text
+        # perplexity (weights frozen). Structural context checks (self-
+        # exclusion, snapshot immutability on ids/vals AND text) ride the
+        # generic section 1d above.
+        if int(cfg.get("icl_k") or 0) > 0:
+            ii_r = d.get("icl_idx_raw")
+            if ii_r is None or ii_r.numel() == 0:
+                errs.append("REACH icl_k>0 but icl_idx_raw missing/empty")
+            if not os.path.exists(os.path.join(run_dir,
+                                               "icl_ctx_log.json.gz")):
+                errs.append("REACH icl_ctx_log.json.gz missing")
+            ppls_r = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_r and len(set(ppls_r)) != 1:
+                errs.append(f"REACH fixed-text perplexity varies across "
+                            f"rounds ({len(set(ppls_r))} distinct) -- "
+                            f"weights not frozen?")
+            # matched fixed/dynamic pair: round-0 exemplar identities AND
+            # displayed values must be bit-identical when the sibling run
+            # is pulled alongside. Both are CPU-derived (RNG selection +
+            # innate round-0 labels), so this holds across heterogeneous
+            # GPUs -- never weakened for hardware.
+            for a_tok, b_tok in (("_fz0_", "_dyn_"), ("_dyn_", "_fz0_")):
+                if a_tok in name:
+                    sib = os.path.join(
+                        os.path.dirname(run_dir.rstrip("/")) or ".",
+                        name.replace(a_tok, b_tok), "trajectory.pt")
+                    if os.path.exists(sib):
+                        ds_r = torch.load(sib, map_location="cpu",
+                                          weights_only=False)
+                        for key in ("icl_idx_raw", "icl_val_raw"):
+                            a_v, b_v = d.get(key), ds_r.get(key)
+                            if (a_v is None or b_v is None
+                                    or a_v.numel() == 0 or b_v.numel() == 0):
+                                errs.append(f"REACH matched pair: {key} "
+                                            f"missing in one of fz0/dyn")
+                            elif not torch.equal(a_v[0].float(),
+                                                 b_v[0].float()):
+                                errs.append(f"REACH matched pair: round-0 "
+                                            f"{key} differs from the "
+                                            f"{b_tok.strip('_')} sibling "
+                                            f"(fixed and dynamic arms must "
+                                            f"share the round-0 context)")
+                    break
+        # baseline <-> arm innate identity when the matched baseline probe
+        # is pulled alongside (the analysis re-verifies this globally)
+        if not is_reach_base:
+            m_slug_r = re.search(r"_(qwen7b|olmo7b|mistral7b)_", name)
+            m_seed_r = re.search(r"_s(\d+)(?:_|$)", name)
+            if m_slug_r and m_seed_r:
+                base_dir = os.path.join(
+                    os.path.dirname(run_dir.rstrip("/")) or ".",
+                    f"pofdreachbase_{m_slug_r.group(1)}_w0p5_l0p2_es0"
+                    f"_s{m_seed_r.group(1)}", "trajectory.pt")
+                if os.path.exists(base_dir):
+                    db_r = torch.load(base_dir, map_location="cpu",
+                                      weights_only=False)
+                    if not torch.equal(db_r["innate"].float(), innate):
+                        errs.append("REACH innate vector differs from the "
+                                    "matched baseline probe's (population "
+                                    "mismatch)")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -996,7 +1275,7 @@ def check_run(run_dir):
                     continue
                 x0 = innate if t == 0 else op_raw[t - 1]
                 h = lam * innate + (1.0 - lam) * x0
-                gate = (served - x0).abs() < eps_ai
+                gate = gp.ai_gate(served, x0, eps_ai, gate_mode)
                 z = torch.where(gate, (1.0 - w) * h + w * served, h)
                 dmean = abs(float(op_raw[t].mean()) - float(z.mean()))
                 if dmean > 1e-4:
@@ -1037,7 +1316,7 @@ def check_run(run_dir):
         # state the next round starts from and the state the buffer labels
         # carry. Both versions gate on it.
         x_before = innate if t == 0 else op_raw[t - 1]
-        gate = (served - x_before).abs() < eps_ai
+        gate = gp.ai_gate(served, x_before, eps_ai, gate_mode)
         if nested:
             # population_update="nested_ai_then_social_v1":
             #   h = lam innate + (1-lam) x(t)
@@ -1067,8 +1346,10 @@ def check_run(run_dir):
                         f"(the AI gate must use the start-of-round opinion)")
 
     # -- 4 FRESH -------------------------------------------------------------
-    # icl (frozen): nothing trains, no n_train ever -- skip.
-    if is_icl or is_iclf or is_ctf:
+    # icl (frozen): nothing trains, no n_train ever -- skip. Reach frozen
+    # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
+    if is_icl or is_iclf or is_ctf or \
+            (is_reach and cfg.get("training_style") == "frozen"):
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
 

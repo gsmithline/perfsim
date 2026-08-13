@@ -75,11 +75,31 @@ def gated_blend(x, served, w_agent, eps):
     return x, float(gate.float().mean())
 
 
-def nested_presocial_update(x0, served, innate, k, w_agent, eps_ai):
+def ai_gate(served, x0, eps_ai, mode="threshold"):
+    """The ONE AI-gate definition (2026-08-13, sft_icl_reach wave). Runner and
+    checker both call this so the deployed update, the dry/counterfactual gate
+    calculations, and the offline replay can never diverge.
+
+      threshold  g_i = 1{|m_i - x0_i| < eps_ai}   (strict <, gate on the
+                 START-OF-ROUND opinion; byte-identical to the pre-2026-08-13
+                 inline expression, and RNG-free either way)
+      all_open   g_i = 1 for every agent. NOT encoded as eps_ai=1: the
+                 threshold gate is a strict inequality, so |m - x| = 1 (an
+                 agent at 0 served 1) would be REJECTED under eps_ai=1.
+    """
+    if mode == "all_open":
+        return torch.ones_like(served, dtype=torch.bool)
+    if mode != "threshold":
+        raise ValueError(f"unknown AI_GATE_MODE: {mode!r}")
+    return (served - x0).abs() < eps_ai
+
+
+def nested_presocial_update(x0, served, innate, k, w_agent, eps_ai,
+                            gate_mode="threshold"):
     """Pre-social round operator (population_update="nested_ai_then_social_v1").
 
         h_i = k innate_i + (1-k) x0_i                      (human component)
-        g_i = 1{|m_i - x0_i| < eps_ai}                      (gate on x0, strict <)
+        g_i = ai_gate(m, x0, eps_ai, gate_mode)             (gate on x0)
         z_i = (1-w_i) h_i + w_i m_i  if g_i else h_i        (platform mixture)
 
     The gate is evaluated against the START-OF-ROUND opinion x0 -- not against
@@ -87,11 +107,14 @@ def nested_presocial_update(x0, served, innate, k, w_agent, eps_ai):
     before the population moves. The innate pull therefore dilutes only the
     human share: w_i = 1 on a gated agent gives z_i = m_i for every k.
 
+    gate_mode="threshold" (the default) reproduces the pre-2026-08-13 behavior
+    byte-for-byte; "all_open" opens the gate for every agent (see ai_gate).
+
     Pure and side-effect free; peer (Deffuant) dynamics run AFTER this on z.
     Returns (z, gate) with gate the boolean acceptance mask.
     """
     h = k * innate + (1.0 - k) * x0
-    gate = (served - x0).abs() < eps_ai
+    gate = ai_gate(served, x0, eps_ai, gate_mode)
     eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
     return (1.0 - eff_w) * h + eff_w * served, gate
 

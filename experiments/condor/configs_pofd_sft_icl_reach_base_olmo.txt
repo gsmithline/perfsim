@@ -1,0 +1,5 @@
+pofdreachbase_olmo7b_w0p5_l0p2_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1
+pofdreachbase_olmo7b_w0p5_l0p2_es0_s42, frozen, 0, 42, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1
+pofdreachbase_olmo7b_w0p5_l0p2_es0_s43, frozen, 0, 43, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1
+pofdreachbase_olmo7b_w0p5_l0p2_es0_s44, frozen, 0, 44, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1
+pofdreachbase_olmo7b_w0p5_l0p2_es0_s45, frozen, 0, 45, 1, replace, 1.0, fixed, ab, 0.0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1

@@ -27,6 +27,7 @@ Usage:
   python3 gen_pofd_sweep.py            # write configs_pofd_<model>.txt + smoke
   python3 gen_pofd_sweep.py --verify   # assert on-disk configs match the grid
 """
+import json
 import os
 import sys
 
@@ -920,6 +921,224 @@ MISTRAL_CUBE_REPL_SUB = ("""\
 # PREREQ: mistral7b_cube_s0 pulled + gated + completeness-inspected.
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> mistral7b_cube_repl
 """ + _MISTRAL_CUBE_TAIL.format(cfg="configs_pofd_mistral7b_cube_repl.txt"))
+# SFT-ICL REACH (2026-08-13, user), keys sft_icl_reach[_smoke|_baseline]
+# + sft_icl_reach_{qwen,olmo,mistral}: with peer interaction OFF, how do
+# shared weight updates vs fixed vs refreshed prompt context change the
+# set of agents the platform can REACH? Four arms x 3 models x 6 gates
+# x 5 seeds = 360 conceptual main trajectories:
+#   b0  = ordinary SFT (beta 0, 1 epoch/round, fresh LoRA-512 + replace)
+#   b1  = forward SFT-KL (beta 1), otherwise identical to b0
+#   fz0 = frozen weights, K=8 random live ICL context FROZEN verbatim at
+#         round 0 (ICL_SNAPSHOT_ROUND=0)
+#   dyn = frozen weights, K=8 context REBUILT from the live population
+#         every round (ICL_SNAPSHOT_ROUND=-1); matched fz0/dyn cells
+#         share bit-identical round-0 contexts by the selection-RNG
+#         construction (checker-enforced)
+# Gates: ea {0.05, 0.1, 0.2, 0.4, 0.7} + the EXPLICIT all-open gate
+# (AI_GATE_MODE=all_open, tag token _eaopen_). all_open is NOT eps_ai=1:
+# the threshold gate is strict-<, so it must never be disguised as a
+# numeric dose. The mode is a new opt-in config field; "threshold" is
+# byte-identical (same expression, RNG-free) to every earlier run, and
+# runner + checker share ONE gate definition (_gated_pop.ai_gate).
+# Env: W=0.5, lam=0.2, es=0 (no peer step ever), gamma=0, greedy
+# serving, 30 rounds, WITH_TWIN=1, movielens Action, 723 agents.
+# BASELINES (15 = 3 models x 5 seeds, pofdreachbase_): one-round
+# frozen-weight NO-context K=0 probes at EPS_AI=0 -- the strict gate
+# never opens, so the probe cannot update opinions; pred_raw[0] is the
+# frozen no-context prediction vector m_base defining the shared
+# pre-intervention cohort U_common(eps) = {i : |m_base_i - innate_i|
+# >= eps} that analyze_sft_icl_reach.py derives OFFLINE (never in the
+# population-update path).
+# REUSE AUDIT (2026-08-13, audit_sft_icl_reach_reuse.py -- BY CONFIG
+# FIELDS + 30-round completeness over runs/pokec_gated_lm +
+# notes/pofd/cluster, never tag similarity): EXACTLY 33 cells exist --
+# qwen 21 (b0 6: w2 s0 plane + fes s42/43 @ea0p4; b1 8: w2f s0 plane +
+# s42/43 @ea{0p05,0p4}; fz0 3 + dyn 3: iclf es0 s0; dyn ea0p05 s0:
+# icl2 k8live) and olmo 12 (b0/b1 w2f s0 planes; dyn 4: icl2 k8live
+# s0). 327 main trajectories queue (qwen 99, olmo 108, mistral 120).
+# The audited map is experiments/condor/manifest_sft_icl_reach.json --
+# the generator consumes it and HARD-ASSERTS the audited counts; rerun
+# the audit script if the local corpus changes.
+# HARDWARE: borderline generations flip across GPU architectures
+# (2026-08-07 iclf finding). The wave stays schedulable (>=80GB, g106
+# excluded, no capability pin -- pinning one architecture at BID-25
+# prices risks starving 342 jobs); instead every run records a config
+# "hardware" block (host/GPU/CC/CUDA/torch/transformers) and the
+# analysis marks heterogeneous-hardware blocks for paired use. The
+# checker's cross-run identity checks (fz0<->dyn round-0 context) are
+# CPU-derived and hold across GPUs -- never weakened for hardware.
+# Smoke (6 jobs, 3 rounds): qwen b0 + dyn at all-open (gates the new
+# AI_GATE_MODE path), olmo/mistral fz0 + dyn at ea0p1 (first-ever
+# OLMo/Mistral ICL + the never-run-on-these-models snapshot path,
+# fixed/dynamic round-0 identity, frozen twin, new checker branches).
+# Flow: smoke -> gate -> baselines -> gate -> full production key.
+REACH_MANIFEST_PATH = os.path.join(HERE, "manifest_sft_icl_reach.json")
+REACH_EXPECT_REUSED = 33
+REACH_EXPECT_NEW = 327
+REACH_EXPECT_NEW_PER_MODEL = {"qwen7b": 99, "olmo7b": 108, "mistral7b": 120}
+REACH_SEEDS = [0, 42, 43, 44, 45]
+REACH_GATES = [0.05, 0.1, 0.2, 0.4, 0.7, "open"]
+REACH_ARMS = ["b0", "b1", "fz0", "dyn"]
+REACH_KEY = {"qwen7b": "sft_icl_reach_qwen", "olmo7b": "sft_icl_reach_olmo",
+             "mistral7b": "sft_icl_reach_mistral"}
+# resource/env deltas per model (mirrors CUBE_MODELS + the mistral cube
+# tail, which are defined later in this file -- kept literal here so the
+# block is self-contained at import time)
+REACH_MODELS = {
+    "qwen7b": {"base_model": "Qwen/Qwen2.5-7B-Instruct",
+               "mem": "128G", "disk": "40G", "ppl_batch": 64,
+               "extra_env": ""},
+    "olmo7b": {"base_model": "allenai/OLMo-2-1124-7B-Instruct",
+               "mem": "160G", "disk": "60G", "ppl_batch": 16,
+               "extra_env": "HF_HOME=/lustre/fast/fast/gsmithline/hf_cache "
+                            "HF_HUB_OFFLINE=1 "},
+    "mistral7b": {"base_model": "mistralai/Mistral-7B-Instruct-v0.3",
+                  "mem": "128G", "disk": "40G", "ppl_batch": 64,
+                  "extra_env": "HF_HOME=/lustre/fast/fast/gsmithline/"
+                               "hf_cache HF_HUB_OFFLINE=1 "},
+}
+# per-arm queue payloads (cols 16-23): ICL knobs, adapter mode, telemetry.
+# gg mirrors the family each arm extends (cube waves ran without gender
+# gaps, iclf with them) so reused and new cells share telemetry surfaces.
+REACH_ARM_COLS = {
+    "b0": dict(style="sft", beta="0", iclk=0, snap=-1, uselora=1, fresh=1,
+               ansk=16, gg=0),
+    "b1": dict(style="sft_kl", beta="1", iclk=0, snap=-1, uselora=1,
+               fresh=1, ansk=16, gg=0),
+    "fz0": dict(style="frozen", beta="0", iclk=8, snap=0, uselora=0,
+                fresh=0, ansk=0, gg=1),
+    "dyn": dict(style="frozen", beta="0", iclk=8, snap=-1, uselora=0,
+                fresh=0, ansk=0, gg=1),
+}
+ROW_REACH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+             "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {gatemode}, {iclk}, "
+             "{snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}")
+REACH_SMOKES = [("qwen7b", "b0", "open"), ("qwen7b", "dyn", "open"),
+                ("olmo7b", "fz0", 0.1), ("olmo7b", "dyn", 0.1),
+                ("mistral7b", "fz0", 0.1), ("mistral7b", "dyn", 0.1)]
+
+
+def _reach_gate_tok(gate):
+    return "eaopen" if gate == "open" else f"ea{_num(gate)}"
+
+
+def reach_tag(model, arm, gate, seed, prefix="pofdreach"):
+    return (f"{prefix}_{model}_{arm}_{_reach_gate_tok(gate)}_{w_tok()}"
+            f"_es0_s{seed}")
+
+
+def reach_base_tag(model, seed):
+    return f"pofdreachbase_{model}_{w_tok()}_es0_s{seed}"
+
+
+def reach_row(model, arm, gate, seed, nrounds=30, prefix="pofdreach"):
+    return ROW_REACH.format(
+        tag=reach_tag(model, arm, gate, seed, prefix), seed=seed,
+        eps_ai="0" if gate == "open" else f"{gate:g}",
+        gatemode="all_open" if gate == "open" else "threshold",
+        nrounds=nrounds, **REACH_ARM_COLS[arm])
+
+
+def reach_base_row(model, seed):
+    # 1-round frozen K=0 probe; EPS_AI=0 under the strict threshold gate
+    # -> no contacts, opinions untouched (the no-update guarantee)
+    return ROW_REACH.format(
+        tag=reach_base_tag(model, seed), style="frozen", beta="0",
+        seed=seed, eps_ai="0", gatemode="threshold", iclk=0, snap=-1,
+        uselora=0, fresh=0, ansk=0, gg=0, nrounds=1)
+
+
+def _reach_manifest():
+    with open(REACH_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def reach_rows(model):
+    """Rows for the audited-MISSING cells of one model, manifest-driven.
+    The generated tag must equal the manifest's recorded tag per cell."""
+    rows = []
+    for c in _reach_manifest()["cells"]:
+        if c["model"] == model and c["status"] == "new":
+            r = reach_row(model, c["arm"], c["gate"], c["seed"])
+            assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
+            rows.append(r)
+    return rows
+
+
+def reach_smoke_rows(model):
+    return [reach_row(m, arm, gate, 0, nrounds=3, prefix="pofdreachsmk")
+            for m, arm, gate in REACH_SMOKES if m == model]
+
+
+REACH_SUB_TEMPLATE = """\
+# HTCondor: SFT-ICL REACH, {model} -- {what}
+# GENERATED by gen_pofd_sweep.py from the REACH block + the audited
+# manifest_sft_icl_reach.json (2026-08-13). Never edit by hand: rerun
+# audit_sft_icl_reach_reuse.py (if the local corpus changed) and then
+# this script. {n_jobs} job(s).
+# No-peer reach study -- arms b0 (ordinary SFT) / b1 (forward SFT-KL)
+# / fz0 (frozen round-0 K=8 ICL context) / dyn (live refreshed K=8
+# context) x gates ea {{0.05,0.1,0.2,0.4,0.7}} + the explicit all-open
+# gate (AI_GATE_MODE=all_open; NEVER eps_ai=1 -- the threshold gate is
+# strict-<). W=0.5, lam=0.2, es=0, gamma=0, greedy serving,
+# WITH_TWIN=1, movielens Action, 723 agents. N_ROUNDS / style / gate
+# mode / ICL & adapter knobs ride the queue (cols 15-23): mains 30
+# rounds, pofdreachbase_ probes 1 round (frozen K=0 at EPS_AI=0: the
+# strict gate never opens, opinions cannot update; pred_raw[0] is the
+# frozen no-context baseline m_base), smokes 3 rounds.
+# Gate every pull with check_pofd_sanity (REACH section: shared
+# ai_gate bit-replay, twin==innate to 1 ulp, mandatory gate_raw +
+# hardware provenance, all-open all-true + contact exactly 1, fz0
+# constant gate/pred, fz0<->dyn round-0 context identity). GPU
+# heterogeneity is recorded per run (config hardware block) and
+# handled downstream by analyze_sft_icl_reach.py -- no capability pin
+# here (it would starve the wave at low bids).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+#   (umbrellas: sft_icl_reach_smoke -> gate -> sft_icl_reach_baseline
+#    -> gate -> sft_icl_reach)
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_pofdreach"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+def reach_sub(model, kind):
+    """kind: 'main' | 'base' | 'smoke'."""
+    key = {"main": REACH_KEY[model],
+           "base": f"sft_icl_reach_base_{REACH_KEY[model].split('_')[-1]}",
+           "smoke": f"sft_icl_reach_smoke_{REACH_KEY[model].split('_')[-1]}"
+           }[kind]
+    n_jobs = {"main": len(reach_rows(model)),
+              "base": len(REACH_SEEDS),
+              "smoke": len(reach_smoke_rows(model))}[kind]
+    what = {"main": "audited-missing main trajectories (30 rounds)",
+            "base": "1-round frozen K=0 baseline probes (EPS_AI=0)",
+            "smoke": "SMOKE (3 rounds)"}[kind]
+    return REACH_SUB_TEMPLATE.format(model=model, key=key, n_jobs=n_jobs,
+                                     what=what, **REACH_MODELS[model])
+
+
 # RANDOM-EVEN-SPLIT twin of the controlled-teacher wave (2026-08-04, user):
 # same two-stage design with the favored set a SYNTHETIC balanced random
 # split (A/B, 361/362 of 723) instead of gender. No prompt feature marks
@@ -2954,6 +3173,63 @@ def main():
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_dpo_mr.sub")] = DPO_MR_SUB
     cube_subs[os.path.join(HERE, "at_pofd_qwen7b_dpo_mr_smoke.sub")] = \
         DPO_MR_SMOKE_SUB
+    # SFT-ICL reach wave (see the REACH block): manifest-driven -- only
+    # audited-missing cells queue. HARD ASSERTS pin the independently
+    # audited counts (33 reused / 327 missing of 360; per-model 99/108/120;
+    # 15 baselines; 6 smokes); a changed corpus must re-run
+    # audit_sft_icl_reach_reuse.py, which refuses to write a manifest that
+    # contradicts its --expect counts.
+    _rman = _reach_manifest()
+    assert _rman["counts"]["cells"] == 360, _rman["counts"]
+    assert _rman["counts"]["reused"] == REACH_EXPECT_REUSED == 33, \
+        _rman["counts"]
+    assert _rman["counts"]["new"] == REACH_EXPECT_NEW == 327, _rman["counts"]
+    assert _rman["counts"]["new_per_model"] == REACH_EXPECT_NEW_PER_MODEL, \
+        _rman["counts"]["new_per_model"]
+    assert _rman["counts"]["baselines"] == 15, _rman["counts"]
+    assert sum(_rman["counts"]["new_per_arm"].values()) == 327
+    assert len(_rman["cells"]) == 360 and len(_rman["baselines"]) == 15
+    _reach_reused = {c["run_tag"] for c in _rman["cells"]
+                     if c["status"] == "reused"}
+    assert len(_reach_reused) == 33
+    _prior_tags_reach = {r.split(",")[0]
+                         for rows in files.values() for r in rows}
+    _reach_all_tags = set()
+    for model in REACH_MODELS:
+        rows_m = reach_rows(model)
+        assert len(rows_m) == REACH_EXPECT_NEW_PER_MODEL[model], \
+            (model, len(rows_m))
+        base_m = [reach_base_row(model, s) for s in REACH_SEEDS]
+        smk_m = reach_smoke_rows(model)
+        assert len(base_m) == 5 and len(smk_m) == 2, (model, len(base_m),
+                                                      len(smk_m))
+        for rows_k in (rows_m, base_m, smk_m):
+            tags_k = {r.split(",")[0] for r in rows_k}
+            assert not (tags_k & _reach_reused), \
+                f"reach queues a reused cell: {tags_k & _reach_reused}"
+            assert not (tags_k & _prior_tags_reach), \
+                f"reach collides with existing configs: " \
+                f"{tags_k & _prior_tags_reach}"
+            assert not (tags_k & _reach_all_tags), "duplicate reach tags"
+            _reach_all_tags |= tags_k
+        short = REACH_KEY[model].split("_")[-1]
+        p = os.path.join(HERE, f"configs_pofd_{REACH_KEY[model]}.txt")
+        files[p] = rows_m
+        expected[p] = REACH_EXPECT_NEW_PER_MODEL[model]
+        p = os.path.join(HERE, f"configs_pofd_sft_icl_reach_base_{short}.txt")
+        files[p] = base_m
+        expected[p] = 5
+        p = os.path.join(HERE,
+                         f"configs_pofd_sft_icl_reach_smoke_{short}.txt")
+        files[p] = smk_m
+        expected[p] = 2
+        for kind in ("main", "base", "smoke"):
+            key = {"main": REACH_KEY[model],
+                   "base": f"sft_icl_reach_base_{short}",
+                   "smoke": f"sft_icl_reach_smoke_{short}"}[kind]
+            cube_subs[os.path.join(HERE, f"at_pofd_{key}.sub")] = \
+                reach_sub(model, kind)
+    assert len(_reach_all_tags) == 327 + 15 + 6
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -3022,6 +3298,9 @@ def main():
           f"6 ws2f cells reused per the config-field audit)"
           f" + 15 dpo_mr pairs (matched-randomness closed/open, "
           f"= 30 arm trajectories)"
+          f" + 327 sft_icl_reach mains (360 conceptual cells, 33 audited "
+          f"reused: qwen 99 + olmo 108 + mistral 120 queue) + 15 reach "
+          f"baseline probes"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)

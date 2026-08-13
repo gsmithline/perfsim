@@ -125,6 +125,26 @@ def _env_int(name, default): return int(os.environ.get(name, str(default)))
 def _env_float(name, default): return float(os.environ.get(name, str(default)))
 
 
+def _hardware_meta():
+    """Hardware/software provenance for config.json (2026-08-13): hostname,
+    GPU model + compute capability, CUDA/torch/transformers versions. Pure
+    metadata -- nothing in the simulation path reads it."""
+    if torch.cuda.is_available():
+        gpu = torch.cuda.get_device_name(0)
+        cc = "%d.%d" % torch.cuda.get_device_capability(0)
+    else:
+        gpu, cc = "cpu", ""
+    try:
+        import transformers
+        tf_ver = transformers.__version__
+    except ImportError:
+        tf_ver = ""
+    return {"hostname": os.uname().nodename, "gpu_name": gpu, "gpu_cc": cc,
+            "cuda_version": torch.version.cuda or "",
+            "torch_version": torch.__version__,
+            "transformers_version": tf_ver}
+
+
 def _wandb_hist(wb, values, bins):
     """wandb.Histogram with fixed [0,1] bins so shapes are comparable across rounds."""
     counts, edges = np.histogram(values.detach().cpu().numpy(), bins=bins, range=(0.0, 1.0))
@@ -591,6 +611,18 @@ def main() -> int:
     pop_model = os.environ.get("POP_MODEL", "fj")
     eps = _env_float("EPS", 0.3)
     eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
+    # AI_GATE_MODE (2026-08-13, sft_icl_reach wave): "threshold" (default) =
+    # the strict |m - x0| < eps_ai gate, byte-identical to every earlier run;
+    # "all_open" = every agent contacted every round. The explicit mode exists
+    # because the threshold gate is a strict inequality -- eps_ai=1 would NOT
+    # open the gate for an agent at distance exactly 1 -- so an all-open
+    # condition must never be disguised as a numeric threshold. One shared
+    # definition (gp.ai_gate) feeds the deployed update, the dry/counterfactual
+    # gate calculations, and the offline checker replay.
+    ai_gate_mode = os.environ.get("AI_GATE_MODE", "threshold")
+    if ai_gate_mode not in ("threshold", "all_open"):
+        raise ValueError(f"AI_GATE_MODE must be 'threshold' or 'all_open'; "
+                         f"got {ai_gate_mode!r}")
     gamma_bias = _env_float("GAMMA_BIAS", 1.5)
     w_plat = _env_float("W_PLAT", 0.3)
     # population innate re-anchor: each round x <- (1-lambda) x + lambda innate
@@ -749,6 +781,9 @@ def main() -> int:
 
     if pop_model not in ("fj", "ab"):
         raise ValueError(f"unknown POP_MODEL: {pop_model!r}")
+    if ai_gate_mode != "threshold" and pop_model != "ab":
+        raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
+                         "eps_ai gate exists only in the ab population)")
     if run_mode not in ("loop", "no_feedback", "direct"):
         raise ValueError(f"unknown RUN_MODE: {run_mode!r}")
     if canary_delta > 0 and not (pop_model == "ab" and run_mode == "loop"):
@@ -894,6 +929,10 @@ def main() -> int:
         "seed_base_data": seed_base_data, "train_cap": train_cap,
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
         "pop_model": pop_model, "eps": eps, "eps_ai": eps_ai, "gamma_bias": gamma_bias,
+        # under all_open the recorded eps_ai is inert (the gate never reads
+        # it); the mode field, not the number, defines the gate. Absent in
+        # configs written before 2026-08-13 -> "threshold".
+        "ai_gate_mode": ai_gate_mode,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
         # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
@@ -930,6 +969,11 @@ def main() -> int:
         "ans_sample_k": ans_sample_k, "ans_sample_n": ans_sample_n,
         "ans_sample_t": ans_sample_t,
         "host": os.uname().nodename,
+        # hardware provenance (2026-08-13, sft_icl_reach wave): borderline
+        # generations flip across GPU architectures (2026-08-07 iclf finding),
+        # so every run records where it computed. Metadata only -- no
+        # simulation path reads it. check_dpo_pair treats it like host.
+        "hardware": _hardware_meta(),
     }
     if training_style == "dpo":
         # tag<->config gate for DPO waves; defaults mirror DPOLearner's env
@@ -1712,7 +1756,7 @@ def main() -> int:
                 # mean|blended - x| = mean(eff_w * |s - x|). Equals plat_disps when
                 # k == 0 (then h == x0); with k > 0 the logged displacement is
                 # measured from h, so the two differ by the anchor's own move.
-                gate = (s - x).abs() < eps_ai
+                gate = gp.ai_gate(s, x, eps_ai, ai_gate_mode)
                 eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
                 return float((eff_w * (s - x).abs()).mean())
             # POPULATION_UPDATE = "nested_ai_then_social_v1". One round is
@@ -1742,7 +1786,8 @@ def main() -> int:
                 else:
                     served_now = served
                 ab_x, gate_open = gp.nested_presocial_update(
-                    x0, served_now, ab_innate, innate_lambda, w_agent, eps_ai)
+                    x0, served_now, ab_innate, innate_lambda, w_agent, eps_ai,
+                    gate_mode=ai_gate_mode)
                 eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
                 # provenance: the innate share carries tag 0, the platform
                 # injects tag 1 on gated agents -- same nesting as the opinions
@@ -1755,7 +1800,7 @@ def main() -> int:
             else:
                 # no_feedback: human component only, no AI mixture; the saved
                 # mask is the counterfactual gate the contact scalar reports
-                gate_nf = (served - x0).abs() < eps_ai
+                gate_nf = gp.ai_gate(served, x0, eps_ai, ai_gate_mode)
                 ab_x = innate_lambda * ab_innate + (1.0 - innate_lambda) * x0
                 ab_f = (1.0 - innate_lambda) * ab_f
                 contacts.append(float(gate_nf.float().mean()))

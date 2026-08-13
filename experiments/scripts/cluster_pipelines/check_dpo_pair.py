@@ -37,7 +37,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from perfsim.learners.lm.dpo_bank import DpoBank, state_digest  # noqa: E402
 
 ALLOWED_CFG_DIFF = {"run_tag", "rlhf_feedback", "dpo_bank_mode", "host",
-                    "gpu_name"}
+                    # "hardware" (2026-08-13): the runner's hardware-
+                    # provenance block -- like host/gpu_name, it may differ
+                    # across the two arms' allocations by design
+                    "gpu_name", "hardware"}
 
 
 def fail(msg):
