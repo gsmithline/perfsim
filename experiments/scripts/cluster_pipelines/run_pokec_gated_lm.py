@@ -94,6 +94,7 @@ except ImportError:
 from perfsim.core.learner import Learner
 from perfsim.core.types import SUPERVISED_SCHEMA
 from perfsim.environments.dynamics import FJWorld, normalize_adjacency
+from perfsim.learners.lm.dpo_bank import bank_from_env, state_digest
 from perfsim.learners.lm.kl_sft import KLSFTLearner
 from perfsim.learners.lm.sft import SFTLearner
 from perfsim.losses import MSELoss
@@ -517,6 +518,16 @@ def main() -> int:
     # predictions beyond the other profile columns. Default 0: telemetry
     # surface of every existing wave unchanged.
     log_gender_gaps = _env_int("LOG_GENDER_GAPS", 0) == 1
+    # MATCHED-RANDOMNESS paired DPO (2026-08-13, strictly opt-in): the
+    # closed arm WRITES a per-round candidate/uniform bank, the open arm
+    # READS it, so both arms see identical candidates and BT uniforms and
+    # differ ONLY in the judge from round 1 on. Round 0 is trained once by
+    # the writer and forked (adapter + preds + population state loaded by
+    # the reader). Unset DPO_BANK_MODE -> every path below is byte-stable.
+    dpo_bank_mode = os.environ.get("DPO_BANK_MODE", "")
+    dpo_bank = bank_from_env()
+    mr_on = dpo_bank is not None
+    mr_reader = mr_on and dpo_bank_mode == "read"
     # closed-loop RLHF (dpo) arm: where preference labels come from.
     #   closed -> the model's own (deployment-shifted) population
     #   open   -> the synchronized no-AI twin (ab_x_cf)
@@ -830,6 +841,14 @@ def main() -> int:
     if training_style == "dpo":
         if rlhf_feedback not in ("closed", "open"):
             raise ValueError("dpo requires RLHF_FEEDBACK in {closed, open}")
+        if mr_on:
+            # matched-randomness pairing is closed-writes / open-reads by
+            # design; any other combination is a wrapper bug.
+            want_mode = {"closed": "write", "open": "read"}[rlhf_feedback]
+            if dpo_bank_mode != want_mode:
+                raise ValueError(f"DPO_BANK_MODE={dpo_bank_mode!r} but "
+                                 f"RLHF_FEEDBACK={rlhf_feedback!r} wants "
+                                 f"{want_mode!r}")
         if run_mode != "loop":
             raise ValueError("dpo requires RUN_MODE=loop (needs the served/deployed signal)")
         if rlhf_feedback == "open" and pop_model != "ab":
@@ -926,6 +945,15 @@ def main() -> int:
             # preference-flip telemetry (2026-08-12); the checker keys on it
             "dpo_flip_telemetry": True,
         })
+        if mr_on:
+            config.update({
+                "dpo_matched": True,
+                "dpo_bank_mode": dpo_bank_mode,
+                "dpo_bank_seed": dpo_bank.bank_seed,
+                "dpo_train_seed": int(os.environ["DPO_TRAIN_SEED"]),
+                "gpu_name": (torch.cuda.get_device_name(0)
+                             if torch.cuda.is_available() else "cpu"),
+            })
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     print(f"[run] {json.dumps(config)}", flush=True)
 
@@ -1132,6 +1160,30 @@ def main() -> int:
         fresh_adapter_snap = gp.snapshot_trainable(lm.inner_model)
         print(f"[run] FRESH_EACH_ROUND on: snapshotted pristine adapter "
               f"({len(fresh_adapter_snap)} tensors)", flush=True)
+    mr_pristine_digest = None
+    if mr_on:
+        if fresh_adapter_snap is None:
+            raise ValueError("matched-randomness DPO requires FRESH_EACH_ROUND=1 "
+                             "+ USE_LORA=1 (the pristine-adapter contract)")
+        mr_pristine_digest = state_digest(fresh_adapter_snap)
+        if mr_reader:
+            # cross-arm pristine identity: both arms must start every round's
+            # training from the SAME zero-state adapter the writer recorded.
+            _bm = dpo_bank.read_meta()
+            if _bm["pristine_digest"] != mr_pristine_digest:
+                raise ValueError("reader pristine adapter differs from the "
+                                 "writer's (bank meta digest mismatch)")
+        else:
+            dpo_bank.write_meta(
+                pristine_digest=mr_pristine_digest,
+                train_seed=int(os.environ["DPO_TRAIN_SEED"]),
+                pop_seed=seed, closed_tag=run_tag,
+                host=os.uname().nodename,
+                gpu=(torch.cuda.get_device_name(0)
+                     if torch.cuda.is_available() else "cpu"))
+        print(f"[run] matched-randomness {dpo_bank_mode}: bank_seed="
+              f"{dpo_bank.bank_seed} pristine={mr_pristine_digest[:12]}",
+              flush=True)
 
     # per-agent platform weight: scaled FJ trust for fj, gated blend weight
     # W_PLAT * platform_sus * scale for ab; no_feedback zeroes both.
@@ -1408,7 +1460,32 @@ def main() -> int:
                                                                 grad_norm_n)
             if fresh_adapter_snap is not None and t > 0:
                 gp.load_trainable(lm.inner_model, fresh_adapter_snap)  # reset to base: fresh model
-            if training_style != "frozen" and train_data is not None:
+                if mr_on:
+                    # matched-randomness contract: every later DPO update
+                    # starts from the SAME pristine adapter -- verified
+                    # BEFORE this round's shared candidate bank is consumed.
+                    _dg = state_digest(gp.snapshot_trainable(lm.inner_model))
+                    if _dg != mr_pristine_digest:
+                        raise ValueError(
+                            f"round {t}: adapter not pristine before bank "
+                            f"consume ({_dg[:12]} != {mr_pristine_digest[:12]})")
+            _mr_r0 = None
+            if mr_reader and t == 0:
+                # ROUND-0 FORK (matched-randomness reader): round 0 was
+                # trained ONCE by the writer -- the closed and open judges
+                # are identical at t=0 -- so load the writer's exact adapter
+                # and (below) serve its exact predictions, giving both arms
+                # one genuinely common round-0 state instead of two
+                # nominally equal trainings.
+                _mr_r0 = dpo_bank.read_round0_state()
+                gp.load_trainable(lm.inner_model, _mr_r0["snapshot"])
+                learner.last_flip_stats = dict(_mr_r0["stats"])
+                learner.last_flip_stats.update(
+                    {"dpo_label_disagree_n": 0,
+                     "dpo_label_disagree_frac": 0.0, "dpo_r0_shared": 1})
+                print("[run] round-0 fork: writer adapter + preds loaded "
+                      "from the bank", flush=True)
+            elif training_style != "frozen" and train_data is not None:
                 if training_style == "dpo":
                     # closed-loop RLHF: build the per-agent judging opinion x_judge.
                     # closed -> own (deployed) population labels (train_data["y"]);
@@ -1423,7 +1500,7 @@ def main() -> int:
                     # no-AI population when instantiated. Downstream use is
                     # arithmetic only (no RNG), so seeded runs stay replay-
                     # identical to the pre-telemetry code path.
-                    _dpo_data = {"agent_idx": _idx, "x_judge": _xj,
+                    _dpo_data = {"agent_idx": _idx, "x_judge": _xj, "round": t,
                                  "x_ref": innate.detach().cpu().float()[_idx.long()]}
                     if ab_x_cf is not None:
                         _dpo_data["x_ref_twin"] = (
@@ -1576,6 +1653,10 @@ def main() -> int:
                 vals = gp.probe_predictions(lm, prompts)
                 preds = torch.tensor([v if v is not None and np.isfinite(v) else float("nan")
                                       for v in vals], dtype=torch.float32)
+            elif _mr_r0 is not None:
+                # round-0 fork: serve the writer's exact round-0 predictions
+                # (bit-identity by construction; no generation, no RNG)
+                preds = _mr_r0["preds"].clone().float()
             else:
                 preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
@@ -1692,6 +1773,19 @@ def main() -> int:
             plat_disp_round = float(np.sum(plat_disps)) if plat_disps else 0.0
             s_tag = float(ab_f.mean())
             op = ab_x.detach().cpu().float().clone()
+            if mr_on and t == 0 and not mr_reader:
+                # writer: persist the genuinely shared round-0 state (adapter
+                # snapshot, served preds, resulting population, r0 stats)
+                dpo_bank.write_round0_state(
+                    snapshot=round0_snap,
+                    preds=last_preds.detach().cpu(),
+                    x0=op,
+                    labels_hash=learner.last_flip_stats.get(
+                        "dpo_orient_hash", ""),
+                    stats=dict(learner.last_flip_stats))
+            if _mr_r0 is not None and not torch.equal(op, _mr_r0["x0"].float()):
+                raise ValueError("reader round-0 population state differs "
+                                 "from the writer's (fork not exact)")
             if ab_x_cf is not None:
                 # matched no-AI twin under the SAME operator with the AI
                 # mixture skipped: human component first, then the same peer

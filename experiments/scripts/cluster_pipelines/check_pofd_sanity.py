@@ -557,6 +557,25 @@ def check_run(run_dir):
                     errs.append(f"TRAJ round {r_.get('round')} "
                                 f"dpo_flip_frac={ff!r} outside [0,1]")
                     break
+        # matched-randomness arms (pofddpomr_, 2026-08-13): _bk token vs
+        # dpo_bank_seed, matched marker, and the closed=write / open=read
+        # pairing. The PAIRED invariants (bank bit-identity, round-0 fork,
+        # twin==judge) live in check_dpo_pair.py, run per pair.
+        if "_bk" in name:
+            m_bk = re.search(r"_bk(\d+)_", name)
+            if m_bk is None:
+                errs.append(f"CONFIG malformed _bk token in dirname {name!r}")
+            elif int(cfg.get("dpo_bank_seed", -1)) != int(m_bk.group(1)):
+                errs.append(f"CONFIG dpo_bank_seed="
+                            f"{cfg.get('dpo_bank_seed')!r} "
+                            f"(tag says {m_bk.group(1)})")
+            if not cfg.get("dpo_matched"):
+                errs.append("CONFIG _bk tag without the dpo_matched marker")
+            want_mode = {"closed": "write", "open": "read"}.get(fb)
+            if want_mode and cfg.get("dpo_bank_mode") != want_mode:
+                errs.append(f"CONFIG dpo_bank_mode="
+                            f"{cfg.get('dpo_bank_mode')!r} "
+                            f"({fb} arm wants {want_mode!r})")
     if is_tch:
         m = re.search(r"_d([pm])0p08_", name)
         if m is None:

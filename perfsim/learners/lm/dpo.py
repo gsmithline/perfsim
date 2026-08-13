@@ -45,6 +45,7 @@ import torch
 
 from perfsim.core.learner import Learner
 from perfsim.core.types import SUPERVISED_SCHEMA, Data, DataSchema
+from perfsim.learners.lm.dpo_bank import bank_from_env, derive_seed, sha_strings, sha_tensor
 from perfsim.learners.lm.sft import _default_target_formatter
 from perfsim.models.hf_causal_lm import HFCausalLMModel
 
@@ -110,6 +111,18 @@ class DPOLearner(Learner):
         self._n_pairs = int(os.environ.get("DPO_N_PAIRS", "0"))        # 0 = all agents
         # per-round pair/flip telemetry, refreshed by _build_pref_dataset
         self.last_flip_stats: dict[str, Any] = {}
+        # MATCHED-RANDOMNESS bank (opt-in via DPO_BANK_MODE=write|read;
+        # unset -> the legacy path below, byte-identical). See dpo_bank.py.
+        self._bank = bank_from_env()
+        self._bank_mode = os.environ.get("DPO_BANK_MODE", "")
+        self._train_seed = int(os.environ.get("DPO_TRAIN_SEED", "-1"))
+        self._last_round = -1
+        if self._bank is not None:
+            if self._train_seed < 0:
+                raise ValueError("matched-randomness DPO requires DPO_TRAIN_SEED")
+            if self._n_pairs:
+                raise ValueError("matched-randomness DPO requires DPO_N_PAIRS=0 "
+                                 "(the bank must cover every agent)")
 
     # --------------------------------------------------------------- candidates
     def _sample_two(self, prompts: list[str]) -> tuple[list[str], list[str]]:
@@ -124,12 +137,172 @@ class DPOLearner(Learner):
             m._do_sample, m._temperature = old_ds, old_t  # type: ignore[attr-defined]
         return a, b
 
+    # ---------------------------------------------- matched-randomness path
+    def _rows_from_candidates(self, prompts, cand_a, cand_b, parsed_a,
+                              parsed_b, valid, tie, uniforms, xj, xr, xt):
+        """Preference rows + orientation from FIXED candidates and uniforms.
+
+        Pure arithmetic -- draws NO random numbers (the reader path's
+        no-unintended-RNG guarantee lives here; unit-tested via global RNG
+        state comparison). Orientation: a_wins iff uniform < P(A|judge)."""
+        rows: list[dict[str, str]] = []
+        orient = torch.zeros(len(prompts), dtype=torch.bool)
+        n_tie = n_fail = n_flip = n_flip_twin = 0
+        disp_sum = 0.0
+        for i in range(len(prompts)):
+            if not bool(valid[i]):
+                n_fail += 1
+                continue
+            if bool(tie[i]):
+                n_tie += 1
+                continue
+            ya, yb = float(parsed_a[i]), float(parsed_b[i])
+            xji = float(xj[i])
+            ua, ub = -abs(ya - xji), -abs(yb - xji)
+            du = ua - ub
+            if xr is not None:
+                xri = float(xr[i])
+                if du * (abs(yb - xri) - abs(ya - xri)) < 0:
+                    n_flip += 1
+                disp_sum += abs(xji - xri)
+            if xt is not None:
+                xti = float(xt[i])
+                if du * (abs(yb - xti) - abs(ya - xti)) < 0:
+                    n_flip_twin += 1
+            p_a = 1.0 / (1.0 + math.exp(-self._tau * du))
+            a_wins = float(uniforms[i]) < p_a
+            orient[i] = bool(a_wins)
+            ta, tb = cand_a[i].strip(), cand_b[i].strip()
+            chosen, rejected = (ta, tb) if a_wins else (tb, ta)
+            rows.append({"prompt": prompts[i], "chosen": chosen,
+                         "rejected": rejected})
+        stats: dict[str, Any] = {"dpo_pairs": len(rows), "dpo_ties": n_tie,
+                                 "dpo_parse_fail": n_fail}
+        if xr is not None:
+            stats["dpo_flip_n"] = n_flip
+            stats["dpo_flip_frac"] = (n_flip / len(rows)) if rows else None
+            stats["dpo_judge_disp_mean"] = (disp_sum / len(rows)) if rows else None
+        if xt is not None:
+            stats["dpo_flip_frac_twin"] = (n_flip_twin / len(rows)) if rows else None
+        return rows, orient, stats
+
+    @staticmethod
+    def _parse_candidates(model, cand_a, cand_b):
+        """Judge-independent candidate features: parsed values, validity
+        (numeric), tie (|ya - yb| < 0.01, both valid)."""
+        n = len(cand_a)
+        parsed_a = [float("nan")] * n
+        parsed_b = [float("nan")] * n
+        valid = [False] * n
+        tie = [False] * n
+        for i in range(n):
+            ta, tb = cand_a[i].strip(), cand_b[i].strip()
+            if re.search(r"\d", ta) is None or re.search(r"\d", tb) is None:
+                continue
+            valid[i] = True
+            parsed_a[i] = model._parse(ta)  # type: ignore[attr-defined]
+            parsed_b[i] = model._parse(tb)  # type: ignore[attr-defined]
+            tie[i] = abs(parsed_a[i] - parsed_b[i]) < 0.01
+        return parsed_a, parsed_b, valid, tie
+
+    def _matched_common(self, data: Data):
+        t = int(data["round"])
+        self._last_round = t
+        idx = data["agent_idx"].long().view(-1)
+        xj = data["x_judge"].float().view(-1)
+        xr = data.get("x_ref")
+        xr = None if xr is None else xr.float().view(-1)
+        xt = data.get("x_ref_twin")
+        xt = None if xt is None else xt.float().view(-1)
+        prompts = [self.model.build_prompt(self.model.profile_at(int(i)))
+                   for i in idx]
+        return t, idx, xj, xr, xt, prompts
+
+    def _writer_pref_dataset(self, data: Data):
+        t, idx, xj, xr, xt, prompts = self._matched_common(data)
+        p_hash = sha_strings(prompts)
+        # dedicated candidate-generation stream (global seed set right
+        # before sampling; disjoint from BT and training streams)
+        cseed = derive_seed(self._bank.bank_seed, t, "cand")
+        torch.manual_seed(cseed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(cseed)
+        cand_a, cand_b = self._sample_two(prompts)
+        parsed_a, parsed_b, valid, tie = self._parse_candidates(
+            self.model, cand_a, cand_b)
+        # one BT uniform per agent, dedicated CPU generator (never global)
+        g_bt = torch.Generator().manual_seed(
+            derive_seed(self._bank.bank_seed, t, "bt"))
+        uniforms = torch.rand(len(prompts), generator=g_bt,
+                              dtype=torch.float64)
+        rows, orient, stats = self._rows_from_candidates(
+            prompts, cand_a, cand_b, parsed_a, parsed_b, valid, tie,
+            uniforms, xj, xr, xt)
+        rec = self._bank.write_round(
+            t, agent_ids=idx, prompt_hash=p_hash, cand_a=cand_a,
+            cand_b=cand_b, parsed_a=parsed_a, parsed_b=parsed_b,
+            valid=valid, tie=tie, uniforms=uniforms, writer_orient=orient)
+        stats.update({"dpo_bank_round": t,
+                      "dpo_cand_hash": rec["cand_hash"][:16],
+                      "dpo_unif_hash": rec["unif_hash"][:16],
+                      "dpo_orient_hash": sha_tensor(orient)[:16]})
+        return rows, stats
+
+    def _replay_pref_dataset(self, data: Data):
+        t, idx, xj, xr, xt, prompts = self._matched_common(data)
+        rec = self._bank.read_round(t)
+        if not torch.equal(rec["agent_ids"], idx):
+            raise ValueError(f"bank round {t}: agent id order mismatch")
+        p_hash = sha_strings(prompts)
+        if p_hash != rec["prompt_hash"]:
+            raise ValueError(f"bank round {t}: prompt hash mismatch "
+                             "(profiles/prompts diverged between arms)")
+        # judge-independent masks must reproduce from the stored parses
+        pa2, pb2, valid2, tie2 = self._parse_candidates(
+            self.model, rec["cand_a"], rec["cand_b"])
+        if (list(map(bool, rec["valid"])) != valid2
+                or list(map(bool, rec["tie"])) != tie2):
+            raise ValueError(f"bank round {t}: validity/tie masks do not "
+                             "reproduce from stored candidates")
+        rows, orient, stats = self._rows_from_candidates(
+            prompts, rec["cand_a"], rec["cand_b"], rec["parsed_a"],
+            rec["parsed_b"], rec["valid"], rec["tie"], rec["uniforms"],
+            xj, xr, xt)
+        usable = rec["valid"] & ~rec["tie"]
+        dis = int((orient[usable] != rec["writer_orient"][usable]).sum())
+        stats.update({"dpo_bank_round": t,
+                      "dpo_cand_hash": rec["cand_hash"][:16],
+                      "dpo_unif_hash": rec["unif_hash"][:16],
+                      "dpo_orient_hash": sha_tensor(orient)[:16],
+                      "dpo_label_disagree_n": dis,
+                      "dpo_label_disagree_frac":
+                          (dis / int(usable.sum())) if int(usable.sum()) else None})
+        return rows, stats
+
     def _build_pref_dataset(self, data: Data) -> "HFDataset":
         if HFDataset is None:
             raise ImportError("DPOLearner requires 'datasets'. pip install 'perfsim[lm]'")
         if "agent_idx" not in data or "x_judge" not in data:
             raise KeyError("DPOLearner.train requires data['agent_idx'] and data['x_judge']")
         self.model.ensure_loaded()
+        if self._bank is not None:
+            if "round" not in data:
+                raise KeyError("matched-randomness DPO requires data['round']")
+            builder = (self._writer_pref_dataset if self._bank_mode == "write"
+                       else self._replay_pref_dataset)
+            rows, stats = builder(data)
+            self.last_flip_stats = stats
+            print(f"[DPOLearner] bank={self._bank_mode} seed="
+                  f"{self._bank.bank_seed} round={self._last_round} | "
+                  f"pairs={stats['dpo_pairs']} (ties={stats['dpo_ties']}, "
+                  f"parse_fail={stats['dpo_parse_fail']})"
+                  + (f" | disagree={stats['dpo_label_disagree_n']}"
+                     if "dpo_label_disagree_n" in stats else ""), flush=True)
+            if not rows:
+                print("[DPOLearner] 0 usable pairs -> skipping DPO update "
+                      "this round", flush=True)
+                return None
+            return HFDataset.from_list(rows)
         idx = data["agent_idx"].long().view(-1)
         xj = data["x_judge"].float().view(-1)
         xr = data.get("x_ref")           # counterfactual judge (flip telemetry)
@@ -206,6 +379,14 @@ class DPOLearner(Learner):
         ds = self._build_pref_dataset(data)
         if ds is None or len(ds) == 0:
             return  # no preference signal this round -> model unchanged, loop continues
+        if self._bank is not None:
+            # dedicated TRAINING stream, fixed across matched arms AND bank
+            # seeds: the production wave varies preference sampling only,
+            # never optimizer/dataloader randomness.
+            ts = derive_seed(self._train_seed, self._last_round, "train")
+            torch.manual_seed(ts)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(ts)
 
         cfg_kwargs: dict[str, Any] = dict(
             output_dir=self._output_dir,
