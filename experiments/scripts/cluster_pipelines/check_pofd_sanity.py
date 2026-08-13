@@ -1391,7 +1391,10 @@ def main():
             print(f"FAIL {name}")
             for e in errs:
                 print(f"     - {e}")
-        elif re.search(r"_es\d", name):
+        # _es0_ is a no-peer tag (reach family): the peer-alive flavor text
+        # must only print when the tokenized dose is actually > 0
+        elif (m_es_p := re.search(r"_es(\d+(?:p\d+)?)_", name)) and \
+                float(m_es_p.group(1).replace("p", ".")) > 0:
             print(f"PASS {name}  (peer step live, twin simulated, fresh data only)")
         else:
             print(f"PASS {name}  (no peer updates, exact platform blend, fresh data only)")
