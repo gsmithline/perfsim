@@ -154,7 +154,12 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               parse-fail NaN), hardware provenance in config, model
               slug/seed/ea/arm tokens vs config. all_open: every gate
               bit true + contact exactly 1.0. fz0: constant gate_raw
-              AND constant pred_raw within the run; matched fz0/dyn
+              AND constant pred_raw within the run (gate flips
+              tolerated ONLY when boundary-explained: the flipped
+              agent's round-0 margin ||m-innate|-eps| within 4 float32
+              ulp -- the lam-anchor's 1-ulp rounding can flip an agent
+              sitting exactly on the strict boundary; observed on the
+              s0 slab); matched fz0/dyn
               siblings share bit-identical round-0 context ids+values
               (CPU-derived -- never weakened for GPU heterogeneity).
               Baseline probes cross-check innate identity when pulled
@@ -1142,14 +1147,30 @@ def check_run(run_dir):
             if "_fz0_" in name:
                 # frozen round-0 context + frozen weights + greedy serving:
                 # the gate mask and the served predictions must be constant
-                # (entrants/exits exactly zero). Within one run the GPU is
-                # fixed, so hardware nondeterminism cannot explain drift.
+                # (entrants/exits zero). ONE exception, observed on the s0
+                # slab (mistral fz0 ea0p05, agent at |m-innate| exactly
+                # 1.2e-8 outside the strict gate): the lam-anchor rounds
+                # x by 1 float32 ulp, which can flip an agent sitting
+                # within ~1 ulp of the boundary. The per-round bit-replay
+                # (1b) still verifies every mask exactly, so here we only
+                # require that any flip is BOUNDARY-EXPLAINED: the flipped
+                # agent's round-0 margin ||m - innate| - eps| must be
+                # within 4 float32 ulp (2.4e-7). Real context/serving
+                # drift moves gates by far more and still fails.
+                served0 = pred_raw[0].clamp(0.0, 1.0)
+                margin0 = ((served0 - innate).abs() - eps_ai).abs()
                 for tt in range(1, gr_r.shape[0]):
-                    if not torch.equal(gr_r[tt], gr_r[0]):
-                        errs.append(f"REACH fz0: gate_raw round {tt} != "
-                                    f"round 0 ({int((gr_r[tt] ^ gr_r[0]).sum())} "
-                                    f"agents flipped; frozen context must "
-                                    f"freeze the gate set)")
+                    flipped = gr_r[tt] ^ gr_r[0]
+                    if not bool(flipped.any()):
+                        continue
+                    off = margin0[flipped]
+                    if float(off.max()) > 2.4e-7:
+                        errs.append(
+                            f"REACH fz0: gate_raw round {tt} != round 0 "
+                            f"({int(flipped.sum())} agents flipped, max "
+                            f"round-0 boundary margin "
+                            f"{float(off.max()):.2e} > 4 ulp -- frozen "
+                            f"context must freeze the gate set)")
                         break
                 for tt in range(1, pred_raw.shape[0]):
                     if not _bit_eq(pred_raw[tt], pred_raw[0]):
