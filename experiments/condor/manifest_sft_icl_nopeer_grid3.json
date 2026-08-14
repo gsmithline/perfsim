@@ -1,0 +1,2317 @@
+{
+ "wave": "sft_icl_nopeer_grid3",
+ "audited": "2026-08-14 local corpora, by config fields + 30-round completeness. Statuses: reused / new / reference (k0 seed repetitions -> the deterministic seed-0 run; never queued).",
+ "roots": [
+  "runs/pokec_gated_lm",
+  "notes/pofd/cluster"
+ ],
+ "grid": {
+  "models": {
+   "qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+   "olmo7b": "allenai/OLMo-2-1124-7B-Instruct",
+   "mistral7b": "mistralai/Mistral-7B-Instruct-v0.3"
+  },
+  "arms": [
+   "k0",
+   "fz0",
+   "dyn",
+   "b0"
+  ],
+  "gates": [
+   0.05,
+   0.1,
+   0.2,
+   0.4,
+   1.0
+  ],
+  "seeds": [
+   0,
+   42,
+   43
+  ],
+  "n_agents": 723,
+  "n_rounds": 30
+ },
+ "counts": {
+  "cells": 180,
+  "reused": 58,
+  "missing": 122,
+  "reference_k0": 28,
+  "new": 94,
+  "new_per_model": {
+   "qwen7b": 30,
+   "olmo7b": 32,
+   "mistral7b": 32
+  },
+  "new_per_arm": {
+   "k0": 0,
+   "fz0": 33,
+   "dyn": 33,
+   "b0": 28
+  },
+  "new_per_gate": {
+   "0.05": 18,
+   "0.1": 18,
+   "0.2": 18,
+   "0.4": 16,
+   "1.0": 24
+  },
+  "baselines": 3
+ },
+ "cells": [
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p05_k0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g135"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p05_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p05_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g193"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p1_k0_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "i104"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p2_k0_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_k0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g204"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p4_k0_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p4_k0_s42",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "i108"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p4_k0_s43",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g201"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_qwen7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g147"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_qwen7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_qwen7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g109"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_fz0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "i103"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_fz0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g200"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_fz0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g193"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_fz0_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_qwen7b_w0p5_l0p2_ea0p05_k8live_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g133"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_dyn_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p1_k8live_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_dyn_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g137"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p2_k8live_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdiclf_qwen7b_dyn_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g107"
+   },
+   "alternates": [
+    "pofdicl2_qwen7b_w0p5_l0p2_ea0p4_k8live_s0"
+   ]
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_dyn_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2_qwen7b_b0_ea0p05_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2_qwen7b_b0_ea0p1_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2_qwen7b_b0_ea0p2_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g149"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g127"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s42_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g198"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s43_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g195"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_qwen7b_b0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g107"
+   },
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_qwen7b_b0_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p05_k0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g109"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p05_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p05_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p1_k0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g102"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p1_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p1_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p2_k0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p2_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p2_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p4_k0_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p4_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p4_k0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g143"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_olmo7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_olmo7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g136"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g133"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_fz0_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p05_k8live_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p1_k8live_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g129"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p2_k8live_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g134"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdicl2_olmo7b_w0p5_l0p2_ea0p4_k8live_s0",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_dyn_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b0_ea0p05_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g147"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b0_ea0p1_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b0_ea0p2_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": null,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_b0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g108"
+   },
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b0_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g138"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p05_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p05_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p2_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p4_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea0p4_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g109"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "k0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "reference",
+   "run_tag": "pofdreach_mistral7b_k0_ea1_w0p5_l0p2_es0_s0",
+   "reference_seed": 0
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g136"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "fz0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_fz0_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g137"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g138"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g135"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g126"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s42"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s43"
+  }
+ ],
+ "baselines": [
+  {
+   "model": "qwen7b",
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreachbase_qwen7b_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "olmo7b",
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreachbase_olmo7b_w0p5_l0p2_es0_s0"
+  },
+  {
+   "model": "mistral7b",
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreachbase_mistral7b_w0p5_l0p2_es0_s0"
+  }
+ ]
+}

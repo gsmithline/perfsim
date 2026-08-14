@@ -1224,6 +1224,19 @@ def check_run(run_dir):
             ii_r = d.get("icl_idx_raw")
             if ii_r is None or ii_r.numel() == 0:
                 errs.append("REACH icl_k>0 but icl_idx_raw missing/empty")
+            elif "_dyn_" in name and ii_r.shape[0] > 1:
+                # refreshed-context provenance (grid3 wave, 2026-08-14): a
+                # dyn arm REBUILDS its context from the live population
+                # every round -- 8-of-722 random draws per agent cannot
+                # repeat identically, so bit-identical exemplar ids across
+                # every round mean the refresh never ran. Structural, not
+                # scientific: no direction/amount of context CHANGE in
+                # values is required, only that selection re-drew.
+                if all(torch.equal(ii_r[tt], ii_r[0])
+                       for tt in range(1, ii_r.shape[0])):
+                    errs.append("REACH dyn: exemplar ids bit-identical "
+                                "across all rounds -- context was never "
+                                "refreshed")
             if not os.path.exists(os.path.join(run_dir,
                                                "icl_ctx_log.json.gz")):
                 errs.append("REACH icl_ctx_log.json.gz missing")

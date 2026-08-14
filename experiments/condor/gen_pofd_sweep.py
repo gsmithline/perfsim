@@ -1162,6 +1162,83 @@ def k0_smoke_rows(model):
             for m, arm, gate in K0_SMOKES if m == model]
 
 
+# THREE-SEED NO-PEER SFT/ICL GATE GRID (2026-08-14, user), keys
+# sft_icl_nopeer_grid3[_smoke] + sft_icl_nopeer_grid3_{qwen,olmo,
+# mistral}: complete the channel comparison -- k0 (plain prompting,
+# K=0) / fz0 (fixed round-0 K=8 context) / dyn (refreshed live K=8
+# context) / b0 (ordinary SFT) -- over 3 models x numeric gates
+# {0.05, 0.1, 0.2, 0.4, 1.0} x seeds {0, 42, 43} = 180 conceptual
+# cells, all threshold mode (_ea1_ strict numeric, never _eaopen_),
+# canonical no-peer env (W0.5/l0.2/es0/gamma0, 30 rounds, WITH_TWIN=1,
+# greedy, corrected operator).
+# AUDIT (audit_sft_icl_nopeer_grid3_reuse.py ->
+# manifest_sft_icl_nopeer_grid3.json): 58 complete (the prediction was
+# 56 -- two GENUINE field-exact k0 cells existed unpredicted:
+# pofdicl2_qwen7b ea0p4 k0 s42/s43 from the icls2x replicates; queue
+# scope unaffected), 122 literally missing of which 28 are k0 seed
+# repetitions mapped as DETERMINISTIC REFERENCES to the seed-0 k0 runs
+# (k0 draws nothing the trajectory consumes; re-running would
+# manufacture artificial replication) -> EXACTLY 94 informative jobs:
+# b0 28 / fz0 33 / dyn 33 / k0 0; qwen 30 / olmo 32 / mistral 32.
+# Tags: the reach family -- cells shared with the HELD full reach wave
+# (numeric gates <= 0.4) carry byte-identical pofdreach_ tags so a
+# later broad release no-ops them; the _ea1_ cells (fz0/dyn all seeds
+# + b0 s42/43) are new tags. NEVER submit concurrently with
+# sft_icl_reach[_s0] (shared tags = write race). Smokes (2 x 3
+# rounds, OUTSIDE the 94): mistral fz0 + dyn at the never-run
+# threshold-ea1 x context combination.
+GRID3_MANIFEST_PATH = os.path.join(HERE,
+                                   "manifest_sft_icl_nopeer_grid3.json")
+GRID3_EXPECT_REUSED = 58
+GRID3_EXPECT_NEW = 94
+GRID3_EXPECT_REFERENCE = 28
+GRID3_EXPECT_NEW_PER_MODEL = {"qwen7b": 30, "olmo7b": 32, "mistral7b": 32}
+GRID3_EXPECT_NEW_PER_ARM = {"k0": 0, "fz0": 33, "dyn": 33, "b0": 28}
+GRID3_KEY = {"qwen7b": "sft_icl_nopeer_grid3_qwen",
+             "olmo7b": "sft_icl_nopeer_grid3_olmo",
+             "mistral7b": "sft_icl_nopeer_grid3_mistral"}
+GRID3_SMOKES = [("mistral7b", "fz0", 1.0), ("mistral7b", "dyn", 1.0)]
+
+
+def _grid3_manifest():
+    with open(GRID3_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def grid3_rows(model):
+    rows = []
+    for c in _grid3_manifest()["cells"]:
+        if c["model"] == model and c["status"] == "new":
+            r = reach_row(model, c["arm"], c["gate"], c["seed"])
+            assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
+            rows.append(r)
+    return rows
+
+
+def grid3_smoke_rows():
+    return [reach_row(m, arm, gate, 0, nrounds=3, prefix="pofdreachsmk")
+            for m, arm, gate in GRID3_SMOKES]
+
+
+def grid3_sub(model, kind):
+    """kind: 'main' | 'smoke' -- rides the REACH sub template."""
+    key = (GRID3_KEY[model] if kind == "main"
+           else "sft_icl_nopeer_grid3_smoke")
+    n_jobs = (len(grid3_rows(model)) if kind == "main"
+              else len(grid3_smoke_rows()))
+    what = {"main": ("THREE-SEED NO-PEER SFT/ICL GATE GRID -- "
+                     "audited-informative cells (30 rounds; _ea1_ strict "
+                     "numeric threshold; k0 seed repetitions are "
+                     "deterministic references, never queued; NEVER "
+                     "co-submit with sft_icl_reach[_s0]: numeric-gate "
+                     "tags are shared)"),
+            "smoke": ("sft_icl_nopeer_grid3 SMOKE (3 rounds; threshold "
+                      "ea1 x fixed/refreshed context, first exercise)")
+            }[kind]
+    return REACH_SUB_TEMPLATE.format(model=model, key=key, n_jobs=n_jobs,
+                                     what=what, **REACH_MODELS[model])
+
+
 def k0_sub(model, kind):
     """kind: 'main' | 'smoke' -- rides the REACH sub template."""
     short = K0_KEY[model].split("_")[-1]
@@ -3409,6 +3486,57 @@ def main():
                 HERE, f"at_pofd_sft_k0_nopeer_smoke_{short}.sub")] = \
                 k0_sub(model, "smoke")
     assert sum(len(k0_smoke_rows(m)) for m in REACH_MODELS) == 2
+    # three-seed no-peer grid (see the GRID3 block): manifest-driven;
+    # numeric-gate (<= 0.4) tags are DELIBERATELY shared with the held
+    # full reach production files; _ea1_ tags are fresh everywhere.
+    _gman = _grid3_manifest()
+    assert _gman["counts"]["cells"] == 180, _gman["counts"]
+    assert _gman["counts"]["reused"] == GRID3_EXPECT_REUSED == 58, \
+        _gman["counts"]
+    assert _gman["counts"]["new"] == GRID3_EXPECT_NEW == 94, _gman["counts"]
+    assert _gman["counts"]["reference_k0"] == GRID3_EXPECT_REFERENCE == 28
+    assert _gman["counts"]["missing"] == 122
+    assert _gman["counts"]["new_per_model"] == GRID3_EXPECT_NEW_PER_MODEL
+    assert _gman["counts"]["new_per_arm"] == GRID3_EXPECT_NEW_PER_ARM
+    assert len(_gman["cells"]) == 180 and len(_gman["baselines"]) == 3
+    _g_reused = {c["run_tag"] for c in _gman["cells"]
+                 if c["status"] == "reused"}
+    _g_refs = [c for c in _gman["cells"] if c["status"] == "reference"]
+    assert all(c["arm"] == "k0" and c["seed"] in (42, 43)
+               for c in _g_refs)
+    _prior_before_g3 = {r.split(",")[0]
+                        for rows in files.values() for r in rows}
+    _g3_total = 0
+    for model in REACH_MODELS:
+        rows_g = grid3_rows(model)
+        assert len(rows_g) == GRID3_EXPECT_NEW_PER_MODEL[model], \
+            (model, len(rows_g))
+        _g3_total += len(rows_g)
+        tags_g = {r.split(",")[0] for r in rows_g}
+        assert not (tags_g & _g_reused)
+        _shared_g = {t for t in tags_g if "_ea1_" not in t}
+        assert _shared_g <= _reach_prod_tags, \
+            f"{model}: non-ea1 grid3 tags must be reach production " \
+            f"tags: {_shared_g - _reach_prod_tags}"
+        _fresh_g = tags_g - _shared_g
+        assert all("_ea1_" in t for t in _fresh_g)
+        assert not (_fresh_g & _prior_before_g3), \
+            f"grid3 ea1 collision: {_fresh_g & _prior_before_g3}"
+        p = os.path.join(HERE, f"configs_pofd_{GRID3_KEY[model]}.txt")
+        files[p] = rows_g
+        expected[p] = GRID3_EXPECT_NEW_PER_MODEL[model]
+        cube_subs[os.path.join(HERE, f"at_pofd_{GRID3_KEY[model]}.sub")] = \
+            grid3_sub(model, "main")
+    assert _g3_total == 94
+    _g3_smk = grid3_smoke_rows()
+    assert len(_g3_smk) == 2
+    assert not ({r.split(",")[0] for r in _g3_smk} & _prior_before_g3)
+    p = os.path.join(HERE, "configs_pofd_sft_icl_nopeer_grid3_smoke.txt")
+    files[p] = _g3_smk
+    expected[p] = 2
+    cube_subs[os.path.join(HERE,
+                           "at_pofd_sft_icl_nopeer_grid3_smoke.sub")] = \
+        grid3_sub("mistral7b", "smoke")
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
