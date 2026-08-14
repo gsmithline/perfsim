@@ -1009,6 +1009,10 @@ REACH_ARM_COLS = {
                 fresh=0, ansk=0, gg=1),
     "dyn": dict(style="frozen", beta="0", iclk=8, snap=-1, uselora=0,
                 fresh=0, ansk=0, gg=1),
+    # k0 (sft_k0_nopeer wave, 2026-08-14): frozen NO-context prompting --
+    # repeated zero-shot serving; no LoRA, no demonstrations, no memory
+    "k0": dict(style="frozen", beta="0", iclk=0, snap=-1, uselora=0,
+               fresh=0, ansk=0, gg=0),
 }
 ROW_REACH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
              "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {gatemode}, {iclk}, "
@@ -1096,6 +1100,82 @@ def reach_s0_rows(model):
             assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
             rows.append(r)
     return rows
+
+
+# SFT vs FROZEN NO-CONTEXT PROMPTING, NO PEERS (2026-08-14, user), keys
+# sft_k0_nopeer[_smoke] + sft_k0_nopeer_{qwen,olmo,mistral}: with peers
+# off, does SFT transmit population information GLOBALLY through shared
+# weights while frozen no-context prompting (k0 = repeated zero-shot
+# serving; NOT adaptive ICL -- ICL_K=0, USE_LORA=0, nothing changes
+# between rounds) acts only as a FIXED external signal? Descriptive
+# seed-0 grid: 3 models x arms {b0, b1, k0} x numeric gates
+# {0.05, 0.1, 0.2, 0.4, 0.7, 1.0} = 54 conceptual cells, EVERY cell
+# AI_GATE_MODE=threshold. ea=1.0 is the STRICT numeric threshold
+# (token _ea1_), deliberately distinct from all_open -- the completed
+# _eaopen_ scout cells are NOT reusable for it, and an agent at
+# distance exactly 1 stays rejected.
+# REUSE AUDIT (audit_sft_k0_nopeer_reuse.py, config fields + 30-round
+# completeness): EXACTLY 32 reused / 22 missing -- qwen/olmo b0+b1+k0
+# at the four <=0.4 gates reuse the w2/w2f planes + icl2/iclf k0 runs;
+# mistral b0/b1 <=0.4 reuse the sft_icl_reach s0 slab; missing = the
+# ea0p7/ea1 ladder tops (b0/b1/k0 x 3 models = 18... of which b0/b1
+# ea0p7 (6) carry the SAME pofdreach_ tags as the parked full reach
+# grid so its eventual release no-ops them) + mistral k0 at the four
+# low gates (4). Per model 6/6/10, per arm b0 6 / b1 6 / k0 10, per
+# gate 1/1/1/1/9/9 -- all hard-asserted from
+# manifest_sft_k0_nopeer.json.
+# NEVER co-submit sft_k0_nopeer with sft_icl_reach (the 6 shared
+# b0/b1 ea0p7 tags would double-queue). Baselines: the completed
+# seed-0 pofdreachbase_ probes are reused (nothing new queues).
+# Smokes (2 x 3 rounds): mistral k0 ea0p1 (the never-run no-context
+# trajectory path with rejected agents) + qwen b0 ea1 (the _ea1_
+# numeric-threshold tag path).
+K0_MANIFEST_PATH = os.path.join(HERE, "manifest_sft_k0_nopeer.json")
+K0_EXPECT_REUSED = 32
+K0_EXPECT_NEW = 22
+K0_EXPECT_NEW_PER_MODEL = {"qwen7b": 6, "olmo7b": 6, "mistral7b": 10}
+K0_EXPECT_NEW_PER_ARM = {"b0": 6, "b1": 6, "k0": 10}
+K0_EXPECT_NEW_PER_GATE = {"0.05": 1, "0.1": 1, "0.2": 1, "0.4": 1,
+                          "0.7": 9, "1.0": 9}
+K0_KEY = {"qwen7b": "sft_k0_nopeer_qwen", "olmo7b": "sft_k0_nopeer_olmo",
+          "mistral7b": "sft_k0_nopeer_mistral"}
+K0_SMOKES = [("mistral7b", "k0", 0.1), ("qwen7b", "b0", 1.0)]
+
+
+def _k0_manifest():
+    with open(K0_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def k0_rows(model):
+    rows = []
+    for c in _k0_manifest()["cells"]:
+        if c["model"] == model and c["status"] == "new":
+            r = reach_row(model, c["arm"], c["gate"], c["seed"])
+            assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
+            rows.append(r)
+    return rows
+
+
+def k0_smoke_rows(model):
+    return [reach_row(m, arm, gate, 0, nrounds=3, prefix="pofdreachsmk")
+            for m, arm, gate in K0_SMOKES if m == model]
+
+
+def k0_sub(model, kind):
+    """kind: 'main' | 'smoke' -- rides the REACH sub template."""
+    short = K0_KEY[model].split("_")[-1]
+    key = K0_KEY[model] if kind == "main" else f"sft_k0_nopeer_smoke_{short}"
+    n_jobs = (len(k0_rows(model)) if kind == "main"
+              else len(k0_smoke_rows(model)))
+    what = {"main": ("SFT vs FROZEN NO-CONTEXT PROMPTING (k0), no peers "
+                     "-- audited-missing seed-0 cells (30 rounds; _ea1_ "
+                     "is the strict numeric threshold, never all_open; "
+                     "NEVER co-submit with sft_icl_reach: 6 b0/b1 ea0p7 "
+                     "tags are shared)"),
+            "smoke": "sft_k0_nopeer SMOKE (3 rounds)"}[kind]
+    return REACH_SUB_TEMPLATE.format(model=model, key=key, n_jobs=n_jobs,
+                                     what=what, **REACH_MODELS[model])
 
 
 REACH_SUB_TEMPLATE = """\
@@ -3275,6 +3355,60 @@ def main():
                 reach_sub(model, kind)
     assert len(_reach_all_tags) == 327 + 15 + 6
     assert sum(REACH_S0_EXPECT.values()) == 33
+    # sft_k0_nopeer wave (see the K0 block): manifest-driven -- only the
+    # audited-missing cells queue. The 6 b0/b1 ea0p7 tags are
+    # DELIBERATELY shared with the parked full reach production files
+    # (same tags -> the eventual reach release no-ops them; never
+    # co-submit); every other tag must be globally fresh.
+    _kman = _k0_manifest()
+    assert _kman["counts"]["cells"] == 54, _kman["counts"]
+    assert _kman["counts"]["reused"] == K0_EXPECT_REUSED == 32, \
+        _kman["counts"]
+    assert _kman["counts"]["new"] == K0_EXPECT_NEW == 22, _kman["counts"]
+    assert _kman["counts"]["new_per_model"] == K0_EXPECT_NEW_PER_MODEL
+    assert _kman["counts"]["new_per_arm"] == K0_EXPECT_NEW_PER_ARM
+    assert _kman["counts"]["new_per_gate"] == K0_EXPECT_NEW_PER_GATE
+    assert len(_kman["cells"]) == 54 and len(_kman["baselines"]) == 3
+    _k_reused = {c["run_tag"] for c in _kman["cells"]
+                 if c["status"] == "reused"}
+    assert len(_k_reused) == 32
+    _reach_prod_tags = set()
+    for _m_r in REACH_MODELS:
+        _reach_prod_tags |= {r.split(",")[0] for r in reach_rows(_m_r)}
+    _prior_before_k0 = {r.split(",")[0]
+                        for rows in files.values() for r in rows}
+    for model in REACH_MODELS:
+        rows_k = k0_rows(model)
+        assert len(rows_k) == K0_EXPECT_NEW_PER_MODEL[model], \
+            (model, len(rows_k))
+        tags_k = {r.split(",")[0] for r in rows_k}
+        assert not (tags_k & _k_reused), \
+            f"k0 wave queues a reused cell: {tags_k & _k_reused}"
+        _shared_k = {t for t in tags_k
+                     if "_ea0p7_" in t and "_k0_" not in t}
+        assert len(_shared_k) == 2 and _shared_k <= _reach_prod_tags, \
+            f"{model}: b0/b1 ea0p7 tags must equal the reach production " \
+            f"tags ({_shared_k})"
+        assert not ((tags_k - _shared_k) & _prior_before_k0), \
+            f"k0 wave collides: {(tags_k - _shared_k) & _prior_before_k0}"
+        short = K0_KEY[model].split("_")[-1]
+        p = os.path.join(HERE, f"configs_pofd_{K0_KEY[model]}.txt")
+        files[p] = rows_k
+        expected[p] = K0_EXPECT_NEW_PER_MODEL[model]
+        cube_subs[os.path.join(HERE, f"at_pofd_{K0_KEY[model]}.sub")] = \
+            k0_sub(model, "main")
+        smk_k = k0_smoke_rows(model)
+        if smk_k:
+            _smk_tags = {r.split(",")[0] for r in smk_k}
+            assert not (_smk_tags & _prior_before_k0)
+            p = os.path.join(HERE,
+                             f"configs_pofd_sft_k0_nopeer_smoke_{short}.txt")
+            files[p] = smk_k
+            expected[p] = 1
+            cube_subs[os.path.join(
+                HERE, f"at_pofd_sft_k0_nopeer_smoke_{short}.sub")] = \
+                k0_sub(model, "smoke")
+    assert sum(len(k0_smoke_rows(m)) for m in REACH_MODELS) == 2
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
@@ -3346,6 +3480,9 @@ def main():
           f" + 327 sft_icl_reach mains (360 conceptual cells, 33 audited "
           f"reused: qwen 99 + olmo 108 + mistral 120 queue) + 15 reach "
           f"baseline probes"
+          f" + 22 sft_k0_nopeer (54 conceptual seed-0 cells, 32 audited "
+          f"reused: qwen 6 + olmo 6 + mistral 10 queue; ea1 = strict "
+          f"numeric threshold)"
           f" + {sum(1 for f in files if 'smoke' in f)} smokes")
     if verify and not ok:
         sys.exit(1)

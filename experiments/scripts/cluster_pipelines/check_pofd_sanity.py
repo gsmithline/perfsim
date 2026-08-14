@@ -142,9 +142,13 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               frozen K=0 baseline probes at eps_ai=0): no-peer (_es0_)
               reach study over arms b0 (sft) / b1 (forward SFT-KL) /
               fz0 (frozen round-0 K=8 context) / dyn (live refreshed
-              K=8 context) x gates ea {0.05,0.1,0.2,0.4,0.7} + the
-              explicit all-open gate (_eaopen_ <-> AI_GATE_MODE=
-              all_open, never a numeric threshold). Gate replays go
+              K=8 context) / k0 (frozen NO-context prompting, the
+              sft_k0_nopeer wave: no exemplars/log allowed, constant
+              perplexity, static-serving gate stability) x gates ea
+              {0.05,0.1,0.2,0.4,0.7} + numeric _ea1_ (strict threshold
+              at 1.0 -- NOT all_open) + the explicit all-open gate
+              (_eaopen_ <-> AI_GATE_MODE=all_open, never a numeric
+              threshold). Gate replays go
               through the SHARED gp.ai_gate (one definition for runner
               + checker). Mandatory per run: exact n_rounds
               completeness, twin_raw == innate (<= 1 float32 ulp, bit-
@@ -393,6 +397,15 @@ def check_run(run_dir):
                     "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
                     "icl_days": 0, "icl_select": "random",
                     "icl_ctx_source": "live", "icl_snapshot_round": -1},
+            # k0 = frozen NO-CONTEXT prompting (sft_k0_nopeer wave,
+            # 2026-08-14): repeated zero-shot serving of the frozen base
+            # model. NOT adaptive ICL -- no demonstrations, no memory, no
+            # population context; the only channel into the population is
+            # the fixed prediction vector through the gate. icl_select /
+            # ctx_source / snapshot are inert at K=0 and not gated.
+            "k0": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False, "icl_k": 0,
+                   "icl_days": 0},
         }
         if is_reach_base:
             # one-round frozen K=0 probe: eps_ai=0 under the strict
@@ -404,7 +417,7 @@ def check_run(run_dir):
                          "icl_k": 0, "icl_days": 0, "n_rounds": 1,
                          "eps_ai": 0.0, "ai_gate_mode": "threshold"})
         else:
-            m_arm = re.search(r"_(b0|b1|fz0|dyn)_ea", name)
+            m_arm = re.search(r"_(b0|b1|fz0|dyn|k0)_ea", name)
             if m_arm is None:
                 errs.append(f"CONFIG unknown reach arm token in dirname "
                             f"{name!r}")
@@ -1144,16 +1157,21 @@ def check_run(run_dir):
                 if bad_c:
                     errs.append(f"REACH all_open: contact != 1.0 exactly "
                                 f"in rounds {bad_c[:5]}")
-            if "_fz0_" in name:
-                # frozen round-0 context + frozen weights + greedy serving:
-                # the gate mask and the served predictions must be constant
-                # (entrants/exits zero). ONE exception, observed on the s0
-                # slab (mistral fz0 ea0p05, agent at |m-innate| exactly
-                # 1.2e-8 outside the strict gate): the lam-anchor rounds
-                # x by 1 float32 ulp, which can flip an agent sitting
-                # within ~1 ulp of the boundary. The per-round bit-replay
-                # (1b) still verifies every mask exactly, so here we only
-                # require that any flip is BOUNDARY-EXPLAINED: the flipped
+            _static_arm = ("fz0" if "_fz0_" in name
+                           else "k0" if "_k0_" in name else None)
+            if _static_arm is not None and gate_mode == "threshold":
+                # STATIC-SERVING arms -- fz0 (frozen round-0 context) and
+                # k0 (frozen no-context prompting): frozen weights + fixed
+                # (or absent) context + greedy serving means the gate mask
+                # and the served predictions must be constant (an
+                # initially rejected agent never enters, entrants/exits
+                # zero). ONE exception, observed on the s0 slab (mistral
+                # fz0 ea0p05, agent at |m-innate| exactly 1.2e-8 outside
+                # the strict gate): the lam-anchor rounds x by 1 float32
+                # ulp, which can flip an agent sitting within ~1 ulp of
+                # the boundary. The per-round bit-replay (1b) still
+                # verifies every mask exactly, so here we only require
+                # that any flip is BOUNDARY-EXPLAINED: the flipped
                 # agent's round-0 margin ||m - innate| - eps| must be
                 # within 4 float32 ulp (2.4e-7). Real context/serving
                 # drift moves gates by far more and still fails.
@@ -1166,22 +1184,24 @@ def check_run(run_dir):
                     off = margin0[flipped]
                     if float(off.max()) > 2.4e-7:
                         errs.append(
-                            f"REACH fz0: gate_raw round {tt} != round 0 "
-                            f"({int(flipped.sum())} agents flipped, max "
-                            f"round-0 boundary margin "
-                            f"{float(off.max()):.2e} > 4 ulp -- frozen "
-                            f"context must freeze the gate set)")
+                            f"REACH {_static_arm}: gate_raw round {tt} != "
+                            f"round 0 ({int(flipped.sum())} agents "
+                            f"flipped, max round-0 boundary margin "
+                            f"{float(off.max()):.2e} > 4 ulp -- static "
+                            f"serving must freeze the gate set)")
                         break
+            if _static_arm is not None:
                 for tt in range(1, pred_raw.shape[0]):
                     if not _bit_eq(pred_raw[tt], pred_raw[0]):
                         neq = ~((pred_raw[tt] == pred_raw[0])
                                 | (torch.isnan(pred_raw[tt])
                                    & torch.isnan(pred_raw[0])))
-                        errs.append(f"REACH fz0: pred_raw round {tt} != "
-                                    f"round 0 ({int(neq.sum())} agents, max "
-                                    f"|diff| {float((pred_raw[tt] - pred_raw[0])[neq].abs().max()):.2e}) "
-                                    f"-- deterministic serving of a frozen "
-                                    f"context must be constant within a run")
+                        errs.append(f"REACH {_static_arm}: pred_raw round "
+                                    f"{tt} != round 0 ({int(neq.sum())} "
+                                    f"agents, max |diff| "
+                                    f"{float((pred_raw[tt] - pred_raw[0])[neq].abs().max()):.2e}) "
+                                    f"-- deterministic static serving must "
+                                    f"be constant within a run")
                         break
         # finite, in-range opinions AND predictions (parse-fail NaN is not
         # acceptable in this family -- it would silently shrink the gate)
@@ -1239,6 +1259,24 @@ def check_run(run_dir):
                                             f"(fixed and dynamic arms must "
                                             f"share the round-0 context)")
                     break
+        # k0 (frozen no-context prompting): population information must
+        # have NO path into the prompt -- no exemplar ids/values, no
+        # rendered context log -- and the fixed-text perplexity must be
+        # constant every round (weights frozen, no LoRA/optimizer).
+        if "_k0_" in name and not is_reach_base:
+            for key in ("icl_idx_raw", "icl_val_raw"):
+                t_k = d.get(key)
+                if t_k is not None and t_k.numel() > 0:
+                    errs.append(f"REACH k0: {key} non-empty -- no-context "
+                                f"prompting must carry no exemplars")
+            if os.path.exists(os.path.join(run_dir, "icl_ctx_log.json.gz")):
+                errs.append("REACH k0: icl_ctx_log.json.gz present -- no "
+                            "rendered context allowed")
+            ppls_k = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_k and len(set(ppls_k)) != 1:
+                errs.append(f"REACH k0: fixed-text perplexity varies "
+                            f"({len(set(ppls_k))} distinct values) -- "
+                            f"weights not frozen?")
         # baseline <-> arm innate identity when the matched baseline probe
         # is pulled alongside (the analysis re-verifies this globally)
         if not is_reach_base:

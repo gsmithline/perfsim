@@ -127,6 +127,11 @@ def main():
         os.path.join(REPO, "notes", "pofd", "cluster")])
     ap.add_argument("--out-dir", default=os.path.join(
         REPO, "notes", "pofd", "reach_analysis"))
+    ap.add_argument("--compare", action="store_true",
+                    help="print the four preregistered DESCRIPTIVE "
+                         "comparisons over the located cells (one seed; "
+                         "no confidence intervals -- agents are not "
+                         "independent replicates)")
     args = ap.parse_args()
     man = json.load(open(args.manifest))
     os.makedirs(args.out_dir, exist_ok=True)
@@ -176,8 +181,11 @@ def main():
         first = torch.full((n,), -1, dtype=torch.long)
         first_own = torch.full((n,), -1, dtype=torch.long)
         cum = []
+        churns = []
         for t in range(n_r):
             g = gates[t]
+            churns.append(NA if t == 0 else
+                          float((g ^ gates[t - 1]).float().mean()))
             newly = g & ~ever
             first[newly] = t
             if t >= 1:
@@ -192,6 +200,7 @@ def main():
             rr = {**ident, "round": t,
                   "accepted_frac": float(g.float().mean()),
                   "cum_accepted_frac": cum[-1],
+                  "gate_churn_prev": churns[-1],
                   "mean_abs_disp_twin": disp,
                   "w1_twin": w1(op[t], tw[t]),
                   "mean_shift_twin": float(op[t].mean() - tw[t].mean()),
@@ -275,7 +284,20 @@ def main():
                    (pred[-1] - pred[0]).abs().mean()),
                "final_pred_disp_from_base": (
                    float((pred[-1] - m_base_v).abs().mean())
-                   if m_base_v is not None else NA)}
+                   if m_base_v is not None else NA),
+               # rounds-25..29 late window (the sft_k0_nopeer wave's
+               # primary movement window; NA on runs shorter than 30)
+               "late_mean_abs_disp_twin": (
+                   float(torch.stack([(op[t] - tw[t]).abs().mean()
+                                      for t in range(25, 30)]).mean())
+                   if n_r >= 30 else NA),
+               "late_w1_twin": (
+                   sum(w1(op[t], tw[t]) for t in range(25, 30)) / 5.0
+                   if n_r >= 30 else NA),
+               "gate_churn_mean": (
+                   sum(c_ for c_ in churns if c_ is not NA)
+                   / max(1, len([c_ for c_ in churns if c_ is not NA]))
+                   if n_r > 1 else NA)}
         runs_rows.append(row)
 
         for i in range(n):
@@ -307,6 +329,73 @@ def main():
     print(f"[reach] cells located: {len(man['cells']) - n_missing}/"
           f"{len(man['cells'])} ({n_missing} not pulled -- rows carry "
           f"found=0)")
+
+    if args.compare:
+        found = [r for r in runs_rows if r.get("found") == 1]
+        models = sorted({r["model"] for r in found})
+        arms = sorted({r["arm"] for r in found})
+        num_gates = sorted({r["gate"] for r in found
+                            if r["gate"] != "open"})
+        gates_all = num_gates + (["open"] if any(
+            r["gate"] == "open" for r in found) else [])
+
+        def cellv(m, a, g, key):
+            for r in found:
+                if r["model"] == m and r["arm"] == a and r["gate"] == g:
+                    return r.get(key)
+            return None
+
+        def disp(m, a, g):
+            v = cellv(m, a, g, "late_mean_abs_disp_twin")
+            return v if v not in (None, NA) else cellv(
+                m, a, g, "final_mean_abs_disp_twin")
+
+        def fmt(v):
+            return "     ." if v in (None, NA) else f"{float(v):9.3f}"
+
+        print("\n[compare] ONE SEED -- descriptive only, no inference; "
+              "agents are not independent replicates.")
+        narrow = num_gates[:2]
+        print(f"\n== C1: common-cohort reach at narrow gates "
+              f"{narrow} (b0 vs k0; NA = empty cohort/unrun) ==")
+        for m in models:
+            for g in narrow:
+                b0v = cellv(m, "b0", g, "common_reached_frac")
+                k0v = cellv(m, "k0", g, "common_reached_frac")
+                d = (float(b0v) - float(k0v)
+                     if b0v not in (None, NA) and k0v not in (None, NA)
+                     else NA)
+                print(f"  {m:10s} ea={g!s:5s} b0={fmt(b0v)} k0={fmt(k0v)}"
+                      f"  b0-k0={fmt(d)}")
+        print("\n== C2: population displacement ladder "
+              "(late rounds 25-29 mean |op - twin|) ==")
+        print(f"{'':17s}" + "".join(f"{g!s:>10s}" for g in gates_all))
+        for m in models:
+            for a in arms:
+                print(f"  {m:10s} {a:3s}" + "".join(
+                    fmt(disp(m, a, g)) for g in gates_all))
+        wide = num_gates[-2:]
+        print(f"\n== C3: wide-gate displacement contrasts {wide} ==")
+        for m in models:
+            for g in wide:
+                b0v, k0v = disp(m, "b0", g), disp(m, "k0", g)
+                b1v = disp(m, "b1", g)
+                d1 = (float(k0v) - float(b0v)
+                      if None not in (k0v, b0v) and NA not in (k0v, b0v)
+                      else NA)
+                d2 = (float(b1v) - float(b0v)
+                      if None not in (b1v, b0v) and NA not in (b1v, b0v)
+                      else NA)
+                print(f"  {m:10s} ea={g!s:5s} k0-b0={fmt(d1)} "
+                      f"b1-b0={fmt(d2)}")
+        print("\n== C4: population dispersion ratio vs twin "
+              "(final round; 1 = preserved) ==")
+        print(f"{'':17s}" + "".join(f"{g!s:>10s}" for g in gates_all))
+        for m in models:
+            for a in arms:
+                print(f"  {m:10s} {a:3s}" + "".join(
+                    fmt(cellv(m, a, g, "final_std_ratio_twin"))
+                    for g in gates_all))
 
 
 if __name__ == "__main__":
