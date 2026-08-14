@@ -1239,6 +1239,86 @@ def grid3_sub(model, kind):
                                      what=what, **REACH_MODELS[model])
 
 
+# EPS_SOCIAL=0.2 SFT/ICL CHANNEL TABLE (2026-08-14, user), keys
+# sft_icl_peer02[_smoke] + {qwen7b,olmo7b,mistral7b}_sft_icl_peer02:
+# complete the peer-live channel comparison -- b0 (ordinary SFT) / k0
+# (frozen plain prompting) / fz0 (fixed round-0 K=8 context) / dyn
+# (refreshed live K=8 context) -- over 3 models x gates {0.1, 0.4} x
+# ES=0.2 x seeds {0, 42, 43} = 72 conceptual cells, all threshold mode.
+# Canonical env otherwise (W0.5/l0.2/gamma0, 30 rounds, WITH_TWIN=1,
+# greedy, replace + 723 labels, corrected operator, one peer sweep).
+# AUDIT (audit_sft_icl_peer02_reuse.py -> manifest_sft_icl_peer02.json,
+# config fields + completeness + per-run checker validation): EXACTLY
+# 27 reused (qwen 16 / olmo 8 / mistral 3, all validation PASS) / 45
+# missing (qwen 8 / olmo 16 / mistral 21; b0 9 / k0 10 / fz0 16 /
+# dyn 10), every count hard-asserted. NEW family pofdpeer2_ (es0p2
+# token; no tags shared with any other wave -- collision-asserted).
+# Smokes (2 x 3 rounds, seed 991, OUTSIDE the 45): mistral fz0 + dyn
+# at ea0p1 es0p2 -- the never-run Mistral peer-context paths.
+PEER2_MANIFEST_PATH = os.path.join(HERE, "manifest_sft_icl_peer02.json")
+PEER2_EXPECT_REUSED = 27
+PEER2_EXPECT_NEW = 45
+PEER2_EXPECT_NEW_PER_MODEL = {"qwen7b": 8, "olmo7b": 16, "mistral7b": 21}
+PEER2_EXPECT_REUSED_PER_MODEL = {"qwen7b": 16, "olmo7b": 8, "mistral7b": 3}
+PEER2_KEY = {m: f"{m}_sft_icl_peer02" for m in
+             ("qwen7b", "olmo7b", "mistral7b")}
+PEER2_SMOKES = [("mistral7b", "fz0", 0.1), ("mistral7b", "dyn", 0.1)]
+PEER2_SMOKE_SEED = 991
+ROW_PEER2 = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+             "0.2, 0.0, 0.5, loop, 0.0, {eps_ai}, threshold, {iclk}, "
+             "{snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}")
+
+
+def peer2_tag(model, arm, gate, seed, prefix="pofdpeer2"):
+    return (f"{prefix}_{model}_{arm}_ea{_num(gate)}_{w_tok()}_es0p2"
+            f"_s{seed}")
+
+
+def peer2_row(model, arm, gate, seed, nrounds=30, prefix="pofdpeer2"):
+    a = REACH_ARM_COLS[arm]
+    return ROW_PEER2.format(
+        tag=peer2_tag(model, arm, gate, seed, prefix), style=a["style"],
+        beta=a["beta"], seed=seed, eps_ai=f"{gate:g}", iclk=a["iclk"],
+        snap=a["snap"], uselora=a["uselora"], fresh=a["fresh"],
+        ansk=a["ansk"], gg=a["gg"], nrounds=nrounds)
+
+
+def _peer2_manifest():
+    with open(PEER2_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def peer2_rows(model):
+    rows = []
+    for c in _peer2_manifest()["cells"]:
+        if c["model"] == model and c["status"] == "new":
+            r = peer2_row(model, c["arm"], c["gate"], c["seed"])
+            assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
+            rows.append(r)
+    return rows
+
+
+def peer2_smoke_rows():
+    return [peer2_row(m, arm, gate, PEER2_SMOKE_SEED, nrounds=3,
+                      prefix="pofdpeer2smk")
+            for m, arm, gate in PEER2_SMOKES]
+
+
+def peer2_sub(model, kind):
+    """kind: 'main' | 'smoke' -- rides the REACH sub template (the row
+    schema is identical; es rides queue col 10)."""
+    key = PEER2_KEY[model] if kind == "main" else "sft_icl_peer02_smoke"
+    n_jobs = (len(peer2_rows(model)) if kind == "main"
+              else len(peer2_smoke_rows()))
+    what = {"main": ("EPS_SOCIAL=0.2 SFT/ICL CHANNEL TABLE -- audited-"
+                     "missing cells (30 rounds, peer step LIVE, twin "
+                     "moves; pofdpeer2_ family, no shared tags)"),
+            "smoke": ("sft_icl_peer02 SMOKE (3 rounds, seed 991; first "
+                      "Mistral peer-context exercise)")}[kind]
+    return REACH_SUB_TEMPLATE.format(model=model, key=key, n_jobs=n_jobs,
+                                     what=what, **REACH_MODELS[model])
+
+
 def k0_sub(model, kind):
     """kind: 'main' | 'smoke' -- rides the REACH sub template."""
     short = K0_KEY[model].split("_")[-1]
@@ -3537,6 +3617,48 @@ def main():
     cube_subs[os.path.join(HERE,
                            "at_pofd_sft_icl_nopeer_grid3_smoke.sub")] = \
         grid3_sub("mistral7b", "smoke")
+    # eps_social=0.2 channel table (see the PEER2 block): manifest-driven,
+    # NEW pofdpeer2_ family -- zero shared tags with any other wave.
+    _pman = _peer2_manifest()
+    assert _pman["counts"]["cells"] == 72, _pman["counts"]
+    assert _pman["counts"]["reused"] == PEER2_EXPECT_REUSED == 27, \
+        _pman["counts"]
+    assert _pman["counts"]["new"] == PEER2_EXPECT_NEW == 45, _pman["counts"]
+    assert _pman["counts"]["new_per_model"] == PEER2_EXPECT_NEW_PER_MODEL
+    assert _pman["counts"]["reused_per_model"] == \
+        PEER2_EXPECT_REUSED_PER_MODEL
+    assert len(_pman["cells"]) == 72 and len(_pman["baselines"]) == 3
+    assert all(c.get("validation") in ("PASS", "SKIPPED")
+               for c in _pman["cells"] if c["status"] == "reused"), \
+        "peer2 manifest carries a reused cell that FAILED validation"
+    _p_reused = {c["run_tag"] for c in _pman["cells"]
+                 if c["status"] == "reused"}
+    _prior_before_p2 = {r.split(",")[0]
+                        for rows in files.values() for r in rows}
+    _p2_total = 0
+    for model in REACH_MODELS:
+        rows_p = peer2_rows(model)
+        assert len(rows_p) == PEER2_EXPECT_NEW_PER_MODEL[model], \
+            (model, len(rows_p))
+        _p2_total += len(rows_p)
+        tags_p = {r.split(",")[0] for r in rows_p}
+        assert not (tags_p & _p_reused)
+        assert not (tags_p & _prior_before_p2), \
+            f"peer2 collision: {tags_p & _prior_before_p2}"
+        p = os.path.join(HERE, f"configs_pofd_{PEER2_KEY[model]}.txt")
+        files[p] = rows_p
+        expected[p] = PEER2_EXPECT_NEW_PER_MODEL[model]
+        cube_subs[os.path.join(HERE, f"at_pofd_{PEER2_KEY[model]}.sub")] = \
+            peer2_sub(model, "main")
+    assert _p2_total == 45
+    _p2_smk = peer2_smoke_rows()
+    assert len(_p2_smk) == 2
+    assert not ({r.split(",")[0] for r in _p2_smk} & _prior_before_p2)
+    p = os.path.join(HERE, "configs_pofd_sft_icl_peer02_smoke.txt")
+    files[p] = _p2_smk
+    expected[p] = 2
+    cube_subs[os.path.join(HERE, "at_pofd_sft_icl_peer02_smoke.sub")] = \
+        peer2_sub("mistral7b", "smoke")
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),

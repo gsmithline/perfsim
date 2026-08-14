@@ -1,0 +1,2 @@
+pofdpeer2smk_mistral7b_fz0_ea0p1_w0p5_l0p2_es0p2_s991, frozen, 0, 991, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, threshold, 8, 0, 0, 0, 0, 1, 3
+pofdpeer2smk_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p2_s991, frozen, 0, 991, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.1, threshold, 8, -1, 0, 0, 0, 1, 3

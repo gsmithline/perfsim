@@ -282,6 +282,18 @@ def check_run(run_dir):
     is_reach = name.startswith("pofdreach")
     is_reach_base = name.startswith("pofdreachbase")
     is_reach_smk = name.startswith("pofdreachsmk")
+    # PEER-CHANNEL grid (2026-08-14, sft_icl_peer02 wave): the es=0.2
+    # completion of the SFT/ICL channel table -- arms b0 (ordinary SFT) /
+    # k0 (frozen plain prompting) / fz0 (frozen round-0 K=8 context) /
+    # dyn (refreshed live K=8 context) at numeric gates with the peer
+    # step LIVE. Unlike the no-peer reach family: the twin MOVES (never
+    # compared to innate), gate masks may churn even for static-serving
+    # arms (peers move agents across a fixed prediction's gate line), and
+    # the exact-copy replay is impossible (peer moves are RNG-pairwise)
+    # -- the SOCIAL section's mean-conservation + contact gates apply
+    # instead. Covers pofdpeer2smk_ (3-round smokes) too.
+    is_peer2 = name.startswith("pofdpeer2")
+    is_peer2_smk = name.startswith("pofdpeer2smk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -449,6 +461,48 @@ def check_run(run_dir):
                         f"{hw_missing}")
         elif not (hw.get("hostname") and hw.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_peer2:
+        # shared surface: movielens Action, greedy, natural labels, no
+        # anchors/interventions, threshold gating. eps=0.2 rides the
+        # MANDATORY _es0p2_ token; W/lam ride the _w/_l tokens.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none", "ai_gate_mode": "threshold"})
+        if m_es is None or abs(want_es - 0.2) > 1e-9:
+            errs.append(f"CONFIG peer2 tag must carry the _es0p2_ token "
+                        f"(got {name!r})")
+        PEER2_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
+                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                   "sft_batch_size": 4, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0, "train_cap": 723},
+            "k0": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False, "icl_k": 0,
+                   "icl_days": 0},
+            "fz0": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": 0},
+            "dyn": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+        }
+        m_arm = re.search(r"_(b0|k0|fz0|dyn)_ea", name)
+        if m_arm is None:
+            errs.append(f"CONFIG unknown peer2 arm token in dirname "
+                        f"{name!r}")
+        else:
+            want.update(PEER2_ARM_WANT[m_arm.group(1)])
+        want["n_rounds"] = 3 if is_peer2_smk else 30
+        if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG peer2 tag needs a NUMERIC _ea token "
+                        f"({name!r}); all-open is not part of this design")
+        if not any(f"_{s}_" in name for s in
+                   ("qwen7b", "olmo7b", "mistral7b")):
+            errs.append(f"CONFIG no known peer2 model slug in {name!r}")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
         # configs, not here. rlhf_feedback IS recorded and tag-checked below.
@@ -1308,6 +1362,81 @@ def check_run(run_dir):
                                     "matched baseline probe's (population "
                                     "mismatch)")
 
+    # -- 1g PEER2 (sft_icl_peer02 wave, 2026-08-14) --------------------------
+    # Mandatory artifacts + invariants for pofdpeer2* runs. The gate
+    # bit-replay rides section 1b (gate_raw REQUIRED here, so 1b always
+    # fires); peer-alive / twin / mean-conservation / contact ride the
+    # SOCIAL section (es=0.2). Static-serving arms (k0/fz0) must keep
+    # their PREDICTIONS bit-constant -- but NOT their gate masks: with
+    # peers live, agents move across a fixed prediction's gate line by
+    # peer dynamics alone. No scientific outcome is a validity condition.
+    if is_peer2:
+        nr_p = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_p or int(op_raw.shape[0]) != nr_p:
+            errs.append(f"PEER2 trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config n_rounds="
+                        f"{nr_p} -- incomplete or over-run)")
+        if pred_raw.shape != op_raw.shape:
+            errs.append(f"PEER2 pred_raw shape {tuple(pred_raw.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        gr_p = d.get("gate_raw")
+        if gr_p is None or gr_p.numel() == 0:
+            errs.append("PEER2 gate_raw missing/empty (mandatory in this "
+                        "family)")
+        elif tuple(gr_p.shape) != tuple(op_raw.shape):
+            errs.append(f"PEER2 gate_raw shape {tuple(gr_p.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        if torch.isfinite(pred_raw).all():
+            if float(pred_raw.min()) < -1e-6 or \
+                    float(pred_raw.max()) > 1 + 1e-6:
+                errs.append(f"PEER2 predictions outside [0,1]: "
+                            f"[{float(pred_raw.min()):.4f}, "
+                            f"{float(pred_raw.max()):.4f}]")
+        else:
+            errs.append("PEER2 non-finite predictions (parse-fail NaN)")
+        _p2_static = ("k0" if "_k0_" in name
+                      else "fz0" if "_fz0_" in name else None)
+        if _p2_static is not None:
+            for tt in range(1, pred_raw.shape[0]):
+                if not _bit_eq(pred_raw[tt], pred_raw[0]):
+                    neq = ~((pred_raw[tt] == pred_raw[0])
+                            | (torch.isnan(pred_raw[tt])
+                               & torch.isnan(pred_raw[0])))
+                    errs.append(f"PEER2 {_p2_static}: pred_raw round {tt} "
+                                f"!= round 0 ({int(neq.sum())} agents) -- "
+                                f"static serving must be constant within "
+                                f"a run (gate masks MAY churn via peers)")
+                    break
+        if "_k0_" in name:
+            for key in ("icl_idx_raw", "icl_val_raw"):
+                t_k = d.get(key)
+                if t_k is not None and t_k.numel() > 0:
+                    errs.append(f"PEER2 k0: {key} non-empty -- plain "
+                                f"prompting must carry no exemplars")
+            if os.path.exists(os.path.join(run_dir,
+                                           "icl_ctx_log.json.gz")):
+                errs.append("PEER2 k0: icl_ctx_log.json.gz present -- no "
+                            "rendered context allowed")
+        if int(cfg.get("icl_k") or 0) > 0:
+            ii_p = d.get("icl_idx_raw")
+            if ii_p is None or ii_p.numel() == 0:
+                errs.append("PEER2 icl_k>0 but icl_idx_raw missing/empty")
+            elif "_dyn_" in name and ii_p.shape[0] > 1:
+                if all(torch.equal(ii_p[tt], ii_p[0])
+                       for tt in range(1, ii_p.shape[0])):
+                    errs.append("PEER2 dyn: exemplar ids bit-identical "
+                                "across all rounds -- context was never "
+                                "refreshed")
+            if not os.path.exists(os.path.join(run_dir,
+                                               "icl_ctx_log.json.gz")):
+                errs.append("PEER2 icl_ctx_log.json.gz missing")
+        if cfg.get("training_style") == "frozen":
+            ppls_p = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_p and len(set(ppls_p)) != 1:
+                errs.append(f"PEER2 fixed-text perplexity varies "
+                            f"({len(set(ppls_p))} distinct values) -- "
+                            f"weights not frozen?")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -1373,9 +1502,11 @@ def check_run(run_dir):
         elif tuple(tw.shape) != tuple(op_raw.shape):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
-        if is_icl or is_iclf or is_ctf:
+        if is_icl or is_iclf or is_ctf or \
+                (is_peer2 and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_)
+            # and the peer2 wave's frozen arms (k0/fz0/dyn)
             return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):
