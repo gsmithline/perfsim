@@ -346,11 +346,16 @@ def test_sabotage_inactive_peer_step(tmp_path):
     assert_verdict(rd, False, "PEER-ALIVE")
 
 
-def test_sabotage_total_silent_parse_failure(tmp_path):
-    """Every agent every round at exactly 0.5 = the runner's silent
-    parse-failure default. Observed for real on mistral7b at K=32."""
+def test_degenerate_constant_serving_warns_but_passes(tmp_path):
+    """Every agent every round at exactly 0.5 is a degenerate constant
+    signal -- measured on mistral7b at K=32 with parse_fail_frac=0, so
+    it is a GENUINE model answer, not the _parse no-digit default. It is
+    a scientific outcome, so it WARNs loudly and must NOT fail."""
     rd = build(tmp_path, "mistral7b", "f32", 1.0, 1.0, flat_pred=True)
-    assert_verdict(rd, False, "silent parse-failure default")
+    rc, out = run_check(rd)
+    assert rc == 0, f"degenerate serving must not FAIL:\n{out[-2500:]}"
+    assert "every prediction is exactly 0.5" in out, out[-2500:]
+    assert "degenerate constant signal" in out, out[-2500:]
 
 
 def test_sabotage_b0_with_kl_term(tmp_path):

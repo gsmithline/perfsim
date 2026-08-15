@@ -1730,25 +1730,31 @@ def check_run(run_dir):
             errs.append("CTXGRID non-finite predictions (parse-fail NaN)")
         if not torch.isfinite(op_raw).all():
             errs.append("CTXGRID non-finite opinions")
-        # SILENT total parse failure. The runner defaults a generation
-        # holding no number to exactly 0.5, so a run whose every agent in
-        # every round sits at 0.5 produced no usable model output at all
-        # -- it is a degenerate constant, not a served signal. Observed
-        # for real on mistral7b at K=32 (2026-08-15 ctxgrid smokes: 723
-        # agents x 3 rounds all 0.5, pred_std 0, while the same model at
-        # K=8 in the same environment gives pred_std ~0.098). This is a
-        # PIPELINE-INTEGRITY failure of the same class as the parse-fail
-        # NaN check above, not a scientific outcome: no channel is
-        # required to move anyone, but every channel must actually serve
-        # a parsed prediction.
+        # DEGENERATE CONSTANT SERVING at exactly 0.5. Two very different
+        # things look identical in a trajectory: HFCausalLMModel._parse
+        # returns a 0.5 default when a generation holds no digit at all,
+        # and a model can also genuinely answer "0.5" for everyone. The
+        # trajectory cannot distinguish them -- only DEBUG_GEN=1 can
+        # (it reports the no-digit fraction as parse_fail_frac).
+        # MEASURED 2026-08-15 on mistral7b at K=32: parse_fail_frac =
+        # 0.0000, so the constant is a GENUINE model answer, not the
+        # parse default. The same model at K=8 in the same environment
+        # serves pred_std ~0.098, and archived qwen/olmo K=32 runs are
+        # healthy -- so deep context collapses mistral's per-agent
+        # signal.
+        # This is therefore a SCIENTIFIC OUTCOME, and this project never
+        # makes an outcome a validity condition -- it is reported as a
+        # WARN with stats, never a failure.
         if pred_raw.numel() and torch.isfinite(pred_raw).all() \
                 and float(pred_raw.min()) == 0.5 \
                 and float(pred_raw.max()) == 0.5:
-            errs.append("CTXGRID every prediction is exactly 0.5 (the "
-                        "silent parse-failure default) -- the model "
-                        "produced no parseable number for any agent in "
-                        "any round; rerun with DEBUG_GEN=1 to see the "
-                        "raw generations")
+            print(f"WARN {name}: every prediction is exactly 0.5 for all "
+                  f"{int(pred_raw.shape[1])} agents in all "
+                  f"{int(pred_raw.shape[0])} rounds (pred_std 0) -- a "
+                  f"degenerate constant signal. Either the _parse "
+                  f"no-digit default or a genuine constant answer; rerun "
+                  f"with DEBUG_GEN=1 to tell them apart (mistral7b at "
+                  f"K=32 measured parse_fail_frac=0, i.e. genuine).")
         # static-serving channels: frozen weights + fixed (or absent)
         # context + greedy serving => the SERVED predictions are constant
         # in every peer regime. The gate mask is additionally constant
