@@ -1739,26 +1739,32 @@ def check_run(run_dir):
         # all 0.5, pred_std 0, unchanged at MAX_NEW_TOKENS 6 and 24),
         # while the same model at K=8 in the same environment serves
         # pred_std ~0.098 and archived qwen/olmo K=32 runs are healthy.
-        # The cause is still OPEN: the first diagnostic reported
-        # parse_fail_frac=0, but that number was never measured -- the
-        # in-context path calls gp.probe_predictions, which (before
-        # 2026-08-15) did not populate the LM's _last_raw /
-        # _last_parse_fail, so DEBUG_GEN printed stale __init__ values.
-        # probe_predictions now mirrors that telemetry; a rerun under
-        # DEBUG_GEN=1 will finally show the raw generations.
-        # Severity: WARN, never a failure. If the constant turns out to
-        # be a real model answer it is a SCIENTIFIC OUTCOME, and this
-        # project never makes an outcome a validity condition.
+        # CAUSE RESOLVED for mistral7b K=32 (2026-08-15, seed-993
+        # diagnostic, once the ICL path actually populated the
+        # telemetry): parse_fail_frac = 1.0000 in every round -- 100% of
+        # generations hold NO DIGIT. The raw text is prose, "To estimate
+        # the user's p...": under a 32-exemplar prompt mistral stops
+        # obeying the "Respond with only the number" instruction and
+        # starts explaining, so no number appears inside MAX_NEW_TOKENS
+        # (checked at 6 and 24) and every agent takes the 0.5 default.
+        # An instruction-following failure at long context, not a
+        # per-agent opinion. Note a much larger token budget is NOT an
+        # obvious fix: _parse takes the FIRST number, which in prose can
+        # be a rating quoted back from the profile -- silently wrong
+        # values instead of an honest constant.
+        # Severity stays WARN, never a failure: the trajectory is
+        # internally consistent and what it records is a real property
+        # of the model under this prompt.
         if pred_raw.numel() and torch.isfinite(pred_raw).all() \
                 and float(pred_raw.min()) == 0.5 \
                 and float(pred_raw.max()) == 0.5:
             print(f"WARN {name}: every prediction is exactly 0.5 for all "
                   f"{int(pred_raw.shape[1])} agents in all "
                   f"{int(pred_raw.shape[0])} rounds (pred_std 0) -- a "
-                  f"degenerate constant signal. Cause UNRESOLVED: either "
-                  f"the _parse no-digit default or a genuine constant "
-                  f"answer. Rerun under DEBUG_GEN=1 (ICL-path telemetry "
-                  f"was fixed 2026-08-15) to tell them apart.")
+                  f"degenerate constant signal, i.e. NO served signal. "
+                  f"Known cause for mistral7b at K=32: 100% digit-free "
+                  f"generations (prose) taking the _parse 0.5 default. "
+                  f"Confirm with DEBUG_GEN=1 (parse_fail_frac).")
         # static-serving channels: frozen weights + fixed (or absent)
         # context + greedy serving => the SERVED predictions are constant
         # in every peer regime. The gate mask is additionally constant
