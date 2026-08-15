@@ -1734,27 +1734,31 @@ def check_run(run_dir):
         # things look identical in a trajectory: HFCausalLMModel._parse
         # returns a 0.5 default when a generation holds no digit at all,
         # and a model can also genuinely answer "0.5" for everyone. The
-        # trajectory cannot distinguish them -- only DEBUG_GEN=1 can
-        # (it reports the no-digit fraction as parse_fail_frac).
-        # MEASURED 2026-08-15 on mistral7b at K=32: parse_fail_frac =
-        # 0.0000, so the constant is a GENUINE model answer, not the
-        # parse default. The same model at K=8 in the same environment
-        # serves pred_std ~0.098, and archived qwen/olmo K=32 runs are
-        # healthy -- so deep context collapses mistral's per-agent
-        # signal.
-        # This is therefore a SCIENTIFIC OUTCOME, and this project never
-        # makes an outcome a validity condition -- it is reported as a
-        # WARN with stats, never a failure.
+        # trajectory alone CANNOT distinguish them.
+        # Observed 2026-08-15 on mistral7b at K=32 (723 agents x 3 rounds
+        # all 0.5, pred_std 0, unchanged at MAX_NEW_TOKENS 6 and 24),
+        # while the same model at K=8 in the same environment serves
+        # pred_std ~0.098 and archived qwen/olmo K=32 runs are healthy.
+        # The cause is still OPEN: the first diagnostic reported
+        # parse_fail_frac=0, but that number was never measured -- the
+        # in-context path calls gp.probe_predictions, which (before
+        # 2026-08-15) did not populate the LM's _last_raw /
+        # _last_parse_fail, so DEBUG_GEN printed stale __init__ values.
+        # probe_predictions now mirrors that telemetry; a rerun under
+        # DEBUG_GEN=1 will finally show the raw generations.
+        # Severity: WARN, never a failure. If the constant turns out to
+        # be a real model answer it is a SCIENTIFIC OUTCOME, and this
+        # project never makes an outcome a validity condition.
         if pred_raw.numel() and torch.isfinite(pred_raw).all() \
                 and float(pred_raw.min()) == 0.5 \
                 and float(pred_raw.max()) == 0.5:
             print(f"WARN {name}: every prediction is exactly 0.5 for all "
                   f"{int(pred_raw.shape[1])} agents in all "
                   f"{int(pred_raw.shape[0])} rounds (pred_std 0) -- a "
-                  f"degenerate constant signal. Either the _parse "
-                  f"no-digit default or a genuine constant answer; rerun "
-                  f"with DEBUG_GEN=1 to tell them apart (mistral7b at "
-                  f"K=32 measured parse_fail_frac=0, i.e. genuine).")
+                  f"degenerate constant signal. Cause UNRESOLVED: either "
+                  f"the _parse no-digit default or a genuine constant "
+                  f"answer. Rerun under DEBUG_GEN=1 (ICL-path telemetry "
+                  f"was fixed 2026-08-15) to tell them apart.")
         # static-serving channels: frozen weights + fixed (or absent)
         # context + greedy serving => the SERVED predictions are constant
         # in every peer regime. The gate mask is additionally constant

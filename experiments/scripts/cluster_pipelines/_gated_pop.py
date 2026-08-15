@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import numpy as np
 import torch
@@ -381,8 +382,25 @@ def kl_grad_decompose(lm, learner, train_data, fmt, n_examples):
 
 @torch.no_grad()
 def probe_predictions(lm, probe_prompts):
-    """Greedy generations on the fixed probe prompts, parsed to [0,1] floats."""
+    """Greedy generations on the fixed probe prompts, parsed to [0,1] floats.
+
+    Mirrors HFCausalLMModel.forward's telemetry side effects. forward() is
+    what normally records _last_raw / _last_parse_fail, but the in-context
+    serving path calls THIS function instead, so without the mirror every
+    ICL run reports the stale __init__ values -- raw=[] and
+    parse_fail_frac=0.0 -- under DEBUG_GEN=1. That silently reads as "no
+    parse failures" when nothing was measured at all (found 2026-08-15
+    while diagnosing mistral7b K=32 serving a constant 0.5).
+
+    Telemetry only: the returned values are the same lm._parse over the
+    same generations, so served predictions are bit-identical and no
+    archived run is affected.
+    """
     outputs = lm._generate(probe_prompts)
+    lm._last_raw = list(outputs)
+    lm._last_parse_fail = sum(
+        1 for o in outputs if re.search(r"\d", o) is None
+    ) / max(1, len(outputs))
     return [lm._parse(o) for o in outputs]
 
 
