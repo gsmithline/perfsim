@@ -73,6 +73,11 @@ def heatmaps(per_cell, grid, out_dir):
     val = {(r["model"], r["arm"], r["gate"], r["eps_social"]):
            r.get("late_std_ratio", NA)
            for r in per_cell if r.get("found") == 1}
+    # channels excluded for serving no parseable signal are marked, not
+    # left blank: a reader must be able to tell "we did not run this and
+    # here is why" from "this ran and produced nothing"
+    excluded = {(r["model"], r["arm"]) for r in per_cell
+                if r.get("status") == "excluded"}
     nums = [v for v in val.values() if v not in (NA, None)]
     if not nums:
         print("[ctxgrid] no located cells -- skipping figures")
@@ -87,10 +92,13 @@ def heatmaps(per_cell, grid, out_dir):
         for ri, row in enumerate(PANELS):
             for ci, (arm, label) in enumerate(row):
                 ax = axes[ri][ci]
+                is_excl = (model, arm) in excluded
                 for yi, es in enumerate(ess):
                     for xi, ea in enumerate(gates):
                         v = val.get((model, arm, ea, es), NA)
-                        if v in (NA, None):
+                        if is_excl:
+                            face, txt, tcol = "0.80", "—", "0.35"
+                        elif v in (NA, None):
                             face, txt, tcol = "0.88", "NA", "0.45"
                         else:
                             face = cmap(norm(v))
@@ -112,6 +120,14 @@ def heatmaps(per_cell, grid, out_dir):
                 ax.set_aspect("equal")
                 # panel identifier (the channel), NOT a figure title
                 ax.set_title(label, fontsize=9.5, pad=4)
+                if is_excl:
+                    ax.text(len(gates) / 2, len(ess) / 2,
+                            "no served signal\n(100% digit-free\n"
+                            "generations)", ha="center", va="center",
+                            fontsize=8.5, color="0.25",
+                            bbox=dict(boxstyle="round,pad=0.35",
+                                      facecolor="white", alpha=0.85,
+                                      edgecolor="0.6", linewidth=0.6))
                 if ri == 1:
                     ax.set_xlabel(r"$\varepsilon_{\mathrm{AI}}$",
                                   fontsize=9)

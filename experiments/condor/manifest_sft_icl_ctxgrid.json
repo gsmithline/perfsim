@@ -46,10 +46,16 @@
    "d32": "live K=32 context (refreshed each round)"
   }
  },
+ "excluded_channels": [
+  "mistral7b/d32",
+  "mistral7b/f32"
+ ],
+ "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
  "counts": {
   "cells": 360,
   "reused": 139,
-  "new": 221,
+  "new": 181,
+  "excluded": 40,
   "reused_per_model": {
    "qwen7b": 43,
    "olmo7b": 42,
@@ -71,21 +77,25 @@
   "new_per_model": {
    "qwen7b": 77,
    "olmo7b": 78,
-   "mistral7b": 66
+   "mistral7b": 26
   },
   "new_per_arm": {
-   "f32": 60,
-   "d32": 44,
+   "f32": 40,
+   "d32": 24,
    "b0": 22,
    "k0": 35,
    "fz0": 38,
    "dyn": 22
   },
   "new_per_es": {
-   "0": 22,
-   "0p2": 39,
-   "0p4": 80,
-   "1": 80
+   "0": 12,
+   "0p2": 29,
+   "0p4": 70,
+   "1": 70
+  },
+  "excluded_per_arm": {
+   "f32": 20,
+   "d32": 20
   }
  },
  "cells": [
@@ -1951,11 +1961,12 @@
    "gate": 0.05,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p05_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -1963,11 +1974,12 @@
    "gate": 0.1,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p1_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -1975,11 +1987,12 @@
    "gate": 0.2,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p2_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -1987,11 +2000,12 @@
    "gate": 0.4,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p4_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -1999,11 +2013,12 @@
    "gate": 1.0,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea1_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -2011,11 +2026,12 @@
    "gate": 0.05,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p05_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -2023,11 +2039,12 @@
    "gate": 0.1,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p1_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -2035,11 +2052,12 @@
    "gate": 0.2,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p2_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -2047,11 +2065,12 @@
    "gate": 0.4,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p4_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -2059,11 +2078,12 @@
    "gate": 1.0,
    "eps_social": 0.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea1_w0p5_l0p2_es0_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "qwen7b",
@@ -3706,11 +3726,12 @@
    "gate": 0.05,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p05_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3718,11 +3739,12 @@
    "gate": 0.1,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p1_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3730,11 +3752,12 @@
    "gate": 0.2,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p2_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3742,11 +3765,12 @@
    "gate": 0.4,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p4_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3754,11 +3778,12 @@
    "gate": 1.0,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea1_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3766,11 +3791,12 @@
    "gate": 0.05,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p05_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3778,11 +3804,12 @@
    "gate": 0.1,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p1_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3790,11 +3817,12 @@
    "gate": 0.2,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p2_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3802,11 +3830,12 @@
    "gate": 0.4,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p4_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -3814,11 +3843,12 @@
    "gate": 1.0,
    "eps_social": 0.2,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea1_w0p5_l0p2_es0p2_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "qwen7b",
@@ -4916,11 +4946,12 @@
    "gate": 0.05,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p05_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4928,11 +4959,12 @@
    "gate": 0.1,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p1_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4940,11 +4972,12 @@
    "gate": 0.2,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p2_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4952,11 +4985,12 @@
    "gate": 0.4,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p4_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4964,11 +4998,12 @@
    "gate": 1.0,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea1_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4976,11 +5011,12 @@
    "gate": 0.05,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p05_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -4988,11 +5024,12 @@
    "gate": 0.1,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p1_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -5000,11 +5037,12 @@
    "gate": 0.2,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p2_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -5012,11 +5050,12 @@
    "gate": 0.4,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p4_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -5024,11 +5063,12 @@
    "gate": 1.0,
    "eps_social": 0.4,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea1_w0p5_l0p2_es0p4_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "qwen7b",
@@ -6126,11 +6166,12 @@
    "gate": 0.05,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p05_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6138,11 +6179,12 @@
    "gate": 0.1,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p1_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6150,11 +6192,12 @@
    "gate": 0.2,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p2_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6162,11 +6205,12 @@
    "gate": 0.4,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea0p4_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6174,11 +6218,12 @@
    "gate": 1.0,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_f32_ea1_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6186,11 +6231,12 @@
    "gate": 0.05,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p05_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6198,11 +6244,12 @@
    "gate": 0.1,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p1_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6210,11 +6257,12 @@
    "gate": 0.2,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p2_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6222,11 +6270,12 @@
    "gate": 0.4,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea0p4_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   },
   {
    "model": "mistral7b",
@@ -6234,11 +6283,12 @@
    "gate": 1.0,
    "eps_social": 1.0,
    "seed": 0,
-   "status": "new",
+   "status": "excluded",
    "run_tag": "pofdctxgrid_mistral7b_d32_ea1_w0p5_l0p2_es1_s0",
+   "excluded_reason": "mistral7b serves no parseable signal at K=32: 100% digit-free generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), so _parse returns its 0.5 default for every agent. Instruction-following failure under a 32-exemplar prompt; verified at MAX_NEW_TOKENS 6 and 24.",
    "config_fingerprint": null,
    "trajectory_sha256": null,
-   "validation": "PENDING"
+   "validation": "NOT RUN"
   }
  ],
  "baselines": [

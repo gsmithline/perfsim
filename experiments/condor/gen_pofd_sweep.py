@@ -1454,12 +1454,18 @@ def gate2d_sub(kind):
 # (collision-asserted). Smokes (2 x 3 rounds, seed 991, OUTSIDE the
 # 221): mistral f32 + d32 at ea1 es1 -- the never-run K=32 corner.
 CTXGRID_MANIFEST_PATH = os.path.join(HERE, "manifest_sft_icl_ctxgrid.json")
+# mistral7b K=32 (f32 + d32, 40 cells) is EXCLUDED, never queued: the
+# seed-993 diagnostic measured parse_fail_frac=1.0 -- 100% digit-free
+# prose generations -- so _parse serves its 0.5 default to every agent
+# and the channel carries no signal. The cells stay in the manifest with
+# status "excluded" so the grid still accounts for all 360.
 CTXGRID_EXPECT_CELLS = 360
 CTXGRID_EXPECT_REUSED = 139
-CTXGRID_EXPECT_NEW = 221
-CTXGRID_EXPECT_NEW_PER_MODEL = {"qwen7b": 77, "olmo7b": 78, "mistral7b": 66}
+CTXGRID_EXPECT_NEW = 181
+CTXGRID_EXPECT_EXCLUDED = 40
+CTXGRID_EXPECT_NEW_PER_MODEL = {"qwen7b": 77, "olmo7b": 78, "mistral7b": 26}
 CTXGRID_EXPECT_NEW_PER_ARM = {"b0": 22, "k0": 35, "fz0": 38, "dyn": 22,
-                              "f32": 60, "d32": 44}
+                              "f32": 40, "d32": 24}
 CTXGRID_KEY = {m: f"sft_icl_ctxgrid_{m[:-2]}" for m in
                ("qwen7b", "olmo7b", "mistral7b")}
 CTXGRID_SMOKE_KEY = "sft_icl_ctxgrid_smoke"
@@ -1569,8 +1575,11 @@ def ctxgrid_sub(model, kind):
                      "audited-missing cells (30 rounds; SFT / K=0 / "
                      "fixed+live K=8 / fixed+live K=32 x eps_AI x "
                      "eps_social, BOTH real numeric thresholds; "
-                     "pofdctxgrid_ family, no shared tags). K=32 arms "
-                     "run ~1.9h vs ~0.9h at K=8 (wrapper drops "
+                     "pofdctxgrid_ family, no shared tags). 181 jobs of "
+                     "360 conceptual cells: 139 audited-reused, and the "
+                     "40 mistral7b K=32 cells EXCLUDED (100% digit-free "
+                     "generations -> no served signal). K=32 arms run "
+                     "~1.9h vs ~0.9h at K=8 (wrapper drops "
                      "GEN_BATCH_SIZE to 8 for ICL_K>=16)"),
             "smoke": ("sft_icl_ctxgrid SMOKE (3 rounds, seed 991; the "
                       "never-run fixed/live K=32 corner at ea1 es1)")
@@ -3948,10 +3957,19 @@ def main():
         _cman["counts"]
     assert _cman["counts"]["reused"] == CTXGRID_EXPECT_REUSED == 139, \
         _cman["counts"]
-    assert _cman["counts"]["new"] == CTXGRID_EXPECT_NEW == 221, \
+    assert _cman["counts"]["new"] == CTXGRID_EXPECT_NEW == 181, \
         _cman["counts"]
+    assert _cman["counts"]["excluded"] == CTXGRID_EXPECT_EXCLUDED == 40, \
+        _cman["counts"]
+    assert (_cman["counts"]["reused"] + _cman["counts"]["new"]
+            + _cman["counts"]["excluded"]) == 360, _cman["counts"]
     assert _cman["counts"]["new_per_model"] == CTXGRID_EXPECT_NEW_PER_MODEL
     assert _cman["counts"]["new_per_arm"] == CTXGRID_EXPECT_NEW_PER_ARM
+    # the excluded channel must never reach the queue
+    assert not [c for c in _cman["cells"]
+                if c["status"] == "new" and c["model"] == "mistral7b"
+                and c["arm"] in ("f32", "d32")], \
+        "mistral7b K=32 is excluded (no parseable signal) -- must not queue"
     assert all(c.get("validation") in ("PASS", "SKIPPED")
                for c in _cman["cells"] if c["status"] == "reused"), \
         "ctxgrid manifest carries a reused cell that FAILED validation"
@@ -3981,7 +3999,7 @@ def main():
         cube_subs[os.path.join(HERE,
                                f"at_pofd_{CTXGRID_KEY[model]}.sub")] = \
             ctxgrid_sub(model, "main")
-    assert _cg_total == CTXGRID_EXPECT_NEW == 221
+    assert _cg_total == CTXGRID_EXPECT_NEW == 181
     _cg_smk = ctxgrid_smoke_rows()
     assert len(_cg_smk) == 2
     assert not ({r.split(",")[0] for r in _cg_smk} & _prior_before_cg)

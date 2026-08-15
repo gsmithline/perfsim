@@ -86,6 +86,29 @@ ARM_WANT_32 = {
 # K=32 cell, so a pristine/noai/donor-context run can never be admitted
 GUARD_32 = {"icl_k": (32,), "icl_ctx_source": ("live",)}
 
+# EXCLUDED (model, arm) channels: combinations that cannot serve a
+# parseable signal at all, so queueing them would only buy a constant.
+# mistral7b at K=32 was measured on 2026-08-15 (seed-993 diagnostic,
+# the first with working ICL-path DEBUG_GEN telemetry) at
+# parse_fail_frac = 1.0000 every round: 100% of generations are prose
+# with no digit ("To estimate the user's p..."), because under a
+# 32-exemplar prompt the model stops obeying "respond with only the
+# number". _parse then returns its 0.5 default for all 723 agents.
+# Verified at MAX_NEW_TOKENS 6 and 24; raising the budget further is
+# NOT a fix, since _parse takes the FIRST number and in prose that can
+# be a rating quoted back from the profile (silently wrong values
+# instead of an honest constant). qwen7b/olmo7b at K=32 are healthy and
+# stay in the grid; mistral7b at K=8 is healthy and stays too.
+# These cells remain in the manifest as status "excluded" -- the grid
+# still accounts for all 360 conceptual cells -- but they never queue.
+EXCLUDED_CHANNELS = {("mistral7b", "f32"), ("mistral7b", "d32")}
+EXCLUDED_REASON = (
+    "mistral7b serves no parseable signal at K=32: 100% digit-free "
+    "generations (parse_fail_frac=1.0, seed-993 diagnostic 2026-08-15), "
+    "so _parse returns its 0.5 default for every agent. Instruction-"
+    "following failure under a 32-exemplar prompt; verified at "
+    "MAX_NEW_TOKENS 6 and 24.")
+
 
 def _num(v):
     return f"{v:g}".replace(".", "p")
@@ -187,6 +210,16 @@ def main():
                             "recorded": {k: cfg.get(k)
                                          for k in AR.RECORDED_ONLY},
                             "alternates": [v[1] for v in verified[1:]]})
+                    elif (model, arm) in EXCLUDED_CHANNELS:
+                        # no reusable run AND the channel cannot serve a
+                        # signal -- record it, never queue it
+                        cell.update({"status": "excluded",
+                                     "run_tag": new_tag(model, arm, gate,
+                                                        es),
+                                     "excluded_reason": EXCLUDED_REASON,
+                                     "config_fingerprint": None,
+                                     "trajectory_sha256": None,
+                                     "validation": "NOT RUN"})
                     else:
                         cell.update({"status": "new",
                                      "run_tag": new_tag(model, arm, gate,
@@ -198,6 +231,12 @@ def main():
 
     reused = [c for c in cells if c["status"] == "reused"]
     new = [c for c in cells if c["status"] == "new"]
+    excluded = [c for c in cells if c["status"] == "excluded"]
+    # an excluded channel must never have silently swallowed a usable
+    # archived run: if one existed the cell would have been reused above
+    assert not [c for c in reused
+                if (c["model"], c["arm"]) in EXCLUDED_CHANNELS], \
+        "an excluded channel matched an archived run -- re-examine"
 
     print(f"\n== reused cells ({len(reused)}) ==")
     for c in reused:
@@ -226,9 +265,16 @@ def main():
     print(f"  reused: {len(reused)}  per model: {tally(reused, 'model')}")
     print(f"          per arm: {tally(reused, 'arm')}")
     print(f"          per es:  {tally(reused, 'eps_social')}")
-    print(f"  new: {len(new)}  per model: {tally(new, 'model')}")
+    print(f"  new (QUEUED): {len(new)}  per model: "
+          f"{tally(new, 'model')}")
     print(f"       per arm: {tally(new, 'arm')}")
     print(f"       per es:  {tally(new, 'eps_social')}")
+    print(f"  excluded (NEVER queued): {len(excluded)}  per model: "
+          f"{tally(excluded, 'model')}  per arm: "
+          f"{tally(excluded, 'arm')}")
+    if excluded:
+        print(f"    reason: {EXCLUDED_REASON}")
+    assert len(reused) + len(new) + len(excluded) == len(cells)
     bad_val = [c["run_tag"] for c in reused
                if c["validation"] not in ("PASS", "SKIPPED")]
     if bad_val:
@@ -271,14 +317,18 @@ def main():
                      "dyn": "live K=8 context (refreshed each round)",
                      "f32": "fixed K=32 context (snapshot round 0)",
                      "d32": "live K=32 context (refreshed each round)"}},
+        "excluded_channels": sorted("/".join(c) for c
+                                    in EXCLUDED_CHANNELS),
+        "excluded_reason": EXCLUDED_REASON,
         "counts": {"cells": len(cells), "reused": len(reused),
-                   "new": len(new),
+                   "new": len(new), "excluded": len(excluded),
                    "reused_per_model": tally(reused, "model"),
                    "reused_per_arm": tally(reused, "arm"),
                    "reused_per_es": tally(reused, "eps_social"),
                    "new_per_model": tally(new, "model"),
                    "new_per_arm": tally(new, "arm"),
-                   "new_per_es": tally(new, "eps_social")},
+                   "new_per_es": tally(new, "eps_social"),
+                   "excluded_per_arm": tally(excluded, "arm")},
         "cells": cells,
         "baselines": [{"model": m, "seed": SEED, "status": "reused",
                        "run_tag": AR.base_tag(m, SEED)} for m in AR.MODELS],

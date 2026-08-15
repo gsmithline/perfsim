@@ -84,9 +84,12 @@ case "$WHAT" in
   # (outside the 78). Flow: mistral_sft_icl_gate2d_smoke (2 jobs) ->
   # pull + gate -> mistral_sft_icl_gate2d (78 jobs).
   mistral_sft_icl_gate2d|mistral_sft_icl_gate2d_smoke) TARGETS="$WHAT" ;;
-  # one-seed context-depth x dual-gate grid (2026-08-15): 221 jobs
-  # (qwen 77 + olmo 78 + mistral 66; b0 22 / k0 35 / fz0 38 / dyn 22 /
-  # f32 60 / d32 44) over 360 conceptual cells, 139 audited-reused.
+  # one-seed context-depth x dual-gate grid (2026-08-15): 181 jobs
+  # (qwen 77 + olmo 78 + mistral 26; b0 22 / k0 35 / fz0 38 / dyn 22 /
+  # f32 40 / d32 24) over 360 conceptual cells, 139 audited-reused and
+  # 40 EXCLUDED -- mistral7b K=32 serves no parseable signal (100%
+  # digit-free generations, parse_fail_frac=1.0), so those cells are
+  # recorded in the manifest but never queued.
   # BOTH gate axes are real numeric thresholds. NEW pofdctxgrid_ family
   # -- no shared tags with any other wave, safe alongside anything.
   # K=32 arms run ~1.9h vs ~0.9h at K=8 (the wrapper drops
