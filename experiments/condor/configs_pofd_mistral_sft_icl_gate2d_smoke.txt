@@ -1,0 +1,2 @@
+pofdgate2dsmk_mistral7b_b0_ea1_w0p5_l0p2_es1_s991, sft, 0, 991, 1, replace, 1.0, fixed, ab, 1, 0.0, 0.5, loop, 0.0, 1, threshold, 0, -1, 1, 1, 16, 0, 3
+pofdgate2dsmk_mistral7b_dyn_ea1_w0p5_l0p2_es1_s991, frozen, 0, 991, 1, replace, 1.0, fixed, ab, 1, 0.0, 0.5, loop, 0.0, 1, threshold, 8, -1, 0, 0, 0, 1, 3

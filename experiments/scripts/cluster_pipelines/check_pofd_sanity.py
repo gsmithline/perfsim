@@ -170,6 +170,22 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               alongside. NO expected scientific outcome is a validity
               condition (no arm must recruit anyone).
 
+  GATE2D      pofdgate2d_ runs (Mistral 2-D gate grid 2026-08-15; incl.
+              pofdgate2dsmk_ 3-round smokes): mistral7b-only sweep of
+              arms b0 (ordinary SFT, beta=0) vs dyn (frozen weights,
+              live K=8 context refreshed every round) over numeric AI
+              gates x numeric SOCIAL gates. _ea1_ = EPS_AI=1.0 under
+              the strict-< threshold (never all_open); _es1_ =
+              EPS_SOCIAL=1.0, the real peer-confidence gate. Every run
+              in this family is es>0 (the es=0 column is audited-reused
+              under the reach family): the twin MOVES, gates ride the
+              shared gp.ai_gate bit-replay (gate_raw + twin_raw
+              mandatory), peer-alive / mean-conservation / contact ride
+              the SOCIAL section, dyn exemplar ids must genuinely
+              refresh, frozen perplexity constant, hardware provenance
+              mandatory, model slug/seed/ea/es/arm tokens vs config. NO
+              expected scientific outcome is a validity condition.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -294,6 +310,18 @@ def check_run(run_dir):
     # instead. Covers pofdpeer2smk_ (3-round smokes) too.
     is_peer2 = name.startswith("pofdpeer2")
     is_peer2_smk = name.startswith("pofdpeer2smk")
+    # MISTRAL 2-D GATE grid (2026-08-15, sft_icl_gate2d wave): the
+    # diagonal-split heatmap family -- mistral7b only, arms b0 (ordinary
+    # SFT, beta=0) vs dyn (frozen weights, live K=8 context refreshed
+    # every round) at numeric AI gates x numeric SOCIAL gates. BOTH axes
+    # are real thresholds: _ea1_ is EPS_AI=1.0 under the strict-< gate
+    # (never all_open) and _es1_ is EPS_SOCIAL=1.0 under the real peer-
+    # confidence gate. New cells exist only at es>0 (the es=0 column is
+    # audited-reused under the reach family), so the twin MOVES and the
+    # peer-alive / mean-conservation / contact gates ride the SOCIAL
+    # section. Covers pofdgate2dsmk_ (3-round smokes) too.
+    is_gate2d = name.startswith("pofdgate2d")
+    is_gate2d_smk = name.startswith("pofdgate2dsmk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -503,6 +531,57 @@ def check_run(run_dir):
         if not any(f"_{s}_" in name for s in
                    ("qwen7b", "olmo7b", "mistral7b")):
             errs.append(f"CONFIG no known peer2 model slug in {name!r}")
+    elif is_gate2d:
+        # shared surface: movielens Action, greedy, natural labels, no
+        # anchors/interventions, threshold gating EVERYWHERE. The 2-D
+        # sweep rides the universal _ea/_es tokens; mistral-only.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none", "ai_gate_mode": "threshold",
+                     "base_model": "mistralai/Mistral-7B-Instruct-v0.3"})
+        if m_es is None or not any(abs(want_es - v) < 1e-9
+                                   for v in (0.2, 0.4, 1.0)):
+            errs.append(f"CONFIG gate2d tag must carry an _es token in "
+                        f"{{0p2, 0p4, 1}} (got {name!r}) -- the es=0 "
+                        f"column is audited-reused under the reach "
+                        f"family, never rerun here")
+        GATE2D_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
+                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                   "sft_batch_size": 4, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0, "train_cap": 723},
+            "dyn": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+        }
+        m_arm = re.search(r"_(b0|dyn)_ea", name)
+        if m_arm is None:
+            errs.append(f"CONFIG unknown gate2d arm token in dirname "
+                        f"{name!r} (only b0/dyn exist in this family)")
+        else:
+            want.update(GATE2D_ARM_WANT[m_arm.group(1)])
+        want["n_rounds"] = 3 if is_gate2d_smk else 30
+        if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG gate2d tag needs a NUMERIC _ea token "
+                        f"({name!r}); all-open is not part of this design")
+        if "_mistral7b_" not in name:
+            errs.append(f"CONFIG gate2d is mistral-only; no _mistral7b_ "
+                        f"slug in {name!r}")
+        # hardware provenance mandatory (GPU-dependent borderline
+        # generations, 2026-08-07 finding; every gate2d run post-dates
+        # the hardware patch)
+        hw2 = cfg.get("hardware") or {}
+        hw2_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                   "cuda_version", "torch_version",
+                                   "transformers_version") if k not in hw2]
+        if hw2_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw2_missing}")
+        elif not (hw2.get("hostname") and hw2.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
         # configs, not here. rlhf_feedback IS recorded and tag-checked below.
@@ -1437,6 +1516,72 @@ def check_run(run_dir):
                             f"({len(set(ppls_p))} distinct values) -- "
                             f"weights not frozen?")
 
+    # -- 1h GATE2D (sft_icl_gate2d wave, 2026-08-15) -------------------------
+    # Mandatory artifacts + invariants for pofdgate2d* runs. The numeric
+    # AI-gate bit-replay rides section 1b (gate_raw REQUIRED here, so 1b
+    # always fires) through the SHARED gp.ai_gate; peer-alive / twin /
+    # mean-conservation / contact ride the SOCIAL section (es>0 in every
+    # cell of this family). Neither arm serves statically -- b0 retrains
+    # each round, dyn rebuilds its context -- so no constancy gate
+    # applies. No scientific outcome is a validity condition.
+    if is_gate2d:
+        nr_g2 = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_g2 or int(op_raw.shape[0]) != nr_g2:
+            errs.append(f"GATE2D trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config n_rounds="
+                        f"{nr_g2} -- incomplete or over-run)")
+        if pred_raw.shape != op_raw.shape:
+            errs.append(f"GATE2D pred_raw shape {tuple(pred_raw.shape)} "
+                        f"!= op_raw {tuple(op_raw.shape)}")
+        gr_g2 = d.get("gate_raw")
+        if gr_g2 is None or gr_g2.numel() == 0:
+            errs.append("GATE2D gate_raw missing/empty (mandatory in "
+                        "this family)")
+        elif tuple(gr_g2.shape) != tuple(op_raw.shape):
+            errs.append(f"GATE2D gate_raw shape {tuple(gr_g2.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        # the matched no-platform twin runs at the SAME social gate, so
+        # it moves -- required in shape here, never compared to innate
+        tw_g2 = d.get("twin_raw")
+        if tw_g2 is None or tw_g2.numel() == 0:
+            errs.append("GATE2D twin_raw missing/empty (WITH_TWIN=1 is "
+                        "mandatory in this family)")
+        elif tuple(tw_g2.shape) != tuple(op_raw.shape):
+            errs.append(f"GATE2D twin_raw shape {tuple(tw_g2.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        if torch.isfinite(pred_raw).all():
+            if float(pred_raw.min()) < -1e-6 or \
+                    float(pred_raw.max()) > 1 + 1e-6:
+                errs.append(f"GATE2D predictions outside [0,1]: "
+                            f"[{float(pred_raw.min()):.4f}, "
+                            f"{float(pred_raw.max()):.4f}]")
+        else:
+            errs.append("GATE2D non-finite predictions (parse-fail NaN)")
+        if int(cfg.get("icl_k") or 0) > 0:
+            ii_g2 = d.get("icl_idx_raw")
+            if ii_g2 is None or ii_g2.numel() == 0:
+                errs.append("GATE2D icl_k>0 but icl_idx_raw missing/empty")
+            elif "_dyn_" in name and ii_g2.shape[0] > 1:
+                # refreshed-context provenance: a dyn arm REBUILDS its
+                # context from the live population every round -- 8-of-722
+                # random draws per agent cannot repeat identically, so
+                # bit-identical exemplar ids across every round mean the
+                # refresh never ran. Structural, not scientific.
+                if all(torch.equal(ii_g2[tt], ii_g2[0])
+                       for tt in range(1, ii_g2.shape[0])):
+                    errs.append("GATE2D dyn: exemplar ids bit-identical "
+                                "across all rounds -- context was never "
+                                "refreshed")
+            if not os.path.exists(os.path.join(run_dir,
+                                               "icl_ctx_log.json.gz")):
+                errs.append("GATE2D icl_ctx_log.json.gz missing")
+        if cfg.get("training_style") == "frozen":
+            ppls_g2 = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_g2 and len(set(ppls_g2)) != 1:
+                errs.append(f"GATE2D fixed-text perplexity varies "
+                            f"({len(set(ppls_g2))} distinct values) -- "
+                            f"weights not frozen?")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -1503,10 +1648,12 @@ def check_run(run_dir):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
         if is_icl or is_iclf or is_ctf or \
-                (is_peer2 and cfg.get("training_style") == "frozen"):
+                ((is_peer2 or is_gate2d)
+                 and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
-            # the no-peer path below) -- peer-env icl runs (pofdicls2_)
-            # and the peer2 wave's frozen arms (k0/fz0/dyn)
+            # the no-peer path below) -- peer-env icl runs (pofdicls2_),
+            # the peer2 wave's frozen arms (k0/fz0/dyn) and the gate2d
+            # wave's dyn arm; gate2d b0 (sft) falls through to FRESH
             return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):

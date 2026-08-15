@@ -1,0 +1,2044 @@
+{
+ "wave": "sft_icl_gate2d",
+ "audited": "2026-08-15 local corpora, by config fields + 30-round completeness; per-reused-cell config fingerprint, trajectory sha256 (op_raw+pred_raw bytes), and check_pofd_sanity verdict recorded at audit time.",
+ "roots": [
+  "runs/pokec_gated_lm",
+  "notes/pofd/cluster"
+ ],
+ "grid": {
+  "model": "mistral7b",
+  "arms": [
+   "b0",
+   "dyn"
+  ],
+  "gates": [
+   0.05,
+   0.1,
+   0.2,
+   0.4,
+   1.0
+  ],
+  "eps_socials": [
+   0.0,
+   0.2,
+   0.4,
+   1.0
+  ],
+  "seeds": [
+   0,
+   42,
+   43
+  ],
+  "n_agents": 723,
+  "n_rounds": 30
+ },
+ "counts": {
+  "cells": 120,
+  "reused": 42,
+  "new": 78,
+  "reused_per_es": {
+   "0": 30,
+   "0p2": 12,
+   "0p4": 0,
+   "1": 0
+  },
+  "new_per_es": {
+   "0": 0,
+   "0p2": 18,
+   "0p4": 30,
+   "1": 30
+  },
+  "new_per_arm": {
+   "b0": 39,
+   "dyn": 39
+  }
+ },
+ "cells": [
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "f40710643801f6fb97f11d1c92d92f00c805c5c27aa15fb4148b5581617a8814",
+   "trajectory_sha256": "2da3266d0bb84ae8a86e38227636454471d8b6fdc22d2923852ce74b2bca7b6a",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "f101eceb69b47f137c50e54400fcda5576d672a1e3c2b2b43b34925461d56857",
+   "trajectory_sha256": "64934b12ce032bb45a9fcbff873e686624e774253648b5eb807e4e642c442460",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g136"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p05_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "fc03a3cb5e221ccc7d01e0578db5ae54f3e8544603cb5d2db1b5e432d3e7ecd6",
+   "trajectory_sha256": "b39e4e9d90cbef95ae0bbbacf7a8080a36ce19feba2d437a9dcb1883a7cb3b41",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g137"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "7c8ee2ae7c4673774318893a7a217e351569062d56b4680aeefd546686560963",
+   "trajectory_sha256": "122da600cb471f5560bc4dec394012ad5d38134f624561533db0a8ed76842bc4",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g137"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "69b4f048f39fa668f71b08a16ebcefa5b781fe6cf6b9fb60d15f2b1c23f87692",
+   "trajectory_sha256": "b03f87e01403460956904c0d84aaa3c11269e6a6433d520a235c8a5212964ccd",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p05_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "20ac1ae8721fa2aa2d6de0068c2efdb07e264a45aee0984c0433e6feafb81074",
+   "trajectory_sha256": "81892837e9fc3aa8838d3b332e4ec7382589328e46c89e405d53f1c794f6f22f",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g102"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "ed3feab0ed38767e6d8cd7a334cddd710a5537eb91e564ac1fd485af4c4bd44b",
+   "trajectory_sha256": "6b24b67ee22e9a1417a0038d0ca5cc79c7a98d7e8cdd9a75dc37ccc5848e8c9c",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "c019230d7371614019fce919a690799d824e456d503b0e8d4a1dfe03b8aeba35",
+   "trajectory_sha256": "73d8e25845c7f59c59a7eb03ebb8bd374fdf96028f79e25172be2b05e731fa0e",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "c90316a121a24bcc66a53813b0fb295cf2ae74e3f1646de195c4c48f311225e1",
+   "trajectory_sha256": "20ff7723e4f693d1983657a484eaa87f73db3558f6fc09512aa78b1588f46f84",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g138"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "a920eed0bf8cae7cde2ebb559cec923af8e2245374034f5ce5c4b3a2c97ccd9c",
+   "trajectory_sha256": "49bce445b59867956055ae2559e45d0dbf0793ff1c3249321062a5e7038496ff",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g138"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "814dcfb491f8c13e926c3ea158364e7f7262d779811c686f6959044fdd9750fa",
+   "trajectory_sha256": "43bd85648b20762d168ff0621fc34cdea07ca3111529fec3fec3d6243e7ca81a",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g143"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p1_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "b3fae3dcf3a99541c79c8465c0c710787b1fc08997d7c95f409591b07fe48d4e",
+   "trajectory_sha256": "359f6396c2ae08764962e27cd818609609b6d7bcb620e1206c101e934ac46a64",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "2a9befb91c9f64fa8d567849e55916bd4934f0150e17ceed8abe342cd08f0cde",
+   "trajectory_sha256": "72525574add820fb396c86b908971bbd7acc62c8c2b8116783eb0a4840218e35",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g135"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "f609e6b779841897125b77539ecabbfef37dd3bca3e7246f538b0118fd0aa5cb",
+   "trajectory_sha256": "4927e64b449f7ed42a5c685ccdeaab86affe58efcb79487898b4b99d370740fd",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "71ddaa4fa5357b99635adc6db5b11a2b789bc4815b4a757b72f2777ca8d59934",
+   "trajectory_sha256": "e67ff262a1333d883bd17b191455d684d69cfc08d811a7b173ce6e8edc678eaa",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "0dd725a4bd547d9e86a62ad0d5811fd06dea5150e21e9308048a6e7c223b3e0e",
+   "trajectory_sha256": "b62d56c916531d971e89d6b591b37f8dcb4eeb5d7d1484c7d4485bb0e107d5c8",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g177"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "75710a6290a6d9bfe5de0f88cfa5c60c60e7dd2ce150f3ba165bdb67bdb85bc6",
+   "trajectory_sha256": "4941e02b2b8128ed5fdedb8c2cd7c5c18d36c033757a9fee4c354f43635a4324",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g138"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p2_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "19c2096a30d461c5feb453fdde49356eb8583e453ba23adf78f718066f40870f",
+   "trajectory_sha256": "f6bdeafcc37f2c13be5ed0f1508151b9d5573de051b786048982f0be645b804d",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g123"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "289e0e54390ce71dcdbbd4d85cab42fbb0b36f42a5a19d5f00c3aeb0cc91c0cc",
+   "trajectory_sha256": "882704d336e598b242e1b3f79d51810f67b8404b3d33173a828b84e7f86d00ec",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g126"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "866f51fb1278bb3ca7ed1a184a814418ec21652849dd4b7e30f1ee8591ba7814",
+   "trajectory_sha256": "b76c26589c216a7a2896dcd7caefa59640d76bd83780099fe924ea7247471304",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "6559a915702de7ce3f388c166166f1ea36f96de9adf113a8ba7e3fdd4dcf00bc",
+   "trajectory_sha256": "a51a15b5fe6973cc7af2f1d3fa9253bce5a1791e976dcb7202ad100d8e6833ea",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "4001dfaaab9b3bca72f1217bcea620d09388600d89919327615ff9e542e13196",
+   "trajectory_sha256": "bba98a06dbe20408f7f6982068b56310700b0b8c998f53c71d4ec0fff4ef6549",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g178"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "b77807682790dbe10e10d21141850a571a58e58644592aabba10190a64764b2f",
+   "trajectory_sha256": "ae60e6c344e0be9aee06fed96e2b15c841d845ffcf269ed89e8d2ed7a731bb06",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g128"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea0p4_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "d3634cfbf6e79f3ff82eb520f713898f607653d106bd50d56542515d82ef3138",
+   "trajectory_sha256": "4cc95712a98ff9b19578cc2d6feb6eb846d5383ffaea9c0378bdd2fe110efe5b",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g136"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "5d58562cc39756a8c050c32d6b29ea8e9cabfd104d2d68de25b088fb7d507a33",
+   "trajectory_sha256": "8c4adedc797371770544d2aafc8729f106010aae9e643749793944eca5e4f504",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "6a5497deba4bcd595e3d7aed8ad4c0b5e1c4883a2e92ccb2e61457ae5beeac5a",
+   "trajectory_sha256": "225862f08564334961d2428a0213ee94b3ed3d6f313b2ea1cf60870b8ff6a080",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g100"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "d3166ee4ed33cab26ddf9c41f52f7c60cf86e36d9852dd5ac9a939121b9c5496",
+   "trajectory_sha256": "3ae58fd567b1597f59023fcdd7848f799e82509fd178842bc4decfe7301d5a05",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g108"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "c123c18716d3acb74e6e8012589fa7bedae6c9cc9d22a70f36ba2c3b7c2e7ec5",
+   "trajectory_sha256": "ea766e8f950a04a566c0d8f6dd982b51932a18f66392e193acac64fc6378e5a7",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g137"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "e333d24d9cd744116a252f21a7dec581220053b15f3d82ed8ca503927e0b07d5",
+   "trajectory_sha256": "8831058590564b541a4a7ecdde5f395f90f6b726fcabb67709c98027c378b791",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_dyn_ea1_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "f635b27d5c32352f9e98866391b883e454755dbe49f278bcda838861c5c2ea0d",
+   "trajectory_sha256": "a6e6a153bae538056de0599da17868da3d60d0f9c3601f3a7c72a0dd8111e5d9",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g143"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "b6c410bde1b91479efe28cdd9f34a664012588726b88df172502df29f8962cd8",
+   "trajectory_sha256": "a59053eb15b91bd1a2ffb9c1a0acbeda62021dab85844687b9b85f1c5f3291c2",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "d73ffc7a24ce50745a1cff95dc409206d981ce1f094bd1a6a1ccf02c962c5884",
+   "trajectory_sha256": "ba319a9038ca3ad483ed964a69cefc879a0e20eab31a73c6542a8a38574920d2",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g108"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "df50b9a75da36ac37990bf2cf349893e7023f05cb9733877827ed7a2e453037c",
+   "trajectory_sha256": "3d580ca3d779ed6a9040b1be563f9502a9dd4f6e8ec182d3823650b2f1e8d367",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g107"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p2_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "073ad40281cbed6392ef4a7c1a522e7e4b00643c6fcf303964264d99ba66538f",
+   "trajectory_sha256": "d30a385c314a7bf99baafa842400e3c71ee9ebaeb8b21eba1dcafe20c8c9dd04",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p2_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "11f6175d77e961ba2a0d1ffc406ec8b0e5fc59ec0199c0adaeb9632b44b31e44",
+   "trajectory_sha256": "98ce4deb8f0d5fb7974dfb6782dbd0e091188cebe0ea0ad2e3daa32764f570f2",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p2_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "8139c9a86127ff1bb6bd1f1b4b20f56b1003b4ee691199f29fbde4c582c07368",
+   "trajectory_sha256": "2bde256c64867213f750c35cafe0723c52d7b4ddf8b5dcf4297589712bf2e402",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g136"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "3bdc60ddd7d5615c296df119704f656f8dbaf390a6293bb86bd07759bad3ffe2",
+   "trajectory_sha256": "21ee51e8740b078ef0471124727ca8414d63d1662dfbddf20aaee798f042c331",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g105"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "7703a5a269fa22e8a67f6fd8a08532ab0dad99ca31b4a55af1f9b8a8f7ae2b44",
+   "trajectory_sha256": "a67b7c3c727d025902dc911c8c1be7b658a15f8c08c821d8f7497214affbf949",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g109"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "414ab48367b8146eb6d28d23dced5958fa52d66671a9159b73f78b3610da4018",
+   "trajectory_sha256": "afd7dcefb12cc5a57b0dad16ed5d2bfe22150b8c11b6c89a0266b6ebd5b50e11",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": false,
+    "ans_sample_k": 16,
+    "log_ppl_dist": true,
+    "host": "g108"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p2_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "bf31338b80006bd65257d06bb203d13199bfe5372c102a0d7d341c788c12fbca",
+   "trajectory_sha256": "19399657b275163b050cbc07864af9c0ad95e38e00d256f64c7aa16eda8a2fd2",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p2_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "0e0ee05103b2679d259e99565dc3eb03c0a3da4472aff6c1ac2a079743891cba",
+   "trajectory_sha256": "0526f8fc72a58c9870736d56e486c2771d986eea395d522435d6bd354ce579df",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g144"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdpeer2_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p2_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": true
+   },
+   "config_fingerprint": "23faa9944d8faa35f67d5d9310ca8a6930c5d541e2612d00989dac525c704886",
+   "trajectory_sha256": "bdb5c37f22be538e6aab0c51bf47623b559938e7d1d71eaa91ac4f25b7d7ce39",
+   "validation": "PASS",
+   "recorded": {
+    "log_gender_gaps": true,
+    "ans_sample_k": 0,
+    "log_ppl_dist": true,
+    "host": "g176"
+   },
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p2_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p2_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p2_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p4_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p4_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 0.4,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es0p4_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p05_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.05,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p05_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.1,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p1_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.2,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p2_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 0.4,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea0p4_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 0,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es1_s0",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es1_s42",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "dyn",
+   "gate": 1.0,
+   "eps_social": 1.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdgate2d_mistral7b_dyn_ea1_w0p5_l0p2_es1_s43",
+   "config_fingerprint": null,
+   "trajectory_sha256": null,
+   "validation": "PENDING"
+  }
+ ]
+}
