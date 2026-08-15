@@ -186,6 +186,25 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               mandatory, model slug/seed/ea/es/arm tokens vs config. NO
               expected scientific outcome is a validity condition.
 
+  CTXGRID     pofdctxgrid_ runs (context-depth x dual-gate grid
+              2026-08-15; incl. pofdctxgridsmk_ 3-round smokes): the
+              one-seed 6-channel grid -- b0 ordinary SFT / k0 frozen
+              no-context prompting / fz0 fixed K=8 (snapshot round 0) /
+              dyn live K=8 / f32 fixed K=32 / d32 live K=32 -- across
+              numeric AI gates x numeric SOCIAL gates. Uniquely spans
+              BOTH peer regimes, so invariants split on the tokenized
+              social dose: es=0 requires twin == innate (<= 1 ulp) and
+              frozen gate masks for the static-serving channels (k0 /
+              fz0 / f32, 4-ulp boundary tolerance), while es>0 lets the
+              twin move and lets peers churn those masks -- only the
+              served predictions stay bit-constant. Always mandatory:
+              gate_raw + twin_raw, exact n_rounds, finite in-range
+              op/pred, hardware provenance, k0 exemplar/log absence,
+              live channels genuinely re-drawing exemplar ids, and the
+              rendered exemplar count matching the icl_k dial (the gate
+              that keeps a K=8 context from masquerading as K=32). NO
+              expected scientific outcome is a validity condition.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -322,6 +341,18 @@ def check_run(run_dir):
     # section. Covers pofdgate2dsmk_ (3-round smokes) too.
     is_gate2d = name.startswith("pofdgate2d")
     is_gate2d_smk = name.startswith("pofdgate2dsmk")
+    # CONTEXT-DEPTH x DUAL-GATE grid (2026-08-15, sft_icl_ctxgrid wave):
+    # one-seed 6-channel grid -- b0 ordinary SFT / k0 frozen no-context
+    # prompting / fz0 fixed K=8 (snapshot round 0) / dyn live K=8 / f32
+    # fixed K=32 / d32 live K=32 -- across numeric AI gates x numeric
+    # SOCIAL gates. Unlike every prior family this one spans BOTH peer
+    # regimes: es=0 cells are no-peer (twin == innate, exact-copy replay
+    # applies) while es>0 cells run the live peer step (twin MOVES, gate
+    # masks may churn even for static-serving arms). "pofdctxgrid" and
+    # "pofdctf" share only "pofdct" -- neither prefix test captures the
+    # other. Covers pofdctxgridsmk_ (3-round smokes) too.
+    is_ctxgrid = name.startswith("pofdctxgrid")
+    is_ctxgrid_smk = name.startswith("pofdctxgridsmk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -581,6 +612,72 @@ def check_run(run_dir):
             errs.append(f"CONFIG hardware metadata missing keys "
                         f"{hw2_missing}")
         elif not (hw2.get("hostname") and hw2.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_ctxgrid:
+        # shared surface: movielens Action, greedy, natural labels, no
+        # anchors/interventions, threshold gating EVERYWHERE. Both the AI
+        # dose and the SOCIAL dose ride their universal tag tokens.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none",
+                     "ai_gate_mode": "threshold"})
+        if m_es is None or not any(abs(want_es - v) < 1e-9
+                                   for v in (0.0, 0.2, 0.4, 1.0)):
+            errs.append(f"CONFIG ctxgrid tag must carry an _es token in "
+                        f"{{0, 0p2, 0p4, 1}} (got {name!r})")
+        # the six adaptation channels. fz0/f32 freeze each agent's
+        # context verbatim after round 0; dyn/d32 rebuild it every round.
+        # K=32 is the SAME live population context as K=8, 4x deeper --
+        # never the pristine/noai/donor sources of the archived k32pri /
+        # k32noai runs, which is why icl_ctx_source is pinned to "live".
+        CTXGRID_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
+                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                   "sft_batch_size": 4, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0, "train_cap": 723},
+            "k0": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False, "icl_k": 0,
+                   "icl_days": 0},
+            "fz0": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": 0},
+            "dyn": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+            "f32": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 32,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": 0},
+            "d32": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 32,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+        }
+        m_arm = re.search(r"_(b0|k0|fz0|dyn|f32|d32)_ea", name)
+        if m_arm is None:
+            errs.append(f"CONFIG unknown ctxgrid arm token in dirname "
+                        f"{name!r}")
+        else:
+            want.update(CTXGRID_ARM_WANT[m_arm.group(1)])
+        want["n_rounds"] = 3 if is_ctxgrid_smk else 30
+        if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG ctxgrid tag needs a NUMERIC _ea token "
+                        f"({name!r}); all-open is not part of this design")
+        if not any(f"_{s}_" in name for s in
+                   ("qwen7b", "olmo7b", "mistral7b")):
+            errs.append(f"CONFIG no known ctxgrid model slug in {name!r}")
+        hw3 = cfg.get("hardware") or {}
+        hw3_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                   "cuda_version", "torch_version",
+                                   "transformers_version") if k not in hw3]
+        if hw3_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw3_missing}")
+        elif not (hw3.get("hostname") and hw3.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
@@ -1582,6 +1679,139 @@ def check_run(run_dir):
                             f"({len(set(ppls_g2))} distinct values) -- "
                             f"weights not frozen?")
 
+    # -- 1i CTXGRID (sft_icl_ctxgrid wave, 2026-08-15) -----------------------
+    # Mandatory artifacts + invariants for pofdctxgrid* runs. The numeric
+    # AI-gate bit-replay rides section 1b (gate_raw REQUIRED here, so 1b
+    # always fires) through the SHARED gp.ai_gate. This family spans BOTH
+    # peer regimes, so the invariants split on the tokenized social dose:
+    # at es=0 the twin must sit on innate and static-serving arms must
+    # freeze their gate masks; at es>0 the twin MOVES and gate masks may
+    # churn via peers (only the served predictions stay constant). No
+    # scientific outcome is a validity condition.
+    if is_ctxgrid:
+        nr_c = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_c or int(op_raw.shape[0]) != nr_c:
+            errs.append(f"CTXGRID trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config n_rounds="
+                        f"{nr_c} -- incomplete or over-run)")
+        if pred_raw.shape != op_raw.shape:
+            errs.append(f"CTXGRID pred_raw shape {tuple(pred_raw.shape)} "
+                        f"!= op_raw {tuple(op_raw.shape)}")
+        gr_c = d.get("gate_raw")
+        if gr_c is None or gr_c.numel() == 0:
+            errs.append("CTXGRID gate_raw missing/empty (mandatory in "
+                        "this family)")
+        elif tuple(gr_c.shape) != tuple(op_raw.shape):
+            errs.append(f"CTXGRID gate_raw shape {tuple(gr_c.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        tw_c = d.get("twin_raw")
+        if tw_c is None or tw_c.numel() == 0:
+            errs.append("CTXGRID twin_raw missing/empty (WITH_TWIN=1 is "
+                        "mandatory in this family)")
+        elif tuple(tw_c.shape) != tuple(op_raw.shape):
+            errs.append(f"CTXGRID twin_raw shape {tuple(tw_c.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        elif not is_social:
+            # no peers: x_cf(t+1) = lam*innate + (1-lam)*x_cf(t) has
+            # innate as its fixed point, but float32 rounding of
+            # lam*v+(1-lam)*v sits up to ONE ulp off v -- same tolerance
+            # the REACH family uses.
+            dtw_c = float((tw_c.float() - innate).abs().max())
+            if dtw_c > 6.0e-8:
+                errs.append(f"CTXGRID es=0 twin drifts off innate (max "
+                            f"|diff| {dtw_c:.2e} > 1 float32 ulp)")
+        if torch.isfinite(pred_raw).all():
+            if float(pred_raw.min()) < -1e-6 or \
+                    float(pred_raw.max()) > 1 + 1e-6:
+                errs.append(f"CTXGRID predictions outside [0,1]: "
+                            f"[{float(pred_raw.min()):.4f}, "
+                            f"{float(pred_raw.max()):.4f}]")
+        else:
+            errs.append("CTXGRID non-finite predictions (parse-fail NaN)")
+        if not torch.isfinite(op_raw).all():
+            errs.append("CTXGRID non-finite opinions")
+        # static-serving channels: frozen weights + fixed (or absent)
+        # context + greedy serving => the SERVED predictions are constant
+        # in every peer regime. The gate mask is additionally constant
+        # only with no peers (peers move agents across a fixed
+        # prediction's gate line), with the same 4-ulp boundary tolerance
+        # the reach family established.
+        _cg_static = next((a for a in ("k0", "fz0", "f32")
+                           if f"_{a}_" in name), None)
+        if _cg_static is not None:
+            for tt in range(1, pred_raw.shape[0]):
+                if not _bit_eq(pred_raw[tt], pred_raw[0]):
+                    neq = ~((pred_raw[tt] == pred_raw[0])
+                            | (torch.isnan(pred_raw[tt])
+                               & torch.isnan(pred_raw[0])))
+                    errs.append(f"CTXGRID {_cg_static}: pred_raw round "
+                                f"{tt} != round 0 ({int(neq.sum())} "
+                                f"agents) -- deterministic static serving "
+                                f"must be constant within a run")
+                    break
+            if not is_social and gr_c is not None and gr_c.numel() and \
+                    tuple(gr_c.shape) == tuple(op_raw.shape):
+                gr_cb = gr_c.bool()
+                served0 = pred_raw[0].clamp(0.0, 1.0)
+                margin0 = ((served0 - innate).abs() - eps_ai).abs()
+                for tt in range(1, gr_cb.shape[0]):
+                    flipped = gr_cb[tt] ^ gr_cb[0]
+                    if not bool(flipped.any()):
+                        continue
+                    if float(margin0[flipped].max()) > 2.4e-7:
+                        errs.append(
+                            f"CTXGRID {_cg_static}: gate_raw round {tt} "
+                            f"!= round 0 ({int(flipped.sum())} agents, "
+                            f"max round-0 boundary margin "
+                            f"{float(margin0[flipped].max()):.2e} > 4 ulp "
+                            f"-- no-peer static serving must freeze the "
+                            f"gate set)")
+                        break
+        if "_k0_" in name:
+            for key in ("icl_idx_raw", "icl_val_raw"):
+                t_k = d.get(key)
+                if t_k is not None and t_k.numel() > 0:
+                    errs.append(f"CTXGRID k0: {key} non-empty -- "
+                                f"no-context prompting must carry no "
+                                f"exemplars")
+            if os.path.exists(os.path.join(run_dir,
+                                           "icl_ctx_log.json.gz")):
+                errs.append("CTXGRID k0: icl_ctx_log.json.gz present -- "
+                            "no rendered context allowed")
+        if int(cfg.get("icl_k") or 0) > 0:
+            ii_c = d.get("icl_idx_raw")
+            if ii_c is None or ii_c.numel() == 0:
+                errs.append("CTXGRID icl_k>0 but icl_idx_raw "
+                            "missing/empty")
+            elif ii_c.shape[0] > 1 and any(f"_{a}_" in name
+                                           for a in ("dyn", "d32")):
+                # refreshed-context provenance: a live arm REBUILDS its
+                # context every round -- K-of-722 random draws per agent
+                # cannot repeat identically, so bit-identical exemplar
+                # ids across every round mean the refresh never ran.
+                if all(torch.equal(ii_c[tt], ii_c[0])
+                       for tt in range(1, ii_c.shape[0])):
+                    errs.append("CTXGRID live context: exemplar ids "
+                                "bit-identical across all rounds -- "
+                                "context was never refreshed")
+            # the exemplar count actually rendered must match the dial
+            if ii_c is not None and ii_c.numel() > 0 and ii_c.dim() >= 2:
+                got_k = int(ii_c.shape[-1])
+                want_k = int(cfg.get("icl_k") or 0)
+                if got_k != want_k:
+                    errs.append(f"CTXGRID icl_idx_raw carries {got_k} "
+                                f"exemplars per agent (config icl_k="
+                                f"{want_k})")
+            if not os.path.exists(os.path.join(run_dir,
+                                               "icl_ctx_log.json.gz")):
+                errs.append("CTXGRID icl_ctx_log.json.gz missing")
+        if cfg.get("training_style") == "frozen":
+            ppls_c = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_c and len(set(ppls_c)) != 1:
+                errs.append(f"CTXGRID fixed-text perplexity varies "
+                            f"({len(set(ppls_c))} distinct values) -- "
+                            f"weights not frozen?")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -1648,7 +1878,7 @@ def check_run(run_dir):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
         if is_icl or is_iclf or is_ctf or \
-                ((is_peer2 or is_gate2d)
+                ((is_peer2 or is_gate2d or is_ctxgrid)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),
@@ -1699,7 +1929,8 @@ def check_run(run_dir):
     # icl (frozen): nothing trains, no n_train ever -- skip. Reach frozen
     # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
     if is_icl or is_iclf or is_ctf or \
-            (is_reach and cfg.get("training_style") == "frozen"):
+            ((is_reach or is_ctxgrid)
+             and cfg.get("training_style") == "frozen"):
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
 

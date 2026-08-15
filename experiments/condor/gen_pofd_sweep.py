@@ -1013,6 +1013,16 @@ REACH_ARM_COLS = {
     # repeated zero-shot serving; no LoRA, no demonstrations, no memory
     "k0": dict(style="frozen", beta="0", iclk=0, snap=-1, uselora=0,
                fresh=0, ansk=0, gg=0),
+    # K=32 context depth (sft_icl_ctxgrid wave, 2026-08-15): the same two
+    # context regimes as fz0/dyn at 4x the exemplar count. f32 freezes
+    # each agent's context verbatim after round 0; d32 rebuilds it every
+    # round. run_one_pokec_gated.sh drops GEN_BATCH_SIZE to 8 for
+    # ICL_K >= 16 on its own (the ~2k-token prompts overflow the 80GB
+    # KV-cache at batch 32) -- no per-arm resource override needed here.
+    "f32": dict(style="frozen", beta="0", iclk=32, snap=0, uselora=0,
+                fresh=0, ansk=0, gg=1),
+    "d32": dict(style="frozen", beta="0", iclk=32, snap=-1, uselora=0,
+                fresh=0, ansk=0, gg=1),
 }
 ROW_REACH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
              "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {gatemode}, {iclk}, "
@@ -1420,6 +1430,106 @@ def gate2d_sub(kind):
     return REACH_SUB_TEMPLATE.format(model="mistral7b", key=key,
                                      n_jobs=n_jobs, what=what,
                                      **REACH_MODELS["mistral7b"])
+
+
+# sft_icl_ctxgrid[_smoke] + sft_icl_ctxgrid_{qwen,olmo,mistral}
+# (2026-08-15): the ONE-SEED context-depth x dual-gate grid. 3 models x 6
+# adaptation channels x eps_AI {0.05,0.1,0.2,0.4,1.0} x eps_social
+# {0,0.2,0.4,1.0} x seed 0 = 360 conceptual cells. Channels: b0 ordinary
+# SFT (beta=0) / k0 frozen no-context prompting / fz0 fixed K=8 (snapshot
+# round 0) / dyn live K=8 / f32 fixed K=32 (snapshot round 0) / d32 live
+# K=32. Both gate axes are REAL numeric thresholds -- eps_AI=1.0 is the
+# strict-< gate (never all_open) and eps_social=1.0 is the real peer-
+# confidence gate.
+# AUDIT (audit_sft_icl_ctxgrid_reuse.py ->
+# manifest_sft_icl_ctxgrid.json): the spec's predicted 126/234 did NOT
+# hold -- exact field matching finds 139 reusable / 221 new (user
+# accepted the audited truth 2026-08-15). Reuse spans reach/grid3 33,
+# icl2 18, iclf 18, icls2 18, peer02 9, gate2d 26, cube w2/w2f/ws2/ws2f
+# 17. FIXED K=32 has ZERO prior runs (nothing pairs icl_k=32 with
+# icl_snapshot_round=0), so all 60 f32 cells are new; the archived
+# k32pri/k32noai runs are NOT fixed-K=32 context (icl_ctx_source
+# pristine/noai) and the audit guards against ever admitting them.
+# NEW family pofdctxgrid_ -- zero tags shared with any other wave
+# (collision-asserted). Smokes (2 x 3 rounds, seed 991, OUTSIDE the
+# 221): mistral f32 + d32 at ea1 es1 -- the never-run K=32 corner.
+CTXGRID_MANIFEST_PATH = os.path.join(HERE, "manifest_sft_icl_ctxgrid.json")
+CTXGRID_EXPECT_CELLS = 360
+CTXGRID_EXPECT_REUSED = 139
+CTXGRID_EXPECT_NEW = 221
+CTXGRID_EXPECT_NEW_PER_MODEL = {"qwen7b": 77, "olmo7b": 78, "mistral7b": 66}
+CTXGRID_EXPECT_NEW_PER_ARM = {"b0": 22, "k0": 35, "fz0": 38, "dyn": 22,
+                              "f32": 60, "d32": 44}
+CTXGRID_KEY = {m: f"sft_icl_ctxgrid_{m[:-2]}" for m in
+               ("qwen7b", "olmo7b", "mistral7b")}
+CTXGRID_SMOKE_KEY = "sft_icl_ctxgrid_smoke"
+CTXGRID_SMOKES = [("mistral7b", "f32", 1.0, 1.0),
+                  ("mistral7b", "d32", 1.0, 1.0)]
+CTXGRID_SMOKE_SEED = 991
+ROW_CTXGRID = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+               "ab, {es}, 0.0, 0.5, loop, 0.0, {eps_ai}, threshold, "
+               "{iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
+               "{nrounds}")
+
+
+def ctxgrid_tag(model, arm, gate, es, seed, prefix="pofdctxgrid"):
+    return (f"{prefix}_{model}_{arm}_ea{_num(gate)}_{w_tok()}"
+            f"_es{_num(es)}_s{seed}")
+
+
+def ctxgrid_row(model, arm, gate, es, seed, nrounds=30,
+                prefix="pofdctxgrid"):
+    a = REACH_ARM_COLS[arm]
+    return ROW_CTXGRID.format(
+        tag=ctxgrid_tag(model, arm, gate, es, seed, prefix),
+        style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
+        eps_ai=f"{gate:g}", iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=nrounds)
+
+
+def _ctxgrid_manifest():
+    with open(CTXGRID_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def ctxgrid_rows(model):
+    """Rows for the audited-MISSING cells of one model, manifest-driven.
+    The generated tag must equal the manifest's recorded tag per cell."""
+    rows = []
+    for c in _ctxgrid_manifest()["cells"]:
+        if c["model"] == model and c["status"] == "new":
+            r = ctxgrid_row(model, c["arm"], c["gate"], c["eps_social"],
+                            c["seed"])
+            assert r.split(",")[0] == c["run_tag"], (r, c["run_tag"])
+            rows.append(r)
+    return rows
+
+
+def ctxgrid_smoke_rows():
+    return [ctxgrid_row(m, arm, gate, es, CTXGRID_SMOKE_SEED, nrounds=3,
+                        prefix="pofdctxgridsmk")
+            for m, arm, gate, es in CTXGRID_SMOKES]
+
+
+def ctxgrid_sub(model, kind):
+    """kind: 'main' | 'smoke' -- rides the REACH sub template (the row
+    schema is identical; es rides queue col 10)."""
+    key = CTXGRID_KEY[model] if kind == "main" else CTXGRID_SMOKE_KEY
+    n_jobs = (len(ctxgrid_rows(model)) if kind == "main"
+              else len(ctxgrid_smoke_rows()))
+    what = {"main": ("ONE-SEED CONTEXT-DEPTH x DUAL-GATE GRID -- "
+                     "audited-missing cells (30 rounds; SFT / K=0 / "
+                     "fixed+live K=8 / fixed+live K=32 x eps_AI x "
+                     "eps_social, BOTH real numeric thresholds; "
+                     "pofdctxgrid_ family, no shared tags). K=32 arms "
+                     "run ~1.9h vs ~0.9h at K=8 (wrapper drops "
+                     "GEN_BATCH_SIZE to 8 for ICL_K>=16)"),
+            "smoke": ("sft_icl_ctxgrid SMOKE (3 rounds, seed 991; the "
+                      "never-run fixed/live K=32 corner at ea1 es1)")
+            }[kind]
+    return REACH_SUB_TEMPLATE.format(model=model, key=key, n_jobs=n_jobs,
+                                     what=what, **REACH_MODELS[model])
 
 
 REACH_SUB_TEMPLATE = """\
@@ -3784,6 +3894,55 @@ def main():
     expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{GATE2D_SMOKE_KEY}.sub")] = \
         gate2d_sub("smoke")
+    # one-seed context-depth x dual-gate grid (see the CTXGRID block):
+    # manifest-driven, NEW pofdctxgrid_ family -- zero shared tags.
+    _cman = _ctxgrid_manifest()
+    assert _cman["counts"]["cells"] == CTXGRID_EXPECT_CELLS == 360, \
+        _cman["counts"]
+    assert _cman["counts"]["reused"] == CTXGRID_EXPECT_REUSED == 139, \
+        _cman["counts"]
+    assert _cman["counts"]["new"] == CTXGRID_EXPECT_NEW == 221, \
+        _cman["counts"]
+    assert _cman["counts"]["new_per_model"] == CTXGRID_EXPECT_NEW_PER_MODEL
+    assert _cman["counts"]["new_per_arm"] == CTXGRID_EXPECT_NEW_PER_ARM
+    assert all(c.get("validation") in ("PASS", "SKIPPED")
+               for c in _cman["cells"] if c["status"] == "reused"), \
+        "ctxgrid manifest carries a reused cell that FAILED validation"
+    # fixed K=32 must be entirely NEW: no archived run pairs icl_k=32
+    # with icl_snapshot_round=0, and k32pri/k32noai are a different
+    # context source entirely
+    assert not [c for c in _cman["cells"]
+                if c["arm"] == "f32" and c["status"] == "reused"], \
+        "fixed K=32 cannot reuse any archived run"
+    _c_reused = {c["run_tag"] for c in _cman["cells"]
+                 if c["status"] == "reused"}
+    _prior_before_cg = {r.split(",")[0]
+                        for rows in files.values() for r in rows}
+    _cg_total = 0
+    for model in REACH_MODELS:
+        rows_c = ctxgrid_rows(model)
+        assert len(rows_c) == CTXGRID_EXPECT_NEW_PER_MODEL[model], \
+            (model, len(rows_c))
+        _cg_total += len(rows_c)
+        tags_c = {r.split(",")[0] for r in rows_c}
+        assert not (tags_c & _c_reused)
+        assert not (tags_c & _prior_before_cg), \
+            f"ctxgrid collision: {tags_c & _prior_before_cg}"
+        p = os.path.join(HERE, f"configs_pofd_{CTXGRID_KEY[model]}.txt")
+        files[p] = rows_c
+        expected[p] = CTXGRID_EXPECT_NEW_PER_MODEL[model]
+        cube_subs[os.path.join(HERE,
+                               f"at_pofd_{CTXGRID_KEY[model]}.sub")] = \
+            ctxgrid_sub(model, "main")
+    assert _cg_total == CTXGRID_EXPECT_NEW == 221
+    _cg_smk = ctxgrid_smoke_rows()
+    assert len(_cg_smk) == 2
+    assert not ({r.split(",")[0] for r in _cg_smk} & _prior_before_cg)
+    p = os.path.join(HERE, f"configs_pofd_{CTXGRID_SMOKE_KEY}.txt")
+    files[p] = _cg_smk
+    expected[p] = 2
+    cube_subs[os.path.join(HERE, f"at_pofd_{CTXGRID_SMOKE_KEY}.sub")] = \
+        ctxgrid_sub("mistral7b", "smoke")
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),
