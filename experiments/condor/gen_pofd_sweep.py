@@ -1525,8 +1525,17 @@ def ctxgrid_smoke_rows():
 # and the parser takes the first number, so a run that already parsed
 # inside 6 tokens yields the IDENTICAL value at 24 -- widening cannot
 # retroactively change any archived cell.
+# NOTE: the executable is IDEMPOTENT -- it exits 0 the moment
+# runs/<tag>/trajectory.pt exists. A diagnostic RERUN must therefore
+# carry a FRESH tag or it silently no-ops (seed 992 did exactly that on
+# 2026-08-15: the .out was rewritten empty, the trajectory kept its
+# original timestamp). Bump this seed for every new diagnostic round.
+#   s991 -> first smokes (no DEBUG_GEN)
+#   s992 -> DEBUG_GEN + MAX_NEW_TOKENS=24, but the ICL path did not yet
+#           populate the telemetry, so it printed stale __init__ values
+#   s993 -> first run with working ICL-path DEBUG_GEN telemetry
 CTXGRID_DBG_KEY = "sft_icl_ctxgrid_debug"
-CTXGRID_DBG_SEED = 992
+CTXGRID_DBG_SEED = 993
 CTXGRID_DBG_MAX_NEW_TOKENS = 24
 
 
