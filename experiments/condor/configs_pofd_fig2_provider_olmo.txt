@@ -1,0 +1,4 @@
+pofdreach_olmo7b_b1_ea0p4_w0p5_l0p2_es0_s42, sft_kl, 1, 42, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 30
+pofdreach_olmo7b_b1_ea0p4_w0p5_l0p2_es0_s43, sft_kl, 1, 43, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 30
+pofdws2f_olmo7b_b1_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data, sft_kl, 1, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 30
+pofdws2f_olmo7b_b1_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data, sft_kl, 1, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 30

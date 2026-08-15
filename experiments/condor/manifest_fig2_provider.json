@@ -1,0 +1,668 @@
+{
+ "wave": "fig2_provider",
+ "audited": "2026-08-15 local corpora, by config fields + 30-round completeness; b1 requires kl_direction=forward.",
+ "roots": [
+  "runs/pokec_gated_lm",
+  "notes/pofd/cluster"
+ ],
+ "grid": {
+  "models": {
+   "qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+   "olmo7b": "allenai/OLMo-2-1124-7B-Instruct",
+   "mistral7b": "mistralai/Mistral-7B-Instruct-v0.3"
+  },
+  "arms": [
+   "b0",
+   "b1"
+  ],
+  "gate": 0.4,
+  "eps_socials": [
+   0.0,
+   0.2
+  ],
+  "seeds": [
+   0,
+   42,
+   43
+  ],
+  "n_agents": 723,
+  "n_rounds": 30
+ },
+ "counts": {
+  "cells": 36,
+  "reused": 30,
+  "new": 6
+ },
+ "cells": [
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2_qwen7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "449786a8e799be997c6c1c7ee4ed5250f866cb766ecf436980cea74a67a4a1d8",
+   "trajectory_sha256": "6f603c505a3abc710c28001837925c12d90b87b6cd4cc0ee72e340c405b39d60",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s42_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "08b5f1fad9b1885dfe2c1c6800186954e141eb3cb25fb3ba2c0637dec6a360b7",
+   "trajectory_sha256": "860c88122482dfe6f5b83307c177feda50716dbfbe524bd2cf23821305b6f8d2",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b0_ea0p4_w0p5_l0p2_s43_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "2123826ff36002e2344e0ffcd2de72ad2d120a0966b04b6f0af131dd5a14a8a9",
+   "trajectory_sha256": "c064b0832b519ae3a6101462480c70b09d8190b485ddbc04a1258dcfb4efb342",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "cb17c127b66470ece7323f89d58bb54dfc64f9d34750b40b068ea195bd57722d",
+   "trajectory_sha256": "dc2275ae5b01569f7de9a810c2d5ffe3e7d7a1b31054c99660d3e3d631db5812",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s42_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "e851978387977d3c23067232a87c4c678caffb96059911837a1f2ef6becaf51b",
+   "trajectory_sha256": "38491ecc3ce9e25fe3067471e4d86dae9cb5e94e76918e4b91bcb033a5efcda8",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s43_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "e0a4d6aa5af1b18d6335c5ff3b8b83d65e9037ca00e2c240f14373ad58bb0272",
+   "trajectory_sha256": "6d15620382879287a481dae27c59c39882ea85ce822ab3ede43c5b7820c37868",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b0_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "1b62d435f32fd401220ae4686bea0c1fa9d10419faa4205c98b6fb1723fa98d7",
+   "trajectory_sha256": "18136c5d2566e9881dc0bd672992e6f3d99c38278c71a69f52b651b0353ad800",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "6872c370e7c43cc32a2d15489fafdf9b7bc512a4e2689df274108b9ebb26f471",
+   "trajectory_sha256": "7a34f11d00bafe89ad49da661e7db9d84cc80911d317a9e5ad62b0a53ab783db",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_olmo7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "3d29ccd514d5b89f0e17b3ea2b2283f039cf1823f9001e351dfdb222a451a743",
+   "trajectory_sha256": "2f2b41f3cadcd22d09c00c14b85bacdcccc19d4e875f3519562d255248861b35",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdw2f_olmo7b_b1_ea0p4_w0p5_l0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": false,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "fb0a5e40e48928fafe0a2e4447f2294f9f5f5cfaf9718040c383c9bc95c7ed4e",
+   "trajectory_sha256": "3e8f9f127a0b49433c1e89183d437d7c202d40cf1581aa265a15b990905fd740",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b1_ea0p4_w0p5_l0p2_es0_s42",
+   "validation": "PENDING"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_olmo7b_b1_ea0p4_w0p5_l0p2_es0_s43",
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "289e0e54390ce71dcdbbd4d85cab42fbb0b36f42a5a19d5f00c3aeb0cc91c0cc",
+   "trajectory_sha256": "882704d336e598b242e1b3f79d51810f67b8404b3d33173a828b84e7f86d00ec",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "866f51fb1278bb3ca7ed1a184a814418ec21652849dd4b7e30f1ee8591ba7814",
+   "trajectory_sha256": "b76c26589c216a7a2896dcd7caefa59640d76bd83780099fe924ea7247471304",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "6559a915702de7ce3f388c166166f1ea36f96de9adf113a8ba7e3fdd4dcf00bc",
+   "trajectory_sha256": "a51a15b5fe6973cc7af2f1d3fa9253bce5a1791e976dcb7202ad100d8e6833ea",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdreach_mistral7b_b1_ea0p4_w0p5_l0p2_es0_s0",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "bec93a06f70fbebd59905967a7208866ee4c622364c5649763859176f7fc463b",
+   "trajectory_sha256": "da93acef80ae573c24fb7abe808a62ef3e16003c1bbbff38a9f4ab7f420fd794",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b1_ea0p4_w0p5_l0p2_es0_s42",
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.0,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdreach_mistral7b_b1_ea0p4_w0p5_l0p2_es0_s43",
+   "validation": "PENDING"
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2_qwen7b_b0_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "43d4b91357fb41978309cdbd79613d88f187cce05a52bec791d7641acdf2aaf5",
+   "trajectory_sha256": "d1308db6fea775bfa3d899212faa359c14863e3e9c65d214e37af3f83e88e59b",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdws2f_qwen7b_b0_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "75edb5ada04e588493f7b46c64de40c52a9dca2aa155187d72057be27ffd0e0a",
+   "trajectory_sha256": "fa1f44254277fa27e2bc6b95a32ffa902625e56a50da9e02c5770a04b70b1599",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdws2f_qwen7b_b0_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "4ba6dff8d656ab64a9de9ef74b6b3afd224b244a364319e06d14ed2c6130a7a2",
+   "trajectory_sha256": "f978e369a34fbbf725c4f702511ff4f1b9593a4e229033493b90f17b8e0705d3",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "d7a96ea5617c7608673317ec59718a514106d0afdca102c2a1cffed68db5109d",
+   "trajectory_sha256": "9e4a5620537caa3d3c7086f8768d702182e0f3011c9f09a84d14d014d86ba7c8",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "119a28b47a0529ccc2cd3f70e3ee5239ad434b373808891d75b7ac8702586ec7",
+   "trajectory_sha256": "1a07d0bd911ea68e1a307b9bc556a5fa1ce8486f440bbc54a54db8c394e693e4",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "qwen7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "c988dfdf0a76f0861a731dedb6eb7c6f891783294844f5050f4b7cec4ac18bae",
+   "trajectory_sha256": "890e48bdd8958f31ceb213f186994100d4c4d50d458f516f0d8beaa8dc92f158",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_olmo7b_b0_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "7c54564d65dbf85a202860e48a1f98d624dc4e9e0e0da9c961a7be5aa6c4f686",
+   "trajectory_sha256": "374443861544c69adda2d70123089a5328cb78a70ccb6432c22525a7d79f2ffa",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdpeer2_olmo7b_b0_ea0p4_w0p5_l0p2_es0p2_s42",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "aca7ab9662f1c0cd8689c82aa1282c5544a8f6c24e9636574f9a9e8e9b8bb5bd",
+   "trajectory_sha256": "d820bf6d2dfabf97024127f4a192c983689d782a236c034a206909066a09d87d",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdpeer2_olmo7b_b0_ea0p4_w0p5_l0p2_es0p2_s43",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "5fd872d769b984463971b2a71185e1c02c2a21191ccf7d4aeffdc6446bb8c33b",
+   "trajectory_sha256": "474fe75d040e92434f66e2222d1d3465baddcbf3666d6bc7ba3f9482eb4f830e",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_olmo7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "notes/pofd/cluster",
+   "artifacts": {
+    "gate_raw": false,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "2a6dfee51a854ca2cf3b67aa855f03c80a644cf5d82ab8888f41870e45ed4077",
+   "trajectory_sha256": "19cba757be23bb789efb93488d55f7092f2ccd15d3a0b41af77bf0dfaa51dbb9",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "new",
+   "run_tag": "pofdws2f_olmo7b_b1_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "validation": "PENDING"
+  },
+  {
+   "model": "olmo7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "new",
+   "run_tag": "pofdws2f_olmo7b_b1_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "validation": "PENDING"
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "3bdc60ddd7d5615c296df119704f656f8dbaf390a6293bb86bd07759bad3ffe2",
+   "trajectory_sha256": "21ee51e8740b078ef0471124727ca8414d63d1662dfbddf20aaee798f042c331",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "7703a5a269fa22e8a67f6fd8a08532ab0dad99ca31b4a55af1f9b8a8f7ae2b44",
+   "trajectory_sha256": "a67b7c3c727d025902dc911c8c1be7b658a15f8c08c821d8f7497214affbf949",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b0",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "414ab48367b8146eb6d28d23dced5958fa52d66671a9159b73f78b3610da4018",
+   "trajectory_sha256": "afd7dcefb12cc5a57b0dad16ed5d2bfe22150b8c11b6c89a0266b6ebd5b50e11",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 0,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "08dc1345cab2467e1459908bce5c8a554fe34d3349e0e7d86ba61a5296a73bab",
+   "trajectory_sha256": "ec038438c7f6c942a1f341e7f4e7892a77f6da5da552f35770e128e29221524b",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 42,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b1_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "3618e121eb4953f625711b9bfc51a6b7a6d9cc1b7018840d47e354776c9eeb9f",
+   "trajectory_sha256": "8162b2d7d949217b79beffb188ccf931fe6838aa266e9398937c1b2bc722881e",
+   "validation": "PASS",
+   "alternates": []
+  },
+  {
+   "model": "mistral7b",
+   "arm": "b1",
+   "gate": 0.4,
+   "eps_social": 0.2,
+   "seed": 43,
+   "status": "reused",
+   "run_tag": "pofdws2f_mistral7b_b1_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+   "source_root": "runs/pokec_gated_lm",
+   "artifacts": {
+    "gate_raw": true,
+    "twin_raw": true,
+    "icl_idx_raw": false
+   },
+   "config_fingerprint": "c66fa187def1e94ef721041a0b88e0adae818f027d47b2b50f35ea5b3cd5a878",
+   "trajectory_sha256": "41b70cff72def292967ae6d3b25fa4867e050464ed7f8f648d39b7dd0b002d8e",
+   "validation": "PASS",
+   "alternates": []
+  }
+ ]
+}
