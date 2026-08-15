@@ -1512,6 +1512,44 @@ def ctxgrid_smoke_rows():
             for m, arm, gate, es in CTXGRID_SMOKES]
 
 
+# DIAGNOSTIC re-smoke (2026-08-15): the first pofdctxgridsmk_ pair came
+# back with EVERY prediction at exactly 0.5 -- the runner's silent
+# parse-failure default -- for mistral7b at K=32, while the same model at
+# K=8 in the same ea1/es1 environment serves pred_std ~0.098 and the
+# archived qwen/olmo K=32 runs parse fine. Generation is capped at
+# MAX_NEW_TOKENS (default 6), so the leading hypothesis is that mistral
+# prefixes its answer under a 32-exemplar prompt and the number never
+# lands inside the budget. These 2 jobs re-run the same corner with
+# DEBUG_GEN=1 (prints the per-round parse-failure fraction + raw decoded
+# strings) and a widened budget. Greedy decoding is prefix-deterministic
+# and the parser takes the first number, so a run that already parsed
+# inside 6 tokens yields the IDENTICAL value at 24 -- widening cannot
+# retroactively change any archived cell.
+CTXGRID_DBG_KEY = "sft_icl_ctxgrid_debug"
+CTXGRID_DBG_SEED = 992
+CTXGRID_DBG_MAX_NEW_TOKENS = 24
+
+
+def ctxgrid_dbg_rows():
+    return [ctxgrid_row("mistral7b", arm, 1.0, 1.0, CTXGRID_DBG_SEED,
+                        nrounds=3, prefix="pofdctxgridsmkdbg")
+            for arm in ("f32", "d32")]
+
+
+def ctxgrid_dbg_sub():
+    mdl = dict(REACH_MODELS["mistral7b"])
+    mdl["extra_env"] = (mdl["extra_env"] + "DEBUG_GEN=1 DEBUG_GEN_N=12 "
+                        f"MAX_NEW_TOKENS={CTXGRID_DBG_MAX_NEW_TOKENS} ")
+    what = ("sft_icl_ctxgrid K=32 PARSE DIAGNOSTIC (3 rounds, seed 992; "
+            "DEBUG_GEN=1 dumps the parse-failure fraction + raw decoded "
+            f"strings, MAX_NEW_TOKENS={CTXGRID_DBG_MAX_NEW_TOKENS}). The "
+            "seed-991 smokes served a constant 0.5 -- total silent parse "
+            "failure -- for mistral at K=32")
+    return REACH_SUB_TEMPLATE.format(model="mistral7b",
+                                     key=CTXGRID_DBG_KEY, n_jobs=2,
+                                     what=what, **mdl)
+
+
 def ctxgrid_sub(model, kind):
     """kind: 'main' | 'smoke' -- rides the REACH sub template (the row
     schema is identical; es rides queue col 10)."""
@@ -3943,6 +3981,16 @@ def main():
     expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{CTXGRID_SMOKE_KEY}.sub")] = \
         ctxgrid_sub("mistral7b", "smoke")
+    _cg_dbg = ctxgrid_dbg_rows()
+    assert len(_cg_dbg) == 2
+    assert not ({r.split(",")[0] for r in _cg_dbg}
+                & (_prior_before_cg | tags_c
+                   | {r.split(",")[0] for r in _cg_smk}))
+    p = os.path.join(HERE, f"configs_pofd_{CTXGRID_DBG_KEY}.txt")
+    files[p] = _cg_dbg
+    expected[p] = 2
+    cube_subs[os.path.join(HERE, f"at_pofd_{CTXGRID_DBG_KEY}.sub")] = \
+        ctxgrid_dbg_sub()
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
         tag=tag_of(m, b, e, s, prefix="pofdsmk"),

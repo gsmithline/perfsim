@@ -91,7 +91,7 @@ def cfg_for(tag, model, arm, gate, es, seed, nrounds):
 
 def build(parent, model, arm, gate, es, seed=0, nrounds=30,
           prefix="pofdctxgrid", tag=None, cfg_mut=None, post=None,
-          peers=None, render_k=None):
+          peers=None, render_k=None, flat_pred=False):
     if tag is None:
         tag = (f"{prefix}_{model}_{arm}_ea{_num(gate)}_w0p5_l0p2"
                f"_es{_num(es)}_s{seed}")
@@ -105,7 +105,8 @@ def build(parent, model, arm, gate, es, seed=0, nrounds=30,
     tw = INNATE.clone()
     lam, w = 0.2, 0.5
     eps_ai = cfg["eps_ai"]
-    frozen_pred = INNATE.mul(0.3).add(0.35)
+    frozen_pred = (torch.full((N,), 0.5) if flat_pred
+                   else INNATE.mul(0.3).add(0.35))
     rows, op_raw, pred_raw, gate_raw, twin_raw = [], [], [], [], []
     icl_idx, icl_val, ctx_rows = [], [], []
     def exemplar_ids(t):
@@ -343,6 +344,13 @@ def test_sabotage_missing_twin(tmp_path):
 def test_sabotage_inactive_peer_step(tmp_path):
     rd = build(tmp_path, "mistral7b", "d32", 0.4, 0.4, peers=False)
     assert_verdict(rd, False, "PEER-ALIVE")
+
+
+def test_sabotage_total_silent_parse_failure(tmp_path):
+    """Every agent every round at exactly 0.5 = the runner's silent
+    parse-failure default. Observed for real on mistral7b at K=32."""
+    rd = build(tmp_path, "mistral7b", "f32", 1.0, 1.0, flat_pred=True)
+    assert_verdict(rd, False, "silent parse-failure default")
 
 
 def test_sabotage_b0_with_kl_term(tmp_path):
