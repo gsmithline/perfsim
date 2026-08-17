@@ -892,6 +892,40 @@ def main() -> int:
             raise ValueError("dpo requires USE_LORA=1 (ref_model=None uses the adapter-off "
                              "base as the fixed anchor; no second model in memory)")
 
+    # INNATE CLAMP (2026-08-17, mistral_innate_clamp_nopeer wave): opt-in
+    # intervention permanently pinning a fixed cohort to its innate
+    # opinions in BOTH the deployed population and the matched twin.
+    # Frozen agents still receive predictions, have gates recorded, keep
+    # their (innate) labels in the training data, and stay eligible as
+    # ICL exemplars -- only their post-round opinion is overridden.
+    # "off" is byte-identical legacy behavior: no config keys, no
+    # trajectory keys, no RNG touched, no tensor writes.
+    innate_clamp_mode = os.environ.get("INNATE_CLAMP_MODE", "off")
+    if innate_clamp_mode not in ("off", "stratified_random", "bottom"):
+        raise ValueError(f"INNATE_CLAMP_MODE must be 'off', "
+                         f"'stratified_random' or 'bottom'; got "
+                         f"{innate_clamp_mode!r}")
+    innate_clamp_frac = _env_float("INNATE_CLAMP_FRAC", 0.0)
+    innate_clamp_seed = _env_int("INNATE_CLAMP_SEED", 0)
+    if innate_clamp_mode != "off":
+        if pop_model != "ab" or run_mode != "loop":
+            raise ValueError("INNATE_CLAMP_MODE requires POP_MODEL=ab and "
+                             "RUN_MODE=loop (the clamp is defined on the "
+                             "AB closed loop only)")
+        if eps != 0.0:
+            # HARD-FAIL by design: with the peer step live, resetting
+            # frozen agents after the sweep would be an UNSAFE
+            # reset-after-peer approximation (their moved values would
+            # already have pulled partners). The one-sided stubborn-peer
+            # operator is a separate, later change.
+            raise ValueError(f"INNATE_CLAMP_MODE={innate_clamp_mode!r} is "
+                             f"no-peer only for now: EPS_SOCIAL must be 0 "
+                             f"(got {eps!r})")
+        if not 0.0 < innate_clamp_frac < 1.0:
+            raise ValueError(f"INNATE_CLAMP_FRAC={innate_clamp_frac!r} "
+                             f"must lie strictly in (0, 1) when the clamp "
+                             f"is on")
+
     out_dir.mkdir(parents=True, exist_ok=True)
     # donor context load (ICL_CTX_SOURCE=donor): the exact opinion vector the
     # exemplar lines will display, hashed for provenance. Loaded BEFORE the
@@ -975,6 +1009,15 @@ def main() -> int:
         # simulation path reads it. check_dpo_pair treats it like host.
         "hardware": _hardware_meta(),
     }
+    if innate_clamp_mode != "off":
+        # recorded ONLY when the clamp is on -- an off-mode run's
+        # config.json stays byte-identical to pre-clamp code (absent ==
+        # off, the audit convention)
+        config.update({
+            "innate_clamp_mode": innate_clamp_mode,
+            "innate_clamp_frac": innate_clamp_frac,
+            "innate_clamp_seed": innate_clamp_seed,
+        })
     if training_style == "dpo":
         # tag<->config gate for DPO waves; defaults mirror DPOLearner's env
         # resolution. Absent from configs written before 2026-08-03 (knobs
@@ -1123,6 +1166,22 @@ def main() -> int:
     print(f"[run] {dataset} ready: N={n}  innate mean={innate_mean:.4f} "
           f"std={innate.std():.4f} in {time.time() - t0:.1f}s", flush=True)
 
+    # innate-clamp cohort: deterministic in (innate, mode, frac, seed) via a
+    # dedicated generator inside the helper -- the global RNG stream is
+    # untouched, so off-mode runs and the frozen/responsive dynamics both
+    # stay bit-identical to a run built without this block.
+    clamp_mask = None
+    clamp_hash = None
+    if innate_clamp_mode != "off":
+        clamp_mask = gp.innate_clamp_mask(innate, innate_clamp_mode,
+                                          innate_clamp_frac,
+                                          innate_clamp_seed)
+        clamp_hash = gp.innate_clamp_hash(clamp_mask)
+        print(f"[run] innate clamp: mode={innate_clamp_mode} "
+              f"frac={innate_clamp_frac:g} seed={innate_clamp_seed} -> "
+              f"{int(clamp_mask.sum())}/{n} agents frozen "
+              f"(sha256={clamp_hash[:12]}...)", flush=True)
+
     def format_number(y) -> str:
         return f"{float(y):.2f}"
 
@@ -1255,6 +1314,8 @@ def main() -> int:
             ab_adj = (setup["adj"] > 0).float().to(ab_device)
             w_agent = (w_plat * plat_sus_eff).clamp(0.0, 1.0).to(ab_device)
             ab_innate = innate.to(ab_device)
+            clamp_mask_dev = (clamp_mask.to(ab_device)
+                              if clamp_mask is not None else None)
             ab_f = torch.zeros(n, device=ab_device)   # provenance tag: model-share of opinion
             # own generator: the HF trainer resets the global seed every round,
             # which froze the sweep's pair pattern across rounds
@@ -1814,6 +1875,12 @@ def main() -> int:
                 accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
                 if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
                     relax_trace.append(round(float(ab_x.std()), 4))
+            if clamp_mask_dev is not None:
+                # permanent innate clamp AFTER the full round operator: the
+                # frozen cohort's recorded state is a bit-exact copy of its
+                # innate opinions every round. They were still served,
+                # gated, and labeled above -- only the outcome is pinned.
+                ab_x[clamp_mask_dev] = ab_innate[clamp_mask_dev]
             contact = float(np.mean(contacts))
             plat_disp_round = float(np.sum(plat_disps)) if plat_disps else 0.0
             s_tag = float(ab_f.mean())
@@ -1842,6 +1909,9 @@ def main() -> int:
                            + (1.0 - innate_lambda) * ab_x_cf)
                 for sw in range(ab_sweeps):
                     gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias, gen=ab_gen_cf)
+                if clamp_mask_dev is not None:
+                    # the twin carries the SAME frozen cohort bit-exactly
+                    ab_x_cf[clamp_mask_dev] = ab_innate[clamp_mask_dev]
                 twin_raw.append(ab_x_cf.detach().cpu().float().clone())
         if op_round0 is None:
             op_round0 = op.clone()
@@ -2045,7 +2115,7 @@ def main() -> int:
             for t_ctx, ctxs in icl_ctx_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
-    torch.save(
+    traj_payload = \
         {
             "trajectory": trajectory,
             "config": config,
@@ -2073,9 +2143,19 @@ def main() -> int:
             "gender_disp": gender_disp,
             "teacher_pred": (teacher_pred if teacher_pred is not None
                              else torch.empty(0)),
-        },
-        out_dir / "trajectory.pt",
-    )
+        }
+    if clamp_mask is not None:
+        # innate-clamp provenance: written ONLY when the clamp is on so an
+        # off-mode trajectory.pt stays byte-identical to pre-clamp code
+        traj_payload.update({
+            "innate_clamp_mask": clamp_mask.detach().cpu().bool().clone(),
+            "innate_clamp_count": int(clamp_mask.sum()),
+            "innate_clamp_mode": innate_clamp_mode,
+            "innate_clamp_frac": innate_clamp_frac,
+            "innate_clamp_seed": innate_clamp_seed,
+            "innate_clamp_hash": clamp_hash,
+        })
+    torch.save(traj_payload, out_dir / "trajectory.pt")
     print(f"[run] outputs in {out_dir}", flush=True)
     if wandb is not None:
         wandb.finish()

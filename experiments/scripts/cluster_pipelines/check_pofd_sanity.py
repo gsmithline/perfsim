@@ -205,6 +205,25 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               that keeps a K=8 context from masquerading as K=32). NO
               expected scientific outcome is a validity condition.
 
+  CLAMP       pofdclamp_ runs (no-peer innate-clamp wave 2026-08-17;
+              incl. pofdclampsmk_ 3-round smokes): mistral-only b0
+              (ordinary SFT) vs dyn (frozen weights, live K=8 context)
+              with a fixed 20% cohort permanently pinned to its innate
+              opinions. Tag grammar pofdclamp_mistral7b_<arm>_<strat|
+              bottom>_ea<g>_w0p5_l0p2_es0_s<seed>. Verified: exact
+              config surface + tag grammar, exactly round(0.2*n) frozen
+              agents (145 of 723), the stored mask reconstructing
+              bit-identically from (innate, mode, frac, seed) with a
+              matching sha256, frozen rows bit-exact on innate at EVERY
+              round in BOTH op_raw and twin_raw, responsive rows on the
+              exact platform blend (section 3, frozen-aware) with the
+              responsive twin <= 1 ulp of innate, SFT consuming all 723
+              labels (FRESH), live-ICL contexts free to carry frozen-
+              agent exemplars (excluding them is the failure), no peer
+              interaction (es=0 token + accepted==0), and numeric
+              eps_AI=1.0 staying threshold mode, never all_open. NO
+              expected scientific outcome is a validity condition.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -353,6 +372,16 @@ def check_run(run_dir):
     # other. Covers pofdctxgridsmk_ (3-round smokes) too.
     is_ctxgrid = name.startswith("pofdctxgrid")
     is_ctxgrid_smk = name.startswith("pofdctxgridsmk")
+    # NO-PEER INNATE-CLAMP wave (2026-08-17, mistral_innate_clamp_nopeer):
+    # a fixed 20% cohort (bottom / stratified_random by innate) is
+    # permanently pinned to its innate opinions in BOTH the deployed
+    # population and the matched twin; everyone is still served, gated,
+    # labeled and exemplar-eligible. es=0 by construction (the clamp
+    # hard-fails under a live peer step), so the exact-copy replay
+    # applies with the frozen rows overridden to innate. Covers
+    # pofdclampsmk_ (3-round smokes) too.
+    is_clamp = name.startswith("pofdclamp")
+    is_clamp_smk = name.startswith("pofdclampsmk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -678,6 +707,71 @@ def check_run(run_dir):
             errs.append(f"CONFIG hardware metadata missing keys "
                         f"{hw3_missing}")
         elif not (hw3.get("hostname") and hw3.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_clamp:
+        # shared surface: canonical no-peer Action environment, threshold
+        # gating EVERYWHERE (a numeric _ea1_ stays the strict-< gate,
+        # NEVER all_open), mistral-only, matched twin mandatory. The
+        # clamp dials are tag-encoded: the _strat_/_bottom_ token maps to
+        # INNATE_CLAMP_MODE, the fraction is fixed at 0.2, and
+        # INNATE_CLAMP_SEED equals the run seed.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none", "ai_gate_mode": "threshold",
+                     "base_model": "mistralai/Mistral-7B-Instruct-v0.3",
+                     "innate_clamp_frac": 0.2})
+        if m_es is None or want_es != 0.0:
+            errs.append(f"CONFIG clamp tag must carry the _es0_ token "
+                        f"(got {name!r}) -- the clamp is no-peer only for "
+                        f"now (no reset-after-peer approximation exists)")
+        CLAMP_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
+                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                   "sft_batch_size": 4, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0, "train_cap": 723},
+            "dyn": {"training_style": "frozen", "kl_beta": 0.0,
+                    "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
+                    "icl_days": 0, "icl_select": "random",
+                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+        }
+        CLAMP_MODE_OF_TOK = {"strat": "stratified_random",
+                             "bottom": "bottom"}
+        m_arm = re.search(r"_(b0|dyn)_(strat|bottom)_ea", name)
+        if m_arm is None:
+            errs.append(f"CONFIG clamp tag needs an _<b0|dyn>_<strat|"
+                        f"bottom>_ token pair before _ea ({name!r})")
+        else:
+            want.update(CLAMP_ARM_WANT[m_arm.group(1)])
+            want["innate_clamp_mode"] = CLAMP_MODE_OF_TOK[m_arm.group(2)]
+        want["n_rounds"] = 3 if is_clamp_smk else 30
+        if "_eaopen_" in name:
+            errs.append(f"CONFIG clamp: all_open is not part of this "
+                        f"design ({name!r}); eps_AI=1.0 rides the numeric "
+                        f"threshold gate")
+        elif re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG clamp tag needs a NUMERIC _ea token "
+                        f"({name!r})")
+        if "_mistral7b_" not in name:
+            errs.append(f"CONFIG clamp is mistral-only; no _mistral7b_ "
+                        f"slug in {name!r}")
+        m_sd_cl = re.search(r"_s(\d+)$", name)
+        if m_sd_cl is None:
+            errs.append(f"CONFIG clamp tag must end in its seed token "
+                        f"({name!r})")
+        else:
+            # the cohort seed is the RUN seed: paired arms/gates at one
+            # seed must share the bit-identical mask
+            want["innate_clamp_seed"] = int(m_sd_cl.group(1))
+        hw4 = cfg.get("hardware") or {}
+        hw4_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                   "cuda_version", "torch_version",
+                                   "transformers_version") if k not in hw4]
+        if hw4_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw4_missing}")
+        elif not (hw4.get("hostname") and hw4.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
@@ -1847,6 +1941,205 @@ def check_run(run_dir):
                             f"({len(set(ppls_c))} distinct values) -- "
                             f"weights not frozen?")
 
+    # -- 1j CLAMP (innate-clamp wave, 2026-08-17) ----------------------------
+    # Mandatory artifacts + invariants for pofdclamp* runs. The AI-gate
+    # bit-replay rides section 1b (gate_raw REQUIRED, so 1b always fires),
+    # the responsive-agent exact platform blend rides section 3 with the
+    # frozen rows overridden to innate. Nothing here encodes an expected
+    # scientific outcome.
+    cl_mask = None
+    if is_clamp:
+        nr_cl = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_cl or int(op_raw.shape[0]) != nr_cl:
+            errs.append(f"CLAMP trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config n_rounds="
+                        f"{nr_cl} -- incomplete or over-run)")
+        if pred_raw.shape != op_raw.shape:
+            errs.append(f"CLAMP pred_raw shape {tuple(pred_raw.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        gr_cl = d.get("gate_raw")
+        if gr_cl is None or gr_cl.numel() == 0:
+            errs.append("CLAMP gate_raw missing/empty (frozen agents must "
+                        "still have gates recorded -- mandatory)")
+        elif tuple(gr_cl.shape) != tuple(op_raw.shape):
+            errs.append(f"CLAMP gate_raw shape {tuple(gr_cl.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        if not torch.isfinite(op_raw).all():
+            errs.append("CLAMP non-finite opinions")
+        elif float(op_raw.min()) < -1e-6 or float(op_raw.max()) > 1 + 1e-6:
+            errs.append(f"CLAMP opinions outside [0,1]: "
+                        f"[{float(op_raw.min()):.4f}, "
+                        f"{float(op_raw.max()):.4f}]")
+        if not torch.isfinite(pred_raw).all():
+            errs.append("CLAMP non-finite predictions (parse-fail NaN)")
+        elif float(pred_raw.min()) < -1e-6 or \
+                float(pred_raw.max()) > 1 + 1e-6:
+            errs.append(f"CLAMP predictions outside [0,1]: "
+                        f"[{float(pred_raw.min()):.4f}, "
+                        f"{float(pred_raw.max()):.4f}]")
+        # cohort mask: present, boolean, exactly round(frac*n) agents
+        # (145 of 723 at 0.20), count/mode/seed/hash keys consistent, and
+        # RECONSTRUCTING bit-identically from (innate, mode, frac, seed)
+        cm_t = d.get("innate_clamp_mask")
+        cl_mode = cfg.get("innate_clamp_mode")
+        cl_frac = float(cfg.get("innate_clamp_frac") or 0.0)
+        cl_seed = cfg.get("innate_clamp_seed")
+        if cm_t is None or cm_t.numel() == 0:
+            errs.append("CLAMP innate_clamp_mask missing/empty in "
+                        "trajectory.pt")
+        elif cm_t.dtype != torch.bool or \
+                tuple(cm_t.shape) != (innate.numel(),):
+            errs.append(f"CLAMP innate_clamp_mask dtype/shape "
+                        f"{cm_t.dtype}/{tuple(cm_t.shape)} (want bool "
+                        f"[{innate.numel()}])")
+        else:
+            cl_mask = cm_t.bool()
+            n_cl = innate.numel()
+            want_frozen = int(round(cl_frac * n_cl))
+            got_frozen = int(cl_mask.sum())
+            if got_frozen != want_frozen:
+                errs.append(f"CLAMP mask freezes {got_frozen} agents "
+                            f"(frac {cl_frac:g} of {n_cl} wants exactly "
+                            f"{want_frozen})")
+            if int(d.get("innate_clamp_count", -1)) != got_frozen:
+                errs.append(f"CLAMP innate_clamp_count="
+                            f"{d.get('innate_clamp_count')!r} != mask sum "
+                            f"{got_frozen}")
+            for key, cfg_v in (("innate_clamp_mode", cl_mode),
+                               ("innate_clamp_seed", cl_seed)):
+                if d.get(key) != cfg_v:
+                    errs.append(f"CLAMP trajectory {key}={d.get(key)!r} "
+                                f"!= config {cfg_v!r}")
+            want_hash = gp.innate_clamp_hash(cl_mask)
+            if d.get("innate_clamp_hash") != want_hash:
+                errs.append(f"CLAMP innate_clamp_hash="
+                            f"{str(d.get('innate_clamp_hash'))[:16]!r}... "
+                            f"does not match the stored mask "
+                            f"({want_hash[:16]!r}...) -- mask corrupted "
+                            f"or tampered")
+            try:
+                rec = gp.innate_clamp_mask(innate, cl_mode, cl_frac,
+                                           int(cl_seed))
+                if not torch.equal(rec, cl_mask):
+                    errs.append(f"CLAMP mask does not reconstruct from "
+                                f"(innate, {cl_mode!r}, {cl_frac:g}, "
+                                f"{cl_seed!r}) -- "
+                                f"{int((rec ^ cl_mask).sum())} agents "
+                                f"differ")
+            except (ValueError, TypeError) as e:
+                errs.append(f"CLAMP mask reconstruction impossible: {e}")
+            # mode-specific cohort properties, checked independently of
+            # the reconstruction (a helper bug cannot self-certify)
+            order_cl = sorted(range(n_cl),
+                              key=lambda i: (float(innate[i]), i))
+            if cl_mode == "bottom":
+                want_ids = set(order_cl[:want_frozen])
+                got_ids = set(cl_mask.nonzero().flatten().tolist())
+                if got_ids != want_ids:
+                    errs.append(f"CLAMP bottom cohort is not the "
+                                f"{want_frozen} lowest innate opinions "
+                                f"(id tie-break): "
+                                f"{len(got_ids ^ want_ids)} ids differ")
+            elif cl_mode == "stratified_random":
+                cuts_cl = gp._largest_remainder([1] * 5, n_cl)
+                quotas_cl = gp._largest_remainder(cuts_cl, want_frozen)
+                lo_cl = 0
+                for b_i, (c_sz, q_w) in enumerate(zip(cuts_cl,
+                                                      quotas_cl)):
+                    b_ids = torch.tensor(order_cl[lo_cl:lo_cl + c_sz])
+                    lo_cl += c_sz
+                    q_got = int(cl_mask[b_ids].sum())
+                    if q_got != q_w:
+                        errs.append(f"CLAMP stratified quintile {b_i} "
+                                    f"freezes {q_got} agents (want {q_w} "
+                                    f"-- cohort must represent the "
+                                    f"innate distribution)")
+            # frozen rows: BIT-EXACT copies of innate at every recorded
+            # round in BOTH the deployed population and the matched twin
+            fro = op_raw[:, cl_mask]
+            if not bool((fro == innate[cl_mask].unsqueeze(0)).all()):
+                bad_n = int((fro != innate[cl_mask].unsqueeze(0))
+                            .any(dim=0).sum())
+                errs.append(f"CLAMP {bad_n} frozen agents drift off "
+                            f"innate in op_raw (max |diff| "
+                            f"{float((fro - innate[cl_mask]).abs().max()):.2e}"
+                            f" -- the clamp must be bit-exact)")
+            tw_cl = d.get("twin_raw")
+            if tw_cl is None or tw_cl.numel() == 0:
+                errs.append("CLAMP twin_raw missing/empty (the matched "
+                            "twin is mandatory in this family)")
+            elif tuple(tw_cl.shape) != tuple(op_raw.shape):
+                errs.append(f"CLAMP twin_raw shape {tuple(tw_cl.shape)} "
+                            f"!= op_raw {tuple(op_raw.shape)}")
+            else:
+                tw_cl = tw_cl.float()
+                tw_fro = tw_cl[:, cl_mask]
+                if not bool((tw_fro
+                             == innate[cl_mask].unsqueeze(0)).all()):
+                    errs.append(f"CLAMP frozen agents drift off innate in "
+                                f"twin_raw (max |diff| "
+                                f"{float((tw_fro - innate[cl_mask]).abs().max()):.2e})")
+                # responsive twin: no peers, so lam*v+(1-lam)*v holds it
+                # on innate to <= 1 float32 ulp (the reach tolerance)
+                dtw_cl = float((tw_cl[:, ~cl_mask]
+                                - innate[~cl_mask]).abs().max())
+                if dtw_cl > 6.0e-8:
+                    errs.append(f"CLAMP responsive twin drifts off innate "
+                                f"(max |diff| {dtw_cl:.2e} > 1 float32 "
+                                f"ulp; no-peer twin must stay innate)")
+            # responsive agents must still update normally: if any
+            # responsive agent was ever gated onto a served value
+            # meaningfully away from its state, the responsive block
+            # cannot be identically innate (a clamp applied beyond its
+            # mask would freeze them too)
+            if gr_cl is not None and gr_cl.numel() and \
+                    tuple(gr_cl.shape) == tuple(op_raw.shape):
+                gr_b = gr_cl.bool()
+                moved = bool((op_raw[:, ~cl_mask]
+                              != innate[~cl_mask].unsqueeze(0)).any())
+                pulled = False
+                for tt in range(op_raw.shape[0]):
+                    x_bef = innate if tt == 0 else op_raw[tt - 1]
+                    dist = (pred_raw[tt].clamp(0.0, 1.0) - x_bef).abs()
+                    if bool((gr_b[tt] & ~cl_mask & (dist > 1e-4)).any()):
+                        pulled = True
+                        break
+                if pulled and not moved:
+                    errs.append("CLAMP responsive agents never move off "
+                                "innate despite gated contact with a "
+                                "distinct served value -- clamp applied "
+                                "beyond its mask?")
+            # live-ICL runs: frozen agents REMAIN exemplar-eligible.
+            # 145-of-723 cohort x K=8 x n x rounds makes zero overlap
+            # astronomically improbable unless they were excluded.
+            if int(cfg.get("icl_k") or 0) > 0:
+                ii_cl = d.get("icl_idx_raw")
+                if ii_cl is None or ii_cl.numel() == 0:
+                    errs.append("CLAMP icl_k>0 but icl_idx_raw "
+                                "missing/empty")
+                else:
+                    froz_ids = cl_mask.nonzero().flatten()
+                    if not bool(torch.isin(ii_cl.long(),
+                                           froz_ids).any()):
+                        errs.append("CLAMP live ICL contexts never carry "
+                                    "a frozen-agent exemplar -- frozen "
+                                    "agents must remain eligible")
+                    if ii_cl.shape[0] > 1 and "_dyn_" in name and \
+                            all(torch.equal(ii_cl[tt], ii_cl[0])
+                                for tt in range(1, ii_cl.shape[0])):
+                        errs.append("CLAMP dyn: exemplar ids "
+                                    "bit-identical across all rounds -- "
+                                    "context was never refreshed")
+                    if not os.path.exists(os.path.join(
+                            run_dir, "icl_ctx_log.json.gz")):
+                        errs.append("CLAMP icl_ctx_log.json.gz missing")
+        if cfg.get("training_style") == "frozen":
+            ppls_cl = [r["perplexity"] for r in traj if "perplexity" in r]
+            if ppls_cl and len(set(ppls_cl)) != 1:
+                errs.append(f"CLAMP fixed-text perplexity varies "
+                            f"({len(set(ppls_cl))} distinct values) -- "
+                            f"weights not frozen?")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -1944,6 +2237,12 @@ def check_run(run_dir):
             # re-anchor over EVERYONE -- reproduce the archived runs exactly
             x_mid = torch.where(gate, (1.0 - w) * x_before + w * served, x_before)
             expect = (1.0 - lam) * x_mid + lam * innate if lam > 0 else x_mid
+        if cl_mask is not None:
+            # innate-clamp runs (section 1j): the runner pins the frozen
+            # cohort AFTER the blend, so the exact-copy expectation is
+            # innate on frozen rows and the untouched blend elsewhere --
+            # this is what "responsive agents still update normally" means
+            expect = torch.where(cl_mask, innate, expect)
         d_acc = (op_raw[t][gate] - expect[gate]).abs()
         if gate.any() and float(d_acc.max()) > ATOL:
             errs.append(f"EXACT-COPY round {t}: accepted opinion != blend "
@@ -1963,8 +2262,10 @@ def check_run(run_dir):
     # -- 4 FRESH -------------------------------------------------------------
     # icl (frozen): nothing trains, no n_train ever -- skip. Reach frozen
     # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
+    # Clamp b0 falls through: SFT must consume all 723 labels (the frozen
+    # cohort's innate labels INCLUDED) every deploy round.
     if is_icl or is_iclf or is_ctf or \
-            ((is_reach or is_ctxgrid)
+            ((is_reach or is_ctxgrid or is_clamp)
              and cfg.get("training_style") == "frozen"):
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)

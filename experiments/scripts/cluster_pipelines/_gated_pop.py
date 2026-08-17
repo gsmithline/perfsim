@@ -137,6 +137,77 @@ def select_probe_indices(innate, n_probe):
     return order[ranks]
 
 
+def _largest_remainder(sizes, total):
+    """Integer quotas proportional to sizes summing exactly to total.
+    Deterministic: leftover units go to the largest fractional remainders,
+    ties broken by lower bin index."""
+    n_all = sum(sizes)
+    exact = [total * s / n_all for s in sizes]
+    base = [int(e) for e in exact]
+    left = total - sum(base)
+    by_rem = sorted(range(len(sizes)),
+                    key=lambda i: (-(exact[i] - base[i]), i))
+    for i in by_rem[:left]:
+        base[i] += 1
+    return base
+
+
+def innate_clamp_mask(innate, mode, frac, seed):
+    """Boolean [n] cohort mask for the permanent innate clamp
+    (INNATE_CLAMP_MODE, 2026-08-17 mistral_innate_clamp_nopeer wave).
+
+    Deterministic in (innate, mode, frac, seed) ONLY: randomness comes
+    from a dedicated torch.Generator, never the global stream, so the
+    SFT and ICL arms and every AI gate at a given INNATE_CLAMP_SEED
+    share the bit-identical cohort, and building the mask perturbs no
+    RNG the loop consumes.
+
+    Cohort size is round(frac*n) exactly (723 @ 0.20 -> 145). "bottom"
+    takes the lowest innate opinions with agent id as the deterministic
+    tie-break. "stratified_random" ranks agents by (innate, id), splits
+    the ranking into 5 quintile bins (largest-remainder sizing), and
+    samples each bin's proportional quota without replacement, so the
+    frozen cohort represents the innate distribution.
+    """
+    n = int(innate.numel())
+    n_frozen = int(round(float(frac) * n))
+    if not 0 < n_frozen < n:
+        raise ValueError(f"INNATE_CLAMP_FRAC={frac!r} gives a degenerate "
+                         f"cohort ({n_frozen} of {n})")
+    order = sorted(range(n), key=lambda i: (float(innate[i]), i))
+    if mode == "bottom":
+        idx = order[:n_frozen]
+    elif mode == "stratified_random":
+        n_bins = 5
+        cuts = _largest_remainder([1] * n_bins, n)   # near-even rank bins
+        bins, lo = [], 0
+        for c in cuts:
+            bins.append(order[lo:lo + c])
+            lo += c
+        quotas = _largest_remainder([len(b) for b in bins], n_frozen)
+        g = torch.Generator()
+        g.manual_seed(int(seed))
+        idx = []
+        for b, q in zip(bins, quotas):
+            perm = torch.randperm(len(b), generator=g)[:q]
+            idx.extend(b[int(j)] for j in perm)
+    else:
+        raise ValueError(f"unknown INNATE_CLAMP_MODE {mode!r} (want "
+                         f"'off', 'stratified_random' or 'bottom')")
+    mask = torch.zeros(n, dtype=torch.bool)
+    mask[torch.tensor(sorted(idx), dtype=torch.long)] = True
+    assert int(mask.sum()) == n_frozen
+    return mask
+
+
+def innate_clamp_hash(mask):
+    """sha256 over the raw cohort bytes -- the trajectory carries it so a
+    tampered/truncated mask is detectable without reconstruction."""
+    import hashlib
+    return hashlib.sha256(
+        mask.detach().cpu().to(torch.uint8).numpy().tobytes()).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Telemetry helpers: everything loss/likelihood-based, from the platform seat
 # (mirrors experiments/competition/18_platform_telemetry.py).
