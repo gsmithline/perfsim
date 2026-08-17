@@ -1867,17 +1867,43 @@ def clamp_graph_smoke_rows():
             for arm in CLAMP_ARMS]
 
 
+# retry key (2026-08-17): exactly the 5 cells the bad node i104 killed
+# (CUDA init fails on its H100; each job bounced off it 5 times and was
+# removed by the retry policy). SAME tags as the main key BY DESIGN --
+# NEVER co-submit with mistral_innate_clamp_graph_s0 while those 5 are
+# still queued there (double-queue write race); the idempotent exec
+# no-ops anything already complete.
+CLAMP_GRAPH_RETRY_KEY = "mistral_innate_clamp_graph_retry"
+CLAMP_GRAPH_RETRY_CELLS = [
+    ("b0", "gscat", 0.1, 0.05),
+    ("b0", "gscat", 0.2, 1.0),
+    ("b0", "gscat", 1.0, 0.0),
+    ("dyn", "gscat", 0.2, 0.1),
+    ("dyn", "gscat", 0.4, 0.05),
+]
+
+
+def clamp_graph_retry_rows():
+    return [clamp_graph_row(arm, gtok, gate, es, 0)
+            for arm, gtok, gate, es in CLAMP_GRAPH_RETRY_CELLS]
+
+
 def clamp_graph_sub(kind):
-    """kind: 'main' | 'smoke'."""
-    key = CLAMP_GRAPH_KEY if kind == "main" else CLAMP_GRAPH_SMOKE_KEY
-    n_jobs = (len(clamp_graph_rows()) if kind == "main"
-              else len(clamp_graph_smoke_rows()))
+    """kind: 'main' | 'smoke' | 'retry'."""
+    key = {"main": CLAMP_GRAPH_KEY, "smoke": CLAMP_GRAPH_SMOKE_KEY,
+           "retry": CLAMP_GRAPH_RETRY_KEY}[kind]
+    n_jobs = {"main": len(clamp_graph_rows()),
+              "smoke": len(clamp_graph_smoke_rows()),
+              "retry": len(clamp_graph_retry_rows())}[kind]
     what = {"main": ("96 seed-0 production cells (30 rounds; "
                      "gclump/gscat x b0/dyn x 4 AI gates x 6 social "
                      "gates incl. in-wave es=0 baselines, one-sided "
                      "stubborn peer operator)"),
             "smoke": ("SMOKE (4 x 3 rounds, seed 991; both masks x "
-                      "both arms at ea0p4 es0p4)")}[kind]
+                      "both arms at ea0p4 es0p4)"),
+            "retry": ("RETRY -- exactly the 5 i104-killed cells (SAME "
+                      "tags as the main key; never co-submit while "
+                      "they are still queued there)")}[kind]
     return CLAMP_PEER_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs,
                                           what=what,
                                           **REACH_MODELS["mistral7b"])
@@ -4604,6 +4630,19 @@ def main():
     cube_subs[os.path.join(HERE,
                            f"at_pofd_{CLAMP_GRAPH_SMOKE_KEY}.sub")] = \
         clamp_graph_sub("smoke")
+    # i104-retry: exactly the 5 killed cells; tags DELIBERATELY shared
+    # with the main graph key (no collision assert here -- the
+    # sft_icl_reach_s0 / fig2 shared-tag precedent), never co-submit.
+    _cg2_rt = clamp_graph_retry_rows()
+    assert len(_cg2_rt) == 5
+    assert {r.split(",")[0] for r in _cg2_rt} <= _cg2_tags, \
+        "retry cells must be a subset of the main graph wave"
+    p = os.path.join(HERE, f"configs_pofd_{CLAMP_GRAPH_RETRY_KEY}.txt")
+    files[p] = _cg2_rt
+    expected[p] = 5
+    cube_subs[os.path.join(HERE,
+                           f"at_pofd_{CLAMP_GRAPH_RETRY_KEY}.sub")] = \
+        clamp_graph_sub("retry")
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()
