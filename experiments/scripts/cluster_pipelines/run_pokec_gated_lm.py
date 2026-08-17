@@ -39,6 +39,13 @@ appended one JSON line per round to telemetry.json (crash-safe):
               direct platform contact per agent per round, so direct-contact
               vs peer-transmitted effects separate offline. Empty tensor in
               runs written before 2026-08-05.
+  icl_days_log.json.gz   ICL_DAYS>0 runs (2026-08-17): per round the FULL
+              context_block string each agent's prompt carried (gzip JSONL,
+              one line per round). For a days-only run (ICL_K=0) this is the
+              exact personal-history sentence -- the agent's OWN recorded
+              opinions, oldest to newest, innate-first on early rounds -- so
+              the no-cross-user guarantee is auditable byte-for-byte against
+              (innate, op_raw).
   icl_idx_raw / icl_val_raw / icl_ctx_log.json.gz   ICL_K>0 runs (2026-08-07):
               per round the [n, K] exemplar agent ids and displayed opinion
               values each agent's context carried, plus the rendered exemplar
@@ -1541,6 +1548,14 @@ def main() -> int:
                           # agents in an ACCEPTED fixed-responsive pair
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
+    icl_days_texts = []  # ICL_DAYS>0: (round, [n] FULL context_block strings
+                         # as passed to build_prompt) -> icl_days_log.json.gz.
+                         # For a days-only run (ICL_K=0) each string IS the
+                         # personal-history sentence, so the exact sequence
+                         # every agent saw -- own values, oldest to newest,
+                         # innate-first early rounds -- is auditable offline
+                         # byte-for-byte against (innate, op_raw), and any
+                         # cross-user content would break the byte match
     icl_ctx_gg = None   # realized displayed-context gender gap, computed once
                         # at the snapshot freeze (repeated per row as
                         # gg_ctx_true when gg telemetry is on)
@@ -1794,6 +1809,7 @@ def main() -> int:
                     icl_rng = np.random.default_rng(70000 + seed * 1000 + t)
                     icl_ids_t, icl_vals_t, icl_txt_t = [], [], []
                 prompts = []
+                days_txt_t = []
                 for i in range(n):
                     parts = []
                     if icrh_on and feedback_mode != "none" and fb_prev is not None:
@@ -1833,8 +1849,13 @@ def main() -> int:
                         icl_ids_t.append(ids_i)
                         icl_vals_t.append(vals_i)
                         icl_txt_t.append(block)
+                    ctx_i = "\n\n".join(parts)
+                    if icl_days > 0:
+                        days_txt_t.append(ctx_i)
                     prompts.append(build_prompt(prof_lookup.iloc[i], lm.tokenizer,
-                                                context_block="\n\n".join(parts)))
+                                                context_block=ctx_i))
+                if icl_days > 0:
+                    icl_days_texts.append((t, days_txt_t))
                 if icl_k > 0 and train_data is not None:
                     ids_t = torch.stack(icl_ids_t)
                     vals_t = torch.stack(icl_vals_t)
@@ -2296,6 +2317,14 @@ def main() -> int:
         # exact prompt text, not just the (ids, vals) that generated it
         with gzip.open(out_dir / "icl_ctx_log.json.gz", "wt") as fh:
             for t_ctx, ctxs in icl_ctx_texts:
+                fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
+    if icl_days_texts:
+        # the ACTUAL full context_block each agent's prompt carried, one
+        # JSON line per round -- for a days-only run this is the exact
+        # personal-history sentence, so the "own history only, oldest to
+        # newest, no other users" guarantee is auditable byte-for-byte
+        with gzip.open(out_dir / "icl_days_log.json.gz", "wt") as fh:
+            for t_ctx, ctxs in icl_days_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
     if raw_gen_rows:
         # every round's raw generations + parsed served values, one JSON

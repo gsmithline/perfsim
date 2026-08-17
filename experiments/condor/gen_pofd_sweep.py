@@ -1023,6 +1023,13 @@ REACH_ARM_COLS = {
                 fresh=0, ansk=0, gg=1),
     "d32": dict(style="frozen", beta="0", iclk=32, snap=-1, uselora=0,
                 fresh=0, ansk=0, gg=1),
+    # d8 (clamp-graph personal-history wave, 2026-08-17): frozen weights,
+    # ZERO cross-user exemplars (ICL_K=0) -- each agent's prompt carries
+    # only its OWN latest eight recorded opinions, oldest to newest
+    # (ICL_DAYS=8 rides the d8 sub template's icldays queue col). Fixed
+    # agents therefore see only repetitions of their own innate opinion.
+    "d8": dict(style="frozen", beta="0", iclk=0, snap=-1, uselora=0,
+               fresh=0, ansk=0, gg=1),
 }
 ROW_REACH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
              "0.0, 0.0, 0.5, loop, 0.0, {eps_ai}, {gatemode}, {iclk}, "
@@ -1867,43 +1874,18 @@ def clamp_graph_smoke_rows():
             for arm in CLAMP_ARMS]
 
 
-# retry key (2026-08-17): exactly the 5 cells the bad node i104 killed
-# (CUDA init fails on its H100; each job bounced off it 5 times and was
-# removed by the retry policy). SAME tags as the main key BY DESIGN --
-# NEVER co-submit with mistral_innate_clamp_graph_s0 while those 5 are
-# still queued there (double-queue write race); the idempotent exec
-# no-ops anything already complete.
-CLAMP_GRAPH_RETRY_KEY = "mistral_innate_clamp_graph_retry"
-CLAMP_GRAPH_RETRY_CELLS = [
-    ("b0", "gscat", 0.1, 0.05),
-    ("b0", "gscat", 0.2, 1.0),
-    ("b0", "gscat", 1.0, 0.0),
-    ("dyn", "gscat", 0.2, 0.1),
-    ("dyn", "gscat", 0.4, 0.05),
-]
-
-
-def clamp_graph_retry_rows():
-    return [clamp_graph_row(arm, gtok, gate, es, 0)
-            for arm, gtok, gate, es in CLAMP_GRAPH_RETRY_CELLS]
-
-
 def clamp_graph_sub(kind):
-    """kind: 'main' | 'smoke' | 'retry'."""
-    key = {"main": CLAMP_GRAPH_KEY, "smoke": CLAMP_GRAPH_SMOKE_KEY,
-           "retry": CLAMP_GRAPH_RETRY_KEY}[kind]
+    """kind: 'main' | 'smoke'."""
+    key = {"main": CLAMP_GRAPH_KEY,
+           "smoke": CLAMP_GRAPH_SMOKE_KEY}[kind]
     n_jobs = {"main": len(clamp_graph_rows()),
-              "smoke": len(clamp_graph_smoke_rows()),
-              "retry": len(clamp_graph_retry_rows())}[kind]
+              "smoke": len(clamp_graph_smoke_rows())}[kind]
     what = {"main": ("96 seed-0 production cells (30 rounds; "
                      "gclump/gscat x b0/dyn x 4 AI gates x 6 social "
                      "gates incl. in-wave es=0 baselines, one-sided "
                      "stubborn peer operator)"),
             "smoke": ("SMOKE (4 x 3 rounds, seed 991; both masks x "
-                      "both arms at ea0p4 es0p4)"),
-            "retry": ("RETRY -- exactly the 5 i104-killed cells (SAME "
-                      "tags as the main key; never co-submit while "
-                      "they are still queued there)")}[kind]
+                      "both arms at ea0p4 es0p4)")}[kind]
     return CLAMP_PEER_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs,
                                           what=what,
                                           **REACH_MODELS["mistral7b"])
@@ -1967,6 +1949,144 @@ periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180
 periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
 
 queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, cmode from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+# mistral_innate_clamp_graph_d8[_smoke] (2026-08-17): the CORRECTED
+# graph-clamp comparison. The old cross-user live K=8 arm (_dyn_) is
+# REPLACED by personal-history ICL (_d8_): frozen weights, ICL_K=0,
+# ICL_DAYS=8 -- each agent's prompt carries only its OWN latest eight
+# recorded opinions, oldest to newest (early rounds use the available
+# history beginning with innate); NO other agent's profile or opinion
+# ever appears, so fixed agents see only repetitions of their own
+# innate opinion. Same seed-0 grid as the main graph wave (masks
+# gclump/gscat, ea {0.1,0.2,0.4,1}, es {0,0.05,0.1,0.2,0.4,1}) = 96
+# CONCEPTUAL cells: every complete _b0_ SFT cell from
+# mistral_innate_clamp_graph_s0 is REUSED unchanged; this key holds
+# the 48 new _d8_ cells PLUS the 3 _b0_ cells still missing at the
+# 2026-08-17 cluster audit (i104 casualties, never completed) = 51
+# jobs. The old _dyn_ runs are EXCLUDED from the corrected analysis.
+# The 3 backfill tags are SHARED with the main key BY DESIGN -- NEVER
+# co-submit with mistral_innate_clamp_graph_s0 (double-queue write
+# race); the idempotent exec no-ops anything already complete.
+# Smokes (2 x 3 rounds, seed 991, OUTSIDE the 96): d8 x both masks at
+# ea0p4 es0p4. Runners write icl_days_log.json.gz (the exact rendered
+# personal-history context per agent per round); the checker replays
+# it byte-for-byte against (innate, op_raw).
+CLAMP_GRAPH_D8_KEY = "mistral_innate_clamp_graph_d8"
+CLAMP_GRAPH_D8_SMOKE_KEY = "mistral_innate_clamp_graph_d8_smoke"
+# the b0 cells with no trajectory on the cluster (audited 2026-08-17
+# after the i104 kills; the retry key that briefly carried them is
+# retired -- its 2 dyn cells are no longer part of the design)
+CLAMP_GRAPH_B0_BACKFILL_CELLS = [
+    ("b0", "gscat", 0.1, 0.05),
+    ("b0", "gscat", 0.2, 1.0),
+    ("b0", "gscat", 1.0, 0.0),
+]
+ROW_CLAMP_GRAPH_D8 = ROW_CLAMP_GRAPH + ", {icldays}"
+
+
+def clamp_graph_d8_row(arm, gtok, gate, es, seed, nrounds=30,
+                       prefix="pofdclamp"):
+    a = REACH_ARM_COLS[arm]
+    return ROW_CLAMP_GRAPH_D8.format(
+        tag=clamp_graph_tag(arm, gtok, gate, es, seed, prefix),
+        style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
+        eps_ai=f"{gate:g}", iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=nrounds,
+        cmode=CLAMP_GRAPH_OF_TOK[gtok],
+        icldays=8 if arm == "d8" else 0)
+
+
+def clamp_graph_d8_rows():
+    rows = [clamp_graph_d8_row("d8", gtok, gate, es, 0)
+            for gtok in CLAMP_GRAPH_TOKS
+            for gate in CLAMP_GRAPH_GATES
+            for es in CLAMP_GRAPH_ESS]
+    rows += [clamp_graph_d8_row(arm, gtok, gate, es, 0)
+             for arm, gtok, gate, es in CLAMP_GRAPH_B0_BACKFILL_CELLS]
+    return rows
+
+
+def clamp_graph_d8_smoke_rows():
+    return [clamp_graph_d8_row("d8", gtok, CLAMP_GRAPH_SMOKE_GATE,
+                               CLAMP_GRAPH_SMOKE_ES,
+                               CLAMP_GRAPH_SMOKE_SEED,
+                               nrounds=3, prefix="pofdclampsmk")
+            for gtok in CLAMP_GRAPH_TOKS]
+
+
+def clamp_graph_d8_sub(kind):
+    """kind: 'main' | 'smoke'."""
+    key = {"main": CLAMP_GRAPH_D8_KEY,
+           "smoke": CLAMP_GRAPH_D8_SMOKE_KEY}[kind]
+    n_jobs = {"main": len(clamp_graph_d8_rows()),
+              "smoke": len(clamp_graph_d8_smoke_rows())}[kind]
+    what = {"main": ("51 seed-0 jobs (30 rounds): the 48 NEW _d8_ "
+                     "personal-history cells (gclump/gscat x 4 AI "
+                     "gates x 6 social gates) + the 3 _b0_ SFT cells "
+                     "missing at the 2026-08-17 audit"),
+            "smoke": ("SMOKE (2 x 3 rounds, seed 991; d8 x both "
+                      "masks at ea0p4 es0p4)")}[kind]
+    return CLAMP_PEER_D8_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs,
+                                             what=what,
+                                             **REACH_MODELS["mistral7b"])
+
+
+CLAMP_PEER_D8_SUB_TEMPLATE = """\
+# HTCondor: INNATE-CLAMP GRAPH WAVE, PERSONAL-HISTORY ARM, mistral7b -- {what}
+# GENERATED by gen_pofd_sweep.py from the CLAMP_GRAPH_D8 block. Never
+# edit by hand: rerun the script. {n_jobs} job(s).
+# The CORRECTED graph-clamp comparison: ordinary SFT (_b0_) vs
+# PERSONAL-HISTORY ICL (_d8_: frozen weights, ICL_K=0, ICL_DAYS=8 --
+# each agent's prompt carries ONLY its own latest eight recorded
+# opinions, oldest to newest, innate-first on early rounds; no other
+# agent's profile or opinion ever appears, so fixed agents see only
+# repetitions of their own innate opinion; every run writes
+# icl_days_log.json.gz for the byte-exact offline replay). The old
+# cross-user _dyn_ arm is EXCLUDED from this analysis. Masks, peer
+# operator and telemetry are IDENTICAL to the main graph wave: two
+# PRE-BUILT 145-agent cohorts (clamp_graph_masks.json, queue col 24)
+# under the one-sided STUBBORN operator (fixed agents keep pairing;
+# an accepted F-R pair moves ONLY the responsive endpoint; NO
+# isolated condition), fixed pinned before AND after the sweep, the
+# matched twin on its mirrored generator. ICL_DAYS rides queue col 25
+# (8 on _d8_ rows, 0 on the _b0_ backfill rows -- those 3 tags are
+# SHARED with mistral_innate_clamp_graph_s0 BY DESIGN; never
+# co-submit the two keys). W=0.5, lam=0.2, gamma=0, greedy serving,
+# WITH_TWIN=1, movielens Action, 30-round mains / 3-round smokes.
+# Gate every pull with check_pofd_sanity (CLAMP section: graph-mask
+# invariants + the d8 personal-history replay -- exact sequence per
+# agent per round, ICL_K=0, no cross-user exemplar artifacts, frozen
+# weights).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+#   (flow: mistral_innate_clamp_graph_d8_smoke -> pull + gate ->
+#    mistral_innate_clamp_graph_d8)
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) INNATE_CLAMP_PEER_MODE=stubborn TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofdclampd8"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, cmode, icldays from experiments/condor/configs_pofd_{key}.txt
 """
 
 
@@ -4630,19 +4750,59 @@ def main():
     cube_subs[os.path.join(HERE,
                            f"at_pofd_{CLAMP_GRAPH_SMOKE_KEY}.sub")] = \
         clamp_graph_sub("smoke")
-    # i104-retry: exactly the 5 killed cells; tags DELIBERATELY shared
-    # with the main graph key (no collision assert here -- the
-    # sft_icl_reach_s0 / fig2 shared-tag precedent), never co-submit.
-    _cg2_rt = clamp_graph_retry_rows()
-    assert len(_cg2_rt) == 5
-    assert {r.split(",")[0] for r in _cg2_rt} <= _cg2_tags, \
-        "retry cells must be a subset of the main graph wave"
-    p = os.path.join(HERE, f"configs_pofd_{CLAMP_GRAPH_RETRY_KEY}.txt")
-    files[p] = _cg2_rt
-    expected[p] = 5
+    # personal-history D8 wave (see the CLAMP_GRAPH_D8 block): the 48
+    # NEW _d8_ cells + the 3 _b0_ cells missing at the 2026-08-17
+    # cluster audit = 51 jobs. The 3 backfill tags are DELIBERATELY
+    # shared with the main graph key (no collision assert for them --
+    # the retry-key precedent), never co-submit the two keys. The 48
+    # _d8_ tags must collide with NOTHING.
+    rows_cg8 = clamp_graph_d8_rows()
+    assert len(rows_cg8) == 51, len(rows_cg8)
+    _cg8_tags = {r.split(",")[0] for r in rows_cg8}
+    assert len(_cg8_tags) == 51
+    _cg8_d8 = {t for t in _cg8_tags if "_d8_" in t}
+    _cg8_b0 = _cg8_tags - _cg8_d8
+    assert len(_cg8_d8) == 48 and len(_cg8_b0) == 3
+    assert all("_stub_" in t and t.endswith("_s0") for t in _cg8_tags)
+    assert not any("_dyn_" in t for t in _cg8_tags), \
+        "the corrected wave has no cross-user arm"
+    for _tok, _n_want in (("_gclump_", 24), ("_gscat_", 24)):
+        assert sum(1 for t in _cg8_d8 if _tok in t) == _n_want, _tok
+    for _g in CLAMP_GRAPH_GATES:
+        assert sum(1 for t in _cg8_d8
+                   if f"_ea{_num(_g)}_" in t) == 12, _g
+    for _e in CLAMP_GRAPH_ESS:
+        assert sum(1 for t in _cg8_d8
+                   if f"_es{_num(_e)}_" in t) == 8, _e
+    assert _cg8_b0 <= _cg2_tags, \
+        "b0 backfill cells must be a subset of the main graph wave"
+    # every d8 row carries icldays=8 (last queue col), every b0 row 0
+    for r in rows_cg8:
+        _tail = ", 8" if "_d8_" in r.split(",")[0] else ", 0"
+        assert r.rstrip().endswith(_tail), r
+    _prior_before_cg8 = {r.split(",")[0]
+                         for rows in files.values() for r in rows}
+    assert not (_cg8_d8 & _prior_before_cg8), \
+        f"d8 collision: {_cg8_d8 & _prior_before_cg8}"
+    p = os.path.join(HERE, f"configs_pofd_{CLAMP_GRAPH_D8_KEY}.txt")
+    files[p] = rows_cg8
+    expected[p] = 51
     cube_subs[os.path.join(HERE,
-                           f"at_pofd_{CLAMP_GRAPH_RETRY_KEY}.sub")] = \
-        clamp_graph_sub("retry")
+                           f"at_pofd_{CLAMP_GRAPH_D8_KEY}.sub")] = \
+        clamp_graph_d8_sub("main")
+    _cg8_smk = clamp_graph_d8_smoke_rows()
+    assert len(_cg8_smk) == 2
+    assert all("_d8_" in r.split(",")[0]
+               and "_stub_ea0p4_" in r.split(",")[0]
+               and "_es0p4_s991" in r.split(",")[0] for r in _cg8_smk)
+    assert sum(1 for r in _cg8_smk if "_gclump_" in r) == 1
+    p = os.path.join(HERE,
+                     f"configs_pofd_{CLAMP_GRAPH_D8_SMOKE_KEY}.txt")
+    files[p] = _cg8_smk
+    expected[p] = 2
+    cube_subs[os.path.join(HERE,
+                           f"at_pofd_{CLAMP_GRAPH_D8_SMOKE_KEY}.sub")] = \
+        clamp_graph_d8_sub("smoke")
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()

@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """Innate-clamp GRAPH-PLACEMENT analysis (2026-08-17,
-mistral_innate_clamp_graph_s0).
+mistral_innate_clamp_graph_s0 + mistral_innate_clamp_graph_d8).
 
 THE TEST: with 145 agents permanently pinned to innate and the peer
 step LIVE under the one-sided STUBBORN operator, how does the fixed
 cohort's PLACEMENT -- graph_clumped (one connected low-cut block,
 41.5% responsive exposure) vs graph_scattered (distributed, 100%
 exposure, 2.9x the cut edges) -- reshape what ordinary SFT (b0) and
-live K=8 ICL (dyn) do to the responsive population as the social gate
-opens? The two masks are matched on innate and degree distributions
+the ICL arm do to the responsive population as the social gate opens?
+The two masks are matched on innate and degree distributions
 (identical joint-stratum quotas), so SCATTERED-minus-CLUMPED at a
 matched (arm, ea, es) isolates the placement effect.
+
+TWO ICL ARMS, TWO ANALYSES (--icl-arm, never mixed):
+  d8 (DEFAULT, the corrected comparison): personal-history ICL --
+     frozen weights, ICL_K=0, ICL_DAYS=8, each agent sees only its
+     OWN latest eight opinions. The old cross-user _dyn_ runs are
+     EXCLUDED. Coverage of all 96 conceptual cells (48 b0 + 48 d8)
+     is HARD-ASSERTED before any output is written. Outputs go to
+     notes/pofd/clamp_graph_d8_analysis/ (the old K8 analysis dir is
+     never overwritten).
+  dyn (legacy): the original cross-user live K=8 arm; lenient
+     coverage, outputs to notes/pofd/clamp_graph_analysis/ exactly as
+     before.
 
 Read-only, descriptive, SEED 0 ONLY (no confidence intervals). All
 baselines are IN-WAVE: es=0 cells run the same masks (the old no-peer
@@ -23,13 +35,15 @@ fixed mean and quantile-W1 gaps with normalized closure, and total
 cut (fixed-responsive) pairs sampled/accepted plus the final fraction
 of responsive agents reached through the cut.
 
-Outputs notes/pofd/clamp_graph_analysis/: clamp_graph_per_cell.csv,
-clamp_graph_placement_contrast.csv (scattered minus clumped).
+Outputs: clamp_graph_per_cell.csv,
+clamp_graph_placement_contrast.csv (scattered minus clumped),
+clamp_graph_arm_contrast.csv (ICL arm minus b0 at matched cells).
 """
 import argparse
 import csv
 import importlib.util
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -44,9 +58,12 @@ _spec_c.loader.exec_module(AC)
 
 NA = "NA"
 MASKS = {"gclump": "graph_clumped", "gscat": "graph_scattered"}
-ARMS = ["b0", "dyn"]
 GATES = [0.1, 0.2, 0.4, 1.0]
 ESS = [0.0, 0.05, 0.1, 0.2, 0.4, 1.0]
+OUT_DIR_OF_ARM = {
+    "d8": os.path.join(REPO, "notes", "pofd", "clamp_graph_d8_analysis"),
+    "dyn": os.path.join(REPO, "notes", "pofd", "clamp_graph_analysis"),
+}
 CONTRAST_METRICS = ["resp_std_ratio_late", "resp_std_ratio_final",
                     "resp_disp_twin_late", "gap_mean_late",
                     "gap_w1_late", "gap_mean_closure",
@@ -67,14 +84,21 @@ def main():
     ap.add_argument("--roots", nargs="*", default=[
         os.path.join(REPO, "runs", "pokec_gated_lm"),
         os.path.join(REPO, "notes", "pofd", "cluster")])
-    ap.add_argument("--out-dir", default=os.path.join(
-        REPO, "notes", "pofd", "clamp_graph_analysis"))
+    ap.add_argument("--icl-arm", choices=["d8", "dyn"], default="d8",
+                    help="ICL arm compared against b0: d8 = the "
+                         "corrected personal-history wave (default, "
+                         "hard-asserts full 96-cell coverage), dyn = "
+                         "the legacy cross-user K=8 analysis")
+    ap.add_argument("--out-dir", default=None,
+                    help="default: per-arm directory, so the corrected "
+                         "d8 analysis never overwrites the old K8 one")
     args = ap.parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
+    arms = ["b0", args.icl_arm]
+    out_dir = args.out_dir or OUT_DIR_OF_ARM[args.icl_arm]
 
     per_cell, missing = [], []
     for gtok in MASKS:
-        for arm in ARMS:
+        for arm in arms:
             for gate in GATES:
                 for es in ESS:
                     tag = cell_tag(arm, gtok, gate, es)
@@ -100,14 +124,23 @@ def main():
                     row["fr_reach_final"] = traj[-1].get(
                         "clamp_fr_reach")
                     per_cell.append(row)
-    n_total = len(MASKS) * len(ARMS) * len(GATES) * len(ESS)
-    print(f"[clamp_graph] cells located: {len(per_cell)}/{n_total}")
+    n_total = len(MASKS) * len(arms) * len(GATES) * len(ESS)
+    print(f"[clamp_graph] cells located: {len(per_cell)}/{n_total} "
+          f"(arms b0/{args.icl_arm})")
     for tag in missing:
         print(f"  MISSING {tag}")
+    if args.icl_arm == "d8" and missing:
+        # the corrected comparison is reported ONLY on the complete
+        # 96-cell surface -- a partial grid silently biases the
+        # placement and arm contrasts
+        print(f"[clamp_graph] HARD FAIL: {len(missing)} of {n_total} "
+              f"conceptual cells missing -- no output written",
+              file=sys.stderr)
+        sys.exit(1)
 
     # placement effect: scattered minus clumped at matched cells
     contrast = []
-    for arm in ARMS:
+    for arm in arms:
         for gate in GATES:
             for es in ESS:
                 def get(mask):
@@ -125,6 +158,28 @@ def main():
                                      and b not in (NA, None) else NA)
                 contrast.append(out)
 
+    # arm effect: the ICL arm minus b0 at matched (mask, gate, es)
+    arm_contrast = []
+    for mask in MASKS.values():
+        for gate in GATES:
+            for es in ESS:
+                def get_arm(arm):
+                    r = [x for x in per_cell if x["mask"] == mask
+                         and x["arm"] == arm and x["gate"] == gate
+                         and x["eps_social"] == es]
+                    return r[0] if r else None
+                rb, ri = get_arm("b0"), get_arm(args.icl_arm)
+                if rb is None or ri is None:
+                    continue
+                out = {"mask": mask, "gate": gate, "eps_social": es}
+                for m in CONTRAST_METRICS:
+                    a, b = ri.get(m), rb.get(m)
+                    out[f"d_{m}"] = (a - b if a not in (NA, None)
+                                     and b not in (NA, None) else NA)
+                arm_contrast.append(out)
+
+    os.makedirs(out_dir, exist_ok=True)
+
     def write(name, rows):
         if not rows:
             print(f"[clamp_graph] {name}: no rows")
@@ -134,7 +189,7 @@ def main():
             for k in r:
                 if k not in keys:
                     keys.append(k)
-        with open(os.path.join(args.out_dir, name), "w",
+        with open(os.path.join(out_dir, name), "w",
                   newline="") as fh:
             wtr = csv.DictWriter(fh, fieldnames=keys, restval=NA)
             wtr.writeheader()
@@ -143,12 +198,13 @@ def main():
 
     write("clamp_graph_per_cell.csv", per_cell)
     write("clamp_graph_placement_contrast.csv", contrast)
+    write("clamp_graph_arm_contrast.csv", arm_contrast)
 
     print("\n== responsive std ratio vs twin, rounds 25-29 (seed 0 -- "
           "single seed, no intervals; cols = ea "
           + "/".join(f"{g:g}" for g in GATES) + ") ==")
     for gtok in MASKS:
-        for arm in ARMS:
+        for arm in arms:
             print(f"  -- {MASKS[gtok]} {arm} --")
             for es in ESS:
                 vals = []

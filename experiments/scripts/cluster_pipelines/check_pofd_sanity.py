@@ -207,9 +207,13 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
 
   CLAMP       pofdclamp_ runs (innate-clamp waves 2026-08-17; incl.
               pofdclampsmk_ 3-round smokes): mistral-only b0 (ordinary
-              SFT) vs dyn (frozen weights, live K=8 context) with a
-              fixed 145-agent cohort permanently pinned to its innate
-              opinions. Tag grammar pofdclamp_mistral7b_<arm>_<strat|
+              SFT) vs dyn (frozen weights, live K=8 cross-user context)
+              vs d8 (frozen weights, ICL_K=0, ICL_DAYS=8 PERSONAL
+              history: each agent's prompt carries only its OWN latest
+              eight recorded opinions, oldest to newest -- graph-mask
+              cohorts only) with a fixed 145-agent cohort permanently
+              pinned to its innate opinions. Tag grammar
+              pofdclamp_mistral7b_<arm>_<strat|
               bottom|gclump|gscat>[_stub]_ea<g>_w0p5_l0p2_es<e>_s<seed>:
               tokenless strat/bottom = the no-peer wave (es=0);
               strat/bottom+_stub_ = one-sided stubborn peers at es>0;
@@ -231,7 +235,15 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               labels (FRESH), live-ICL contexts free to carry frozen-
               agent exemplars (excluding them is the failure), no peer
               interaction (es=0 token + accepted==0), and numeric
-              eps_AI=1.0 staying threshold mode, never all_open. NO
+              eps_AI=1.0 staying threshold mode, never all_open. d8
+              adds the PERSONAL-HISTORY replay: icl_days_log.json.gz
+              (the exact rendered context per agent per round) must
+              byte-match the sentence rebuilt from (innate, op_raw) --
+              own values only, oldest to newest, innate-first early
+              rounds, window == icl_days -- with ICL_K=0, zero
+              cross-user exemplar artifacts (no icl_idx_raw/
+              icl_val_raw/icl_ctx_log), frozen weights, and fixed
+              agents seeing only their own innate repeated. NO
               expected scientific outcome is a validity condition.
 
   ZSPRIOR     pofdzsprior_ runs (zero-shot prior screen 2026-08-17):
@@ -765,6 +777,13 @@ def check_run(run_dir):
                     "use_lora": 0, "fresh_each_round": False, "icl_k": 8,
                     "icl_days": 0, "icl_select": "random",
                     "icl_ctx_source": "live", "icl_snapshot_round": -1},
+            # d8 (corrected graph wave, 2026-08-17): PERSONAL-history
+            # ICL -- frozen weights, ZERO cross-user exemplars, each
+            # agent's context is its own last 8 recorded opinions
+            "d8": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False, "icl_k": 0,
+                   "icl_days": 8, "icl_select": "random",
+                   "icl_ctx_source": "live", "icl_snapshot_round": -1},
         }
         CLAMP_MODE_OF_TOK = {"strat": "stratified_random",
                              "bottom": "bottom",
@@ -780,10 +799,10 @@ def check_run(run_dir):
         #                               MANDATORY, es may be 0 (in-wave
         #                               baselines; the sweep is inert)
         m_arm = re.search(
-            r"_(b0|dyn)_(strat|bottom|gclump|gscat)(?:_(stub))?_ea",
+            r"_(b0|dyn|d8)_(strat|bottom|gclump|gscat)(?:_(stub))?_ea",
             name)
         if m_arm is None:
-            errs.append(f"CONFIG clamp tag needs an _<b0|dyn>_<strat|"
+            errs.append(f"CONFIG clamp tag needs an _<b0|dyn|d8>_<strat|"
                         f"bottom|gclump|gscat>[_stub]_ token run before "
                         f"_ea ({name!r})")
         else:
@@ -791,6 +810,10 @@ def check_run(run_dir):
             _cl_tok = m_arm.group(2)
             want["innate_clamp_mode"] = CLAMP_MODE_OF_TOK[_cl_tok]
             _is_graph_mask = _cl_tok in ("gclump", "gscat")
+            if m_arm.group(1) == "d8" and not _is_graph_mask:
+                errs.append(f"CONFIG the personal-history d8 arm exists "
+                            f"only in the graph-placement wave "
+                            f"(gclump/gscat), got {name!r}")
             if m_arm.group(3):
                 want["innate_clamp_peer_mode"] = "stubborn"
                 if not _is_graph_mask and \
@@ -2324,6 +2347,95 @@ def check_run(run_dir):
                     if not os.path.exists(os.path.join(
                             run_dir, "icl_ctx_log.json.gz")):
                         errs.append("CLAMP icl_ctx_log.json.gz missing")
+            # -- d8 PERSONAL-HISTORY replay (corrected graph wave) -------
+            # Every agent's rendered context must be EXACTLY the sentence
+            # rebuilt from (innate, op_raw): its OWN recorded opinions,
+            # oldest to newest, innate-first on early rounds, window ==
+            # icl_days. Byte-equality simultaneously proves the sequence
+            # and that NO other agent's profile or opinion entered the
+            # context; cross-user exemplar artifacts must not exist at
+            # all; fixed agents may see only their own innate repeated.
+            icl_d_cl = int(cfg.get("icl_days") or 0)
+            if icl_d_cl > 0:
+                if int(cfg.get("icl_k") or 0) != 0:
+                    errs.append("CLAMP personal-history arm carries "
+                                "icl_k>0 -- cross-user exemplars are "
+                                "forbidden in d8")
+                for _bad_k in ("icl_idx_raw", "icl_val_raw"):
+                    _bad_v = d.get(_bad_k)
+                    if _bad_v is not None and _bad_v.numel():
+                        errs.append(f"CLAMP d8: {_bad_k} non-empty -- "
+                                    f"cross-user exemplar artifacts must "
+                                    f"not exist")
+                if os.path.exists(os.path.join(run_dir,
+                                               "icl_ctx_log.json.gz")):
+                    errs.append("CLAMP d8: icl_ctx_log.json.gz present "
+                                "-- no cross-user context may be "
+                                "rendered")
+                dl_path = os.path.join(run_dir, "icl_days_log.json.gz")
+                if not os.path.exists(dl_path):
+                    errs.append("CLAMP d8: icl_days_log.json.gz missing "
+                                "(the rendered personal-history "
+                                "contexts are mandatory)")
+                else:
+                    with gzip.open(dl_path, "rt") as fh:
+                        dl_rows = [json.loads(line) for line in fh]
+                    n_rounds_cl = op_raw.shape[0]
+                    tgt_cl = cfg.get("ml_target") or "Action"
+                    if [r.get("round") for r in dl_rows] != \
+                            list(range(n_rounds_cl)):
+                        errs.append(f"CLAMP d8: icl_days_log holds "
+                                    f"rounds "
+                                    f"{[r.get('round') for r in dl_rows][:5]}"
+                                    f"... (want 0..{n_rounds_cl - 1})")
+                    else:
+                        hist_cl = [innate]
+                        bad_hist = None
+                        for tt, dr in enumerate(dl_rows):
+                            ctxs = dr.get("ctx") or []
+                            if len(ctxs) != n_cl:
+                                bad_hist = (tt, None,
+                                            f"{len(ctxs)} contexts "
+                                            f"(want {n_cl})")
+                                break
+                            win = hist_cl[-icl_d_cl:]
+                            for i in range(n_cl):
+                                days_s = ", ".join(f"{float(h[i]):.2f}"
+                                                   for h in win)
+                                want_s = (
+                                    "This user's own opinion of "
+                                    f"{tgt_cl} movies over the most "
+                                    "recent days (oldest to newest): "
+                                    f"{days_s}.")
+                                if ctxs[i] != want_s:
+                                    bad_hist = (tt, i,
+                                                f"got {ctxs[i][:90]!r} "
+                                                f"want {want_s[:90]!r}")
+                                    break
+                            if bad_hist is not None:
+                                break
+                            hist_cl.append(op_raw[tt])
+                        if bad_hist is not None:
+                            errs.append(f"CLAMP d8: personal-history "
+                                        f"context off the (innate, "
+                                        f"op_raw) replay at round "
+                                        f"{bad_hist[0]} agent "
+                                        f"{bad_hist[1]}: {bad_hist[2]}")
+                        else:
+                            # fixed agents: nothing but their own innate,
+                            # stated directly on the final rendered round
+                            for i in cl_mask.nonzero().flatten().tolist():
+                                iv = f"{float(innate[i]):.2f}"
+                                seq_s = dl_rows[-1]["ctx"][i] \
+                                    .rsplit(": ", 1)[1].rstrip(".")
+                                if any(v != iv
+                                       for v in seq_s.split(", ")):
+                                    errs.append(
+                                        f"CLAMP d8: fixed agent {i} "
+                                        f"history is not pure innate "
+                                        f"repetition ({seq_s!r} vs "
+                                        f"{iv})")
+                                    break
             # -- clamp-PEER invariants (mistral_innate_clamp_peer_s0) ----
             cl_peer = cfg.get("innate_clamp_peer_mode")
             if cl_peer:
