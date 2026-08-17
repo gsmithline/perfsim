@@ -205,12 +205,22 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               that keeps a K=8 context from masquerading as K=32). NO
               expected scientific outcome is a validity condition.
 
-  CLAMP       pofdclamp_ runs (no-peer innate-clamp wave 2026-08-17;
-              incl. pofdclampsmk_ 3-round smokes): mistral-only b0
-              (ordinary SFT) vs dyn (frozen weights, live K=8 context)
-              with a fixed 20% cohort permanently pinned to its innate
+  CLAMP       pofdclamp_ runs (innate-clamp waves 2026-08-17; incl.
+              pofdclampsmk_ 3-round smokes): mistral-only b0 (ordinary
+              SFT) vs dyn (frozen weights, live K=8 context) with a
+              fixed 145-agent cohort permanently pinned to its innate
               opinions. Tag grammar pofdclamp_mistral7b_<arm>_<strat|
-              bottom>_ea<g>_w0p5_l0p2_es0_s<seed>. Verified: exact
+              bottom|gclump|gscat>[_stub]_ea<g>_w0p5_l0p2_es<e>_s<seed>:
+              tokenless strat/bottom = the no-peer wave (es=0);
+              strat/bottom+_stub_ = one-sided stubborn peers at es>0;
+              gclump/gscat (graph-placement masks, ALWAYS _stub_, es>=0)
+              reconstruct from the committed clamp_graph_masks.json
+              artifact with hashes and graph statistics recomputed from
+              its edge list. Stubborn: fixed agents keep pairing, only
+              responsive endpoints of accepted F-R pairs move (touch/
+              reach logs verified; NO isolated condition exists), and
+              the responsive mean must replay the nested blend on every
+              one-sided-move-free round. Verified: exact
               config surface + tag grammar, exactly round(0.2*n) frozen
               agents (145 of 723), the stored mask reconstructing
               bit-identically from (innate, mode, frac, seed) with a
@@ -746,10 +756,6 @@ def check_run(run_dir):
                      "feedback_mode": "none", "ai_gate_mode": "threshold",
                      "base_model": "mistralai/Mistral-7B-Instruct-v0.3",
                      "innate_clamp_frac": 0.2})
-        if m_es is None or want_es != 0.0:
-            errs.append(f"CONFIG clamp tag must carry the _es0_ token "
-                        f"(got {name!r}) -- the clamp is no-peer only for "
-                        f"now (no reset-after-peer approximation exists)")
         CLAMP_ARM_WANT = {
             "b0": {"training_style": "sft", "kl_beta": 0.0, "use_lora": 1,
                    "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
@@ -761,14 +767,56 @@ def check_run(run_dir):
                     "icl_ctx_source": "live", "icl_snapshot_round": -1},
         }
         CLAMP_MODE_OF_TOK = {"strat": "stratified_random",
-                             "bottom": "bottom"}
-        m_arm = re.search(r"_(b0|dyn)_(strat|bottom)_ea", name)
+                             "bottom": "bottom",
+                             "gclump": "graph_clumped",
+                             "gscat": "graph_scattered"}
+        # peer grammar (2026-08-17): an optional _stub_ token after the
+        # cohort selects the one-sided STUBBORN operator (fixed agents
+        # keep pairing; only responsive endpoints move). There is
+        # deliberately NO isolated condition. Rules by cohort:
+        #   strat/bottom + _stub_    -> es must be NONZERO
+        #   strat/bottom tokenless   -> the no-peer wave (es=0, no key)
+        #   gclump/gscat             -> the GRAPH wave: _stub_ token
+        #                               MANDATORY, es may be 0 (in-wave
+        #                               baselines; the sweep is inert)
+        m_arm = re.search(
+            r"_(b0|dyn)_(strat|bottom|gclump|gscat)(?:_(stub))?_ea",
+            name)
         if m_arm is None:
             errs.append(f"CONFIG clamp tag needs an _<b0|dyn>_<strat|"
-                        f"bottom>_ token pair before _ea ({name!r})")
+                        f"bottom|gclump|gscat>[_stub]_ token run before "
+                        f"_ea ({name!r})")
         else:
             want.update(CLAMP_ARM_WANT[m_arm.group(1)])
-            want["innate_clamp_mode"] = CLAMP_MODE_OF_TOK[m_arm.group(2)]
+            _cl_tok = m_arm.group(2)
+            want["innate_clamp_mode"] = CLAMP_MODE_OF_TOK[_cl_tok]
+            _is_graph_mask = _cl_tok in ("gclump", "gscat")
+            if m_arm.group(3):
+                want["innate_clamp_peer_mode"] = "stubborn"
+                if not _is_graph_mask and \
+                        (m_es is None or want_es <= 0.0):
+                    errs.append(f"CONFIG peer-clamp tag must carry a "
+                                f"NONZERO _es token ({name!r}) -- the "
+                                f"peer operator is meaningless at es=0")
+                if _is_graph_mask and m_es is None:
+                    errs.append(f"CONFIG graph-mask clamp tag must "
+                                f"carry an _es token ({name!r})")
+            else:
+                if _is_graph_mask:
+                    errs.append(f"CONFIG graph-mask clamp tags must "
+                                f"carry the _stub_ token ({name!r}) -- "
+                                f"the graph wave always declares the "
+                                f"stubborn operator")
+                if "innate_clamp_peer_mode" in cfg:
+                    errs.append(f"CONFIG innate_clamp_peer_mode="
+                                f"{cfg.get('innate_clamp_peer_mode')!r} "
+                                f"recorded on a tokenless (no-peer) "
+                                f"clamp tag {name!r}")
+                if m_es is None or want_es != 0.0:
+                    errs.append(f"CONFIG clamp tag without a peer token "
+                                f"must carry the _es0_ token (got "
+                                f"{name!r}) -- no reset-after-peer "
+                                f"approximation exists")
         want["n_rounds"] = 3 if is_clamp_smk else 30
         if "_eaopen_" in name:
             errs.append(f"CONFIG clamp: all_open is not part of this "
@@ -2088,17 +2136,85 @@ def check_run(run_dir):
                             f"does not match the stored mask "
                             f"({want_hash[:16]!r}...) -- mask corrupted "
                             f"or tampered")
-            try:
-                rec = gp.innate_clamp_mask(innate, cl_mode, cl_frac,
-                                           int(cl_seed))
-                if not torch.equal(rec, cl_mask):
-                    errs.append(f"CLAMP mask does not reconstruct from "
-                                f"(innate, {cl_mode!r}, {cl_frac:g}, "
-                                f"{cl_seed!r}) -- "
-                                f"{int((rec ^ cl_mask).sum())} agents "
-                                f"differ")
-            except (ValueError, TypeError) as e:
-                errs.append(f"CLAMP mask reconstruction impossible: {e}")
+            if cl_mode in ("graph_clumped", "graph_scattered"):
+                # GRAPH-PLACEMENT masks: reconstruct from the committed
+                # artifact and RECOMPUTE every graph statistic from the
+                # artifact's own edge list (cut, ff, exposure,
+                # conductance, largest fixed component) -- the artifact
+                # cannot self-certify a stat it did not earn.
+                _art_p = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "condor", "clamp_graph_masks.json")
+                if not os.path.exists(_art_p):
+                    errs.append("CLAMP clamp_graph_masks.json missing "
+                                "-- graph masks must be built before "
+                                "any job exists")
+                else:
+                    _art = json.load(open(_art_p))
+                    _am = _art["masks"].get(cl_mode) or {}
+                    if sorted(cl_mask.nonzero().flatten().tolist()) != \
+                            _am.get("ids"):
+                        errs.append(f"CLAMP {cl_mode} mask ids differ "
+                                    f"from the committed artifact")
+                    if d.get("innate_clamp_hash") != _am.get("hash"):
+                        errs.append(f"CLAMP {cl_mode} hash differs from "
+                                    f"the artifact's")
+                    if not all(_art.get("criteria", {}).values()):
+                        errs.append("CLAMP artifact acceptance criteria "
+                                    "not all true")
+                    _a_inn = torch.tensor(_art["innate"],
+                                          dtype=torch.float32)
+                    if innate.numel() != _a_inn.numel() or \
+                            float((innate - _a_inn).abs().max()) > 1e-6:
+                        errs.append("CLAMP dataset innate differs from "
+                                    "the mask artifact's population")
+                    if _am.get("ids"):
+                        adj_cl = torch.zeros(n_cl, n_cl,
+                                             dtype=torch.bool)
+                        for _e1, _e2 in _art["edges"]:
+                            adj_cl[_e1][_e2] = True
+                            adj_cl[_e2][_e1] = True
+                        f_cl = cl_mask
+                        r_cl = ~f_cl
+                        cut_g = int(adj_cl[f_cl][:, r_cl].sum())
+                        ff_g = int(adj_cl[f_cl][:, f_cl].sum()) // 2
+                        exp_g = int((adj_cl[r_cl][:, f_cl].sum(1) > 0)
+                                    .sum())
+                        st_rec = _am.get("stats", {})
+                        if cut_g != st_rec.get("cut_edges") or \
+                                ff_g != st_rec.get("ff_edges") or \
+                                exp_g != st_rec.get(
+                                    "exposed_responsive"):
+                            errs.append(
+                                f"CLAMP {cl_mode} graph stats do not "
+                                f"recompute from the artifact edges "
+                                f"(cut {cut_g} vs "
+                                f"{st_rec.get('cut_edges')}, ff {ff_g} "
+                                f"vs {st_rec.get('ff_edges')}, exposed "
+                                f"{exp_g} vs "
+                                f"{st_rec.get('exposed_responsive')})")
+                        _q = _art.get("quotas")
+                        _strat_l = _art.get("stratum")
+                        if _q and _strat_l:
+                            _st_t = torch.tensor(_strat_l)
+                            cnt_g = [int((_st_t[cl_mask] == s).sum())
+                                     for s in range(len(_q))]
+                            if cnt_g != _q:
+                                errs.append(f"CLAMP {cl_mode} stratum "
+                                            f"counts != shared quotas")
+            else:
+                try:
+                    rec = gp.innate_clamp_mask(innate, cl_mode, cl_frac,
+                                               int(cl_seed))
+                    if not torch.equal(rec, cl_mask):
+                        errs.append(f"CLAMP mask does not reconstruct "
+                                    f"from (innate, {cl_mode!r}, "
+                                    f"{cl_frac:g}, {cl_seed!r}) -- "
+                                    f"{int((rec ^ cl_mask).sum())} "
+                                    f"agents differ")
+                except (ValueError, TypeError) as e:
+                    errs.append(f"CLAMP mask reconstruction impossible: "
+                                f"{e}")
             # mode-specific cohort properties, checked independently of
             # the reconstruction (a helper bug cannot self-certify)
             order_cl = sorted(range(n_cl),
@@ -2150,14 +2266,18 @@ def check_run(run_dir):
                     errs.append(f"CLAMP frozen agents drift off innate in "
                                 f"twin_raw (max |diff| "
                                 f"{float((tw_fro - innate[cl_mask]).abs().max()):.2e})")
-                # responsive twin: no peers, so lam*v+(1-lam)*v holds it
-                # on innate to <= 1 float32 ulp (the reach tolerance)
-                dtw_cl = float((tw_cl[:, ~cl_mask]
-                                - innate[~cl_mask]).abs().max())
-                if dtw_cl > 6.0e-8:
-                    errs.append(f"CLAMP responsive twin drifts off innate "
-                                f"(max |diff| {dtw_cl:.2e} > 1 float32 "
-                                f"ulp; no-peer twin must stay innate)")
+                if not cfg.get("innate_clamp_peer_mode"):
+                    # responsive twin: no peers, so lam*v+(1-lam)*v holds
+                    # it on innate to <= 1 float32 ulp (the reach
+                    # tolerance). With a live clamp-peer operator the
+                    # responsive twin MOVES -- never compared to innate.
+                    dtw_cl = float((tw_cl[:, ~cl_mask]
+                                    - innate[~cl_mask]).abs().max())
+                    if dtw_cl > 6.0e-8:
+                        errs.append(f"CLAMP responsive twin drifts off "
+                                    f"innate (max |diff| {dtw_cl:.2e} > "
+                                    f"1 float32 ulp; no-peer twin must "
+                                    f"stay innate)")
             # responsive agents must still update normally: if any
             # responsive agent was ever gated onto a served value
             # meaningfully away from its state, the responsive block
@@ -2204,6 +2324,98 @@ def check_run(run_dir):
                     if not os.path.exists(os.path.join(
                             run_dir, "icl_ctx_log.json.gz")):
                         errs.append("CLAMP icl_ctx_log.json.gz missing")
+            # -- clamp-PEER invariants (mistral_innate_clamp_peer_s0) ----
+            cl_peer = cfg.get("innate_clamp_peer_mode")
+            if cl_peer:
+                if d.get("innate_clamp_peer_mode") != cl_peer:
+                    errs.append(f"CLAMP trajectory innate_clamp_peer_mode"
+                                f"={d.get('innate_clamp_peer_mode')!r} "
+                                f"!= config {cl_peer!r}")
+                need_k = ("clamp_fr_sampled", "clamp_fr_accepted",
+                          "clamp_fr_reach", "clamp_gap_mean",
+                          "clamp_gap_w1", "clamp_resp_std_ratio",
+                          "clamp_resp_disp")
+                bad_k = [r["round"] for r in traj
+                         if any(k not in r for k in need_k)]
+                if bad_k:
+                    errs.append(f"CLAMP peer telemetry keys missing in "
+                                f"rounds {bad_k[:5]}")
+                tr_cl = d.get("clamp_fr_touch_raw")
+                if tr_cl is None or tr_cl.numel() == 0:
+                    errs.append("CLAMP clamp_fr_touch_raw missing/empty "
+                                "(mandatory under a peer mode)")
+                elif tuple(tr_cl.shape) != tuple(op_raw.shape):
+                    errs.append(f"CLAMP clamp_fr_touch_raw shape "
+                                f"{tuple(tr_cl.shape)} != op_raw "
+                                f"{tuple(op_raw.shape)}")
+                else:
+                    tr_cl = tr_cl.bool()
+                    if bool((tr_cl & cl_mask.unsqueeze(0)).any()):
+                        errs.append("CLAMP touch marks a FIXED agent -- "
+                                    "only responsive endpoints of "
+                                    "accepted F-R pairs may be touched")
+                    # recorded cumulative reach must equal the touch log
+                    cum = torch.zeros_like(cl_mask)
+                    for tt, r in enumerate(traj):
+                        cum = cum | tr_cl[tt]
+                        want_rc = float(cum[~cl_mask].float().mean())
+                        got_rc = r.get("clamp_fr_reach")
+                        if got_rc is None or abs(got_rc - want_rc) > 1e-6:
+                            errs.append(f"CLAMP round {tt}: "
+                                        f"clamp_fr_reach={got_rc!r} != "
+                                        f"touch-log cumulative "
+                                        f"{want_rc:.6f}")
+                            break
+                fr_s = [int(r.get("clamp_fr_sampled") or 0) for r in traj]
+                fr_a = [int(r.get("clamp_fr_accepted") or 0)
+                        for r in traj]
+                if any(a > s for s, a in zip(fr_s, fr_a)):
+                    errs.append("CLAMP fr_accepted exceeds fr_sampled in "
+                                "some round")
+                if sum(fr_s) == 0:
+                    # accidental isolated-peer behavior: with hundreds of
+                    # selections per round and a 20% fixed cohort, zero
+                    # sampled F-pairs means fixed agents were EXCLUDED
+                    # from pairing -- there is no isolated condition in
+                    # this design
+                    errs.append("CLAMP stubborn but no fixed agent was "
+                                "ever sampled as a pair endpoint -- "
+                                "fixed agents must participate in "
+                                "pairing (no isolated condition exists)")
+                # clamp-aware conservation replay: the RESPONSIVE mean is
+                # conserved by the sweep in every round WITHOUT an
+                # accepted one-sided F-R move -- op[resp] must then equal
+                # the nested blend's z[resp] in mean.
+                w_cl = float(cfg.get("w_plat", 1.0))
+                lam_cl = float(cfg.get("innate_lambda", 0.0))
+                for tt in range(op_raw.shape[0]):
+                    if fr_a[tt] > 0:
+                        continue
+                    served_t = pred_raw[tt].clamp(0.0, 1.0)
+                    x0_t = innate if tt == 0 else op_raw[tt - 1]
+                    h_t = lam_cl * innate + (1.0 - lam_cl) * x0_t
+                    g_t = gp.ai_gate(served_t, x0_t, eps_ai, gate_mode)
+                    z_t = torch.where(g_t, (1.0 - w_cl) * h_t
+                                      + w_cl * served_t, h_t)
+                    dm = abs(float(op_raw[tt][~cl_mask].mean())
+                             - float(z_t[~cl_mask].mean()))
+                    if dm > 1e-4:
+                        errs.append(f"CLAMP round {tt}: responsive mean "
+                                    f"off the nested blend by {dm:.2e} "
+                                    f"with no one-sided F-R move -- "
+                                    f"peer-mode operator not applied as "
+                                    f"declared ({cl_peer})")
+                        break
+                # recorded structure telemetry must match the artifacts
+                for tt, r in enumerate(traj):
+                    gm = r.get("clamp_gap_mean")
+                    want_gm = float(op_raw[tt][~cl_mask].mean()
+                                    - op_raw[tt][cl_mask].mean())
+                    if gm is None or abs(gm - want_gm) > 1e-5:
+                        errs.append(f"CLAMP round {tt}: clamp_gap_mean="
+                                    f"{gm!r} != recomputed "
+                                    f"{want_gm:.6f}")
+                        break
         if cfg.get("training_style") == "frozen":
             ppls_cl = [r["perplexity"] for r in traj if "perplexity" in r]
             if ppls_cl and len(set(ppls_cl)) != 1:
@@ -2338,7 +2550,11 @@ def check_run(run_dir):
                 gate = gp.ai_gate(served, x0, eps_ai, gate_mode)
                 z = torch.where(gate, (1.0 - w) * h + w * served, h)
                 dmean = abs(float(op_raw[t].mean()) - float(z.mean()))
-                if dmean > 1e-4:
+                # clamp-peer runs break TOTAL-mean conservation by design
+                # (fixed rows re-pinned to innate off their blend; stubborn
+                # F-R moves are one-sided) -- section 1j runs the
+                # clamp-aware conservation checks instead
+                if dmean > 1e-4 and not is_clamp:
                     errs.append(f"SOCIAL round {t}: mean(op_raw) differs from "
                                 f"mean(z) by {dmean:.2e} -- peer sweep is "
                                 f"mean-conserving, so the nested update did NOT "
@@ -2362,12 +2578,13 @@ def check_run(run_dir):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
         if is_icl or is_iclf or is_ctf or \
-                ((is_peer2 or is_gate2d or is_ctxgrid)
+                ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),
-            # the peer2 wave's frozen arms (k0/fz0/dyn) and the gate2d
-            # wave's dyn arm; gate2d b0 (sft) falls through to FRESH
+            # the peer2 wave's frozen arms (k0/fz0/dyn), the gate2d
+            # wave's dyn arm and the clamp peer/graph waves' dyn arm;
+            # b0 (sft) falls through to FRESH
             return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):

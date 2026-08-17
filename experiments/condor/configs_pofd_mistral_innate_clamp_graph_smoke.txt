@@ -1,0 +1,4 @@
+pofdclampsmk_mistral7b_b0_gclump_stub_ea0p4_w0p5_l0p2_es0p4_s991, sft, 0, 991, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 3, graph_clumped
+pofdclampsmk_mistral7b_dyn_gclump_stub_ea0p4_w0p5_l0p2_es0p4_s991, frozen, 0, 991, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.5, loop, 0.0, 0.4, threshold, 8, -1, 0, 0, 0, 1, 3, graph_clumped
+pofdclampsmk_mistral7b_b0_gscat_stub_ea0p4_w0p5_l0p2_es0p4_s991, sft, 0, 991, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.5, loop, 0.0, 0.4, threshold, 0, -1, 1, 1, 16, 0, 3, graph_scattered
+pofdclampsmk_mistral7b_dyn_gscat_stub_ea0p4_w0p5_l0p2_es0p4_s991, frozen, 0, 991, 1, replace, 1.0, fixed, ab, 0.4, 0.0, 0.5, loop, 0.0, 0.4, threshold, 8, -1, 0, 0, 0, 1, 3, graph_scattered

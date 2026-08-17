@@ -394,7 +394,7 @@ def test_peer_dose_tag_rejected(tmp_path):
         tmp_path, "b0", "strat", 0.4,
         tag="pofdclamp_mistral7b_b0_strat_ea0p4_w0p5_l0p2_es0p2_s0",
         cfg_mut=lambda c: c.update(eps=0.2))
-    assert_verdict(rd, False, "no-peer only")
+    assert_verdict(rd, False, "reset-after-peer")
 
 
 def test_all_open_gate_rejected(tmp_path):
@@ -456,9 +456,10 @@ def test_runner_guard_source():
     # avoid importing transformers in this suite
     src = open(os.path.join(PIPE, "run_pokec_gated_lm.py")).read()
     assert "INNATE_CLAMP_MODE" in src
-    assert "no-peer only for now" in src
+    assert "reset-after-peer approximation" in src
     guard = src[src.index("innate_clamp_mode = "):]
-    assert guard.index("no-peer only") < guard.index("out_dir.mkdir"), \
+    assert guard.index("reset-after-peer") < guard.index(
+        "out_dir.mkdir"), \
         "clamp/peer guard must fire before any output is created"
     # every clamp write is gated on mode != 'off' (byte-identity of
     # off-mode runs): config keys and trajectory keys both conditional

@@ -931,26 +931,49 @@ def main() -> int:
     # "off" is byte-identical legacy behavior: no config keys, no
     # trajectory keys, no RNG touched, no tensor writes.
     innate_clamp_mode = os.environ.get("INNATE_CLAMP_MODE", "off")
-    if innate_clamp_mode not in ("off", "stratified_random", "bottom"):
+    if innate_clamp_mode not in ("off", "stratified_random", "bottom",
+                                 "graph_clumped", "graph_scattered"):
         raise ValueError(f"INNATE_CLAMP_MODE must be 'off', "
-                         f"'stratified_random' or 'bottom'; got "
+                         f"'stratified_random', 'bottom', "
+                         f"'graph_clumped' or 'graph_scattered'; got "
                          f"{innate_clamp_mode!r}")
     innate_clamp_frac = _env_float("INNATE_CLAMP_FRAC", 0.0)
     innate_clamp_seed = _env_int("INNATE_CLAMP_SEED", 0)
+    # INNATE_CLAMP_PEER_MODE (2026-08-17, mistral_innate_clamp_peer_s0
+    # wave): how the Deffuant sweep treats the frozen cohort.
+    #   unset      -> legacy: the clamp stays no-peer only (eps must be 0)
+    #   stubborn   -> fixed agents participate fully in pairing; an
+    #                 accepted fixed-responsive pair moves ONLY the
+    #                 responsive endpoint to the midpoint, and fixed
+    #                 agents are never moved even transiently
+    # There is deliberately NO isolated condition (design decision
+    # 2026-08-17): in both cohorts the fixed agents keep influencing
+    # responsive neighbors. The IDENTICAL operator runs on the matched
+    # twin with the mirrored generator.
+    innate_clamp_peer_mode = os.environ.get("INNATE_CLAMP_PEER_MODE", "")
+    if innate_clamp_peer_mode not in ("", "stubborn"):
+        raise ValueError(f"INNATE_CLAMP_PEER_MODE must be unset or "
+                         f"'stubborn'; got {innate_clamp_peer_mode!r} "
+                         f"(there is no isolated condition)")
+    if innate_clamp_peer_mode and innate_clamp_mode == "off":
+        raise ValueError("INNATE_CLAMP_PEER_MODE requires the clamp "
+                         "(INNATE_CLAMP_MODE != 'off') -- there is no "
+                         "fixed cohort to route peers around otherwise")
     if innate_clamp_mode != "off":
         if pop_model != "ab" or run_mode != "loop":
             raise ValueError("INNATE_CLAMP_MODE requires POP_MODEL=ab and "
                              "RUN_MODE=loop (the clamp is defined on the "
                              "AB closed loop only)")
-        if eps != 0.0:
-            # HARD-FAIL by design: with the peer step live, resetting
-            # frozen agents after the sweep would be an UNSAFE
-            # reset-after-peer approximation (their moved values would
-            # already have pulled partners). The one-sided stubborn-peer
-            # operator is a separate, later change.
-            raise ValueError(f"INNATE_CLAMP_MODE={innate_clamp_mode!r} is "
-                             f"no-peer only for now: EPS_SOCIAL must be 0 "
-                             f"(got {eps!r})")
+        if eps != 0.0 and not innate_clamp_peer_mode:
+            # HARD-FAIL by design: with the peer step live and NO peer
+            # mode, resetting frozen agents after the sweep would be an
+            # UNSAFE reset-after-peer approximation (their moved values
+            # would already have pulled partners). The one-sided
+            # stubborn operator above is the sanctioned peer path.
+            raise ValueError(f"INNATE_CLAMP_MODE={innate_clamp_mode!r} "
+                             f"with EPS_SOCIAL={eps!r} needs an explicit "
+                             f"INNATE_CLAMP_PEER_MODE=stubborn -- no "
+                             f"reset-after-peer approximation")
         if not 0.0 < innate_clamp_frac < 1.0:
             raise ValueError(f"INNATE_CLAMP_FRAC={innate_clamp_frac!r} "
                              f"must lie strictly in (0, 1) when the clamp "
@@ -1048,6 +1071,10 @@ def main() -> int:
             "innate_clamp_frac": innate_clamp_frac,
             "innate_clamp_seed": innate_clamp_seed,
         })
+        if innate_clamp_peer_mode:
+            # recorded ONLY when set -- the completed no-peer clamp
+            # wave's configs stay byte-identical
+            config["innate_clamp_peer_mode"] = innate_clamp_peer_mode
     if save_raw_gen:
         # recorded ONLY when on (absent == off, the audit convention)
         config["save_raw_gen"] = True
@@ -1209,11 +1236,43 @@ def main() -> int:
     # stay bit-identical to a run built without this block.
     clamp_mask = None
     clamp_hash = None
-    if innate_clamp_mode != "off":
+    if innate_clamp_mode in ("graph_clumped", "graph_scattered"):
+        # GRAPH-PLACEMENT masks (2026-08-17, mistral_innate_clamp_graph
+        # wave): built deterministically from the kNN graph + innate by
+        # build_clamp_graph_masks.py BEFORE any GPU job, committed as
+        # clamp_graph_masks.json. Loaded (never recomputed) here, and
+        # verified against the live dataset before a single round runs.
+        _art_path = (Path(__file__).resolve().parents[3]
+                     / "experiments" / "condor"
+                     / "clamp_graph_masks.json")
+        _art = json.loads(_art_path.read_text())
+        if _art["n"] != n:
+            raise ValueError(f"clamp_graph_masks.json built for n="
+                             f"{_art['n']}, dataset has {n} agents")
+        _art_innate = torch.tensor(_art["innate"], dtype=torch.float32)
+        _d_inn = float((innate - _art_innate).abs().max())
+        if _d_inn > 1e-6:
+            raise ValueError(f"dataset innate differs from the mask "
+                             f"artifact's by {_d_inn:.2e} -- masks were "
+                             f"built for a different population")
+        if int(round(innate_clamp_frac * n)) != _art["n_fixed"]:
+            raise ValueError(f"INNATE_CLAMP_FRAC={innate_clamp_frac!r} "
+                             f"disagrees with the artifact cohort size "
+                             f"{_art['n_fixed']}")
+        clamp_mask = torch.zeros(n, dtype=torch.bool)
+        clamp_mask[torch.tensor(_art["masks"][innate_clamp_mode]["ids"],
+                                dtype=torch.long)] = True
+        clamp_hash = gp.innate_clamp_hash(clamp_mask)
+        if clamp_hash != _art["masks"][innate_clamp_mode]["hash"]:
+            raise ValueError(f"reconstructed {innate_clamp_mode} mask "
+                             f"hash differs from the artifact's -- "
+                             f"artifact corrupted")
+    elif innate_clamp_mode != "off":
         clamp_mask = gp.innate_clamp_mask(innate, innate_clamp_mode,
                                           innate_clamp_frac,
                                           innate_clamp_seed)
         clamp_hash = gp.innate_clamp_hash(clamp_mask)
+    if clamp_mask is not None:
         print(f"[run] innate clamp: mode={innate_clamp_mode} "
               f"frac={innate_clamp_frac:g} seed={innate_clamp_seed} -> "
               f"{int(clamp_mask.sum())}/{n} agents frozen "
@@ -1353,6 +1412,10 @@ def main() -> int:
             ab_innate = innate.to(ab_device)
             clamp_mask_dev = (clamp_mask.to(ab_device)
                               if clamp_mask is not None else None)
+            clamp_touch_cum = (torch.zeros(n, dtype=torch.bool,
+                                           device=ab_device)
+                               if (clamp_mask_dev is not None
+                                   and innate_clamp_peer_mode) else None)
             ab_f = torch.zeros(n, device=ab_device)   # provenance tag: model-share of opinion
             # own generator: the HF trainer resets the global seed every round,
             # which froze the sweep's pair pattern across rounds
@@ -1474,6 +1537,8 @@ def main() -> int:
                       # (floats; the prompt renders them as {v:.2f})
     raw_gen_rows = []   # SAVE_RAW_GEN=1: per round the raw decoded strings,
                         # the parsed served values and parse_fail_frac
+    clamp_touch_raw = []  # clamp peer mode: [n] bool per round -- responsive
+                          # agents in an ACCEPTED fixed-responsive pair
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
     icl_ctx_gg = None   # realized displayed-context gender gap, computed once
@@ -1918,12 +1983,34 @@ def main() -> int:
                 contacts.append(float(gate_nf.float().mean()))
                 gate_raw.append(gate_nf.detach().cpu().bool().clone())
 
+            if clamp_mask_dev is not None and innate_clamp_peer_mode:
+                # pin BEFORE the peer step: a partner of a fixed agent
+                # must see its innate opinion, never its transient
+                # platform blend (the fixed cohort transmits no AI
+                # influence). The post-round pin below still runs.
+                ab_x[clamp_mask_dev] = ab_innate[clamp_mask_dev]
+            clamp_fr_sampled_rd = 0
+            clamp_fr_accepted_rd = 0
+            clamp_touch_rd = (torch.zeros(n, dtype=torch.bool,
+                                          device=ab_x.device)
+                              if (clamp_mask_dev is not None
+                                  and innate_clamp_peer_mode) else None)
             for sw in range(ab_sweeps):
                 # social dynamics ONLY -- the platform/innate mixture above is
                 # not repeated per sweep. POP_ORDER is inert under this version:
                 # peers always run last (it is retained in the config for the
                 # legacy runs it described).
-                accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias, gen=ab_gen)
+                if clamp_mask_dev is not None and innate_clamp_peer_mode:
+                    _acc, _cst = gp.ab_sweep_stubborn(
+                        ab_x, ab_adj, eps, gamma_bias, gen=ab_gen,
+                        fixed=clamp_mask_dev)
+                    accepted += _acc
+                    clamp_fr_sampled_rd += _cst["fr_sampled"]
+                    clamp_fr_accepted_rd += _cst["fr_accepted"]
+                    clamp_touch_rd |= _cst["touched"]
+                else:
+                    accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias,
+                                            gen=ab_gen)
                 if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
                     relax_trace.append(round(float(ab_x.std()), 4))
             if clamp_mask_dev is not None:
@@ -1958,8 +2045,20 @@ def main() -> int:
                     ab_x_cf = ab_innate.clone()
                 ab_x_cf = (innate_lambda * ab_innate
                            + (1.0 - innate_lambda) * ab_x_cf)
+                if clamp_mask_dev is not None and innate_clamp_peer_mode:
+                    # same pre-sweep pin as the deployed population
+                    ab_x_cf[clamp_mask_dev] = ab_innate[clamp_mask_dev]
                 for sw in range(ab_sweeps):
-                    gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias, gen=ab_gen_cf)
+                    if clamp_mask_dev is not None and innate_clamp_peer_mode:
+                        # the IDENTICAL stubborn operator on the twin --
+                        # same mask, same operator, mirrored generator
+                        # (ab_gen_cf shares ab_gen's seed construction)
+                        gp.ab_sweep_stubborn(
+                            ab_x_cf, ab_adj, eps, gamma_bias,
+                            gen=ab_gen_cf, fixed=clamp_mask_dev)
+                    else:
+                        gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias,
+                                    gen=ab_gen_cf)
                 if clamp_mask_dev is not None:
                     # the twin carries the SAME frozen cohort bit-exactly
                     ab_x_cf[clamp_mask_dev] = ab_innate[clamp_mask_dev]
@@ -2052,6 +2151,39 @@ def main() -> int:
                 row["op_twin_l1"] = float((_op - _tw).abs().mean())
                 row["op_twin_w1"] = float((torch.sort(_op).values
                                            - torch.sort(_tw).values).abs().mean())
+            if clamp_mask is not None and innate_clamp_peer_mode:
+                # clamp-peer telemetry (2026-08-17): fixed-responsive
+                # pair sampling/acceptance, cumulative responsive reach
+                # by fixed neighbors, and the responsive-vs-twin /
+                # responsive-vs-fixed structure -- all on the RESPONSIVE
+                # subset (the fixed cohort is innate by construction)
+                clamp_touch_cum |= clamp_touch_rd
+                clamp_touch_raw.append(
+                    clamp_touch_rd.detach().cpu().bool().clone())
+                _resp_m = ~clamp_mask
+                _opc = op.detach().cpu().float()
+                row["clamp_fr_sampled"] = int(clamp_fr_sampled_rd)
+                row["clamp_fr_accepted"] = int(clamp_fr_accepted_rd)
+                row["clamp_fr_reach"] = float(
+                    clamp_touch_cum.detach().cpu()[_resp_m]
+                    .float().mean())
+                if ab_x_cf is not None:
+                    _twc = ab_x_cf.detach().cpu().float()
+                    _s_twr = float(_twc[_resp_m].std())
+                    row["clamp_resp_std_ratio"] = (
+                        float(_opc[_resp_m].std()) / _s_twr
+                        if _s_twr > 0 else None)
+                    row["clamp_resp_disp"] = float(
+                        (_opc[_resp_m] - _twc[_resp_m]).abs().mean())
+                row["clamp_gap_mean"] = float(
+                    _opc[_resp_m].mean() - _opc[clamp_mask].mean())
+                row["clamp_gap_w1"] = gp.quantile_w1(
+                    _opc[_resp_m], _opc[clamp_mask])
+                _g0m = float(innate[_resp_m].mean()
+                             - innate[clamp_mask].mean())
+                row["clamp_gap_closure"] = (
+                    1.0 - row["clamp_gap_mean"] / _g0m
+                    if abs(_g0m) > 1e-9 else None)
         row.update(pred_block)
         if log_gender_gaps:
             # favored-minus-others group means; _true = real gender, _disp =
@@ -2212,6 +2344,11 @@ def main() -> int:
             "innate_clamp_seed": innate_clamp_seed,
             "innate_clamp_hash": clamp_hash,
         })
+        if innate_clamp_peer_mode:
+            traj_payload["innate_clamp_peer_mode"] = innate_clamp_peer_mode
+            traj_payload["clamp_fr_touch_raw"] = (
+                torch.stack(clamp_touch_raw) if clamp_touch_raw
+                else torch.empty(0))
     torch.save(traj_payload, out_dir / "trajectory.pt")
     print(f"[run] outputs in {out_dir}", flush=True)
     if wandb is not None:

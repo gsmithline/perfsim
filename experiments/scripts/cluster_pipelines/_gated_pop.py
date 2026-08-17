@@ -65,6 +65,83 @@ def ab_sweep(x, adj, eps, gamma, gen=None):
     return accepted
 
 
+def ab_sweep_stubborn(x, adj, eps, gamma, gen, fixed):
+    """One-sided STUBBORN Deffuant sweep (INNATE_CLAMP_PEER_MODE=
+    stubborn, 2026-08-17). Mutates x, returns (accepted, stats).
+
+    Fixed agents participate fully in pair selection (initiators AND
+    partners) but are NEVER moved by any path through this function --
+    not even transiently (no move-then-reset; a later pair in the same
+    sweep always sees the fixed agent at its standing value). Accepted
+    R-R pairs take the ordinary midpoint; an accepted F-R pair moves
+    ONLY the responsive endpoint to the midpoint (the fixed endpoint
+    stays bit-exact); an accepted F-F pair moves no one.
+
+    The selection machinery is a verbatim copy of ab_sweep (same draws,
+    same Luby resolution, same generator consumption) -- only the pair
+    UPDATE branches on the mask, so a no-fixed-agent call reproduces
+    the legacy sweep bit-for-bit. Legacy ab_sweep above is untouched.
+
+    stats: fr_sampled / fr_accepted count kept pairs with EXACTLY one
+    fixed endpoint (before / after the confidence test); touched is a
+    [n] bool of responsive agents that sat in an ACCEPTED F-R pair.
+    """
+    n = x.shape[0]
+    device = x.device
+    stats = {"fr_sampled": 0, "fr_accepted": 0,
+             "touched": torch.zeros(n, dtype=torch.bool, device=device)}
+    bsz = min(AB_BATCH, n)
+    done, accepted = 0, 0
+    while done < n:
+        ini = torch.randperm(n, device=device, generator=gen)[:bsz]
+        ar = torch.arange(ini.shape[0], device=device)
+        d = (x[ini, None] - x[None, :]).abs().clamp_min(AB_MIN_DIST)
+        wts = d.pow(-gamma) * adj[ini]
+        wts[ar, ini] = 0.0
+        ok_row = wts.sum(1) > 0
+        if not bool(ok_row.any()):
+            break
+        ini, wts = ini[ok_row], wts[ok_row]
+        ar = torch.arange(ini.shape[0], device=device)
+        par = torch.multinomial(wts, 1, generator=gen).squeeze(1)
+        pri = torch.rand(ini.shape[0], device=device, generator=gen)
+        inc = torch.zeros(ini.shape[0], n, dtype=torch.bool, device=device)
+        inc[ar, ini] = True
+        inc[ar, par] = True
+        best = torch.where(inc, pri[:, None],
+                           torch.tensor(2.0, device=device)).amin(0)
+        keep = (pri <= best[ini]) & (pri <= best[par])
+        idx = keep.nonzero().squeeze(1)[: n - done]
+        i1, i2 = ini[idx], par[idx]
+        one_fixed = fixed[i1] ^ fixed[i2]
+        ok = (x[i1] - x[i2]).abs() < eps
+        a1, a2 = i1[ok], i2[ok]
+        f1, f2 = fixed[a1], fixed[a2]
+        mid = 0.5 * (x[a1] + x[a2])
+        x[a1[~f1]] = mid[~f1]
+        x[a2[~f2]] = mid[~f2]
+        fr_ok = ok & one_fixed
+        stats["fr_sampled"] += int(one_fixed.sum())
+        stats["fr_accepted"] += int(fr_ok.sum())
+        fr_idx = fr_ok.nonzero().squeeze(1)
+        if fr_idx.numel():
+            r_end = torch.where(fixed[i1[fr_idx]], i2[fr_idx],
+                                i1[fr_idx])
+            stats["touched"][r_end] = True
+        done += len(idx)
+        accepted += int(ok.sum())
+    return accepted, stats
+
+
+def quantile_w1(a, b, grid=512):
+    """1-Wasserstein between samples of possibly different sizes via
+    quantile interpolation on a shared probability grid (the responsive
+    and fixed cohorts differ in size)."""
+    qs = torch.linspace(0.0, 1.0, grid)
+    return float((torch.quantile(a.float().cpu(), qs)
+                  - torch.quantile(b.float().cpu(), qs)).abs().mean())
+
+
 def gated_blend(x, served, w_agent, eps):
     """x_i <- (1-w_i) x_i + w_i m_i where |m_i - x_i| < eps. Returns (x, contact).
 
