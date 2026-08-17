@@ -1328,6 +1328,19 @@ def main() -> int:
         resp_marker = "<start_of_turn>model\n"
     elif "mistral" in bm or "ministral" in bm:
         resp_marker = "[/INST]"
+    elif "qwen3" in bm:
+        # Qwen3's non-thinking assistant prefix ends with an EMPTY think
+        # block, so on the old-TRL collator path the mask must run
+        # THROUGH it -- anchoring at "<|im_start|>assistant\n" would
+        # leave the think tokens inside the completion loss. Trained
+        # styles therefore require thinking pinned off, so the
+        # completion is exactly the numeric target.
+        if training_style in ("sft", "sft_kl", "dpo") and \
+                _ct_kwargs.get("enable_thinking") is not False:
+            raise ValueError(
+                "Qwen3 training requires CHAT_THINKING=0: the masking "
+                "marker assumes the non-thinking assistant prefix")
+        resp_marker = "</think>\n\n"
     else:
         resp_marker = "<|im_start|>assistant\n"
     learner_kwargs = dict(

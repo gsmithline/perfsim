@@ -246,6 +246,22 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               agents seeing only their own innate repeated. NO
               expected scientific outcome is a validity condition.
 
+  FAM         pofdfam_ runs (Figure-2 family-prior scout 2026-08-17;
+              incl. pofdfamsmk_ 3-round b1 smokes): six checkpoints
+              (qwen7b, qwen3_8b thinking-off, olmo7b, olmo3_7b,
+              mistral7b, ministral8b) x arms b0 (ordinary SFT) / b0p5 +
+              b1 (forward-KL SFT) / k0 (frozen plain prompting) at the
+              wide-open numeric gate (EPS_AI=1 strict-< threshold,
+              never all_open) with a live peer step (es 0.05/0.2),
+              seed 0, canonical Action loop (W=0.5, lam=0.2, matched
+              twin, fresh LoRA on trained arms, SAVE_RAW_GEN=1).
+              Verified: exact per-slug base_model, qwen3_8b REQUIRES
+              chat_thinking=False (all others must lack the key), arm
+              training surface incl. kl_direction=forward on the KL
+              arms, es/seed/round tag surface, hardware provenance.
+              Reused cells keep their original tags and are gated
+              under their own families.
+
   ZSPRIOR     pofdzsprior_ runs (zero-shot prior screen 2026-08-17):
               one 1-round frozen probe per CANDIDATE checkpoint --
               qwen3_8b (Qwen/Qwen3-8B, chat_thinking=False REQUIRED),
@@ -428,6 +444,14 @@ def check_run(run_dir):
     # checkpoint's zero-shot prior, with every raw decoded response
     # persisted (SAVE_RAW_GEN=1 -> raw_gen_log.json.gz).
     is_zsprior = name.startswith("pofdzsprior")
+    # FIGURE-2 FAMILY-PRIOR SCOUT (2026-08-17, fig2_family_prior_scout):
+    # six checkpoints (Qwen2.5-7B / Qwen3-8B thinking-off / OLMo-2 /
+    # OLMo-3 / Mistral-7B / Ministral-8B) x arms b0/b0p5/b1/k0 at the
+    # wide-open numeric gate (EPS_AI=1 strict-< threshold) with a live
+    # peer step (es 0.05/0.2), seed 0, canonical Action loop. Covers
+    # pofdfamsmk_ (3-round b1 smokes) too.
+    is_fam = name.startswith("pofdfam")
+    is_fam_smk = name.startswith("pofdfamsmk")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -867,6 +891,92 @@ def check_run(run_dir):
             errs.append(f"CONFIG hardware metadata missing keys "
                         f"{hw4_missing}")
         elif not (hw4.get("hostname") and hw4.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_fam:
+        # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
+        # wide-open numeric gate with a live peer step. The checkpoint
+        # rides its own slug; the arm token maps to the training
+        # surface; Qwen3 MUST record chat_thinking=False and every
+        # other checkpoint must NOT carry the key.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none", "ai_gate_mode": "threshold",
+                     "eps_ai": 1.0, "train_cap": 723,
+                     "anchor_mode": "fixed",
+                     "population_update": "nested_ai_then_social_v1",
+                     "save_raw_gen": True})
+        FAM_BASE = {
+            "qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+            "qwen3_8b": "Qwen/Qwen3-8B",
+            "olmo7b": "allenai/OLMo-2-1124-7B-Instruct",
+            "olmo3_7b": "allenai/Olmo-3-7B-Instruct",
+            "mistral7b": "mistralai/Mistral-7B-Instruct-v0.3",
+            "ministral8b": "mistralai/Ministral-8B-Instruct-2410",
+        }
+        FAM_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0,
+                   "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                   "sft_epochs": 1, "sft_batch_size": 4,
+                   "fresh_each_round": True, "icl_k": 0, "icl_days": 0},
+            "b0p5": {"training_style": "sft_kl", "kl_beta": 0.5,
+                     "kl_direction": "forward", "use_lora": 1,
+                     "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                     "sft_batch_size": 4, "fresh_each_round": True,
+                     "icl_k": 0, "icl_days": 0},
+            "b1": {"training_style": "sft_kl", "kl_beta": 1.0,
+                   "kl_direction": "forward", "use_lora": 1,
+                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
+                   "sft_batch_size": 4, "fresh_each_round": True,
+                   "icl_k": 0, "icl_days": 0},
+            "k0": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False,
+                   "icl_k": 0, "icl_days": 0},
+        }
+        slug_f = next((s for s in FAM_BASE
+                       if name.startswith(f"pofdfam_{s}_")
+                       or name.startswith(f"pofdfamsmk_{s}_")), None)
+        if slug_f is None:
+            errs.append(f"CONFIG unknown fam checkpoint slug in {name!r}")
+        else:
+            want["base_model"] = FAM_BASE[slug_f]
+            if slug_f == "qwen3_8b":
+                want["chat_thinking"] = False
+            elif "chat_thinking" in cfg:
+                errs.append(f"CONFIG chat_thinking="
+                            f"{cfg.get('chat_thinking')!r} recorded for "
+                            f"{slug_f} -- only Qwen3 carries the "
+                            f"thinking directive")
+        m_arm_f = re.search(r"_(b0p5|b0|b1|k0)_ea1_", name)
+        if m_arm_f is None:
+            errs.append(f"CONFIG fam tag needs an "
+                        f"_<b0|b0p5|b1|k0>_ea1_ token run ({name!r}) "
+                        f"-- the scout runs ONLY the wide-open numeric "
+                        f"gate")
+        else:
+            want.update(FAM_ARM_WANT[m_arm_f.group(1)])
+            if is_fam_smk and m_arm_f.group(1) != "b1":
+                errs.append(f"CONFIG fam smokes are b1-only ({name!r})")
+        if m_es is None or want_es not in (0.05, 0.2):
+            errs.append(f"CONFIG fam tag needs an _es0p05_ or _es0p2_ "
+                        f"token ({name!r})")
+        want["n_rounds"] = 3 if is_fam_smk else 30
+        m_sd_f = re.search(r"_s(\d+)$", name)
+        if m_sd_f is None or int(m_sd_f.group(1)) != 0:
+            errs.append(f"CONFIG fam is a seed-0 wave; tag must end in "
+                        f"_s0 ({name!r})")
+        else:
+            want["seed"] = 0
+        hw_f = cfg.get("hardware") or {}
+        hw_f_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                    "cuda_version", "torch_version",
+                                    "transformers_version")
+                        if k not in hw_f]
+        if hw_f_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw_f_missing}")
+        elif not (hw_f.get("hostname") and hw_f.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_zsprior:
         # 1-round frozen zero-shot probe: nothing trains, nothing enters
@@ -2690,13 +2800,14 @@ def check_run(run_dir):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
         if is_icl or is_iclf or is_ctf or \
-                ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp)
+                ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp
+                  or is_fam)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),
             # the peer2 wave's frozen arms (k0/fz0/dyn), the gate2d
-            # wave's dyn arm and the clamp peer/graph waves' dyn arm;
-            # b0 (sft) falls through to FRESH
+            # wave's dyn arm, the clamp peer/graph waves' dyn arm and
+            # the fam scout's k0 arm; sft arms fall through to FRESH
             return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):

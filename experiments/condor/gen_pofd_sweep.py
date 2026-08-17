@@ -1005,6 +1005,10 @@ REACH_ARM_COLS = {
                ansk=16, gg=0),
     "b1": dict(style="sft_kl", beta="1", iclk=0, snap=-1, uselora=1,
                fresh=1, ansk=16, gg=0),
+    # b0p5 (fig2 family-prior scout, 2026-08-17): forward-KL SFT at the
+    # intermediate beta=0.5 dose; otherwise the exact b1 envelope
+    "b0p5": dict(style="sft_kl", beta="0.5", iclk=0, snap=-1, uselora=1,
+                 fresh=1, ansk=16, gg=0),
     "fz0": dict(style="frozen", beta="0", iclk=8, snap=0, uselora=0,
                 fresh=0, ansk=0, gg=1),
     "dyn": dict(style="frozen", beta="0", iclk=8, snap=-1, uselora=0,
@@ -2087,6 +2091,173 @@ periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180
 periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
 
 queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, cmode, icldays from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+# fig2_family_prior_scout[_smoke] (2026-08-17): the FIGURE-2 FAMILY-
+# PRIOR SCOUT -- six checkpoints (Qwen2.5-7B-Instruct, Qwen3-8B
+# thinking OFF, OLMo-2-1124-7B-Instruct, Olmo-3-7B-Instruct,
+# Mistral-7B-Instruct-v0.3, Ministral-8B-Instruct-2410) x arms
+# {b0 = ordinary SFT, b0p5 = forward-KL SFT beta=0.5, b1 = forward-KL
+# SFT beta=1, k0 = frozen plain prompting} x EPS_AI=1 (numeric
+# strict-< threshold, never all_open) x es {0.05, 0.2} x seed 0
+# = 48 CONCEPTUAL cells on the canonical Action environment (W=0.5,
+# lam=0.2, 30 rounds, nested AI-then-peer operator, matched twin,
+# greedy serving, fresh LoRA each round on trained arms,
+# SAVE_RAW_GEN=1). Reuse is by EXACT FIELD-LEVEL AUDIT
+# (audit_fig2_family_prior_reuse.py -> manifest_fig2_family_prior.json,
+# config fields + 30-round completeness + twin presence, never tag
+# similarity); only cells the manifest marks "new" queue here. ONE sub
+# serves all six checkpoints: BASE_MODEL / CHAT_THINKING / memory /
+# disk / PPL_BATCH ride the queue (cols 24-28); every job runs against
+# the offline lustre cache (PRE-CACHE Qwen/Qwen2.5-7B-Instruct there
+# before submitting -- the other five are already cached).
+# CHAT_THINKING=0 pins Qwen3's hybrid-reasoning template OFF; the
+# runner's qwen3 masking marker ("</think>\n\n") keeps completion-only
+# SFT masking correct after the non-thinking assistant prefix.
+# Smokes (3 x 3 rounds, seed 0, production configuration): b1 at
+# es0p2 for each NEW checkpoint (qwen3_8b / olmo3_7b / ministral8b).
+FAM_KEY = "fig2_family_prior_scout"
+FAM_SMOKE_KEY = "fig2_family_prior_smoke"
+FAM_MANIFEST_PATH = os.path.join(HERE, "manifest_fig2_family_prior.json")
+FAM_MODELS = {
+    "qwen7b": {"base_model": "Qwen/Qwen2.5-7B-Instruct",
+               "chatthink": "default", "mem": "128G", "disk": "40G",
+               "pplbatch": 64},
+    "qwen3_8b": {"base_model": "Qwen/Qwen3-8B",
+                 "chatthink": "0", "mem": "128G", "disk": "40G",
+                 "pplbatch": 64},
+    "olmo7b": {"base_model": "allenai/OLMo-2-1124-7B-Instruct",
+               "chatthink": "default", "mem": "160G", "disk": "60G",
+               "pplbatch": 16},
+    "olmo3_7b": {"base_model": "allenai/Olmo-3-7B-Instruct",
+                 "chatthink": "default", "mem": "160G", "disk": "60G",
+                 "pplbatch": 16},
+    "mistral7b": {"base_model": "mistralai/Mistral-7B-Instruct-v0.3",
+                  "chatthink": "default", "mem": "128G", "disk": "40G",
+                  "pplbatch": 64},
+    "ministral8b": {"base_model": "mistralai/Ministral-8B-Instruct-2410",
+                    "chatthink": "default", "mem": "128G", "disk": "40G",
+                    "pplbatch": 64},
+}
+FAM_ARMS = ["b0", "b0p5", "b1", "k0"]
+FAM_ESS = [0.05, 0.2]
+FAM_SMOKE_MODELS = ["qwen3_8b", "olmo3_7b", "ministral8b"]
+ROW_FAM = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, ab, "
+           "{es}, 0.0, 0.5, loop, 0.0, 1, threshold, {iclk}, {snap}, "
+           "{uselora}, {fresh}, {ansk}, {gg}, {nrounds}, {basemodel}, "
+           "{chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def fam_tag(model, arm, es, seed=0, prefix="pofdfam"):
+    return (f"{prefix}_{model}_{arm}_ea1_{w_tok()}"
+            f"_es{_num(es)}_s{seed}")
+
+
+def fam_row(model, arm, es, nrounds=30, prefix="pofdfam"):
+    a = REACH_ARM_COLS[arm]
+    m = FAM_MODELS[model]
+    return ROW_FAM.format(
+        tag=fam_tag(model, arm, es, 0, prefix),
+        style=a["style"], beta=a["beta"], seed=0, es=f"{es:g}",
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=nrounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def _fam_manifest():
+    with open(FAM_MANIFEST_PATH) as fh:
+        return json.load(fh)
+
+
+def fam_rows():
+    """Rows for the cells the field-level audit marks 'new'. The
+    manifest is the single source of truth; counts are asserted for
+    CONSISTENCY (48 conceptual, reused+new==48, full grid coverage),
+    never forced to a particular reuse split."""
+    mf = _fam_manifest()
+    cells = mf["cells"]
+    assert len(cells) == 48, len(cells)
+    keys = {(c["model"], c["arm"], c["eps_social"]) for c in cells}
+    assert keys == {(m, a, e) for m in FAM_MODELS for a in FAM_ARMS
+                    for e in FAM_ESS}, "manifest grid incomplete"
+    reused = [c for c in cells if c["status"] == "reused"]
+    new = [c for c in cells if c["status"] == "new"]
+    assert len(reused) + len(new) == 48
+    assert mf["counts"]["reused"] == len(reused)
+    assert mf["counts"]["new"] == len(new)
+    bad_val = [c["run_tag"] for c in reused
+               if c.get("validation") not in ("PASS", "SKIPPED")]
+    assert not bad_val, f"reused cells failing validation: {bad_val}"
+    return [fam_row(c["model"], c["arm"], c["eps_social"])
+            for c in new]
+
+
+def fam_smoke_rows():
+    return [fam_row(m, "b1", 0.2, nrounds=3, prefix="pofdfamsmk")
+            for m in FAM_SMOKE_MODELS]
+
+
+def fam_sub(kind):
+    """kind: 'main' | 'smoke'."""
+    key = {"main": FAM_KEY, "smoke": FAM_SMOKE_KEY}[kind]
+    n_jobs = {"main": len(fam_rows()),
+              "smoke": len(fam_smoke_rows())}[kind]
+    what = {"main": (f"{n_jobs} seed-0 production cells (30 rounds; the "
+                     f"48-cell 6-checkpoint x b0/b0p5/b1/k0 x ea1 x "
+                     f"es 0.05/0.2 grid minus the field-audited reuse)"),
+            "smoke": ("SMOKE (3 x 3 rounds, seed 0, production "
+                      "configuration; b1 es0p2 for qwen3_8b / "
+                      "olmo3_7b / ministral8b)")}[kind]
+    return FAM_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs, what=what)
+
+
+FAM_SUB_TEMPLATE = """\
+# HTCondor: FIGURE-2 FAMILY-PRIOR SCOUT -- {what}
+# GENERATED by gen_pofd_sweep.py from the FAM block. Never edit by
+# hand: rerun the script. {n_jobs} job(s).
+# Six checkpoints on the canonical Action environment: EPS_AI=1 under
+# the numeric strict-< threshold gate, es 0.05/0.2, W=0.5, lam=0.2,
+# gamma=0, 30 rounds, nested AI-then-peer operator, matched twin,
+# greedy serving, fresh LoRA each round on trained arms (b0 sft /
+# b0p5 + b1 forward-KL sft_kl), frozen plain prompting on k0,
+# SAVE_RAW_GEN=1. BASE_MODEL / CHAT_THINKING / mem / disk / PPL_BATCH
+# ride the queue -- Qwen3-8B runs CHAT_THINKING=0 (thinking pinned
+# OFF; the runner's qwen3 marker keeps completion-only masking
+# correct). All checkpoints load from the offline lustre cache:
+# PRE-CACHE Qwen/Qwen2.5-7B-Instruct there before submitting.
+# Cells already satisfied by the field-level reuse audit
+# (manifest_fig2_family_prior.json) are NOT queued here.
+# Gate every pull with check_pofd_sanity (FAM section: exact model id
+# per slug, qwen3 chat_thinking=False, arm/gate/es surface).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+#   (flow: fig2_family_prior_smoke -> pull + gate ->
+#    fig2_family_prior_scout)
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig2fam"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
 """
 
 
@@ -4803,6 +4974,36 @@ def main():
     cube_subs[os.path.join(HERE,
                            f"at_pofd_{CLAMP_GRAPH_D8_SMOKE_KEY}.sub")] = \
         clamp_graph_d8_sub("smoke")
+    # Figure-2 family-prior scout (see the FAM block): the 48-cell
+    # 6-checkpoint grid minus whatever the field-level audit reused.
+    # Counts come from the manifest and are asserted for CONSISTENCY
+    # (fam_rows), never forced to a particular reuse split.
+    rows_fam = fam_rows()
+    _fam_tags = {r.split(",")[0] for r in rows_fam}
+    assert len(_fam_tags) == len(rows_fam)
+    assert all(t.startswith("pofdfam_") and "_ea1_" in t
+               and t.endswith("_s0") for t in _fam_tags)
+    _prior_before_fam = {r.split(",")[0]
+                         for rows in files.values() for r in rows}
+    assert not (_fam_tags & _prior_before_fam), \
+        f"fam collision: {_fam_tags & _prior_before_fam}"
+    p = os.path.join(HERE, f"configs_pofd_{FAM_KEY}.txt")
+    files[p] = rows_fam
+    expected[p] = len(rows_fam)
+    cube_subs[os.path.join(HERE, f"at_pofd_{FAM_KEY}.sub")] = \
+        fam_sub("main")
+    _fam_smk = fam_smoke_rows()
+    assert len(_fam_smk) == 3
+    assert all("_b1_ea1_" in r.split(",")[0]
+               and r.split(",")[0].startswith("pofdfamsmk_")
+               and "_es0p2_s0" in r.split(",")[0] for r in _fam_smk)
+    assert {r.split(",")[0].split("_b1_")[0].replace("pofdfamsmk_", "")
+            for r in _fam_smk} == set(FAM_SMOKE_MODELS)
+    p = os.path.join(HERE, f"configs_pofd_{FAM_SMOKE_KEY}.txt")
+    files[p] = _fam_smk
+    expected[p] = 3
+    cube_subs[os.path.join(HERE, f"at_pofd_{FAM_SMOKE_KEY}.sub")] = \
+        fam_sub("smoke")
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()
