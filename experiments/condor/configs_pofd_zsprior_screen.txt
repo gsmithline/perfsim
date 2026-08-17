@@ -1,0 +1,4 @@
+pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1, Qwen/Qwen3-8B, 0
+pofdzsprior_olmo3_7b_w0p5_l0p2_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1, allenai/Olmo-3-7B-Instruct, default
+pofdzsprior_ministral8b_w0p5_l0p2_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1, mistralai/Ministral-8B-Instruct-2410, default
+pofdzsprior_mistralnemo_w0p5_l0p2_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, 1, mistralai/Mistral-Nemo-Instruct-2407, default

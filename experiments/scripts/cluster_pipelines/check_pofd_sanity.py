@@ -224,6 +224,22 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               eps_AI=1.0 staying threshold mode, never all_open. NO
               expected scientific outcome is a validity condition.
 
+  ZSPRIOR     pofdzsprior_ runs (zero-shot prior screen 2026-08-17):
+              one 1-round frozen probe per CANDIDATE checkpoint --
+              qwen3_8b (Qwen/Qwen3-8B, chat_thinking=False REQUIRED),
+              olmo3_7b, ministral8b, mistralnemo -- on the paper's 723
+              Action profiles at seed 0, greedy decoding, EPS_AI=0
+              under the strict-< threshold gate. Verified: exact config
+              surface, exactly one round over 723 agents, opinions
+              within 1 ulp of innate (the probe cannot update anyone),
+              gate mask all-closed, finite in-[0,1] predictions,
+              raw_gen_log.json.gz present with all 723 raw responses,
+              EVERY response carrying a digit (parse_fail_frac 0.0),
+              and the logged parsed values equal to the served
+              pred_raw[0]. A constant prior WARNs (degenerate but
+              internally consistent). NO expected scientific outcome
+              is a validity condition.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -382,6 +398,14 @@ def check_run(run_dir):
     # pofdclampsmk_ (3-round smokes) too.
     is_clamp = name.startswith("pofdclamp")
     is_clamp_smk = name.startswith("pofdclampsmk")
+    # ZERO-SHOT PRIOR SCREEN (2026-08-17, zsprior_screen): 1-round frozen
+    # probes of CANDIDATE checkpoints (Qwen3-8B thinking-off, Olmo-3-7B-
+    # Instruct, Ministral-8B, Mistral-Nemo) on the paper's 723 Action
+    # profiles. EPS_AI=0 under the strict-< threshold gate: no agent is
+    # ever contacted and opinions cannot update; pred_raw[0] is the
+    # checkpoint's zero-shot prior, with every raw decoded response
+    # persisted (SAVE_RAW_GEN=1 -> raw_gen_log.json.gz).
+    is_zsprior = name.startswith("pofdzsprior")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -772,6 +796,53 @@ def check_run(run_dir):
             errs.append(f"CONFIG hardware metadata missing keys "
                         f"{hw4_missing}")
         elif not (hw4.get("hostname") and hw4.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_zsprior:
+        # 1-round frozen zero-shot probe: nothing trains, nothing enters
+        # the prompt beyond the profile, the strict EPS_AI=0 gate never
+        # opens, and the raw generations are mandatory artifacts. The
+        # candidate checkpoint rides its own slug; Qwen3 MUST record
+        # chat_thinking=False (thinking explicitly disabled) and every
+        # other checkpoint must NOT carry the key (no directive given).
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none", "ai_gate_mode": "threshold",
+                     "eps_ai": 0.0, "n_rounds": 1,
+                     "training_style": "frozen", "kl_beta": 0.0,
+                     "use_lora": 0, "fresh_each_round": False,
+                     "icl_k": 0, "icl_days": 0, "save_raw_gen": True})
+        ZSPRIOR_BASE = {
+            "qwen3_8b": "Qwen/Qwen3-8B",
+            "olmo3_7b": "allenai/Olmo-3-7B-Instruct",
+            "ministral8b": "mistralai/Ministral-8B-Instruct-2410",
+            "mistralnemo": "mistralai/Mistral-Nemo-Instruct-2407",
+        }
+        slug_z = next((s for s in ZSPRIOR_BASE if f"_{s}_" in name), None)
+        if slug_z is None:
+            errs.append(f"CONFIG unknown zsprior checkpoint slug in "
+                        f"{name!r}")
+        else:
+            want["base_model"] = ZSPRIOR_BASE[slug_z]
+            if slug_z == "qwen3_8b":
+                want["chat_thinking"] = False
+            elif "chat_thinking" in cfg:
+                errs.append(f"CONFIG chat_thinking="
+                            f"{cfg.get('chat_thinking')!r} recorded for "
+                            f"{slug_z} -- only the Qwen3 probe carries "
+                            f"the thinking directive")
+        if m_es is None or want_es != 0.0:
+            errs.append(f"CONFIG zsprior tag must carry the _es0_ token "
+                        f"(got {name!r})")
+        hw5 = cfg.get("hardware") or {}
+        hw5_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                   "cuda_version", "torch_version",
+                                   "transformers_version") if k not in hw5]
+        if hw5_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw5_missing}")
+        elif not (hw5.get("hostname") and hw5.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_dpo:
         # DPO_BETA is env-only (not in config.json) -- verified via the submit
@@ -2140,6 +2211,91 @@ def check_run(run_dir):
                             f"({len(set(ppls_cl))} distinct values) -- "
                             f"weights not frozen?")
 
+    # -- 1k ZSPRIOR (zero-shot prior screen, 2026-08-17) ---------------------
+    # Every candidate checkpoint must have loaded, served all 723
+    # profiles, parsed to a number for EVERY agent, and left the
+    # population untouched. The raw responses are first-class artifacts.
+    if is_zsprior:
+        n_z = innate.numel()
+        if len(traj) != 1 or tuple(op_raw.shape) != (1, n_z):
+            errs.append(f"ZSPRIOR trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (want exactly one "
+                        f"round over {n_z} agents)")
+        if tuple(pred_raw.shape) != (1, n_z):
+            errs.append(f"ZSPRIOR pred_raw shape {tuple(pred_raw.shape)} "
+                        f"-- all {n_z} profiles must be served once")
+        elif not torch.isfinite(pred_raw).all():
+            errs.append("ZSPRIOR non-finite predictions")
+        elif float(pred_raw.min()) < 0.0 or float(pred_raw.max()) > 1.0:
+            errs.append(f"ZSPRIOR predictions outside [0,1]: "
+                        f"[{float(pred_raw.min()):.4f}, "
+                        f"{float(pred_raw.max()):.4f}]")
+        elif float(pred_raw.std()) == 0.0:
+            print(f"WARN {name}: constant zero-shot prior (every "
+                  f"prediction exactly {float(pred_raw[0][0]):g}, "
+                  f"pred_std 0) -- a degenerate prior carries no "
+                  f"per-agent signal even though parsing succeeded")
+        # opinions untouched: the strict EPS_AI=0 gate never opens, so
+        # the single recorded round is the lam-anchored innate (<= 1
+        # float32 ulp, the reach twin precedent)
+        if op_raw.numel():
+            d_op_z = float((op_raw[0] - innate).abs().max())
+            if d_op_z > 6.0e-8:
+                errs.append(f"ZSPRIOR opinions moved off innate (max "
+                            f"|diff| {d_op_z:.2e} > 1 float32 ulp; the "
+                            f"EPS_AI=0 probe cannot update opinions)")
+        gr_z = d.get("gate_raw")
+        if gr_z is None or gr_z.numel() == 0:
+            errs.append("ZSPRIOR gate_raw missing/empty")
+        elif bool(gr_z.bool().any()):
+            errs.append(f"ZSPRIOR gate opened for "
+                        f"{int(gr_z.bool().sum())} agents -- the strict "
+                        f"EPS_AI=0 threshold can never open")
+        # raw responses: mandatory, one line, 723 strings, every one
+        # carrying a digit, parsed values matching the served vector
+        rg_path = os.path.join(run_dir, "raw_gen_log.json.gz")
+        if not os.path.exists(rg_path):
+            errs.append("ZSPRIOR raw_gen_log.json.gz missing "
+                        "(SAVE_RAW_GEN=1 is mandatory in this family)")
+        else:
+            with gzip.open(rg_path, "rt") as fh:
+                rg_rows = [json.loads(line) for line in fh]
+            if len(rg_rows) != 1:
+                errs.append(f"ZSPRIOR raw_gen_log holds {len(rg_rows)} "
+                            f"rounds (want exactly 1)")
+            if rg_rows:
+                rg = rg_rows[0]
+                raw_z = rg.get("raw") or []
+                parsed_z = rg.get("parsed") or []
+                if len(raw_z) != n_z:
+                    errs.append(f"ZSPRIOR {len(raw_z)} raw responses "
+                                f"(want {n_z} -- every profile served)")
+                no_digit = [i for i, s in enumerate(raw_z)
+                            if re.search(r"\d", s) is None]
+                if no_digit:
+                    errs.append(
+                        f"ZSPRIOR numeric parsing FAILED for "
+                        f"{len(no_digit)} of {len(raw_z)} responses "
+                        f"(digit-free -> served the 0.5 _parse default); "
+                        f"first: agent {no_digit[0]} "
+                        f"{raw_z[no_digit[0]][:60]!r}")
+                if rg.get("parse_fail_frac") not in (0, 0.0):
+                    errs.append(f"ZSPRIOR parse_fail_frac="
+                                f"{rg.get('parse_fail_frac')!r} (want "
+                                f"0.0 -- every response must parse)")
+                if len(parsed_z) != n_z:
+                    errs.append(f"ZSPRIOR {len(parsed_z)} parsed values "
+                                f"(want {n_z})")
+                elif tuple(pred_raw.shape) == (1, n_z) and \
+                        not torch.equal(
+                            torch.tensor(parsed_z,
+                                         dtype=torch.float32),
+                            pred_raw[0]):
+                    errs.append("ZSPRIOR parsed values in "
+                                "raw_gen_log.json.gz differ from the "
+                                "served pred_raw[0] -- raw/parsed "
+                                "provenance broken")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -2264,7 +2420,7 @@ def check_run(run_dir):
     # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
     # Clamp b0 falls through: SFT must consume all 723 labels (the frozen
     # cohort's innate labels INCLUDED) every deploy round.
-    if is_icl or is_iclf or is_ctf or \
+    if is_icl or is_iclf or is_ctf or is_zsprior or \
             ((is_reach or is_ctxgrid or is_clamp)
              and cfg.get("training_style") == "frozen"):
         return errs

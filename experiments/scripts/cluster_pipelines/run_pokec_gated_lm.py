@@ -114,6 +114,25 @@ gp = importlib.util.module_from_spec(_spec_gp)
 _spec_gp.loader.exec_module(gp)
 
 
+def _chat_template_kwargs():
+    """Extra kwargs for apply_chat_template, from CHAT_THINKING.
+
+    Unset / "default" -> {} (the template call stays byte-identical to
+    every archived run). "0"/"1" -> {"enable_thinking": False/True} --
+    the explicit reasoning switch hybrid-reasoning templates (Qwen3)
+    read; templates that ignore the variable render unchanged. Only "0"
+    and "1" are directives; anything else is rejected loudly rather
+    than silently ignored.
+    """
+    tk = os.environ.get("CHAT_THINKING", "")
+    if tk in ("", "default"):
+        return {}
+    if tk in ("0", "1"):
+        return {"enable_thinking": tk == "1"}
+    raise ValueError(f"CHAT_THINKING must be '0', '1' or 'default'; "
+                     f"got {tk!r}")
+
+
 def _env_or(name, default=None):
     val = os.environ.get(name, default)
     if val is None:
@@ -305,7 +324,13 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
         )
         if getattr(tokenizer, "chat_template", None):
             messages = [{"role": "user", "content": user_msg}]
-            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            # CHAT_THINKING (2026-08-17, zero-shot prior screen): unset
+            # keeps this call byte-identical to every archived run; "0"
+            # pins enable_thinking=False so hybrid-reasoning templates
+            # (Qwen3) answer directly inside the token budget.
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True,
+                **_chat_template_kwargs())
         # base (non-chat) model: no chat template, so use a plain-text completion
         # prompt cued for a number. NOTE: this differs from the instruct chat
         # prompt, so base-vs-instruct is not a fully controlled comparison.
@@ -601,6 +626,11 @@ def main() -> int:
     # strings. Sanity check that sampled generation is real numbers, not nonsense.
     debug_gen = _env_int("DEBUG_GEN", 0) == 1
     debug_gen_n = _env_int("DEBUG_GEN_N", 12)
+    # SAVE_RAW_GEN (2026-08-17, zero-shot prior screen): persist EVERY
+    # round's raw decoded generations + parsed values to
+    # raw_gen_log.json.gz. Off (default) writes nothing -- byte-identical
+    # legacy outputs.
+    save_raw_gen = _env_int("SAVE_RAW_GEN", 0) == 1
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
     platform_scale = _env_float("PLATFORM_SUS_SCALE", 1.0)
@@ -1018,6 +1048,13 @@ def main() -> int:
             "innate_clamp_frac": innate_clamp_frac,
             "innate_clamp_seed": innate_clamp_seed,
         })
+    if save_raw_gen:
+        # recorded ONLY when on (absent == off, the audit convention)
+        config["save_raw_gen"] = True
+    _ct_kwargs = _chat_template_kwargs()
+    if _ct_kwargs:
+        # recorded ONLY when CHAT_THINKING carries a directive
+        config["chat_thinking"] = _ct_kwargs["enable_thinking"]
     if training_style == "dpo":
         # tag<->config gate for DPO waves; defaults mirror DPOLearner's env
         # resolution. Absent from configs written before 2026-08-03 (knobs
@@ -1435,6 +1472,8 @@ def main() -> int:
     icl_idx_raw = []  # ICL_K>0: per round [n, K] exemplar AGENT ids shown
     icl_val_raw = []  # ICL_K>0: per round [n, K] displayed opinion values
                       # (floats; the prompt renders them as {v:.2f})
+    raw_gen_rows = []   # SAVE_RAW_GEN=1: per round the raw decoded strings,
+                        # the parsed served values and parse_fail_frac
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
     icl_ctx_gg = None   # realized displayed-context gender gap, computed once
@@ -1765,6 +1804,18 @@ def main() -> int:
             else:
                 preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
+            if save_raw_gen and _mr_r0 is None:
+                # raw provenance for the served vector: lm._last_raw is
+                # refreshed by both serving paths (forward and
+                # probe_predictions); the matched-randomness fork serves
+                # stored preds without generating, so nothing to log there
+                raw_gen_rows.append({
+                    "round": t,
+                    "parse_fail_frac": float(getattr(
+                        lm, "_last_parse_fail", float("nan"))),
+                    "raw": list(getattr(lm, "_last_raw", [])),
+                    "parsed": [float(v) for v in preds.tolist()],
+                })
             if debug_gen:
                 raw = [r.strip()[:24] for r in getattr(lm, "_last_raw", [])[:debug_gen_n]]
                 print(f"[round {t}] DEBUG_GEN parse_fail_frac="
@@ -2114,6 +2165,12 @@ def main() -> int:
         with gzip.open(out_dir / "icl_ctx_log.json.gz", "wt") as fh:
             for t_ctx, ctxs in icl_ctx_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
+    if raw_gen_rows:
+        # every round's raw generations + parsed served values, one JSON
+        # line per round (SAVE_RAW_GEN=1 runs only)
+        with gzip.open(out_dir / "raw_gen_log.json.gz", "wt") as fh:
+            for r in raw_gen_rows:
+                fh.write(json.dumps(r) + "\n")
     (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
     traj_payload = \
         {
