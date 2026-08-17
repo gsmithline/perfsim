@@ -513,7 +513,7 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) KL_DIRECTION=forward KL_REF_ADAPTER=$(refadapter) LOG_GENDER_GAPS=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdtfe"
@@ -568,7 +568,7 @@ request_cpus      = 4
 request_memory    = 160G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) DPO_BETA=$(dpobeta) DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=3 DPO_N_PAIRS=0 SFT_EPOCHS=0 SFT_LR=5e-5 LORA_R=128 USE_LORA=1 DO_SAMPLE=0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofddpo"
@@ -635,7 +635,7 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) RLHF_FEEDBACK=$(rlhf) DPO_BETA=$(dpobeta) DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=0 DPO_N_PAIRS=0 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 SFT_EPOCHS=0 SFT_LR=5e-5 LORA_R=128 USE_LORA=1 DO_SAMPLE=0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofdwdpo2e"
@@ -689,7 +689,7 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 {env}
@@ -777,7 +777,7 @@ request_cpus      = 4
 request_memory    = 160G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) DPO_BANK_SEED=$(bankseed) DPO_TRAIN_SEED=777 DPO_BETA=0.5 DPO_TAU=12.0 DPO_GEN_TEMP=1.0 DPO_MAX_STEPS=3 DPO_N_PAIRS=0 SFT_EPOCHS=0 SFT_LR=5e-5 LORA_R=128 USE_LORA=1 DO_SAMPLE=0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS={nr} EPOCH_SIZE=100 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX={suffix}"
@@ -874,7 +874,7 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 40G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL=mistralai/Mistral-7B-Instruct-v0.3 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_lora512_pofdcube"
@@ -1771,7 +1771,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofdclamp"
@@ -1925,7 +1925,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) INNATE_CLAMP_PEER_MODE=stubborn TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofdclamppeer"
@@ -2022,7 +2022,7 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 60G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_zsprior_screen"
@@ -2075,7 +2075,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_pofdreach"
@@ -2365,7 +2365,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdcube"
@@ -2475,7 +2475,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) REPLAY_FRAC=$(rfrac) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdreplay1"
@@ -2565,7 +2565,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) SFT_MAX_STEPS=$(steps) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS={n_rounds} EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=0 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdbudget"
@@ -2676,7 +2676,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live LOG_GENDER_GAPS=1 WITH_TWIN=1 INNATE_LAMBDA=0.2 USE_LORA=0 FRESH_EACH_ROUND=0 TRAIN_CAP=723 N_ROUNDS={n_rounds} EPOCH_SIZE=100 BASE_MODEL={base_model} GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_pofdiclf"
@@ -2792,7 +2792,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_CTX_DONOR=/home/gsmithline/perfsim/runs/pokec_gated_lm/$(donor) ICL_CTX_DONOR_ROUND=$(dround) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=donor LOG_GENDER_GAPS=1 WITH_TWIN=1 INNATE_LAMBDA=0.2 USE_LORA=0 FRESH_EACH_ROUND=0 TRAIN_CAP=723 N_ROUNDS={n_rounds} EPOCH_SIZE=100 BASE_MODEL={base_model} GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofdctf"
@@ -2998,7 +2998,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=$(wtwin) INNATE_LAMBDA=$(lam) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{model}_lora512_pofdseedcore"
@@ -3150,7 +3150,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=$(iclsrc) KL_DIRECTION=forward USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_pofdffill"
@@ -3190,7 +3190,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) REPLAY_FRAC=$(rfrac) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdreplay1"
@@ -3229,7 +3229,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen7b_lora512_pofdffcorners"
