@@ -1012,12 +1012,16 @@ def check_run(run_dir):
         # rides its own slug; the arm token maps to the training
         # surface; Qwen3 MUST record chat_thinking=False and every
         # other checkpoint must NOT carry the key.
+        # eps_ai rides the _ea token (2026-08-18 gate ablation: ea
+        # 0.1/0.2/0.4 joined the original wide-open ea1 surface); the
+        # generic tag/config cross-check enforces cfg == token, and
+        # the arm-regex below pins the ALLOWED gate set
         want.update({"ml_target": "Action", "gamma_bias": 0.0,
                      "teacher_label_delta": 0.0, "pristine_frac": 0.0,
                      "replay_frac": 0.0, "do_sample": False,
                      "deploy_every": 1, "n_labeled": 723, "icrh": False,
                      "feedback_mode": "none", "ai_gate_mode": "threshold",
-                     "eps_ai": 1.0, "train_cap": 723,
+                     "train_cap": 723,
                      "anchor_mode": "fixed",
                      "population_update": "nested_ai_then_social_v1",
                      "save_raw_gen": True})
@@ -1066,16 +1070,30 @@ def check_run(run_dir):
                             f"{cfg.get('chat_thinking')!r} recorded for "
                             f"{slug_f} -- only Qwen3 carries the "
                             f"thinking directive")
-        m_arm_f = re.search(r"_(b0p5|b0|b1|b2|b4|b8|k0)_ea1_", name)
+        m_arm_f = re.search(
+            r"_(b0p5|b0|b1|b2|b4|b8|k0)_ea(1|0p1|0p2|0p4)_", name)
         if m_arm_f is None:
             errs.append(f"CONFIG fam tag needs an "
-                        f"_<b0|b0p5|b1|b2|b4|b8|k0>_ea1_ token run "
-                        f"({name!r}) -- the scout runs ONLY the "
-                        f"wide-open numeric gate")
+                        f"_<b0|b0p5|b1|b2|b4|b8|k0>_ea<1|0p1|0p2|"
+                        f"0p4>_ token run ({name!r}) -- ea1 = the "
+                        f"scout/beta surface, 0p1/0p2/0p4 = the "
+                        f"Section-3 gate ablation")
+            _fam_gate_tok = "1"
         else:
             want.update(FAM_ARM_WANT[m_arm_f.group(1)])
+            _fam_gate_tok = m_arm_f.group(2)
+            want["eps_ai"] = float(_fam_gate_tok.replace("p", "."))
             if is_fam_smk and m_arm_f.group(1) != "b1":
                 errs.append(f"CONFIG fam smokes are b1-only ({name!r})")
+            if _fam_gate_tok != "1" and \
+                    m_arm_f.group(1) not in ("b0", "b1"):
+                errs.append(f"CONFIG the gate ablation runs ONLY the "
+                            f"b0/b1 arms; {m_arm_f.group(1)} exists "
+                            f"only at ea1 ({name!r})")
+            if _fam_gate_tok != "1" and \
+                    (m_es is None or want_es != 0.05):
+                errs.append(f"CONFIG the gate ablation is pinned at "
+                            f"_es0p05_ ({name!r})")
         if m_es is None or want_es not in (0.05, 0.2):
             errs.append(f"CONFIG fam tag needs an _es0p05_ or _es0p2_ "
                         f"token ({name!r})")
@@ -1087,6 +1105,9 @@ def check_run(run_dir):
                         f"({name!r})")
         else:
             want["seed"] = int(m_sd_f.group(1))
+            if _fam_gate_tok != "1" and int(m_sd_f.group(1)) != 0:
+                errs.append(f"CONFIG the gate ablation is seed-0 "
+                            f"only ({name!r})")
         hw_f = cfg.get("hardware") or {}
         hw_f_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
                                     "cuda_version", "torch_version",

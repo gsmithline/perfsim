@@ -2728,6 +2728,87 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# fam_gate_ablation (2026-08-18): the SECTION-3 FAMILY-GATE ABLATION
+# -- the six family-prior checkpoints x SFT arms {b0 = beta 0, b1 =
+# forward-KL beta 1} across the AI-gate axis ea 0.1/0.2/0.4/1
+# (numeric strict-< threshold) at the FIXED es=0.05, lam=0.2, W=0.5
+# canonical Action surface, seed 0, 30 rounds = 48 conceptual cells
+# on the EXACT completed family-prior-scout code path (same serving,
+# training, peer and twin paths; SAVE_RAW_GEN=1; Qwen3 thinking OFF;
+# same pofdfam_ family and sub surface -- eps_ai already rides the
+# queue). The 12 completed ea=1 scout cells REUSE by field-level
+# audit (audit_fam_gate_reuse.py -> manifest_fam_gate_ablation.json;
+# save_raw_gen is a MATCHED field so the pofdevo_ wave's mistral b0
+# runs at these gates can never shadow a cell); the 36 cells at ea
+# {0.1, 0.2, 0.4} queue here. NO smoke: every checkpoint already
+# carries a production gate on this path.
+FAMG_KEY = "fam_gate_ablation"
+FAMG_MANIFEST_PATH = os.path.join(
+    HERE, "manifest_fam_gate_ablation.json")
+FAMG_ARMS = ["b0", "b1"]
+FAMG_GATES = [0.1, 0.2, 0.4, 1.0]
+FAMG_ES = 0.05
+ROW_FAMG = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+            "ab, {es}, 0.0, 0.5, loop, 0.0, {eps_ai}, threshold, "
+            "{iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
+            "{nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, "
+            "{pplbatch}")
+
+
+def famg_tag(model, arm, gate, seed=0):
+    return (f"pofdfam_{model}_{arm}_ea{_num(gate)}_{w_tok()}"
+            f"_es{_num(FAMG_ES)}_s{seed}")
+
+
+def famg_row(model, arm, gate, nrounds=30, seed=0):
+    a = REACH_ARM_COLS[arm]
+    m = FAM_MODELS[model]
+    return ROW_FAMG.format(
+        tag=famg_tag(model, arm, gate, seed),
+        style=a["style"], beta=a["beta"], seed=seed,
+        es=f"{FAMG_ES:g}", eps_ai=f"{gate:g}",
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=nrounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def famg_rows():
+    """The 36 genuinely-missing jobs, straight from the audited
+    manifest -- counts asserted for CONSISTENCY with the expected
+    12-reused/36-new split, never forced."""
+    mf = json.load(open(FAMG_MANIFEST_PATH))
+    cells = mf["cells"]
+    assert mf["n_cells"] == 48 and len(cells) == 48, mf["n_cells"]
+    assert {(c["model"], c["arm"], c["gate"]) for c in cells} == \
+        {(m, a, g) for m in FAM_MODELS for a in FAMG_ARMS
+         for g in FAMG_GATES}
+    reused = [c for c in cells if c["status"] == "reused"]
+    new = [c for c in cells if c["status"] == "new"]
+    assert len(reused) == 12 and len(new) == 36, \
+        (len(reused), len(new))
+    assert all(c["gate"] == 1.0 for c in reused), \
+        "only the completed ea=1 scout cells may reuse"
+    assert all(c.get("verdict") == "PASS" for c in reused)
+    rows = []
+    for c in sorted(new,
+                    key=lambda c: (c["model"], c["arm"], c["gate"])):
+        r = famg_row(c["model"], c["arm"], c["gate"])
+        assert r.split(",")[0].strip() == c["new_tag"], \
+            (r.split(",")[0], c["new_tag"])
+        rows.append(r)
+    return rows
+
+
+def famg_sub():
+    return FAM_SUB_TEMPLATE.format(
+        key=FAMG_KEY, n_jobs=len(famg_rows()),
+        what=("SECTION-3 GATE ABLATION: 36 seed-0 cells (30 rounds; "
+              "6 checkpoints x b0/b1 x ea 0.1/0.2/0.4 at es0p05; "
+              "the 12 ea1 scout cells REUSE per the audited "
+              "manifest -- never co-submit with the scout keys)"))
+
+
 # zsprior_screen (2026-08-17): ZERO-SHOT PRIOR SCREEN for four candidate
 # checkpoints -- Qwen/Qwen3-8B (CHAT_THINKING=0: the hybrid-reasoning
 # template's enable_thinking switch is pinned OFF so the answer lands
@@ -5640,6 +5721,41 @@ def main():
         cube_subs[os.path.join(HERE,
                                f"at_pofd_{FAM_CONFIRM_KEY[_a]}.sub")] = \
             fam_sub(f"{_a}_confirm")
+    # Section-3 family-gate ablation (see the FAMG block): 36 new
+    # seed-0 cells at ea {0.1, 0.2, 0.4}; the 12 ea=1 scout cells
+    # reuse and must NEVER re-queue (their tags stay with
+    # fig2_family_prior_scout).
+    rows_fg = famg_rows()
+    assert len(rows_fg) == 36, len(rows_fg)
+    _fg_tags = {r.split(",")[0] for r in rows_fg}
+    assert len(_fg_tags) == 36
+    assert all(t.startswith("pofdfam_") and "_es0p05_" in t
+               and t.endswith("_s0") for t in _fg_tags)
+    assert not any("_ea1_" in t for t in _fg_tags), \
+        "the ea=1 cells reuse -- they never queue here"
+    for _arm_tok, _nw in (("_b0_", 18), ("_b1_", 18)):
+        assert sum(1 for t in _fg_tags if _arm_tok in t) == _nw, \
+            _arm_tok
+    for _g in (0.1, 0.2, 0.4):
+        assert sum(1 for t in _fg_tags
+                   if f"_ea{_num(_g)}_" in t) == 12, _g
+    for _m in FAM_MODELS:
+        assert sum(1 for t in _fg_tags
+                   if f"_{_m}_" in t) == 6, _m
+    # qwen3 rides thinking OFF; every other checkpoint the default
+    for r in rows_fg:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[24] == ("0" if "_qwen3_8b_" in _cols[0]
+                             else "default"), r
+    _prior_fg = {r.split(",")[0]
+                 for rows in files.values() for r in rows}
+    assert not (_fg_tags & _prior_fg), \
+        f"famg collision: {_fg_tags & _prior_fg}"
+    p = os.path.join(HERE, f"configs_pofd_{FAMG_KEY}.txt")
+    files[p] = rows_fg
+    expected[p] = 36
+    cube_subs[os.path.join(HERE, f"at_pofd_{FAMG_KEY}.sub")] = \
+        famg_sub()
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()
