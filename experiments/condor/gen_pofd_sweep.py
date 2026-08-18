@@ -2117,17 +2117,23 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 # the environment -- served, gated, pinned bit-exact, stubborn peer
 # pairing, mirrored in the matched twin -- and changes EXACTLY ONE
 # thing: SFT_EXCLUDE_CLAMPED=1 drops A's rows from every SFT batch
-# (round 0 included), so each round trains on all and only the 578
-# responsive agents with their current live opinions. Comparing _b0_
+# (round 0 included) and keeps the training VOLUME matched at 723
+# rows by duplicating 145 responsive agents picked once per run by a
+# dedicated run-seeded generator (seed + 723_145; reused every round,
+# no simulation RNG advanced), so each round trains on 578 responsive
+# agents once + those 145 twice, all with current live opinions and
+# never a fixed id. Comparing _b0_
 # vs _b0xa_ at a matched cell therefore measures whether information
 # from A reaches the responsive cohort THROUGH SHARED MODEL WEIGHTS;
 # the personal-history _d8_ arm (each agent sees only its own history)
 # is the structural null and is REUSED, never rerun. Same seed-0 grid
 # as the completed wave (masks gclump/gscat x ea {0.1,0.2,0.4,1} x es
 # {0,0.05,0.1,0.2,0.4,1}) = 48 NEW jobs; all 48 _b0_ and all 48 _d8_
-# cells are reused unchanged. Runners persist sft_idx_raw/sft_y_raw
-# (the exact ordered training ids + labels per round); the checker
-# proves the exclusion against the reconstructed mask complement.
+# cells are reused unchanged. Runners persist sft_idx_raw/sft_y_raw/
+# sft_dup_idx (the exact ordered training ids + labels per round and
+# the run-fixed duplicate selection); the checker proves exclusion +
+# volume match against the reconstructed mask complement and the
+# replayed seeded selection.
 # Smokes (2 x 3 rounds, seed 991, OUTSIDE the 48): b0xa x both masks
 # at ea0p4 es0p2.
 CLAMP_XA_KEY = "mistral_clamp_exclude_a"
@@ -2174,22 +2180,27 @@ CLAMP_XA_SUB_TEMPLATE = """\
 # with SFT_EXCLUDE_CLAMPED=1 (_b0xa_): the 145 fixed agents stay
 # fully present -- served, gated, pinned bit-exact in population AND
 # twin, stubborn peer pairing unchanged -- but their rows are dropped
-# from every SFT batch (round 0 included), so each round trains on
-# all and only the 578 responsive agents with their current live
-# opinions. The b0-vs-b0xa difference at a matched cell is the
+# from every SFT batch (round 0 included) while the training VOLUME
+# stays matched at 723 rows: 145 responsive agents, picked ONCE per
+# run by a dedicated run-seeded generator (seed + 723_145, no
+# simulation RNG advanced) and reused every round, are each included
+# once more, so every round trains on 578 responsive agents once +
+# those 145 twice, all with current live opinions and never a fixed
+# id. The b0-vs-b0xa difference at a matched cell is the
 # weight-mediated pathway from A to the responsive cohort; the
 # reused _d8_ personal-history arm is the structural null. Masks,
 # peer operator, serving, generation and telemetry are IDENTICAL to
 # the completed graph wave (clamp_graph_masks.json rides queue col
 # 24, stubborn operator fixed in this env). Every run persists
-# sft_idx_raw/sft_y_raw -- the exact ordered training ids + labels
-# per round -- for the offline exclusion proof. W=0.5, lam=0.2,
+# sft_idx_raw/sft_y_raw/sft_dup_idx -- the exact ordered training
+# ids + labels per round and the run-fixed duplicate selection --
+# for the offline exclusion + volume-match proof. W=0.5, lam=0.2,
 # gamma=0, greedy serving, WITH_TWIN=1, movielens Action, 30-round
 # mains / 3-round smokes.
 # Gate every pull with check_pofd_sanity (CLAMP section: graph-mask
-# invariants + the b0xa provenance replay -- training ids == the
-# exact responsive complement every round, labels == the live
-# opinions, no fixed id ever trains).
+# invariants + the b0xa provenance replay -- 723 rows every round ==
+# the ascending responsive complement then the replayed seeded
+# duplicates, labels == the live opinions, no fixed id ever trains).
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
 #   (flow: mistral_clamp_exclude_a_smoke -> pull + gate ->
 #    mistral_clamp_exclude_a)

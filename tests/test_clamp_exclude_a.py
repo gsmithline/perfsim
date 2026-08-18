@@ -1,28 +1,33 @@
 """Tests for the CAUSAL SOURCE-EXCLUSION wave (2026-08-18,
-mistral_clamp_exclude_a): the completed graph-clamp _b0_ SFT runs
-include the 145 fixed agents' innate labels in every shared weight
-update; the _b0xa_ arm keeps cohort A fully present in the
-environment (served, gated, pinned, stubborn peer pairing, matched
-twin) but drops its rows from EVERY SFT batch (round 0 included) via
-SFT_EXCLUDE_CLAMPED=1, so each round trains on all and only the 578
-responsive agents with their current live opinions.
+mistral_clamp_exclude_a, VOLUME-MATCHED respec): the completed
+graph-clamp _b0_ SFT runs include the 145 fixed agents' innate labels
+in every shared weight update; the _b0xa_ arm keeps cohort A fully
+present in the environment (served, gated, pinned, stubborn peer
+pairing, matched twin) but drops its rows from EVERY SFT batch
+(round 0 included) via SFT_EXCLUDE_CLAMPED=1 while keeping the
+training volume matched to ordinary SFT at 723 rows/round: all 578
+responsive agents once, plus 145 distinct responsive agents -- picked
+ONCE per run by a dedicated run-seeded generator (seed + 723_145, no
+simulation RNG advanced) and reused every round -- each once more.
 
 Generator: exactly 48 rows (2 masks x 4 AI gates x 6 social gates,
 seed 0, the exact b0 queue surface) + 2 smokes (seed 991, ea0p4
 es0p2); the sub pins SFT_EXCLUDE_CLAMPED=1 in the env; zero tag
 collisions with the completed b0/d8 families (both are REUSED).
 
-Runner: persists sft_idx_raw/sft_y_raw -- the ordered training ids +
-labels per deploy round -- whenever the flag is on.
+Runner: persists sft_idx_raw/sft_y_raw/sft_dup_idx -- the ordered 723
+training ids + labels per deploy round and the run-fixed duplicate
+selection -- whenever the flag is on.
 
 Checker, via REAL-population fixtures (723 agents, artifact masks +
 edges, the real stubborn operator, reusing test_innate_clamp_graph's
 builder): healthy b0xa production/es0-baseline/smoke runs PASS; a
-fixed id inside a training batch, a missing responsive id, a
-duplicate responsive id, a label off the live-opinion replay, a
-tampered mask, a b0xa tag without the flag, the flag on a b0 tag and
-an n_train row off the 578 complement all FAIL; legacy b0 fixtures
-still pass unchanged.
+fixed id inside a training batch, a missing responsive id (short and
+same-width), a broken duplicate structure, a duplicate selection off
+the seeded replay, a label off the live-opinion replay, a tampered
+mask, a b0xa tag without the flag, the flag on a b0 tag and an
+n_train row off 723 all FAIL; legacy b0 fixtures still pass
+unchanged.
 
 Run with USE_TF=0 (the transformers TF probe deadlocks on this Mac).
 """
@@ -104,6 +109,12 @@ def test_runner_exclusion_surface():
     assert "_keep_xa = ~clamp_mask[train_data" in src
     assert "sft_idx_raw.append(" in src and "sft_y_raw.append(" in src
     assert 'config["sft_exclude_clamped"] = True' in src
+    # volume match: dedicated run-seeded duplicate selection, chosen
+    # once per run outside every simulation RNG stream, appended via
+    # cat every round
+    assert "manual_seed(seed + 723_145)" in src
+    assert "torch.cat([v, v[_dup_rows_xa]], 0)" in src
+    assert 'traj_payload["sft_dup_idx"]' in src
 
 
 def test_analyzer_exclude_a_surface():
@@ -120,18 +131,28 @@ def test_analyzer_exclude_a_surface():
 
 def xa_post(d):
     """Attach the exclusion provenance the runner persists: per round
-    the ORDERED responsive ids and each agent's live opinion label
-    (innate on round 0, op_raw[t-1] after), plus the 578 n_train."""
-    resp_ids = (~d["innate_clamp_mask"]).nonzero().flatten().long()
+    the ORDERED 723 training ids (578 responsive once, then the 145
+    run-seeded duplicate rows -- the runner's exact formula) and each
+    row's live opinion label (innate on round 0, op_raw[t-1] after),
+    plus the volume-matched 723 n_train."""
+    mask = d["innate_clamp_mask"]
+    resp_ids = (~mask).nonzero().flatten().long()
+    gen = torch.Generator().manual_seed(
+        int(d["config"]["seed"]) + 723_145)
+    perm = torch.randperm(resp_ids.numel(),
+                          generator=gen)[:int(mask.sum())]
+    dup_ids = resp_ids[perm]
+    row_ids = torch.cat([resp_ids, dup_ids])
     idx_rows, y_rows = [], []
     for t in range(d["op_raw"].shape[0]):
         y = d["innate"] if t == 0 else d["op_raw"][t - 1]
-        idx_rows.append(resp_ids.clone())
-        y_rows.append(y[resp_ids].float().clone())
+        idx_rows.append(row_ids.clone())
+        y_rows.append(y[row_ids].float().clone())
     d["sft_idx_raw"] = torch.stack(idx_rows)
     d["sft_y_raw"] = torch.stack(y_rows)
+    d["sft_dup_idx"] = dup_ids.clone()
     for r in d["trajectory"]:
-        r["n_train"] = int(resp_ids.numel())
+        r["n_train"] = int(row_ids.numel())
 
 
 def xa_cfg(c):
@@ -189,13 +210,45 @@ def test_missing_responsive_id_fails(tmp_path):
     tg.assert_verdict(rd, False, "training count off")
 
 
-def test_duplicate_responsive_id_fails(tmp_path):
+def test_missing_responsive_id_same_width_fails(tmp_path):
+    # overwrite one non-duplicated base row with another base id:
+    # the batch stays 723 wide but one responsive agent vanishes
     rd = build_xa(tmp_path, "graph_clumped")
 
     def fn(t):
-        t["sft_idx_raw"][4][10] = t["sft_idx_raw"][4][11]
+        dup = set(t["sft_dup_idx"].tolist())
+        base = [i for i in t["sft_idx_raw"][4][:578].tolist()
+                if i not in dup]
+        row = t["sft_idx_raw"][4][:578].tolist().index(base[0])
+        t["sft_idx_raw"][4][row] = base[1]
     tg.edit(rd, fn)
-    tg.assert_verdict(rd, False, "duplicate training id")
+    tg.assert_verdict(rd, False, "missing responsive")
+
+
+def test_duplicate_structure_off_fails(tmp_path):
+    # point one duplicate row at another duplicated id: that id now
+    # appears three times and the displaced one only once
+    rd = build_xa(tmp_path, "graph_clumped")
+
+    def fn(t):
+        t["sft_idx_raw"][4][578] = t["sft_idx_raw"][4][579]
+    tg.edit(rd, fn)
+    tg.assert_verdict(rd, False, "duplicate structure off")
+
+
+def test_dup_selection_off_seeded_replay_fails(tmp_path):
+    # a VALID 578-once + 145-twice batch whose duplicate rows differ
+    # from the dedicated run-seeded selection order -- only the
+    # seeded replay can catch it
+    rd = build_xa(tmp_path, "graph_clumped")
+
+    def fn(t):
+        t["sft_dup_idx"][[0, 1]] = t["sft_dup_idx"][[1, 0]]
+        t["sft_idx_raw"][:, [578, 579]] = \
+            t["sft_idx_raw"][:, [579, 578]]
+        t["sft_y_raw"][:, [578, 579]] = t["sft_y_raw"][:, [579, 578]]
+    tg.edit(rd, fn)
+    tg.assert_verdict(rd, False, "run-seeded selection")
 
 
 def test_wrong_label_fails(tmp_path):
@@ -242,11 +295,11 @@ def test_flag_on_b0_tag_fails(tmp_path):
     tg.assert_verdict(rd, False, "non-b0xa clamp tag")
 
 
-def test_n_train_off_complement_fails(tmp_path):
+def test_n_train_off_volume_match_fails(tmp_path):
     rd = build_xa(tmp_path, "graph_clumped")
 
     def fn(t):
-        t["trajectory"][5]["n_train"] = 723
+        t["trajectory"][5]["n_train"] = 578   # the pre-respec volume
     tg.edit(rd, fn)
     tg.assert_verdict(rd, False, "n_train")
 

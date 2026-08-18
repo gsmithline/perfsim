@@ -71,12 +71,15 @@ appended one JSON line per round to telemetry.json (crash-safe):
               round 0 all True) and the ACTUAL labels fed to the learner, so
               batch composition is verifiable end-to-end offline. Empty
               tensors everywhere else.
-  sft_idx_raw / sft_y_raw   trajectory.pt, SFT_EXCLUDE_CLAMPED=1 runs only
-              (2026-08-18, mistral_clamp_exclude_a wave): per deploy round
-              the ORDERED agent ids fed to the learner and their labels
-              AFTER the fixed cohort's rows are dropped, so the source
-              exclusion is provable exactly offline (never present
-              otherwise).
+  sft_idx_raw / sft_y_raw / sft_dup_idx   trajectory.pt,
+              SFT_EXCLUDE_CLAMPED=1 runs only (2026-08-18,
+              mistral_clamp_exclude_a wave): per deploy round the ORDERED
+              723 agent ids fed to the learner and their labels -- the 578
+              responsive agents once, then the 145 run-seeded duplicate
+              responsive rows (sft_dup_idx, selected once per run by a
+              dedicated generator, reused every round) -- so the source
+              exclusion AND the volume match are provable exactly offline
+              (never present otherwise).
 """
 
 from __future__ import annotations
@@ -992,16 +995,20 @@ def main() -> int:
                              f"must lie strictly in (0, 1) when the clamp "
                              f"is on")
     # SFT_EXCLUDE_CLAMPED (2026-08-18, mistral_clamp_exclude_a wave):
-    # causal SOURCE EXCLUSION. The fixed cohort stays FULLY present in
-    # the environment -- served, gated, pinned, peer-paired (stubborn),
-    # mirrored in the twin -- but its rows are dropped from EVERY SFT
-    # batch (round 0 included), so the only removed pathway is the
-    # fixed cohort's labels entering the shared weights. The drop is a
-    # boolean row filter AFTER the (inert at cap=n) subsample -- no
-    # generator is advanced, so the batch is the included-arm batch
-    # minus the fixed rows in the same agent order. 0/unset is
-    # byte-identical legacy behavior (no config key, no trajectory
-    # keys).
+    # causal SOURCE EXCLUSION, VOLUME-MATCHED. The fixed cohort stays
+    # FULLY present in the environment -- served, gated, pinned,
+    # peer-paired (stubborn), mirrored in the twin -- but its rows are
+    # dropped from EVERY SFT batch (round 0 included) and replaced by
+    # one duplicate row for each of 145 responsive agents picked ONCE
+    # per run by a dedicated run-seeded generator (seed + 723_145) and
+    # reused every round, so each round trains on exactly 723 rows
+    # (578 responsive once + those 145 twice) and the training VOLUME
+    # matches ordinary SFT while the only removed pathway is the fixed
+    # cohort's labels entering the shared weights. The rebuild is
+    # boolean filtering + indexing + cat AFTER the (inert at cap=n)
+    # subsample -- no existing simulation generator is ever advanced.
+    # 0/unset is byte-identical legacy behavior (no config key, no
+    # trajectory keys).
     sft_exclude_clamped = _env_int("SFT_EXCLUDE_CLAMPED", 0) == 1
     if sft_exclude_clamped:
         if innate_clamp_mode == "off":
@@ -1310,6 +1317,23 @@ def main() -> int:
                                           innate_clamp_frac,
                                           innate_clamp_seed)
         clamp_hash = gp.innate_clamp_hash(clamp_mask)
+    xa_dup_idx = None
+    if sft_exclude_clamped:
+        # volume-matched exclusion: the 145 responsive agents whose
+        # rows are DUPLICATED in every round's batch. Dedicated
+        # run-seeded generator (seed + 723_145), created and consumed
+        # only here -- no existing simulation RNG stream advances --
+        # selected once per run and reused every round.
+        _resp_ids_xa = (~clamp_mask).nonzero().flatten()
+        _xa_gen = torch.Generator().manual_seed(seed + 723_145)
+        _perm_xa = torch.randperm(
+            _resp_ids_xa.numel(),
+            generator=_xa_gen)[:int(clamp_mask.sum())]
+        xa_dup_idx = _resp_ids_xa[_perm_xa].long()
+        print(f"[run] source exclusion: volume-matched batch = "
+              f"{int((~clamp_mask).sum())} responsive rows + "
+              f"{xa_dup_idx.numel()} run-seeded duplicate rows",
+              flush=True)
     if clamp_mask is not None:
         print(f"[run] innate clamp: mode={innate_clamp_mode} "
               f"frac={innate_clamp_frac:g} seed={innate_clamp_seed} -> "
@@ -1714,14 +1738,29 @@ def main() -> int:
                     train_y_raw.append(
                         train_data["y"].squeeze(-1).detach().cpu().clone())
             if sft_exclude_clamped and train_data is not None:
-                # causal source exclusion: drop the fixed cohort's rows
-                # from THIS round's batch (round 0 included). Boolean
-                # indexing only -- no generator advances -- and the
-                # kept rows stay in the included-arm agent order. The
-                # exact (ids, labels) fed to the learner are persisted
-                # per round for the offline exclusion proof.
+                # causal source exclusion, VOLUME-MATCHED: drop the
+                # fixed cohort's rows from THIS round's batch (round 0
+                # included), then append one duplicate row for each of
+                # the xa_dup_idx responsive agents (fixed per run), so
+                # every round trains on exactly 723 rows -- 578
+                # responsive once + 145 of them twice -- with each
+                # row carrying that agent's CURRENT live label.
+                # Filtering/indexing/cat only: no generator advances.
+                # The exact (ids, labels) fed to the learner are
+                # persisted per round for the offline proof.
                 _keep_xa = ~clamp_mask[train_data["agent_idx"].long()]
                 train_data = {k: v[_keep_xa]
+                              for k, v in train_data.items()}
+                _ai_xa = train_data["agent_idx"].long()
+                _row_of_xa = torch.full((n,), -1, dtype=torch.long)
+                _row_of_xa[_ai_xa] = torch.arange(_ai_xa.numel())
+                _dup_rows_xa = _row_of_xa[xa_dup_idx]
+                if int((_dup_rows_xa < 0).sum()):
+                    raise ValueError(
+                        "SFT_EXCLUDE_CLAMPED: a duplicate-selection "
+                        "id is missing from this round's responsive "
+                        "batch -- the volume match is undefined")
+                train_data = {k: torch.cat([v, v[_dup_rows_xa]], 0)
                               for k, v in train_data.items()}
                 sft_idx_raw.append(
                     train_data["agent_idx"].detach().cpu().long().clone())
@@ -2442,14 +2481,16 @@ def main() -> int:
                 else torch.empty(0))
         if sft_exclude_clamped:
             # source-exclusion provenance: the exact ordered training
-            # (ids, labels) per deploy round, so the checker can prove
-            # cohort A never entered the batch and every responsive
-            # label matched its live opinion
+            # (ids, labels) per deploy round plus the run-fixed
+            # duplicate selection, so the checker can prove cohort A
+            # never entered the batch, the volume match held at 723
+            # rows, and every label matched its live opinion
             traj_payload["sft_idx_raw"] = (
                 torch.stack(sft_idx_raw) if sft_idx_raw
                 else torch.empty(0))
             traj_payload["sft_y_raw"] = (
                 torch.stack(sft_y_raw) if sft_y_raw else torch.empty(0))
+            traj_payload["sft_dup_idx"] = xa_dup_idx.detach().cpu().clone()
     torch.save(traj_payload, out_dir / "trajectory.pt")
     print(f"[run] outputs in {out_dir}", flush=True)
     if wandb is not None:

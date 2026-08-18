@@ -152,8 +152,9 @@ case "$WHAT" in
   # ea {0.1,0.2,0.4,1} x es {0,0.05,0.1,0.2,0.4,1}) with
   # SFT_EXCLUDE_CLAMPED=1: cohort A (145 fixed agents) stays fully
   # present, served, pinned and peer-paired, but its rows never enter
-  # an SFT batch, so every round trains on exactly the 578 responsive
-  # agents. The completed _b0_ and _d8_ cells are REUSED (no shared
+  # an SFT batch; the volume stays MATCHED at 723 rows/round (578
+  # responsive once + 145 run-seeded responsive duplicates, fixed per
+  # run). The completed _b0_ and _d8_ cells are REUSED (no shared
   # tags with any key -- safe to submit alone). Smokes: 2 x 3 rounds
   # seed 991, b0xa x both masks at ea0p4 es0p2. Flow:
   # mistral_clamp_exclude_a_smoke -> pull + gate ->

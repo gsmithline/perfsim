@@ -215,9 +215,12 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               graph-mask cohorts only: the exact b0 envelope with
               SFT_EXCLUDE_CLAMPED=1 -- the fixed cohort stays fully
               present and pinned but its rows never enter an SFT
-              batch; sft_idx_raw/sft_y_raw must replay the exact
-              responsive complement with live-opinion labels every
-              round) with a fixed 145-agent cohort permanently
+              batch; the training volume stays MATCHED at 723 rows by
+              duplicating 145 responsive agents picked once per run
+              by a dedicated run-seeded generator; sft_idx_raw/
+              sft_y_raw/sft_dup_idx must replay the exact 578-once +
+              145-twice batch with live-opinion labels every round)
+              with a fixed 145-agent cohort permanently
               pinned to its innate opinions. Tag grammar
               pofdclamp_mistral7b_<arm>_<strat|
               bottom|gclump|gscat>[_stub]_ea<g>_w0p5_l0p2_es<e>_s<seed>:
@@ -238,7 +241,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               round in BOTH op_raw and twin_raw, responsive rows on the
               exact platform blend (section 3, frozen-aware) with the
               responsive twin <= 1 ulp of innate, SFT consuming all 723
-              labels (FRESH; b0xa: exactly the 578 responsive labels),
+              labels (FRESH; b0xa: 723 rows, all responsive -- 578 once
+              + the 145 run-seeded duplicates, never a fixed id),
               live-ICL contexts free to carry frozen-
               agent exemplars (excluding them is the failure), no peer
               interaction (es=0 token + accepted==0), and numeric
@@ -2581,11 +2585,15 @@ def check_run(run_dir):
             # -- b0xa SOURCE EXCLUSION (mistral_clamp_exclude_a) ---------
             # The fixed cohort must stay fully present in the
             # environment (every check above) while its rows NEVER
-            # enter an SFT batch: the persisted per-round (ordered
-            # ids, labels) must equal the exact responsive complement
-            # of the reconstructed mask, with each agent's CURRENT
-            # live opinion as its label (innate on round 0,
-            # op_raw[t-1] after -- bit-exact by construction).
+            # enter an SFT batch -- and the training VOLUME must stay
+            # matched to ordinary SFT at 723 rows/round: the persisted
+            # per-round (ordered ids, labels) must equal the ascending
+            # responsive complement of the reconstructed mask followed
+            # by the 145 duplicate responsive rows of the dedicated
+            # run-seeded selection (seed + 723_145, replayed here),
+            # every row carrying that agent's CURRENT live opinion
+            # (innate on round 0, op_raw[t-1] after -- bit-exact by
+            # construction).
             xa_cfg_on = bool(cfg.get("sft_exclude_clamped"))
             if ("_b0xa_" in name) != xa_cfg_on:
                 errs.append(f"CLAMP b0xa tag/config mismatch: "
@@ -2595,54 +2603,81 @@ def check_run(run_dir):
             if xa_cfg_on:
                 si_xa = d.get("sft_idx_raw")
                 sy_xa = d.get("sft_y_raw")
+                sd_xa = d.get("sft_dup_idx")
                 n_resp_xa = n_cl - got_frozen
                 want_ids_xa = (~cl_mask).nonzero().flatten().long()
                 t_xa = op_raw.shape[0]
+                # replay the dedicated run-seeded duplicate selection
+                _xa_gen = torch.Generator().manual_seed(
+                    int(cfg.get("seed") or 0) + 723_145)
+                _perm_xa = torch.randperm(
+                    n_resp_xa, generator=_xa_gen)[:got_frozen]
+                want_dup_xa = want_ids_xa[_perm_xa]
+                want_row_xa = torch.cat([want_ids_xa, want_dup_xa])
+                if sd_xa is None or sd_xa.numel() == 0:
+                    errs.append("CLAMP b0xa sft_dup_idx missing/empty "
+                                "(the run-fixed duplicate selection is "
+                                "mandatory)")
+                elif not torch.equal(sd_xa.long(), want_dup_xa):
+                    errs.append("CLAMP b0xa sft_dup_idx off the "
+                                "dedicated run-seeded selection "
+                                "(seed + 723_145 over the responsive "
+                                "complement)")
                 if si_xa is None or si_xa.numel() == 0 \
                         or sy_xa is None or sy_xa.numel() == 0:
                     errs.append("CLAMP b0xa sft_idx_raw/sft_y_raw "
                                 "missing/empty (the per-round training "
                                 "provenance is mandatory)")
-                elif tuple(si_xa.shape) != (t_xa, n_resp_xa) or \
-                        tuple(sy_xa.shape) != (t_xa, n_resp_xa):
+                elif tuple(si_xa.shape) != (t_xa, n_cl) or \
+                        tuple(sy_xa.shape) != (t_xa, n_cl):
                     errs.append(f"CLAMP b0xa training count off: "
                                 f"sft_idx_raw {tuple(si_xa.shape)} / "
                                 f"sft_y_raw {tuple(sy_xa.shape)} (want "
-                                f"[{t_xa}, {n_resp_xa}]: every deploy "
-                                f"round trains on all and only the "
-                                f"{n_resp_xa} responsive agents)")
+                                f"[{t_xa}, {n_cl}]: volume-matched "
+                                f"{n_resp_xa} responsive once + "
+                                f"{got_frozen} duplicated = {n_cl} "
+                                f"rows every deploy round)")
                 else:
                     si_xa = si_xa.long()
                     ids_ok = True
                     for tt in range(t_xa):
                         ids_t = si_xa[tt]
-                        if torch.equal(ids_t, want_ids_xa):
+                        if torch.equal(ids_t, want_row_xa):
                             continue
                         ids_ok = False
                         n_fx = int(cl_mask[ids_t.clamp(0, n_cl - 1)]
                                    .sum())
-                        n_dup = n_resp_xa - int(ids_t.unique().numel())
+                        uq_t, ct_t = ids_t.unique(return_counts=True)
                         n_miss = int((~torch.isin(want_ids_xa, ids_t))
                                      .sum())
+                        n_twice = int((ct_t == 2).sum())
+                        n_over = int((ct_t > 2).sum())
                         if n_fx:
                             errs.append(f"CLAMP b0xa round {tt}: "
                                         f"{n_fx} FIXED agent id(s) in "
                                         f"the training batch -- cohort "
                                         f"A must never enter SFT")
-                        if n_dup > 0:
-                            errs.append(f"CLAMP b0xa round {tt}: "
-                                        f"{n_dup} duplicate training "
-                                        f"id(s) -- every responsive "
-                                        f"agent appears exactly once")
                         if n_miss:
                             errs.append(f"CLAMP b0xa round {tt}: "
                                         f"{n_miss} missing responsive "
-                                        f"id(s) -- every responsive "
-                                        f"agent appears exactly once")
-                        if not (n_fx or n_dup > 0 or n_miss):
+                                        f"id(s) -- all {n_resp_xa} "
+                                        f"unique responsive ids are "
+                                        f"required")
+                        if n_twice != got_frozen or n_over:
+                            errs.append(f"CLAMP b0xa round {tt}: "
+                                        f"duplicate structure off "
+                                        f"({n_twice} ids twice, "
+                                        f"{n_over} more than twice; "
+                                        f"want exactly {got_frozen} "
+                                        f"ids twice, the rest once)")
+                        if not (n_fx or n_miss
+                                or n_twice != got_frozen or n_over):
                             errs.append(f"CLAMP b0xa round {tt}: "
                                         f"training ids off the "
-                                        f"ascending responsive order")
+                                        f"dedicated run-seeded "
+                                        f"selection/canonical order "
+                                        f"(complement then duplicate "
+                                        f"rows)")
                         break
                     if ids_ok:
                         if not torch.isfinite(sy_xa).all():
@@ -2651,7 +2686,7 @@ def check_run(run_dir):
                         for tt in range(t_xa):
                             src_t = innate if tt == 0 else op_raw[tt - 1]
                             d_lab = (sy_xa[tt].float()
-                                     - src_t[want_ids_xa].float()) \
+                                     - src_t[want_row_xa].float()) \
                                 .abs().max()
                             if float(d_lab) > 0.0:
                                 errs.append(
@@ -2664,11 +2699,12 @@ def check_run(run_dir):
                                 break
                 bad_nt_xa = [(r.get("round"), r.get("n_train"))
                              for r in traj if r.get("is_deploy")
-                             and r.get("n_train") != n_resp_xa]
+                             and r.get("n_train") != n_cl]
                 if bad_nt_xa:
-                    errs.append(f"CLAMP b0xa n_train != {n_resp_xa} "
-                                f"at {bad_nt_xa[:5]} (the batch must "
-                                f"be exactly the responsive cohort)")
+                    errs.append(f"CLAMP b0xa n_train != {n_cl} at "
+                                f"{bad_nt_xa[:5]} (the volume-matched "
+                                f"batch is 578 responsive once + 145 "
+                                f"duplicated)")
             # -- clamp-PEER invariants (mistral_innate_clamp_peer_s0) ----
             cl_peer = cfg.get("innate_clamp_peer_mode")
             if cl_peer:
@@ -2983,8 +3019,9 @@ def check_run(run_dir):
     # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
     # Clamp b0 falls through: SFT must consume all 723 labels (the frozen
     # cohort's innate labels INCLUDED) every deploy round. Clamp b0xa
-    # (sft_exclude_clamped) consumes exactly the responsive complement:
-    # cap minus the fixed cohort (578 of 723 at frac 0.2).
+    # (sft_exclude_clamped) also consumes 723 rows -- volume-matched:
+    # 578 responsive once + 145 run-seeded responsive duplicates, never
+    # a fixed id (section 1j proves the composition).
     if is_icl or is_iclf or is_ctf or is_zsprior or \
             ((is_reach or is_ctxgrid or is_clamp)
              and cfg.get("training_style") == "frozen"):
@@ -3004,12 +3041,6 @@ def _fresh_errs(cfg, traj, is_dpo):
             errs.append("FRESH no n_train logged (pipeline predates the n_train patch?)")
     else:
         cap = int(cfg.get("train_cap") or 0) or 723
-        if cfg.get("sft_exclude_clamped"):
-            # source exclusion (b0xa): the fixed cohort's rows never
-            # enter the batch, so the expected size is the responsive
-            # complement (723 - 145 = 578 at frac 0.2)
-            cap -= int(round(float(cfg.get("innate_clamp_frac") or 0.0)
-                             * (int(cfg.get("n_labeled") or 0) or 723)))
         wrong = [(t, n) for t, n in sizes if n != cap]
         if wrong:
             errs.append(f"FRESH n_train != {cap} at {wrong[:5]}")

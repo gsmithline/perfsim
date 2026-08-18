@@ -6,22 +6,27 @@
 # with SFT_EXCLUDE_CLAMPED=1 (_b0xa_): the 145 fixed agents stay
 # fully present -- served, gated, pinned bit-exact in population AND
 # twin, stubborn peer pairing unchanged -- but their rows are dropped
-# from every SFT batch (round 0 included), so each round trains on
-# all and only the 578 responsive agents with their current live
-# opinions. The b0-vs-b0xa difference at a matched cell is the
+# from every SFT batch (round 0 included) while the training VOLUME
+# stays matched at 723 rows: 145 responsive agents, picked ONCE per
+# run by a dedicated run-seeded generator (seed + 723_145, no
+# simulation RNG advanced) and reused every round, are each included
+# once more, so every round trains on 578 responsive agents once +
+# those 145 twice, all with current live opinions and never a fixed
+# id. The b0-vs-b0xa difference at a matched cell is the
 # weight-mediated pathway from A to the responsive cohort; the
 # reused _d8_ personal-history arm is the structural null. Masks,
 # peer operator, serving, generation and telemetry are IDENTICAL to
 # the completed graph wave (clamp_graph_masks.json rides queue col
 # 24, stubborn operator fixed in this env). Every run persists
-# sft_idx_raw/sft_y_raw -- the exact ordered training ids + labels
-# per round -- for the offline exclusion proof. W=0.5, lam=0.2,
+# sft_idx_raw/sft_y_raw/sft_dup_idx -- the exact ordered training
+# ids + labels per round and the run-fixed duplicate selection --
+# for the offline exclusion + volume-match proof. W=0.5, lam=0.2,
 # gamma=0, greedy serving, WITH_TWIN=1, movielens Action, 30-round
 # mains / 3-round smokes.
 # Gate every pull with check_pofd_sanity (CLAMP section: graph-mask
-# invariants + the b0xa provenance replay -- training ids == the
-# exact responsive complement every round, labels == the live
-# opinions, no fixed id ever trains).
+# invariants + the b0xa provenance replay -- 723 rows every round ==
+# the ascending responsive complement then the replayed seeded
+# duplicates, labels == the live opinions, no fixed id ever trains).
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> mistral_clamp_exclude_a_smoke
 #   (flow: mistral_clamp_exclude_a_smoke -> pull + gate ->
 #    mistral_clamp_exclude_a)

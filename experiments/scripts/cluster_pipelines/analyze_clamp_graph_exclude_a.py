@@ -6,7 +6,9 @@ THE ESTIMAND: the completed _b0_ SFT runs include the 145 fixed
 agents' innate labels in every shared weight update; the _b0xa_ runs
 are identical except SFT_EXCLUDE_CLAMPED=1 drops cohort A's rows from
 every SFT batch while A stays fully present in the environment
-(served, gated, pinned, stubborn peer pairing, matched twin). The
+(served, gated, pinned, stubborn peer pairing, matched twin) and the
+training volume stays MATCHED at 723 rows/round (578 responsive once
++ 145 run-seeded responsive duplicates, fixed per run). The
 b0-minus-b0xa difference on the RESPONSIVE cohort B (578 agents) is
 therefore the pathway from A into B THROUGH SHARED MODEL WEIGHTS:
   - no-peer cells (es=0): the PRIMARY estimand -- the only route from
