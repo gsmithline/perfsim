@@ -463,6 +463,11 @@ def check_run(run_dir):
     # pofdfamsmk_ (3-round b1 smokes) too.
     is_fam = name.startswith("pofdfam")
     is_fam_smk = name.startswith("pofdfamsmk")
+    # FULLY-EVOLVING comparison wave (2026-08-18,
+    # mistral_bottom20_evolving): the no-clamp b0/d8 companion grid to
+    # the bottom-20%-fixed wave -- all 723 agents evolve, symmetric
+    # peers, matched twin; cohort A exists only in the analysis.
+    is_evo = name.startswith("pofdevo")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -932,6 +937,74 @@ def check_run(run_dir):
             errs.append(f"CONFIG hardware metadata missing keys "
                         f"{hw4_missing}")
         elif not (hw4.get("hostname") and hw4.get("gpu_name")):
+            errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_evo:
+        # FULLY-EVOLVING comparison wave: the canonical Action loop
+        # with NO clamp and NO fixed agents -- any clamp/exclusion
+        # config key is a tag/config lie. Mistral-only, numeric
+        # threshold gate, matched twin, seed rides the tag.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723, "icrh": False,
+                     "feedback_mode": "none",
+                     "ai_gate_mode": "threshold", "train_cap": 723,
+                     "anchor_mode": "fixed",
+                     "population_update": "nested_ai_then_social_v1",
+                     "base_model": "mistralai/Mistral-7B-Instruct-v0.3",
+                     "n_rounds": 30})
+        EVO_ARM_WANT = {
+            "b0": {"training_style": "sft", "kl_beta": 0.0,
+                   "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                   "sft_epochs": 1, "sft_batch_size": 4,
+                   "fresh_each_round": True, "icl_k": 0,
+                   "icl_days": 0},
+            # d8: PERSONAL-history ICL, frozen weights, zero
+            # cross-user exemplars (byte replay in section 1m)
+            "d8": {"training_style": "frozen", "kl_beta": 0.0,
+                   "use_lora": 0, "fresh_each_round": False,
+                   "icl_k": 0, "icl_days": 8, "icl_select": "random",
+                   "icl_ctx_source": "live",
+                   "icl_snapshot_round": -1},
+        }
+        m_arm_e = re.search(r"_(b0|d8)_ea", name)
+        if m_arm_e is None:
+            errs.append(f"CONFIG evo tag needs a _<b0|d8>_ea token "
+                        f"run ({name!r})")
+        else:
+            want.update(EVO_ARM_WANT[m_arm_e.group(1)])
+        for _k_evo in ("innate_clamp_mode", "innate_clamp_peer_mode",
+                       "innate_clamp_frac", "innate_clamp_seed",
+                       "sft_exclude_clamped"):
+            if _k_evo in cfg:
+                errs.append(f"CONFIG {_k_evo}={cfg.get(_k_evo)!r} "
+                            f"recorded on a fully-evolving evo tag "
+                            f"({name!r}) -- no clamp and no fixed "
+                            f"agents exist in this wave")
+        if "_mistral7b_" not in name:
+            errs.append(f"CONFIG evo is mistral-only; no _mistral7b_ "
+                        f"slug in {name!r}")
+        if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG evo tag needs a NUMERIC _ea token "
+                        f"({name!r})")
+        if m_es is None:
+            errs.append(f"CONFIG evo tag must carry an _es token "
+                        f"({name!r})")
+        m_sd_e = re.search(r"_s(\d+)$", name)
+        if m_sd_e is None:
+            errs.append(f"CONFIG evo tag must end in its seed token "
+                        f"({name!r})")
+        else:
+            want["seed"] = int(m_sd_e.group(1))
+        hw_e = cfg.get("hardware") or {}
+        hw_e_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
+                                    "cuda_version", "torch_version",
+                                    "transformers_version")
+                        if k not in hw_e]
+        if hw_e_missing:
+            errs.append(f"CONFIG hardware metadata missing keys "
+                        f"{hw_e_missing}")
+        elif not (hw_e.get("hostname") and hw_e.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
     elif is_fam:
         # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
@@ -2814,6 +2887,112 @@ def check_run(run_dir):
                             f"({len(set(ppls_cl))} distinct values) -- "
                             f"weights not frozen?")
 
+    # -- 1m EVO (fully-evolving comparison wave, 2026-08-18) -----------------
+    # NO clamp, NO fixed agents: the matched twin is mandatory at
+    # every es, no clamp artifact may exist, the trajectory must be
+    # complete, and the d8 arm must replay its personal-history
+    # contexts byte-for-byte from (innate, op_raw) -- the identical
+    # guarantee the clamp d8 waves carry, minus the fixed-cohort
+    # repetition check (there are no fixed agents).
+    if is_evo:
+        nr_e = int(cfg.get("n_rounds") or 0)
+        if len(traj) != nr_e or int(op_raw.shape[0]) != nr_e:
+            errs.append(f"EVO trajectory holds {len(traj)} rows / "
+                        f"op_raw {tuple(op_raw.shape)} (config "
+                        f"n_rounds={nr_e} -- incomplete or over-run)")
+        if not torch.isfinite(op_raw).all():
+            errs.append("EVO non-finite opinions")
+        elif float(op_raw.min()) < 0.0 or float(op_raw.max()) > 1.0:
+            errs.append(f"EVO opinions outside [0,1]: "
+                        f"[{float(op_raw.min()):.4f}, "
+                        f"{float(op_raw.max()):.4f}]")
+        if not torch.isfinite(pred_raw).all():
+            errs.append("EVO non-finite predictions (parse-fail NaN)")
+        tw_e = d.get("twin_raw")
+        if tw_e is None or tw_e.numel() == 0:
+            errs.append("EVO twin_raw missing/empty (the matched "
+                        "no-platform twin is mandatory)")
+        elif tuple(tw_e.shape) != tuple(op_raw.shape):
+            errs.append(f"EVO twin_raw shape {tuple(tw_e.shape)} != "
+                        f"op_raw {tuple(op_raw.shape)}")
+        cm_e = d.get("innate_clamp_mask")
+        if cm_e is not None and cm_e.numel():
+            errs.append("EVO innate_clamp_mask present -- a fully-"
+                        "evolving run must not carry clamp artifacts")
+        icl_d_e = int(cfg.get("icl_days") or 0)
+        if icl_d_e > 0:
+            if int(cfg.get("icl_k") or 0) != 0:
+                errs.append("EVO personal-history arm carries "
+                            "icl_k>0 -- cross-user exemplars are "
+                            "forbidden in d8")
+            for _bad_k in ("icl_idx_raw", "icl_val_raw"):
+                _bad_v = d.get(_bad_k)
+                if _bad_v is not None and _bad_v.numel():
+                    errs.append(f"EVO d8: {_bad_k} non-empty -- "
+                                f"cross-user exemplar artifacts must "
+                                f"not exist")
+            if os.path.exists(os.path.join(run_dir,
+                                           "icl_ctx_log.json.gz")):
+                errs.append("EVO d8: icl_ctx_log.json.gz present "
+                            "-- no cross-user context may be "
+                            "rendered")
+            dl_path = os.path.join(run_dir, "icl_days_log.json.gz")
+            if not os.path.exists(dl_path):
+                errs.append("EVO d8: icl_days_log.json.gz missing "
+                            "(the rendered personal-history "
+                            "contexts are mandatory)")
+            else:
+                with gzip.open(dl_path, "rt") as fh:
+                    dl_rows = [json.loads(line) for line in fh]
+                n_rounds_e = op_raw.shape[0]
+                n_e = innate.numel()
+                tgt_e = cfg.get("ml_target") or "Action"
+                if [r.get("round") for r in dl_rows] != \
+                        list(range(n_rounds_e)):
+                    errs.append(f"EVO d8: icl_days_log holds rounds "
+                                f"{[r.get('round') for r in dl_rows][:5]}"
+                                f"... (want 0..{n_rounds_e - 1})")
+                else:
+                    hist_e = [innate]
+                    bad_hist_e = None
+                    for tt, dr in enumerate(dl_rows):
+                        ctxs = dr.get("ctx") or []
+                        if len(ctxs) != n_e:
+                            bad_hist_e = (tt, None,
+                                          f"{len(ctxs)} contexts "
+                                          f"(want {n_e})")
+                            break
+                        win = hist_e[-icl_d_e:]
+                        for i in range(n_e):
+                            days_s = ", ".join(f"{float(h[i]):.2f}"
+                                               for h in win)
+                            want_s = (
+                                "This user's own opinion of "
+                                f"{tgt_e} movies over the most "
+                                "recent days (oldest to newest): "
+                                f"{days_s}.")
+                            if ctxs[i] != want_s:
+                                bad_hist_e = (tt, i,
+                                              f"got {ctxs[i][:90]!r} "
+                                              f"want {want_s[:90]!r}")
+                                break
+                        if bad_hist_e is not None:
+                            break
+                        hist_e.append(op_raw[tt])
+                    if bad_hist_e is not None:
+                        errs.append(f"EVO d8: personal-history "
+                                    f"context off the (innate, "
+                                    f"op_raw) replay at round "
+                                    f"{bad_hist_e[0]} agent "
+                                    f"{bad_hist_e[1]}: {bad_hist_e[2]}")
+        if cfg.get("training_style") == "frozen":
+            ppls_e = [r["perplexity"] for r in traj
+                      if "perplexity" in r]
+            if ppls_e and len(set(ppls_e)) != 1:
+                errs.append(f"EVO fixed-text perplexity varies "
+                            f"({len(set(ppls_e))} distinct values) "
+                            f"-- weights not frozen?")
+
     # -- 1k ZSPRIOR (zero-shot prior screen, 2026-08-17) ---------------------
     # Every candidate checkpoint must have loaded, served all 723
     # profiles, parsed to a number for EVERY agent, and left the
@@ -2970,7 +3149,7 @@ def check_run(run_dir):
                         f"op_raw {tuple(op_raw.shape)}")
         if is_icl or is_iclf or is_ctf or \
                 ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp
-                  or is_fam)
+                  or is_fam or is_evo)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),
@@ -3033,7 +3212,7 @@ def check_run(run_dir):
     # 578 responsive once + 145 run-seeded responsive duplicates, never
     # a fixed id (section 1j proves the composition).
     if is_icl or is_iclf or is_ctf or is_zsprior or \
-            ((is_reach or is_ctxgrid or is_clamp)
+            ((is_reach or is_ctxgrid or is_clamp or is_evo)
              and cfg.get("training_style") == "frozen"):
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
