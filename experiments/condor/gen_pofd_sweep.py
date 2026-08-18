@@ -2199,17 +2199,40 @@ def fam_smoke_rows():
             for m in FAM_SMOKE_MODELS]
 
 
+# qwen retry (2026-08-18): exactly the 8 qwen7b cells. The scout
+# released before Qwen/Qwen2.5-7B-Instruct reached the offline lustre
+# cache, so all 8 died at model load (HF_HUB_OFFLINE=1 refused the
+# download) and the retry policy removed them; the other 39 completed
+# and passed the gate. SAME tags as the scout key BY DESIGN -- NEVER
+# co-submit with fig2_family_prior_scout while these are queued there
+# (double-queue write race); the idempotent exec no-ops anything
+# already complete. PRE-CACHE the checkpoint before submitting.
+FAM_QWEN_RETRY_KEY = "fig2_family_prior_qwen_retry"
+
+
+def fam_qwen_retry_rows():
+    return [r for r in fam_rows()
+            if r.split(",")[0].startswith("pofdfam_qwen7b_")]
+
+
 def fam_sub(kind):
-    """kind: 'main' | 'smoke'."""
-    key = {"main": FAM_KEY, "smoke": FAM_SMOKE_KEY}[kind]
+    """kind: 'main' | 'smoke' | 'qwen_retry'."""
+    key = {"main": FAM_KEY, "smoke": FAM_SMOKE_KEY,
+           "qwen_retry": FAM_QWEN_RETRY_KEY}[kind]
     n_jobs = {"main": len(fam_rows()),
-              "smoke": len(fam_smoke_rows())}[kind]
+              "smoke": len(fam_smoke_rows()),
+              "qwen_retry": len(fam_qwen_retry_rows())}[kind]
     what = {"main": (f"{n_jobs} seed-0 production cells (30 rounds; the "
                      f"48-cell 6-checkpoint x b0/b0p5/b1/k0 x ea1 x "
                      f"es 0.05/0.2 grid minus the field-audited reuse)"),
             "smoke": ("SMOKE (3 x 3 rounds, seed 0, production "
                       "configuration; b1 es0p2 for qwen3_8b / "
-                      "olmo3_7b / ministral8b)")}[kind]
+                      "olmo3_7b / ministral8b)"),
+            "qwen_retry": ("QWEN RETRY -- exactly the 8 qwen7b cells "
+                           "that died uncached (SAME tags as the scout "
+                           "key; never co-submit while they are queued "
+                           "there; pre-cache Qwen2.5-7B-Instruct "
+                           "first)")}[kind]
     return FAM_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs, what=what)
 
 
@@ -5004,6 +5027,19 @@ def main():
     expected[p] = 3
     cube_subs[os.path.join(HERE, f"at_pofd_{FAM_SMOKE_KEY}.sub")] = \
         fam_sub("smoke")
+    # qwen retry: exactly the 8 uncached-death qwen7b cells; tags
+    # DELIBERATELY shared with the scout key (no collision assert --
+    # the retry-key precedent), never co-submit.
+    _fam_rt = fam_qwen_retry_rows()
+    assert len(_fam_rt) == 8, len(_fam_rt)
+    assert {r.split(",")[0] for r in _fam_rt} <= _fam_tags, \
+        "qwen retry cells must be a subset of the scout wave"
+    p = os.path.join(HERE, f"configs_pofd_{FAM_QWEN_RETRY_KEY}.txt")
+    files[p] = _fam_rt
+    expected[p] = 8
+    cube_subs[os.path.join(HERE,
+                           f"at_pofd_{FAM_QWEN_RETRY_KEY}.sub")] = \
+        fam_sub("qwen_retry")
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()

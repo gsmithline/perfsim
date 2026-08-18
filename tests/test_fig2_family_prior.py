@@ -112,6 +112,18 @@ def test_generator_smokes():
         assert cols[22] == "3", r    # 3-round smokes
 
 
+def test_generator_qwen_retry():
+    rows = GEN.fam_qwen_retry_rows()
+    assert len(rows) == 8
+    tags = {r.split(",")[0] for r in rows}
+    assert all(t.startswith("pofdfam_qwen7b_") for t in tags)
+    assert tags <= {r.split(",")[0] for r in GEN.fam_rows()}
+    for arm in ("_b0_", "_b0p5_", "_b1_", "_k0_"):
+        assert sum(1 for t in tags if arm in t) == 2, arm
+    sub = GEN.fam_sub("qwen_retry")
+    assert "fig2_family_prior_qwen_retry" in sub
+
+
 def test_fam_sub_template_surface():
     sub = GEN.fam_sub("main")
     assert "CHAT_THINKING=$(chatthink)" in sub
