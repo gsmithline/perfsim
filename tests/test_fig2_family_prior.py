@@ -124,6 +124,72 @@ def test_generator_qwen_retry():
     assert "fig2_family_prior_qwen_retry" in sub
 
 
+def test_generator_beta_scout_and_confirm_keys():
+    rows = GEN.fam_beta_rows()
+    assert len(rows) == 18
+    tags = {r.split(",")[0] for r in rows}
+    assert len(tags) == 18
+    for arm, beta in (("_b2_", "2"), ("_b4_", "4"), ("_b8_", "8")):
+        sub = [r for r in rows if arm in r.split(",")[0]]
+        assert len(sub) == 6, arm
+        assert all(c.split(",")[1].strip() == "sft_kl"
+                   and c.split(",")[2].strip() == beta for c in sub)
+    assert all("_ea1_" in t and "_es0p05_s0" in t for t in tags)
+    # brand-new tags: zero overlap with the completed 48-cell wave
+    assert not (tags & {r.split(",")[0] for r in GEN.fam_rows()})
+    for arm in ("b2", "b4", "b8"):
+        crows = GEN.fam_confirm_rows(arm)
+        assert len(crows) == 12
+        ctags = {r.split(",")[0] for r in crows}
+        assert len(ctags) == 12
+        assert all(f"_{arm}_" in t and "_es0p05_" in t
+                   and (t.endswith("_s42") or t.endswith("_s43"))
+                   for t in ctags)
+        assert not (ctags & tags)
+        assert GEN.FAM_CONFIRM_KEY[arm] == \
+            f"fig2_family_prior_{arm}_confirm"
+
+
+def test_analyzer_beta_surface():
+    src = open(os.path.join(PIPE, "analyze_fig2_family_prior.py")).read()
+    assert "n_correct >= 5" in src
+    assert "prior_pop_pearson" in src and "prior_pop_spearman" in src
+    assert "shape_retention_mean" in src
+    assert "stability_w1_mean" in src
+    assert "no shared setting is selected" in src
+    assert "pofdreachbase_qwen7b" in src and "pofdzsprior_qwen3_8b" in src
+    # panel spec: 2x3 family columns, P0 kept as its own reference,
+    # no late model distribution
+    assert "PANEL_GRID" in src and "perfect prediction" in src
+    assert "pred_raw" not in src.split("def main")[1].split(
+        "import matplotlib")[1]
+
+
+def test_checker_accepts_beta_arms(tmp_path):
+    rd = build_fam(tmp_path, "olmo3_7b", "b4", 0.05)
+    tg.assert_verdict(rd, True)
+
+
+def test_checker_accepts_confirm_seed(tmp_path):
+    def mut(c):
+        c["seed"] = 42
+    rd = build_fam(tmp_path, "ministral8b", "b2", 0.05, cfg_mut=mut,
+                   tag="pofdfam_ministral8b_b2_ea1_w0p5_l0p2_es0p05_s42")
+    tg.assert_verdict(rd, True)
+
+
+def test_checker_rejects_wrong_beta_and_seed(tmp_path):
+    def mut(c):
+        c["kl_beta"] = 1.0
+    rd = build_fam(tmp_path, "qwen7b", "b8", 0.05, cfg_mut=mut)
+    tg.assert_verdict(rd, False, "kl_beta")
+    def mut2(c):
+        c["seed"] = 7
+    rd2 = build_fam(tmp_path, "qwen7b", "b2", 0.05, cfg_mut=mut2,
+                    tag="pofdfam_qwen7b_b2_ea1_w0p5_l0p2_es0p05_s7")
+    tg.assert_verdict(rd2, False, "_s0/_s42/_s43")
+
+
 def test_fam_sub_template_surface():
     sub = GEN.fam_sub("main")
     assert "CHAT_THINKING=$(chatthink)" in sub
@@ -205,9 +271,10 @@ def fam_cfg(tag, model, arm, es, nrounds):
                   "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
                   "sft_epochs": 1, "sft_batch_size": 4,
                   "fresh_each_round": True, "icl_k": 0, "icl_days": 0})
-    elif arm in ("b0p5", "b1"):
+    elif arm in ("b0p5", "b1", "b2", "b4", "b8"):
         c.update({"training_style": "sft_kl",
-                  "kl_beta": 0.5 if arm == "b0p5" else 1.0,
+                  "kl_beta": {"b0p5": 0.5, "b1": 1.0, "b2": 2.0,
+                              "b4": 4.0, "b8": 8.0}[arm],
                   "kl_direction": "forward", "use_lora": 1,
                   "lora_r": 512, "sft_lr": 5e-5, "sft_epochs": 1,
                   "sft_batch_size": 4, "fresh_each_round": True,

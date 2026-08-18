@@ -1009,6 +1009,14 @@ REACH_ARM_COLS = {
     # intermediate beta=0.5 dose; otherwise the exact b1 envelope
     "b0p5": dict(style="sft_kl", beta="0.5", iclk=0, snap=-1, uselora=1,
                  fresh=1, ansk=16, gg=0),
+    # b2/b4/b8 (fig2 beta scout, 2026-08-18): the high-retention forward-
+    # KL doses; everything except the coefficient copies the b1 envelope
+    "b2": dict(style="sft_kl", beta="2", iclk=0, snap=-1, uselora=1,
+               fresh=1, ansk=16, gg=0),
+    "b4": dict(style="sft_kl", beta="4", iclk=0, snap=-1, uselora=1,
+               fresh=1, ansk=16, gg=0),
+    "b8": dict(style="sft_kl", beta="8", iclk=0, snap=-1, uselora=1,
+               fresh=1, ansk=16, gg=0),
     "fz0": dict(style="frozen", beta="0", iclk=8, snap=0, uselora=0,
                 fresh=0, ansk=0, gg=1),
     "dyn": dict(style="frozen", beta="0", iclk=8, snap=-1, uselora=0,
@@ -2154,12 +2162,12 @@ def fam_tag(model, arm, es, seed=0, prefix="pofdfam"):
             f"_es{_num(es)}_s{seed}")
 
 
-def fam_row(model, arm, es, nrounds=30, prefix="pofdfam"):
+def fam_row(model, arm, es, nrounds=30, prefix="pofdfam", seed=0):
     a = REACH_ARM_COLS[arm]
     m = FAM_MODELS[model]
     return ROW_FAM.format(
-        tag=fam_tag(model, arm, es, 0, prefix),
-        style=a["style"], beta=a["beta"], seed=0, es=f"{es:g}",
+        tag=fam_tag(model, arm, es, seed, prefix),
+        style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
         iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
         fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=nrounds,
         basemodel=m["base_model"], chatthink=m["chatthink"],
@@ -2215,13 +2223,53 @@ def fam_qwen_retry_rows():
             if r.split(",")[0].startswith("pofdfam_qwen7b_")]
 
 
+# beta scout + confirmation keys (2026-08-18): extend the COMPLETED
+# 48-cell fam grid along the forward-KL coefficient ONLY. Arms b2/b4/b8
+# copy the b1 envelope exactly (fresh LoRA, forward KL, canonical
+# Action, ea1 numeric threshold) at es=0.05, seed 0 -- 6 checkpoints x
+# 3 betas = 18 jobs, brand-new _b2_/_b4_/_b8_ tags (collision-asserted,
+# no smokes: the b1 envelope smoked clean on every new checkpoint).
+# The analyzer (analyze_fig2_family_prior.py) then selects the SMALLEST
+# shared beta whose late populations sit closest in W1 to their own
+# frozen k0 endpoints for >= 5 of 6 checkpoints; the matching
+# confirmation key (12 jobs: 6 checkpoints x seeds 42/43 at that beta)
+# is the ONLY one submitted.
+FAM_BETA_KEY = "fig2_family_prior_beta_scout"
+FAM_BETA_ARMS = ["b2", "b4", "b8"]
+FAM_BETA_ES = 0.05
+FAM_CONFIRM_SEEDS = [42, 43]
+FAM_CONFIRM_KEY = {arm: f"fig2_family_prior_{arm}_confirm"
+                   for arm in FAM_BETA_ARMS}
+
+
+def fam_beta_rows():
+    return [fam_row(model, arm, FAM_BETA_ES)
+            for arm in FAM_BETA_ARMS
+            for model in FAM_MODELS]
+
+
+def fam_confirm_rows(arm):
+    return [fam_row(model, arm, FAM_BETA_ES, seed=seed)
+            for model in FAM_MODELS
+            for seed in FAM_CONFIRM_SEEDS]
+
+
 def fam_sub(kind):
-    """kind: 'main' | 'smoke' | 'qwen_retry'."""
+    """kind: 'main' | 'smoke' | 'qwen_retry' | 'beta_scout' |
+    'b2_confirm' | 'b4_confirm' | 'b8_confirm'."""
     key = {"main": FAM_KEY, "smoke": FAM_SMOKE_KEY,
-           "qwen_retry": FAM_QWEN_RETRY_KEY}[kind]
+           "qwen_retry": FAM_QWEN_RETRY_KEY,
+           "beta_scout": FAM_BETA_KEY,
+           "b2_confirm": FAM_CONFIRM_KEY["b2"],
+           "b4_confirm": FAM_CONFIRM_KEY["b4"],
+           "b8_confirm": FAM_CONFIRM_KEY["b8"]}[kind]
     n_jobs = {"main": len(fam_rows()),
               "smoke": len(fam_smoke_rows()),
-              "qwen_retry": len(fam_qwen_retry_rows())}[kind]
+              "qwen_retry": len(fam_qwen_retry_rows()),
+              "beta_scout": len(fam_beta_rows()),
+              "b2_confirm": len(fam_confirm_rows("b2")),
+              "b4_confirm": len(fam_confirm_rows("b4")),
+              "b8_confirm": len(fam_confirm_rows("b8"))}[kind]
     what = {"main": (f"{n_jobs} seed-0 production cells (30 rounds; the "
                      f"48-cell 6-checkpoint x b0/b0p5/b1/k0 x ea1 x "
                      f"es 0.05/0.2 grid minus the field-audited reuse)"),
@@ -2232,7 +2280,20 @@ def fam_sub(kind):
                            "that died uncached (SAME tags as the scout "
                            "key; never co-submit while they are queued "
                            "there; pre-cache Qwen2.5-7B-Instruct "
-                           "first)")}[kind]
+                           "first)"),
+            "beta_scout": ("BETA SCOUT -- 18 seed-0 cells (6 "
+                           "checkpoints x forward-KL beta {2,4,8} at "
+                           "es0p05; everything else copies the "
+                           "completed b1 configuration)"),
+            "b2_confirm": ("BETA=2 CONFIRMATION -- 6 checkpoints x "
+                           "seeds 42/43 at es0p05 (submit ONLY the "
+                           "analyzer-selected beta's key)"),
+            "b4_confirm": ("BETA=4 CONFIRMATION -- 6 checkpoints x "
+                           "seeds 42/43 at es0p05 (submit ONLY the "
+                           "analyzer-selected beta's key)"),
+            "b8_confirm": ("BETA=8 CONFIRMATION -- 6 checkpoints x "
+                           "seeds 42/43 at es0p05 (submit ONLY the "
+                           "analyzer-selected beta's key)")}[kind]
     return FAM_SUB_TEMPLATE.format(key=key, n_jobs=n_jobs, what=what)
 
 
@@ -5040,6 +5101,44 @@ def main():
     cube_subs[os.path.join(HERE,
                            f"at_pofd_{FAM_QWEN_RETRY_KEY}.sub")] = \
         fam_sub("qwen_retry")
+    # beta scout: 18 brand-new seed-0 cells along the forward-KL axis
+    rows_fb = fam_beta_rows()
+    assert len(rows_fb) == 18, len(rows_fb)
+    _fb_tags = {r.split(",")[0] for r in rows_fb}
+    assert len(_fb_tags) == 18
+    for _a in FAM_BETA_ARMS:
+        assert sum(1 for t in _fb_tags if f"_{_a}_" in t) == 6, _a
+    assert all("_ea1_" in t and "_es0p05_s0" in t for t in _fb_tags)
+    _prior_before_fb = {r.split(",")[0]
+                        for rows in files.values() for r in rows}
+    assert not (_fb_tags & _prior_before_fb), \
+        f"beta scout collision: {_fb_tags & _prior_before_fb}"
+    p = os.path.join(HERE, f"configs_pofd_{FAM_BETA_KEY}.txt")
+    files[p] = rows_fb
+    expected[p] = 18
+    cube_subs[os.path.join(HERE, f"at_pofd_{FAM_BETA_KEY}.sub")] = \
+        fam_sub("beta_scout")
+    # confirmation keys: 12 jobs each (6 checkpoints x seeds 42/43);
+    # only the analyzer-selected beta's key is ever submitted
+    for _a in FAM_BETA_ARMS:
+        rows_fc = fam_confirm_rows(_a)
+        assert len(rows_fc) == 12, (_a, len(rows_fc))
+        _fc_tags = {r.split(",")[0] for r in rows_fc}
+        assert len(_fc_tags) == 12
+        assert all(f"_{_a}_" in t and "_es0p05_" in t
+                   and (t.endswith("_s42") or t.endswith("_s43"))
+                   for t in _fc_tags)
+        _prior_now = {r.split(",")[0]
+                      for rows in files.values() for r in rows}
+        assert not (_fc_tags & _prior_now), \
+            f"{_a} confirm collision: {_fc_tags & _prior_now}"
+        p = os.path.join(HERE,
+                         f"configs_pofd_{FAM_CONFIRM_KEY[_a]}.txt")
+        files[p] = rows_fc
+        expected[p] = 12
+        cube_subs[os.path.join(HERE,
+                               f"at_pofd_{FAM_CONFIRM_KEY[_a]}.sub")] = \
+            fam_sub(f"{_a}_confirm")
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()

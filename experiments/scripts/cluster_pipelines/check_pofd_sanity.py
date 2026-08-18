@@ -934,6 +934,10 @@ def check_run(run_dir):
                    "use_lora": 0, "fresh_each_round": False,
                    "icl_k": 0, "icl_days": 0},
         }
+        # beta scout / confirmation arms (2026-08-18): the b1 envelope
+        # at the high-retention forward-KL doses
+        for _fb, _fbeta in (("b2", 2.0), ("b4", 4.0), ("b8", 8.0)):
+            FAM_ARM_WANT[_fb] = {**FAM_ARM_WANT["b1"], "kl_beta": _fbeta}
         slug_f = next((s for s in FAM_BASE
                        if name.startswith(f"pofdfam_{s}_")
                        or name.startswith(f"pofdfamsmk_{s}_")), None)
@@ -948,12 +952,12 @@ def check_run(run_dir):
                             f"{cfg.get('chat_thinking')!r} recorded for "
                             f"{slug_f} -- only Qwen3 carries the "
                             f"thinking directive")
-        m_arm_f = re.search(r"_(b0p5|b0|b1|k0)_ea1_", name)
+        m_arm_f = re.search(r"_(b0p5|b0|b1|b2|b4|b8|k0)_ea1_", name)
         if m_arm_f is None:
             errs.append(f"CONFIG fam tag needs an "
-                        f"_<b0|b0p5|b1|k0>_ea1_ token run ({name!r}) "
-                        f"-- the scout runs ONLY the wide-open numeric "
-                        f"gate")
+                        f"_<b0|b0p5|b1|b2|b4|b8|k0>_ea1_ token run "
+                        f"({name!r}) -- the scout runs ONLY the "
+                        f"wide-open numeric gate")
         else:
             want.update(FAM_ARM_WANT[m_arm_f.group(1)])
             if is_fam_smk and m_arm_f.group(1) != "b1":
@@ -963,11 +967,12 @@ def check_run(run_dir):
                         f"token ({name!r})")
         want["n_rounds"] = 3 if is_fam_smk else 30
         m_sd_f = re.search(r"_s(\d+)$", name)
-        if m_sd_f is None or int(m_sd_f.group(1)) != 0:
-            errs.append(f"CONFIG fam is a seed-0 wave; tag must end in "
-                        f"_s0 ({name!r})")
+        if m_sd_f is None or int(m_sd_f.group(1)) not in (0, 42, 43):
+            # 0 = the scouts; 42/43 = the selected-beta confirmation
+            errs.append(f"CONFIG fam tag must end in _s0/_s42/_s43 "
+                        f"({name!r})")
         else:
-            want["seed"] = 0
+            want["seed"] = int(m_sd_f.group(1))
         hw_f = cfg.get("hardware") or {}
         hw_f_missing = [k for k in ("hostname", "gpu_name", "gpu_cc",
                                     "cuda_version", "torch_version",
