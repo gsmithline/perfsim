@@ -71,6 +71,12 @@ appended one JSON line per round to telemetry.json (crash-safe):
               round 0 all True) and the ACTUAL labels fed to the learner, so
               batch composition is verifiable end-to-end offline. Empty
               tensors everywhere else.
+  sft_idx_raw / sft_y_raw   trajectory.pt, SFT_EXCLUDE_CLAMPED=1 runs only
+              (2026-08-18, mistral_clamp_exclude_a wave): per deploy round
+              the ORDERED agent ids fed to the learner and their labels
+              AFTER the fixed cohort's rows are dropped, so the source
+              exclusion is provable exactly offline (never present
+              otherwise).
 """
 
 from __future__ import annotations
@@ -985,6 +991,26 @@ def main() -> int:
             raise ValueError(f"INNATE_CLAMP_FRAC={innate_clamp_frac!r} "
                              f"must lie strictly in (0, 1) when the clamp "
                              f"is on")
+    # SFT_EXCLUDE_CLAMPED (2026-08-18, mistral_clamp_exclude_a wave):
+    # causal SOURCE EXCLUSION. The fixed cohort stays FULLY present in
+    # the environment -- served, gated, pinned, peer-paired (stubborn),
+    # mirrored in the twin -- but its rows are dropped from EVERY SFT
+    # batch (round 0 included), so the only removed pathway is the
+    # fixed cohort's labels entering the shared weights. The drop is a
+    # boolean row filter AFTER the (inert at cap=n) subsample -- no
+    # generator is advanced, so the batch is the included-arm batch
+    # minus the fixed rows in the same agent order. 0/unset is
+    # byte-identical legacy behavior (no config key, no trajectory
+    # keys).
+    sft_exclude_clamped = _env_int("SFT_EXCLUDE_CLAMPED", 0) == 1
+    if sft_exclude_clamped:
+        if innate_clamp_mode == "off":
+            raise ValueError("SFT_EXCLUDE_CLAMPED requires the innate "
+                             "clamp (INNATE_CLAMP_MODE != 'off') -- "
+                             "there is no fixed cohort to exclude")
+        if training_style == "frozen":
+            raise ValueError("SFT_EXCLUDE_CLAMPED is meaningless with "
+                             "frozen weights (nothing ever trains)")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     # donor context load (ICL_CTX_SOURCE=donor): the exact opinion vector the
@@ -1082,6 +1108,11 @@ def main() -> int:
             # recorded ONLY when set -- the completed no-peer clamp
             # wave's configs stay byte-identical
             config["innate_clamp_peer_mode"] = innate_clamp_peer_mode
+        if sft_exclude_clamped:
+            # recorded ONLY when on (absent == off, the audit
+            # convention): the completed included-SFT clamp waves stay
+            # byte-identical
+            config["sft_exclude_clamped"] = True
     if save_raw_gen:
         # recorded ONLY when on (absent == off, the audit convention)
         config["save_raw_gen"] = True
@@ -1550,6 +1581,10 @@ def main() -> int:
     train_y_raw = [] # REPLAY_FRAC>0 only: the ACTUAL labels fed to the learner
                      # each deploy round ([n_labeled] float), so the batch
                      # composition is checkable end-to-end offline
+    sft_idx_raw = [] # SFT_EXCLUDE_CLAMPED=1 only: per deploy round the ORDERED
+                     # agent ids fed to the learner (the post-exclusion batch)
+    sft_y_raw = []   # SFT_EXCLUDE_CLAMPED=1 only: the matching labels, same
+                     # row order -- the exclusion is checkable exactly offline
     icl_ctx_cache = None  # ICL_SNAPSHOT_ROUND >= 0: (ids [n,K], vals [n,K])
                           # frozen at the snapshot round, reused verbatim after
     icl_idx_raw = []  # ICL_K>0: per round [n, K] exemplar AGENT ids shown
@@ -1678,6 +1713,20 @@ def main() -> int:
                     replay_raw.append(rep_mask)
                     train_y_raw.append(
                         train_data["y"].squeeze(-1).detach().cpu().clone())
+            if sft_exclude_clamped and train_data is not None:
+                # causal source exclusion: drop the fixed cohort's rows
+                # from THIS round's batch (round 0 included). Boolean
+                # indexing only -- no generator advances -- and the
+                # kept rows stay in the included-arm agent order. The
+                # exact (ids, labels) fed to the learner are persisted
+                # per round for the offline exclusion proof.
+                _keep_xa = ~clamp_mask[train_data["agent_idx"].long()]
+                train_data = {k: v[_keep_xa]
+                              for k, v in train_data.items()}
+                sft_idx_raw.append(
+                    train_data["agent_idx"].detach().cpu().long().clone())
+                sft_y_raw.append(train_data["y"].squeeze(-1)
+                                 .detach().cpu().float().clone())
             loss_block = {}
             if train_data is not None:
                 # platform-seat pre-train telemetry: current adapter on the
@@ -2391,6 +2440,16 @@ def main() -> int:
             traj_payload["clamp_fr_touch_raw"] = (
                 torch.stack(clamp_touch_raw) if clamp_touch_raw
                 else torch.empty(0))
+        if sft_exclude_clamped:
+            # source-exclusion provenance: the exact ordered training
+            # (ids, labels) per deploy round, so the checker can prove
+            # cohort A never entered the batch and every responsive
+            # label matched its live opinion
+            traj_payload["sft_idx_raw"] = (
+                torch.stack(sft_idx_raw) if sft_idx_raw
+                else torch.empty(0))
+            traj_payload["sft_y_raw"] = (
+                torch.stack(sft_y_raw) if sft_y_raw else torch.empty(0))
     torch.save(traj_payload, out_dir / "trajectory.pt")
     print(f"[run] outputs in {out_dir}", flush=True)
     if wandb is not None:

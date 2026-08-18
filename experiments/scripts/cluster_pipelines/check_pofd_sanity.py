@@ -211,7 +211,13 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               vs d8 (frozen weights, ICL_K=0, ICL_DAYS=8 PERSONAL
               history: each agent's prompt carries only its OWN latest
               eight recorded opinions, oldest to newest -- graph-mask
-              cohorts only) with a fixed 145-agent cohort permanently
+              cohorts only) vs b0xa (2026-08-18 SOURCE EXCLUSION,
+              graph-mask cohorts only: the exact b0 envelope with
+              SFT_EXCLUDE_CLAMPED=1 -- the fixed cohort stays fully
+              present and pinned but its rows never enter an SFT
+              batch; sft_idx_raw/sft_y_raw must replay the exact
+              responsive complement with live-opinion labels every
+              round) with a fixed 145-agent cohort permanently
               pinned to its innate opinions. Tag grammar
               pofdclamp_mistral7b_<arm>_<strat|
               bottom|gclump|gscat>[_stub]_ea<g>_w0p5_l0p2_es<e>_s<seed>:
@@ -232,7 +238,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               round in BOTH op_raw and twin_raw, responsive rows on the
               exact platform blend (section 3, frozen-aware) with the
               responsive twin <= 1 ulp of innate, SFT consuming all 723
-              labels (FRESH), live-ICL contexts free to carry frozen-
+              labels (FRESH; b0xa: exactly the 578 responsive labels),
+              live-ICL contexts free to carry frozen-
               agent exemplars (excluding them is the failure), no peer
               interaction (es=0 token + accepted==0), and numeric
               eps_AI=1.0 staying threshold mode, never all_open. d8
@@ -808,6 +815,15 @@ def check_run(run_dir):
                    "use_lora": 0, "fresh_each_round": False, "icl_k": 0,
                    "icl_days": 8, "icl_select": "random",
                    "icl_ctx_source": "live", "icl_snapshot_round": -1},
+            # b0xa (source-exclusion wave, 2026-08-18): the exact b0
+            # envelope + SFT_EXCLUDE_CLAMPED -- the fixed cohort's
+            # rows never enter an SFT batch (provenance checked in 1j)
+            "b0xa": {"training_style": "sft", "kl_beta": 0.0,
+                     "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                     "sft_epochs": 1, "sft_batch_size": 4,
+                     "fresh_each_round": True, "icl_k": 0,
+                     "icl_days": 0, "train_cap": 723,
+                     "sft_exclude_clamped": True},
         }
         CLAMP_MODE_OF_TOK = {"strat": "stratified_random",
                              "bottom": "bottom",
@@ -823,12 +839,13 @@ def check_run(run_dir):
         #                               MANDATORY, es may be 0 (in-wave
         #                               baselines; the sweep is inert)
         m_arm = re.search(
-            r"_(b0|dyn|d8)_(strat|bottom|gclump|gscat)(?:_(stub))?_ea",
+            r"_(b0xa|b0|dyn|d8)_(strat|bottom|gclump|gscat)(?:_(stub))?"
+            r"_ea",
             name)
         if m_arm is None:
-            errs.append(f"CONFIG clamp tag needs an _<b0|dyn|d8>_<strat|"
-                        f"bottom|gclump|gscat>[_stub]_ token run before "
-                        f"_ea ({name!r})")
+            errs.append(f"CONFIG clamp tag needs an _<b0xa|b0|dyn|d8>_"
+                        f"<strat|bottom|gclump|gscat>[_stub]_ token run "
+                        f"before _ea ({name!r})")
         else:
             want.update(CLAMP_ARM_WANT[m_arm.group(1)])
             _cl_tok = m_arm.group(2)
@@ -838,6 +855,16 @@ def check_run(run_dir):
                 errs.append(f"CONFIG the personal-history d8 arm exists "
                             f"only in the graph-placement wave "
                             f"(gclump/gscat), got {name!r}")
+            if m_arm.group(1) == "b0xa" and not _is_graph_mask:
+                errs.append(f"CONFIG the source-exclusion b0xa arm "
+                            f"exists only in the graph-placement wave "
+                            f"(gclump/gscat), got {name!r}")
+            if m_arm.group(1) != "b0xa" and \
+                    cfg.get("sft_exclude_clamped"):
+                errs.append(f"CONFIG sft_exclude_clamped="
+                            f"{cfg.get('sft_exclude_clamped')!r} "
+                            f"recorded on a non-b0xa clamp tag "
+                            f"({name!r}) -- tag/config mismatch")
             if m_arm.group(3):
                 want["innate_clamp_peer_mode"] = "stubborn"
                 if not _is_graph_mask and \
@@ -2551,6 +2578,97 @@ def check_run(run_dir):
                                         f"repetition ({seq_s!r} vs "
                                         f"{iv})")
                                     break
+            # -- b0xa SOURCE EXCLUSION (mistral_clamp_exclude_a) ---------
+            # The fixed cohort must stay fully present in the
+            # environment (every check above) while its rows NEVER
+            # enter an SFT batch: the persisted per-round (ordered
+            # ids, labels) must equal the exact responsive complement
+            # of the reconstructed mask, with each agent's CURRENT
+            # live opinion as its label (innate on round 0,
+            # op_raw[t-1] after -- bit-exact by construction).
+            xa_cfg_on = bool(cfg.get("sft_exclude_clamped"))
+            if ("_b0xa_" in name) != xa_cfg_on:
+                errs.append(f"CLAMP b0xa tag/config mismatch: "
+                            f"sft_exclude_clamped="
+                            f"{cfg.get('sft_exclude_clamped')!r} on "
+                            f"tag {name!r}")
+            if xa_cfg_on:
+                si_xa = d.get("sft_idx_raw")
+                sy_xa = d.get("sft_y_raw")
+                n_resp_xa = n_cl - got_frozen
+                want_ids_xa = (~cl_mask).nonzero().flatten().long()
+                t_xa = op_raw.shape[0]
+                if si_xa is None or si_xa.numel() == 0 \
+                        or sy_xa is None or sy_xa.numel() == 0:
+                    errs.append("CLAMP b0xa sft_idx_raw/sft_y_raw "
+                                "missing/empty (the per-round training "
+                                "provenance is mandatory)")
+                elif tuple(si_xa.shape) != (t_xa, n_resp_xa) or \
+                        tuple(sy_xa.shape) != (t_xa, n_resp_xa):
+                    errs.append(f"CLAMP b0xa training count off: "
+                                f"sft_idx_raw {tuple(si_xa.shape)} / "
+                                f"sft_y_raw {tuple(sy_xa.shape)} (want "
+                                f"[{t_xa}, {n_resp_xa}]: every deploy "
+                                f"round trains on all and only the "
+                                f"{n_resp_xa} responsive agents)")
+                else:
+                    si_xa = si_xa.long()
+                    ids_ok = True
+                    for tt in range(t_xa):
+                        ids_t = si_xa[tt]
+                        if torch.equal(ids_t, want_ids_xa):
+                            continue
+                        ids_ok = False
+                        n_fx = int(cl_mask[ids_t.clamp(0, n_cl - 1)]
+                                   .sum())
+                        n_dup = n_resp_xa - int(ids_t.unique().numel())
+                        n_miss = int((~torch.isin(want_ids_xa, ids_t))
+                                     .sum())
+                        if n_fx:
+                            errs.append(f"CLAMP b0xa round {tt}: "
+                                        f"{n_fx} FIXED agent id(s) in "
+                                        f"the training batch -- cohort "
+                                        f"A must never enter SFT")
+                        if n_dup > 0:
+                            errs.append(f"CLAMP b0xa round {tt}: "
+                                        f"{n_dup} duplicate training "
+                                        f"id(s) -- every responsive "
+                                        f"agent appears exactly once")
+                        if n_miss:
+                            errs.append(f"CLAMP b0xa round {tt}: "
+                                        f"{n_miss} missing responsive "
+                                        f"id(s) -- every responsive "
+                                        f"agent appears exactly once")
+                        if not (n_fx or n_dup > 0 or n_miss):
+                            errs.append(f"CLAMP b0xa round {tt}: "
+                                        f"training ids off the "
+                                        f"ascending responsive order")
+                        break
+                    if ids_ok:
+                        if not torch.isfinite(sy_xa).all():
+                            errs.append("CLAMP b0xa non-finite "
+                                        "training labels")
+                        for tt in range(t_xa):
+                            src_t = innate if tt == 0 else op_raw[tt - 1]
+                            d_lab = (sy_xa[tt].float()
+                                     - src_t[want_ids_xa].float()) \
+                                .abs().max()
+                            if float(d_lab) > 0.0:
+                                errs.append(
+                                    f"CLAMP b0xa round {tt}: training "
+                                    f"label off the live-opinion "
+                                    f"replay (max |diff| "
+                                    f"{float(d_lab):.2e}; labels must "
+                                    f"equal innate on round 0 and "
+                                    f"op_raw[t-1] after)")
+                                break
+                bad_nt_xa = [(r.get("round"), r.get("n_train"))
+                             for r in traj if r.get("is_deploy")
+                             and r.get("n_train") != n_resp_xa]
+                if bad_nt_xa:
+                    errs.append(f"CLAMP b0xa n_train != {n_resp_xa} "
+                                f"at {bad_nt_xa[:5]} (the batch must "
+                                f"be exactly the responsive cohort)")
             # -- clamp-PEER invariants (mistral_innate_clamp_peer_s0) ----
             cl_peer = cfg.get("innate_clamp_peer_mode")
             if cl_peer:
@@ -2864,7 +2982,9 @@ def check_run(run_dir):
     # icl (frozen): nothing trains, no n_train ever -- skip. Reach frozen
     # arms (fz0/dyn/base) share the skip; reach b0/b1 arms get the check.
     # Clamp b0 falls through: SFT must consume all 723 labels (the frozen
-    # cohort's innate labels INCLUDED) every deploy round.
+    # cohort's innate labels INCLUDED) every deploy round. Clamp b0xa
+    # (sft_exclude_clamped) consumes exactly the responsive complement:
+    # cap minus the fixed cohort (578 of 723 at frac 0.2).
     if is_icl or is_iclf or is_ctf or is_zsprior or \
             ((is_reach or is_ctxgrid or is_clamp)
              and cfg.get("training_style") == "frozen"):
@@ -2884,6 +3004,12 @@ def _fresh_errs(cfg, traj, is_dpo):
             errs.append("FRESH no n_train logged (pipeline predates the n_train patch?)")
     else:
         cap = int(cfg.get("train_cap") or 0) or 723
+        if cfg.get("sft_exclude_clamped"):
+            # source exclusion (b0xa): the fixed cohort's rows never
+            # enter the batch, so the expected size is the responsive
+            # complement (723 - 145 = 578 at frac 0.2)
+            cap -= int(round(float(cfg.get("innate_clamp_frac") or 0.0)
+                             * (int(cfg.get("n_labeled") or 0) or 723)))
         wrong = [(t, n) for t, n in sizes if n != cap]
         if wrong:
             errs.append(f"FRESH n_train != {cap} at {wrong[:5]}")
