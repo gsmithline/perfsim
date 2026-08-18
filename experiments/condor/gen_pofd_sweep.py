@@ -2755,18 +2755,18 @@ ROW_FAMG = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
             "{pplbatch}")
 
 
-def famg_tag(model, arm, gate, seed=0):
+def famg_tag(model, arm, gate, seed=0, es=FAMG_ES):
     return (f"pofdfam_{model}_{arm}_ea{_num(gate)}_{w_tok()}"
-            f"_es{_num(FAMG_ES)}_s{seed}")
+            f"_es{_num(es)}_s{seed}")
 
 
-def famg_row(model, arm, gate, nrounds=30, seed=0):
+def famg_row(model, arm, gate, nrounds=30, seed=0, es=FAMG_ES):
     a = REACH_ARM_COLS[arm]
     m = FAM_MODELS[model]
     return ROW_FAMG.format(
-        tag=famg_tag(model, arm, gate, seed),
+        tag=famg_tag(model, arm, gate, seed, es),
         style=a["style"], beta=a["beta"], seed=seed,
-        es=f"{FAMG_ES:g}", eps_ai=f"{gate:g}",
+        es=f"{es:g}", eps_ai=f"{gate:g}",
         iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
         fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=nrounds,
         basemodel=m["base_model"], chatthink=m["chatthink"],
@@ -2807,6 +2807,66 @@ def famg_sub():
               "6 checkpoints x b0/b1 x ea 0.1/0.2/0.4 at es0p05; "
               "the 12 ea1 scout cells REUSE per the audited "
               "manifest -- never co-submit with the scout keys)"))
+
+
+# fam_gate_social (2026-08-18): the SOCIAL-GATE EXTENSION of the
+# Section-3 gate ablation -- the same six checkpoints x b0/b1 x ea
+# 0.1/0.2/0.4/1 surface EXTENDED across es 0/0.05/0.2 (lam=0.2,
+# W=0.5, seed 0, 30 rounds) = 144 conceptual cells on the exact fam
+# code path. Field-level audit (audit_fam_gate_reuse.py, full-surface
+# mode -> manifest_fam_gate_social.json): the es0p05 cells are the
+# 48-cell ablation wave (12 complete ea1 scout cells + 36 queued in
+# fam_gate_ablation -- NEVER re-queued here); es0p2 keeps the 12
+# completed ea1 scout cells (incl. the pofdgate2d occupant inherited
+# from the fam manifest); the 48 es0 cells + the 36 es0p2 cells
+# below ea1 = 84 NEW jobs. NO smoke.
+FAMGS_KEY = "fam_gate_social"
+FAMGS_MANIFEST_PATH = os.path.join(
+    HERE, "manifest_fam_gate_social.json")
+FAMGS_ESS = [0.0, 0.05, 0.2]
+
+
+def famgs_rows():
+    """The 84 genuinely-missing jobs from the audited full-surface
+    manifest -- counts asserted for CONSISTENCY with the expected
+    split (every es0p05 cell reused-or-covered, es0p2 new below ea1,
+    es0 all new), never forced."""
+    mf = json.load(open(FAMGS_MANIFEST_PATH))
+    cells = mf["cells"]
+    assert mf["n_cells"] == 144 and len(cells) == 144, mf["n_cells"]
+    assert {(c["model"], c["arm"], c["gate"], c["es"])
+            for c in cells} == \
+        {(m, a, g, e) for m in FAM_MODELS for a in FAMG_ARMS
+         for g in FAMG_GATES for e in FAMGS_ESS}
+    new = [c for c in cells if c["status"] == "new"]
+    assert len(new) == 84 and mf["n_new"] == 84, len(new)
+    assert all(c["status"] != "new" for c in cells
+               if c["es"] == 0.05), \
+        "the es0p05 surface belongs to fam_gate_ablation"
+    assert all(c["es"] in (0.0, 0.2) for c in new)
+    assert sum(1 for c in new if c["es"] == 0.0) == 48
+    assert sum(1 for c in new if c["es"] == 0.2) == 36
+    assert not any(c["es"] == 0.2 and c["gate"] == 1.0 for c in new)
+    reused = [c for c in cells if c["status"] == "reused"]
+    assert all(c.get("verdict") == "PASS" for c in reused)
+    rows = []
+    for c in sorted(new, key=lambda c: (c["model"], c["arm"],
+                                        c["gate"], c["es"])):
+        r = famg_row(c["model"], c["arm"], c["gate"], es=c["es"])
+        assert r.split(",")[0].strip() == c["new_tag"], \
+            (r.split(",")[0], c["new_tag"])
+        rows.append(r)
+    return rows
+
+
+def famgs_sub():
+    return FAM_SUB_TEMPLATE.format(
+        key=FAMGS_KEY, n_jobs=len(famgs_rows()),
+        what=("SOCIAL-GATE EXTENSION: 84 seed-0 cells (30 rounds; 6 "
+              "checkpoints x b0/b1 x the 48 es0 cells + the 36 es0p2 "
+              "cells below ea1; es0p05 lives in fam_gate_ablation and "
+              "the ea1 cells reuse -- never co-submit with the scout "
+              "or ablation keys)"))
 
 
 # zsprior_screen (2026-08-17): ZERO-SHOT PRIOR SCREEN for four candidate
@@ -5756,6 +5816,41 @@ def main():
     expected[p] = 36
     cube_subs[os.path.join(HERE, f"at_pofd_{FAMG_KEY}.sub")] = \
         famg_sub()
+    # social-gate extension (see the FAMGS block): 84 new seed-0
+    # cells (48 es0 + 36 es0p2 below ea1); the es0p05 surface stays
+    # with fam_gate_ablation and the ea1 cells reuse -- their tags
+    # never queue here.
+    rows_fgs = famgs_rows()
+    assert len(rows_fgs) == 84, len(rows_fgs)
+    _fgs_tags = {r.split(",")[0] for r in rows_fgs}
+    assert len(_fgs_tags) == 84
+    assert all(t.startswith("pofdfam_") and t.endswith("_s0")
+               for t in _fgs_tags)
+    assert not any("_es0p05_" in t for t in _fgs_tags)
+    assert sum(1 for t in _fgs_tags if "_es0_" in t) == 48
+    assert sum(1 for t in _fgs_tags if "_es0p2_" in t) == 36
+    assert not any("_ea1_" in t and "_es0p2_" in t
+                   for t in _fgs_tags), \
+        "the es0p2 ea1 scout cells reuse -- they never queue"
+    for _arm_tok, _nw in (("_b0_", 42), ("_b1_", 42)):
+        assert sum(1 for t in _fgs_tags if _arm_tok in t) == _nw, \
+            _arm_tok
+    for _m in FAM_MODELS:
+        assert sum(1 for t in _fgs_tags
+                   if f"_{_m}_" in t) == 14, _m
+    for r in rows_fgs:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[24] == ("0" if "_qwen3_8b_" in _cols[0]
+                             else "default"), r
+    _prior_fgs = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (_fgs_tags & _prior_fgs), \
+        f"famgs collision: {_fgs_tags & _prior_fgs}"
+    p = os.path.join(HERE, f"configs_pofd_{FAMGS_KEY}.txt")
+    files[p] = rows_fgs
+    expected[p] = 84
+    cube_subs[os.path.join(HERE, f"at_pofd_{FAMGS_KEY}.sub")] = \
+        famgs_sub()
     # zero-shot prior screen (see the ZSPRIOR block): exactly 4 one-round
     # probes, one per candidate checkpoint, NEW pofdzsprior_ family.
     rows_zsp = zsprior_rows()

@@ -1090,13 +1090,15 @@ def check_run(run_dir):
                 errs.append(f"CONFIG the gate ablation runs ONLY the "
                             f"b0/b1 arms; {m_arm_f.group(1)} exists "
                             f"only at ea1 ({name!r})")
-            if _fam_gate_tok != "1" and \
-                    (m_es is None or want_es != 0.05):
-                errs.append(f"CONFIG the gate ablation is pinned at "
-                            f"_es0p05_ ({name!r})")
-        if m_es is None or want_es not in (0.05, 0.2):
-            errs.append(f"CONFIG fam tag needs an _es0p05_ or _es0p2_ "
-                        f"token ({name!r})")
+            # es0 (2026-08-18 social-gate extension): b0/b1 only at
+            # every gate -- the other arms never ran without peers
+            if m_es is not None and want_es == 0.0 and \
+                    m_arm_f.group(1) not in ("b0", "b1"):
+                errs.append(f"CONFIG the es0 extension runs ONLY the "
+                            f"b0/b1 arms ({name!r})")
+        if m_es is None or want_es not in (0.0, 0.05, 0.2):
+            errs.append(f"CONFIG fam tag needs an _es0_, _es0p05_ or "
+                        f"_es0p2_ token ({name!r})")
         want["n_rounds"] = 3 if is_fam_smk else 30
         m_sd_f = re.search(r"_s(\d+)$", name)
         if m_sd_f is None or int(m_sd_f.group(1)) not in (0, 42, 43):
@@ -1105,7 +1107,8 @@ def check_run(run_dir):
                         f"({name!r})")
         else:
             want["seed"] = int(m_sd_f.group(1))
-            if _fam_gate_tok != "1" and int(m_sd_f.group(1)) != 0:
+            if (_fam_gate_tok != "1" or want_es == 0.0) and \
+                    int(m_sd_f.group(1)) != 0:
                 errs.append(f"CONFIG the gate ablation is seed-0 "
                             f"only ({name!r})")
         hw_f = cfg.get("hardware") or {}

@@ -130,7 +130,7 @@ def test_analyzer_surface():
     assert "fam_gate_analysis" in src
     assert "HARD FAIL" in src and "sys.exit(1)" in src
     for out in ("fam_gate_pairs.csv", "fam_gate_pairs.tex",
-                "fam_gate_panels"):
+                "fam_gate_panels", "fam_gate_grid"):
         assert out in src, out
     assert "itertools.combinations" in src
     assert "median" in src and r"\toprule" in src
@@ -223,9 +223,84 @@ def test_ablation_gate_seed42_fails(tmp_path):
     tg.assert_verdict(rd, False, "seed-0 only")
 
 
-def test_ablation_gate_es0p2_fails(tmp_path):
-    rd = build_famg(tmp_path, "mistral7b", "b0", 0.2, es=0.2)
-    tg.assert_verdict(rd, False, "pinned at _es0p05_")
+def test_ablation_gate_es0p1_fails(tmp_path):
+    # 0.1 is not in the allowed social-gate set {0, 0.05, 0.2}
+    rd = build_famg(tmp_path, "mistral7b", "b0", 0.2, es=0.1)
+    tg.assert_verdict(rd, False, "_es0p05_ or _es0p2_")
+
+
+# -- social-gate extension (2026-08-18) ----------------------------------
+
+def test_generator_famgs_is_exactly_84():
+    rows = GEN.famgs_rows()
+    assert len(rows) == 84
+    tags = [r.split(",")[0] for r in rows]
+    assert len(set(tags)) == 84
+    assert all(t.startswith("pofdfam_") and t.endswith("_s0")
+               for t in tags)
+    assert not any("_es0p05_" in t for t in tags)
+    assert sum(1 for t in tags if "_es0_" in t) == 48
+    assert sum(1 for t in tags if "_es0p2_" in t) == 36
+    assert not any("_ea1_" in t and "_es0p2_" in t for t in tags)
+    assert sum(1 for t in tags if "_b0_" in t) == 42
+    assert sum(1 for t in tags if "_b1_" in t) == 42
+    for m in MODELS:
+        assert sum(1 for t in tags if f"_{m}_" in t) == 14, m
+    # no collision with the ablation / scout keys
+    for other in (GEN.famg_rows(), GEN.fam_rows()):
+        assert not (set(tags) & {r.split(",")[0] for r in other})
+
+
+def test_social_manifest_expected_split():
+    m = json.load(open(os.path.join(
+        REPO, "experiments", "condor",
+        "manifest_fam_gate_social.json")))
+    assert m["n_cells"] == 144 and m["n_new"] == 84
+    new = [c for c in m["cells"] if c["status"] == "new"]
+    assert sum(1 for c in new if c["es"] == 0.0) == 48
+    assert sum(1 for c in new if c["es"] == 0.2) == 36
+    assert not any(c["status"] == "new" for c in m["cells"]
+                   if c["es"] == 0.05)
+    cov = [c for c in m["cells"] if c["status"] == "covered_running"]
+    assert len(cov) == 36 and all(c["es"] == 0.05 for c in cov)
+    re = [c for c in m["cells"] if c["status"] == "reused"]
+    assert all(c["verdict"] == "PASS" for c in re)
+    inh = [c for c in re if c.get("inherited")]
+    assert [(c["model"], c["arm"], c["es"]) for c in inh] == \
+        [("mistral7b", "b0", 0.2)]
+
+
+def test_famgs_sub_surface():
+    sub = GEN.famgs_sub()
+    assert "SAVE_RAW_GEN=1" in sub
+    assert sub.rstrip().endswith(
+        "pplbatch from experiments/condor/"
+        "configs_pofd_fam_gate_social.txt")
+
+
+def test_healthy_b0_ea0p2_es0p2(tmp_path):
+    tg.assert_verdict(build_famg(tmp_path, "mistral7b", "b0", 0.2,
+                                 es=0.2), True)
+
+
+def test_healthy_b1_ea1_es0(tmp_path):
+    tg.assert_verdict(build_famg(tmp_path, "qwen7b", "b1", 1.0,
+                                 es=0.0), True)
+
+
+def test_k0_at_es0_fails(tmp_path):
+    rd = build_famg(tmp_path, "ministral8b", "k0", 1.0, es=0.0)
+    tg.assert_verdict(rd, False, "b0/b1 arms")
+
+
+def test_es0_seed42_fails(tmp_path):
+    def mut(c):
+        c["seed"] = 42
+    rd = build_famg(tmp_path, "mistral7b", "b0", 1.0, es=0.0,
+                    tag=famg_tag("mistral7b", "b0", 1.0, es=0.0,
+                                 seed=42),
+                    cfg_mut=mut)
+    tg.assert_verdict(rd, False, "seed-0 only")
 
 
 def test_gate_token_config_mismatch_fails(tmp_path):

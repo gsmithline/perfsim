@@ -2,10 +2,11 @@
 """SECTION-3 FAMILY-GATE ABLATION analysis (2026-08-18,
 fam_gate_ablation).
 
-Grid: six checkpoints x SFT arms {b0 = beta 0, b1 = forward-KL
-beta 1} x ea {0.1, 0.2, 0.4, 1} at the fixed es=0.05 / lam=0.2 /
-W=0.5 canonical Action surface, seed 0 = 48 cells, all HARD-REQUIRED
-(the 12 ea=1 cells are the completed family-prior-scout runs).
+Grid (2026-08-18 SOCIAL-GATE EXTENSION): six checkpoints x SFT arms
+{b0 = beta 0, b1 = forward-KL beta 1} x ea {0.1, 0.2, 0.4, 1} x es
+{0, 0.05, 0.2} at lam=0.2 / W=0.5, seed 0 = 144 cells, all
+HARD-REQUIRED (the ea=1 cells are the completed family-prior-scout
+runs; es0.05 is the 48-cell ablation wave).
 
 Equilibrium W1 between a checkpoint pair = the mean over rounds
 25-29 of the exact 1-Wasserstein distance between their late
@@ -15,10 +16,16 @@ Prior W1 = the same distance between the pair's zero-shot M0 priors
 
 Outputs (notes/pofd/fam_gate_analysis/):
   fam_gate_panels.png/pdf   three panels (Qwen / OLMo / Mistral):
-      WITHIN-FAMILY equilibrium W1 vs the AI gate, one line per beta
+      WITHIN-FAMILY equilibrium W1 vs the AI gate at es0.05, one
+      line per beta
+  fam_gate_grid.png/pdf     split-cell heatmaps over the full
+      ea x es surface (beta=0 upper-left triangle, beta=1
+      lower-right): within-family median and all-15-pair median
+      equilibrium W1
   fam_gate_pairs.csv        all 15 checkpoint pairs: prior W1 +
-      equilibrium W1 under both betas at every gate + a median row
-  fam_gate_pairs.tex        the same table as a LaTeX appendix
+      equilibrium W1 under both betas at EVERY (gate, es) + median
+      row
+  fam_gate_pairs.tex        the es0.05 gate axis as a LaTeX appendix
       tabular (booktabs)
 """
 import argparse
@@ -53,7 +60,7 @@ FAMILIES = [("Qwen", ("qwen7b", "qwen3_8b")),
             ("Mistral", ("mistral7b", "ministral8b"))]
 ARMS = ["b0", "b1"]
 GATES = [0.1, 0.2, 0.4, 1.0]
-ES_TOK = "es0p05"
+ESS = [0.0, 0.05, 0.2]
 LATE = range(25, 30)
 OUT_DIR_DEFAULT = os.path.join(
     REPO, "notes", "pofd", "fam_gate_analysis")
@@ -63,9 +70,9 @@ def _num(v):
     return f"{v:g}".replace(".", "p")
 
 
-def cell_tag(model, arm, gate):
+def cell_tag(model, arm, gate, es=0.05):
     return (f"pofdfam_{model}_{arm}_ea{_num(gate)}_w0p5_l0p2"
-            f"_{ES_TOK}_s0")
+            f"_es{_num(es)}_s0")
 
 
 def w1(a, b):
@@ -86,13 +93,22 @@ def main():
     for model in MODELS:
         for arm in ARMS:
             for gate in GATES:
-                tag = cell_tag(model, arm, gate)
-                rd = AN.find_run(args.roots, tag)
-                if rd is None:
-                    missing.append(tag)
-                else:
-                    run_of[(model, arm, gate)] = rd
-    n_total = len(MODELS) * len(ARMS) * len(GATES)
+                for es in ESS:
+                    tag = cell_tag(model, arm, gate, es)
+                    # the mistral b0 ea1 es0p2 slot is filled by the
+                    # gate2d run the fam scout itself reused
+                    rd = AN.find_run(args.roots, tag)
+                    if rd is None and gate == 1.0 and es == 0.2 \
+                            and (model, arm) == ("mistral7b", "b0"):
+                        rd = AN.find_run(
+                            args.roots,
+                            "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2"
+                            "_es0p2_s0")
+                    if rd is None:
+                        missing.append(tag)
+                    else:
+                        run_of[(model, arm, gate, es)] = rd
+    n_total = len(MODELS) * len(ARMS) * len(GATES) * len(ESS)
     print(f"[fam_gate] cells located: {len(run_of)}/{n_total}")
     for tag in missing:
         print(f"  MISSING {tag}")
@@ -115,9 +131,10 @@ def main():
             sys.exit(1)
         prior_of[m] = AN.load(rd)["pred_raw"].float()[0].clamp(0, 1)
 
-    def eq_w1(m1, m2, arm, gate):
-        return sum(w1(a, b) for a, b in zip(late_of[(m1, arm, gate)],
-                                            late_of[(m2, arm, gate)])
+    def eq_w1(m1, m2, arm, gate, es=0.05):
+        return sum(w1(a, b)
+                   for a, b in zip(late_of[(m1, arm, gate, es)],
+                                   late_of[(m2, arm, gate, es)])
                    ) / len(list(LATE))
 
     pairs = list(itertools.combinations(MODELS, 2))
@@ -127,8 +144,9 @@ def main():
                "prior_w1": w1(prior_of[m1], prior_of[m2])}
         for arm in ARMS:
             for gate in GATES:
-                row[f"eq_w1_{arm}_ea{_num(gate)}"] = \
-                    eq_w1(m1, m2, arm, gate)
+                for es in ESS:
+                    row[f"eq_w1_{arm}_ea{_num(gate)}_es{_num(es)}"] \
+                        = eq_w1(m1, m2, arm, gate, es)
         rows.append(row)
     med = {"pair": "median (15 pairs)"}
     for key in rows[0]:
@@ -165,7 +183,8 @@ def main():
         cells = [r["pair"], f"{r['prior_w1']:.3f}"]
         for arm in ARMS:
             for gate in GATES:
-                cells.append(f"{r[f'eq_w1_{arm}_ea{_num(gate)}']:.3f}")
+                cells.append(
+                    f"{r[f'eq_w1_{arm}_ea{_num(gate)}_es0p05']:.3f}")
         tex.append(" & ".join(cells) + r" \\")
     tex += [r"\bottomrule", r"\end{tabular}", ""]
     with open(os.path.join(args.out_dir, "fam_gate_pairs.tex"),
@@ -212,6 +231,70 @@ def main():
                                      f"fam_gate_panels.{ext}"),
                         dpi=200 if ext == "png" else None)
         print("[fam_gate] wrote fam_gate_panels.png/pdf")
+
+        # split-cell heatmaps over the full ea x es surface: beta=0
+        # in the upper-left triangle, beta=1 in the lower-right;
+        # left panel = median of the 3 within-family pairs, right =
+        # median of all 15 pairs
+        from matplotlib.colors import Normalize
+        from matplotlib.cm import ScalarMappable
+        from matplotlib.patches import Polygon
+
+        fam_pairs = [p for _, p in FAMILIES]
+
+        def med_grid(arm, pool):
+            return [[statistics.median(
+                eq_w1(m1, m2, arm, g, e) for m1, m2 in pool)
+                for g in GATES] for e in ESS]
+
+        panels2 = [("within-family median", fam_pairs),
+                   ("all-15-pair median", pairs)]
+        fig2, axes2 = plt.subplots(1, 2, figsize=(9.6, 4.2))
+        for ax, (lab, pool) in zip(axes2, panels2):
+            ul = med_grid("b0", pool)     # beta = 0
+            lr = med_grid("b1", pool)     # beta = 1
+            vals = [v for gr_ in (ul, lr) for row in gr_
+                    for v in row]
+            norm = Normalize(vmin=min(vals), vmax=max(vals))
+            cmap = plt.cm.viridis
+            for j in range(len(ESS)):
+                for i in range(len(GATES)):
+                    c0 = (i - 0.5, j - 0.5)
+                    c1 = (i + 0.5, j + 0.5)
+                    ax.add_patch(Polygon(
+                        [c0, (i - 0.5, j + 0.5), c1], closed=True,
+                        facecolor=cmap(norm(ul[j][i])),
+                        edgecolor="white", lw=0.5))
+                    ax.add_patch(Polygon(
+                        [c0, (i + 0.5, j - 0.5), c1], closed=True,
+                        facecolor=cmap(norm(lr[j][i])),
+                        edgecolor="white", lw=0.5))
+                    ax.text(i - 0.19, j + 0.21, f"{ul[j][i]:.3f}",
+                            ha="center", va="center", fontsize=5.6)
+                    ax.text(i + 0.19, j - 0.21, f"{lr[j][i]:.3f}",
+                            ha="center", va="center", fontsize=5.6)
+            ax.text(0.02, 1.02, r"upper-left: $\beta=0$ · "
+                                r"lower-right: $\beta=1$",
+                    transform=ax.transAxes, ha="left", va="bottom",
+                    fontsize=7)
+            fig2.colorbar(ScalarMappable(norm=norm, cmap=cmap),
+                          ax=ax, fraction=0.046, pad=0.04,
+                          label=f"equilibrium $W_1$ ({lab})")
+            ax.set_xlim(-0.5, len(GATES) - 0.5)
+            ax.set_ylim(-0.5, len(ESS) - 0.5)
+            ax.set_xticks(range(len(GATES)))
+            ax.set_xticklabels([f"{g:g}" for g in GATES])
+            ax.set_yticks(range(len(ESS)))
+            ax.set_yticklabels([f"{e:g}" for e in ESS])
+            ax.set_xlabel(r"$\varepsilon_{\mathrm{AI}}$")
+            ax.set_ylabel(r"$\varepsilon_{\mathrm{social}}$")
+            ax.set_aspect("equal")
+        fig2.tight_layout()
+        for ext in ("png", "pdf"):
+            fig2.savefig(os.path.join(args.out_dir,
+                                      f"fam_gate_grid.{ext}"),
+                         dpi=220 if ext == "png" else None)
+        print("[fam_gate] wrote fam_gate_grid.png/pdf")
 
 
 if __name__ == "__main__":
