@@ -837,7 +837,10 @@ def check_run(run_dir):
         # cohort selects the one-sided STUBBORN operator (fixed agents
         # keep pairing; only responsive endpoints move). There is
         # deliberately NO isolated condition. Rules by cohort:
-        #   strat/bottom + _stub_    -> es must be NONZERO
+        #   strat + _stub_           -> es must be NONZERO
+        #   bottom + _stub_          -> es may be 0 (2026-08-18 b20
+        #                               full grid: in-wave baselines,
+        #                               the sweep is inert)
         #   strat/bottom tokenless   -> the no-peer wave (es=0, no key)
         #   gclump/gscat             -> the GRAPH wave: _stub_ token
         #                               MANDATORY, es may be 0 (in-wave
@@ -873,14 +876,19 @@ def check_run(run_dir):
                             f"({name!r}) -- tag/config mismatch")
             if m_arm.group(3):
                 want["innate_clamp_peer_mode"] = "stubborn"
-                if not _is_graph_mask and \
+                # strat + _stub_ still requires a live dose; gclump/
+                # gscat AND (2026-08-18, b20 full grid) bottom + _stub_
+                # allow es=0 -- in-wave baselines run the operator
+                # inert, the graph-wave precedent
+                if _cl_tok == "strat" and \
                         (m_es is None or want_es <= 0.0):
                     errs.append(f"CONFIG peer-clamp tag must carry a "
                                 f"NONZERO _es token ({name!r}) -- the "
                                 f"peer operator is meaningless at es=0")
-                if _is_graph_mask and m_es is None:
-                    errs.append(f"CONFIG graph-mask clamp tag must "
-                                f"carry an _es token ({name!r})")
+                if _cl_tok != "strat" and m_es is None:
+                    errs.append(f"CONFIG {_cl_tok} clamp tag with the "
+                                f"_stub_ token must carry an _es token "
+                                f"({name!r})")
             else:
                 if _is_graph_mask:
                     errs.append(f"CONFIG graph-mask clamp tags must "

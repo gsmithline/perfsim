@@ -2231,45 +2231,61 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
-# mistral_bottom20_source_impact (2026-08-18): the BOTTOM-20% SOURCE-
-# IMPACT wave. Cohort A = the 145 agents with the LOWEST innate
-# Action opinions (INNATE_CLAMP_MODE=bottom: deterministic ranking by
-# innate then agent id -- NOT representative, stratified, or
-# graph-optimized), pinned bit-exact at innate for all 30 rounds in
-# population AND twin; cohort B = the other 578 evolves normally.
-# es=0 (the PRIMARY no-peer test), no peer operator. Three arms x
-# ea {0.1,0.2,0.4,1} (numeric threshold) x seeds {0,42,43} = 36
-# conceptual cells:
+# mistral_bottom20_source_impact (2026-08-18, FULL-GRID revision --
+# supersedes the never-submitted 24-job no-peer-only version): the
+# BOTTOM-20% SOURCE-IMPACT wave. Cohort A = the 145 agents with the
+# LOWEST innate Action opinions (INNATE_CLAMP_MODE=bottom:
+# deterministic ranking by innate then agent id -- NOT
+# representative, stratified, or graph-optimized), pinned bit-exact
+# at innate for all 30 rounds in population AND twin; cohort B = the
+# other 578 evolves normally. SEED 0 ONLY. Three arms x ea
+# {0.1,0.2,0.4,1} (numeric threshold) x es {0,0.05,0.1,0.2,0.4,1}
+# = 72 conceptual cells:
 #   b0   ordinary fresh SFT on all 723 labels (A's unchanged innate
-#        labels included every round) -- the 12 completed no-peer-
-#        clamp bottom cells REUSE (field-level audit,
-#        audit_bottom20_reuse.py -> manifest_bottom20_source_impact
-#        .json; hard-fails on any other split)
+#        labels included every round) -- the 4 completed seed-0
+#        no-peer bottom cells (es=0, tokenless) REUSE (field-level
+#        audit, audit_bottom20_reuse.py ->
+#        manifest_bottom20_source_impact.json; hard-fails on any
+#        other split); the 20 es>0 cells are NEW
 #   b0xa identical SFT with A excluded from every batch, volume-
 #        matched at 723 rows via the existing run-seeded 145-
-#        duplicate procedure (seed + 723_145) -- 12 NEW
+#        duplicate procedure (seed + 723_145) -- 24 NEW
 #   d8   frozen weights, personal-history ICL (ICL_K=0, ICL_DAYS=8:
-#        only the recipient's own opinions, innate-first) -- 12 NEW
-# The old global live-K=8 dyn arm and both graph-placement cohorts
-# are NEVER reused (training_style / innate_clamp_mode are matched
-# audit fields). NO smoke: the bottom clamp, volume-matched
-# exclusion, and personal-history paths all carry production gates
-# already. ICL_DAYS and SFT_EXCLUDE_CLAMPED ride the queue (cols
-# 25/26: d8 rows 8/0, b0xa rows 0/1).
+#        only the recipient's own opinions, innate-first) -- 24 NEW
+# = 68 NEW jobs. Every new row carries the _stub_ token and runs the
+# one-sided STUBBORN operator (fixed agents keep pairing; A-A pairs
+# do nothing, in A-B pairs only B moves, B-B updates normally; fixed
+# never move even transiently; the IDENTICAL operator runs on the
+# matched twin) -- inert at the es=0 in-wave baselines, the graph-
+# wave precedent. The old global live-K=8 dyn arm and both graph
+# cohorts are NEVER reused (matched audit fields). NO smoke: the
+# bottom clamp, stubborn peers, volume-matched exclusion, and
+# personal-history paths all carry production gates already.
+# ICL_DAYS and SFT_EXCLUDE_CLAMPED ride the queue (cols 25/26: d8
+# rows 8/0, b0/b0xa rows 0/{0,1}).
 B20_KEY = "mistral_bottom20_source_impact"
 B20_MANIFEST_PATH = os.path.join(
     HERE, "manifest_bottom20_source_impact.json")
 B20_ARMS = ["b0", "b0xa", "d8"]
 B20_GATES = [0.1, 0.2, 0.4, 1.0]
-B20_SEEDS = [0, 42, 43]
-ROW_B20 = ROW_CLAMP + ", {icldays}, {sftexcl}"
+B20_ESS = [0.0, 0.05, 0.1, 0.2, 0.4, 1.0]
+B20_SEEDS = [0]
+ROW_B20 = ROW_CLAMP_GRAPH + ", {icldays}, {sftexcl}"
 
 
-def b20_row(arm, gate, seed, nrounds=30, prefix="pofdclamp"):
+def b20_tag(arm, gate, es, seed=0, prefix="pofdclamp"):
+    # only the four reused b0 no-peer cells are tokenless; every NEW
+    # cell declares the stubborn operator (inert at es=0)
+    stub = "" if (arm == "b0" and es == 0.0) else "_stub"
+    return (f"{prefix}_mistral7b_{arm}_bottom{stub}_ea{_num(gate)}"
+            f"_{w_tok()}_es{_num(es)}_s{seed}")
+
+
+def b20_row(arm, gate, es, seed=0, nrounds=30, prefix="pofdclamp"):
     a = REACH_ARM_COLS[arm]
     return ROW_B20.format(
-        tag=clamp_tag(arm, "bottom", gate, seed, prefix),
-        style=a["style"], beta=a["beta"], seed=seed,
+        tag=b20_tag(arm, gate, es, seed, prefix),
+        style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
         eps_ai=f"{gate:g}", iclk=a["iclk"], snap=a["snap"],
         uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
         gg=a["gg"], nrounds=nrounds, cmode="bottom",
@@ -2278,26 +2294,27 @@ def b20_row(arm, gate, seed, nrounds=30, prefix="pofdclamp"):
 
 
 def b20_rows():
-    """The 24 genuinely-missing jobs, straight from the audited
+    """The 68 genuinely-missing jobs, straight from the audited
     manifest -- counts are asserted for CONSISTENCY with the expected
-    12-reused/24-new split, never forced."""
+    4-reused/68-new split, never forced."""
     mf = json.load(open(B20_MANIFEST_PATH))
     cells = mf["cells"]
-    assert mf["n_cells"] == 36 and len(cells) == 36, mf["n_cells"]
-    assert {(c["arm"], c["gate"], c["seed"]) for c in cells} == \
-        {(a, g, s) for a in B20_ARMS for g in B20_GATES
-         for s in B20_SEEDS}
+    assert mf["n_cells"] == 72 and len(cells) == 72, mf["n_cells"]
+    assert {(c["arm"], c["gate"], c["es"]) for c in cells} == \
+        {(a, g, e) for a in B20_ARMS for g in B20_GATES
+         for e in B20_ESS}
+    assert all(c["seed"] == 0 for c in cells), "seed 0 only"
     reused = [c for c in cells if c["status"] == "reused"]
     new = [c for c in cells if c["status"] == "new"]
-    assert len(reused) == 12 and len(new) == 24, \
+    assert len(reused) == 4 and len(new) == 68, \
         (len(reused), len(new))
-    assert all(c["arm"] == "b0" for c in reused), \
-        "only the completed b0 bottom cells may reuse"
+    assert all(c["arm"] == "b0" and c["es"] == 0.0 for c in reused), \
+        "only the completed seed-0 b0 bottom no-peer cells may reuse"
     assert all(c.get("verdict") == "PASS" for c in reused)
     rows = []
     for c in sorted(new,
-                    key=lambda c: (c["arm"], c["gate"], c["seed"])):
-        r = b20_row(c["arm"], c["gate"], c["seed"])
+                    key=lambda c: (c["arm"], c["gate"], c["es"])):
+        r = b20_row(c["arm"], c["gate"], c["es"])
         assert r.split(",")[0].strip() == c["new_tag"], \
             (r.split(",")[0], c["new_tag"])
         rows.append(r)
@@ -2311,27 +2328,31 @@ def b20_sub():
 
 
 B20_SUB_TEMPLATE = """\
-# HTCondor: BOTTOM-20% SOURCE-IMPACT WAVE, mistral7b -- 24 NEW jobs
-# (12 b0xa volume-matched source-exclusion + 12 d8 personal-history;
-# the 12 completed b0 bottom cells REUSE per the audited manifest).
-# GENERATED by gen_pofd_sweep.py from the B20 block. Never edit by
-# hand: rerun the script. {n_jobs} job(s).
+# HTCondor: BOTTOM-20% SOURCE-IMPACT WAVE (full ea x es grid),
+# mistral7b -- 68 NEW seed-0 jobs (b0 es>0 20 + b0xa 24 + d8 24; the
+# 4 completed b0 bottom no-peer cells REUSE per the audited
+# manifest). GENERATED by gen_pofd_sweep.py from the B20 block.
+# Never edit by hand: rerun the script. {n_jobs} job(s).
 # Cohort A = the 145 LOWEST-innate agents (INNATE_CLAMP_MODE=bottom,
 # deterministic innate-then-id ranking), pinned bit-exact at innate
-# in population AND twin; B = the other 578. es=0, NO peer operator
-# -- the PRIMARY no-peer test of whether A's labels reach B through
-# shared SFT weights. b0xa drops A's rows from every batch and
-# volume-matches at 723 rows (578 responsive once + 145 run-seeded
-# duplicates, sft_idx_raw/sft_y_raw/sft_dup_idx persisted); d8 is
-# the structural null (frozen weights, each prompt carries only the
-# recipient's own last 8 opinions, icl_days_log persisted).
-# ICL_DAYS rides queue col 25 (8 on d8, 0 on b0xa); the exclusion
-# flag rides col 26 (1 on b0xa, 0 on d8). W=0.5, lam=0.2, gamma=0,
-# greedy serving, WITH_TWIN=1, movielens Action, 30 rounds, seeds
-# 0/42/43. NO smoke (all three paths carry production gates).
+# in population AND twin; B = the other 578. Full grid ea
+# 0.1/0.2/0.4/1 x es 0/0.05/0.1/0.2/0.4/1: every row runs the
+# one-sided STUBBORN operator (A-A pairs do nothing, in A-B pairs
+# only B moves, B-B updates normally, fixed never move even
+# transiently, IDENTICAL operator on the matched twin; inert at the
+# es=0 in-wave baselines). b0 trains on all 723 labels; b0xa drops
+# A's rows from every batch and volume-matches at 723 rows (578
+# responsive once + 145 run-seeded duplicates,
+# sft_idx_raw/sft_y_raw/sft_dup_idx persisted); d8 is the structural
+# null (frozen weights, each prompt carries only the recipient's own
+# last 8 opinions, icl_days_log persisted).
+# ICL_DAYS rides queue col 25 (8 on d8, else 0); the exclusion flag
+# rides col 26 (1 on b0xa, else 0). W=0.5, lam=0.2, gamma=0, greedy
+# serving, WITH_TWIN=1, movielens Action, 30 rounds, SEED 0 ONLY.
+# NO smoke (all paths carry production gates).
 # Gate every pull with check_pofd_sanity (CLAMP section: bottom-mask
-# reconstruction, fixed bit-exact in pop AND twin, b0xa provenance
-# replay, d8 personal-history replay).
+# reconstruction, fixed bit-exact in pop AND twin, stubborn peer
+# invariants, b0xa provenance replay, d8 personal-history replay).
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
 universe          = vanilla
 executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
@@ -2344,7 +2365,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) SFT_EXCLUDE_CLAMPED=$(sftexcl) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofdclampb20"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) INNATE_CLAMP_PEER_MODE=stubborn SFT_EXCLUDE_CLAMPED=$(sftexcl) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofdclampb20"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
@@ -5362,37 +5383,44 @@ def main():
     cube_subs[os.path.join(HERE,
                            f"at_pofd_{CLAMP_XA_SMOKE_KEY}.sub")] = \
         clamp_xa_sub("smoke")
-    # bottom-20% source-impact wave (see the B20 block): 24 NEW jobs
-    # (12 b0xa + 12 d8) from the audited manifest; the 12 completed
-    # b0 bottom cells reuse and must NEVER re-queue (their tags stay
-    # with the mistral_innate_clamp_nopeer key).
+    # bottom-20% source-impact wave (see the B20 block, full-grid
+    # revision): 68 NEW seed-0 jobs from the audited manifest; the 4
+    # completed b0 bottom no-peer cells reuse and must NEVER re-queue
+    # (their tokenless tags stay with mistral_innate_clamp_nopeer).
     rows_b20 = b20_rows()
-    assert len(rows_b20) == 24, len(rows_b20)
+    assert len(rows_b20) == 68, len(rows_b20)
     _b20_tags = {r.split(",")[0] for r in rows_b20}
-    assert len(_b20_tags) == 24
-    assert all("_bottom_" in t and "_es0_" in t and "_stub_" not in t
+    assert len(_b20_tags) == 68
+    assert all("_bottom_stub_" in t and t.endswith("_s0")
                and "mistral7b" in t for t in _b20_tags)
-    for _arm_tok, _nw in (("_b0xa_", 12), ("_d8_", 12)):
+    for _arm_tok, _nw in (("_b0_", 20), ("_b0xa_", 24), ("_d8_", 24)):
         assert sum(1 for t in _b20_tags if _arm_tok in t) == _nw, \
             _arm_tok
-    assert not any("_b0_" in t or "_dyn_" in t for t in _b20_tags)
+    assert not any("_dyn_" in t for t in _b20_tags)
+    # the reused tokenless b0 es0 tags never appear here
+    assert not any("_b0_bottom_ea" in t for t in _b20_tags)
     for _g in B20_GATES:
         assert sum(1 for t in _b20_tags
-                   if f"_ea{_num(_g)}_" in t) == 6, _g
-    for _s in B20_SEEDS:
+                   if f"_ea{_num(_g)}_" in t) == 17, _g
+    for _e in B20_ESS:
+        _nw = 8 if _e == 0.0 else 12
         assert sum(1 for t in _b20_tags
-                   if t.endswith(f"_s{_s}")) == 8, _s
-    # queue tails: (icldays, sftexcl) = (8, 0) on d8, (0, 1) on b0xa
+                   if f"_es{_num(_e)}_" in t) == _nw, _e
+    # queue tails: (icldays, sftexcl) = (8, 0) on d8, (0, 1) on
+    # b0xa, (0, 0) on the b0 peer cells
     for r in rows_b20:
-        _want_tail = ", 8, 0" if "_d8_" in r.split(",")[0] else ", 0, 1"
+        _t = r.split(",")[0]
+        _want_tail = (", 8, 0" if "_d8_" in _t
+                      else ", 0, 1" if "_b0xa_" in _t else ", 0, 0")
         assert r.rstrip().endswith(_want_tail), r
+    assert "INNATE_CLAMP_PEER_MODE=stubborn" in b20_sub()
     _prior_b20 = {r.split(",")[0]
                   for rows in files.values() for r in rows}
     assert not (_b20_tags & _prior_b20), \
         f"b20 collision: {_b20_tags & _prior_b20}"
     p = os.path.join(HERE, f"configs_pofd_{B20_KEY}.txt")
     files[p] = rows_b20
-    expected[p] = 24
+    expected[p] = 68
     cube_subs[os.path.join(HERE, f"at_pofd_{B20_KEY}.sub")] = b20_sub()
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
