@@ -211,8 +211,8 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               vs d8 (frozen weights, ICL_K=0, ICL_DAYS=8 PERSONAL
               history: each agent's prompt carries only its OWN latest
               eight recorded opinions, oldest to newest -- graph-mask
-              cohorts only) vs b0xa (2026-08-18 SOURCE EXCLUSION,
-              graph-mask cohorts only: the exact b0 envelope with
+              or bottom cohorts) vs b0xa (2026-08-18 SOURCE EXCLUSION,
+              graph-mask or bottom cohorts: the exact b0 envelope with
               SFT_EXCLUDE_CLAMPED=1 -- the fixed cohort stays fully
               present and pinned but its rows never enter an SFT
               batch; the training volume stays MATCHED at 723 rows by
@@ -855,14 +855,16 @@ def check_run(run_dir):
             _cl_tok = m_arm.group(2)
             want["innate_clamp_mode"] = CLAMP_MODE_OF_TOK[_cl_tok]
             _is_graph_mask = _cl_tok in ("gclump", "gscat")
-            if m_arm.group(1) == "d8" and not _is_graph_mask:
-                errs.append(f"CONFIG the personal-history d8 arm exists "
+            # d8/b0xa cohorts: the graph-placement wave (2026-08-17)
+            # and the bottom-20% source-impact wave (2026-08-18,
+            # tokenless bottom at es0). NEVER strat.
+            if m_arm.group(1) in ("d8", "b0xa") and \
+                    _cl_tok not in ("gclump", "gscat", "bottom"):
+                errs.append(f"CONFIG the {m_arm.group(1)} arm exists "
                             f"only in the graph-placement wave "
-                            f"(gclump/gscat), got {name!r}")
-            if m_arm.group(1) == "b0xa" and not _is_graph_mask:
-                errs.append(f"CONFIG the source-exclusion b0xa arm "
-                            f"exists only in the graph-placement wave "
-                            f"(gclump/gscat), got {name!r}")
+                            f"(gclump/gscat) or the bottom-20% "
+                            f"source-impact wave (bottom), got "
+                            f"{name!r}")
             if m_arm.group(1) != "b0xa" and \
                     cfg.get("sft_exclude_clamped"):
                 errs.append(f"CONFIG sft_exclude_clamped="
