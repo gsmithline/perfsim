@@ -4,8 +4,18 @@ qwen_k1_grid).
 
 Matched cells: arms {b0 = ordinary SFT, b1 = forward-KL SFT at
 lambda_KL = 1} x eps_AI {0.1, 0.2, 0.4, 1} x eps_social
-{0, 0.05, 0.2}, seed 0 = 24 pairs, 48 trajectories, ALL HARD-
-REQUIRED. The two conditions differ in ONE dial, the FJ innate
+{0, 0.05, 0.2}, seed 0 = 24 MATCHED pairs (48 trajectories), all
+HARD-REQUIRED, plus the k=1-only eps_social=1 column (8 more k=1
+trajectories, also hard-required).
+
+The es=1 column is reported but NOT contrasted: the completed
+Section-3 k=0.2 grid has no es=1 cells at all. k=0.2 runs at es=1 do
+exist on the cluster, but in other families (pofdctxgrid_ for b0,
+pofdqgs_ for b1) whose full config surface has not been audited
+against the fam surface -- pairing across them without that audit
+would silently compare different experiments. To contrast es=1
+properly, either run 8 matched k=0.2 fam cells or field-audit those
+families first. The two conditions differ in ONE dial, the FJ innate
 anchor k: 0.2 in the completed Section-3 grid (pofdfam_ tags,
 _l0p2_), 1 in this wave (pofdfamk1_ tags, _l1_). At k=1 the update is
 memoryless -- each round re-anchors fully to innate and the platform
@@ -51,7 +61,8 @@ _spec.loader.exec_module(AN)
 
 ARMS = ["b0", "b1"]
 GATES = [0.1, 0.2, 0.4, 1.0]
-ESS = [0.0, 0.05, 0.2]
+ESS = [0.0, 0.05, 0.2]          # matched on BOTH anchors
+K1_ONLY_ESS = [1.0]             # k=1 column, no k=0.2 twin
 LATE = list(range(25, 30))
 KS = [("k0p2", "pofdfam", "w0p5_l0p2"),
       ("k1", "pofdfamk1", "w0p5_l1")]
@@ -112,14 +123,16 @@ def main():
     for kind, _, _ in KS:
         for arm in ARMS:
             for gate in GATES:
-                for es in ESS:
+                _ess = (ESS + K1_ONLY_ESS) if kind == "k1" else ESS
+                for es in _ess:
                     tag = cell_tag(kind, arm, gate, es)
                     rd = AN.find_run(args.roots, tag)
                     if rd is None:
                         missing.append(tag)
                     else:
                         run_of[(kind, arm, gate, es)] = rd
-    n_total = len(KS) * len(ARMS) * len(GATES) * len(ESS)
+    n_total = (len(KS) * len(ARMS) * len(GATES) * len(ESS)
+               + len(ARMS) * len(GATES) * len(K1_ONLY_ESS))
     print(f"[k1] trajectories located: {len(run_of)}/{n_total}")
     for tag in missing:
         print(f"  MISSING {tag}")
@@ -195,6 +208,10 @@ def main():
         return [r for r in contrast if r["arm"] == arm
                 and r["gate"] == gate and r["eps_social"] == es][0]
 
+    print(f"\n[k1] eps_social={K1_ONLY_ESS} is k=1 ONLY -- the "
+          f"Section-3 k=0.2 grid has no es=1 cells, so those "
+          f"{len(ARMS) * len(GATES) * len(K1_ONLY_ESS)} rows appear "
+          f"in k1_per_cell.csv and are NOT contrasted.")
     for arm in ARMS:
         print(f"\n== {arm}: k=1 minus k=0.2 (cols = ea "
               + "/".join(f"{g:g}" for g in GATES) + ") ==")

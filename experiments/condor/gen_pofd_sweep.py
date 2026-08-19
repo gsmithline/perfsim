@@ -2900,9 +2900,16 @@ queue {cols} from experiments/condor/configs_pofd_{key}.txt
 # NO smoke: the code path is the validated Section-3 path; only the
 # anchor value is new.
 QK1_KEY = "qwen_k1_grid"
+# es=1 full-peer column (2026-08-19, added AFTER the 24-job base grid
+# was already submitted). It ships as its OWN key so the in-flight
+# cells are never re-queued: the idempotent exec only no-ops runs
+# that are already COMPLETE, so re-submitting the base key mid-flight
+# would be a write race, not a no-op.
+QK1_ES1_KEY = "qwen_k1_grid_es1"
 QK1_ARMS = ["b0", "b1"]
 QK1_GATES = [0.1, 0.2, 0.4, 1.0]
 QK1_ESS = [0.0, 0.05, 0.2]
+QK1_ES1 = [1.0]
 QK1_LAMBDA = 1.0
 QK1_MODEL = "qwen7b"
 
@@ -2930,16 +2937,17 @@ def qk1_row(arm, gate, es, seed=0, nrounds=30):
         pplbatch=m["pplbatch"])
 
 
-def qk1_rows():
+def qk1_rows(ess=None):
     return [qk1_row(arm, gate, es)
             for arm in QK1_ARMS
             for gate in QK1_GATES
-            for es in QK1_ESS]
+            for es in (QK1_ESS if ess is None else ess)]
 
 
-def qk1_sub():
-    return QK1_SUB_TEMPLATE.format(key=QK1_KEY,
-                                   n_jobs=len(qk1_rows()))
+def qk1_sub(key=None, ess=None):
+    key = key or QK1_KEY
+    return QK1_SUB_TEMPLATE.format(key=key,
+                                   n_jobs=len(qk1_rows(ess)))
 
 
 QK1_SUB_TEMPLATE = """\
@@ -6563,6 +6571,37 @@ def main():
     files[p] = rows_qk1
     expected[p] = 24
     cube_subs[os.path.join(HERE, f"at_pofd_{QK1_KEY}.sub")] = _qk1_sub
+    # es=1 full-peer column, added after the base grid was submitted:
+    # its OWN key, 8 cells, disjoint from the in-flight 24.
+    rows_qk1e = qk1_rows(QK1_ES1)
+    assert len(rows_qk1e) == 8, len(rows_qk1e)
+    _qk1e_tags = {r.split(",")[0] for r in rows_qk1e}
+    assert len(_qk1e_tags) == 8
+    assert all(t.startswith("pofdfamk1_qwen7b_") and "_w0p5_l1_" in t
+               and t.endswith("_es1_s0") for t in _qk1e_tags)
+    for _arm_tok in ("_b0_", "_b1_"):
+        assert sum(1 for t in _qk1e_tags if _arm_tok in t) == 4
+    for _g in QK1_GATES:
+        assert sum(1 for t in _qk1e_tags
+                   if f"_ea{_num(_g)}_" in t) == 2, _g
+    # MUST be disjoint from the already-submitted base grid
+    assert not (_qk1e_tags & _qk1_tags), \
+        f"es1 column would re-queue in-flight cells: " \
+        f"{_qk1e_tags & _qk1_tags}"
+    _qk1e_sub = qk1_sub(QK1_ES1_KEY, QK1_ES1)
+    _qk1e_env = next(ln for ln in _qk1e_sub.splitlines()
+                     if ln.startswith("environment"))
+    assert "INNATE_LAMBDA=1 " in _qk1e_env
+    assert "POP_RESET" not in _qk1e_env
+    _prior_qk1e = {r.split(",")[0]
+                   for rows in files.values() for r in rows}
+    assert not (_qk1e_tags & _prior_qk1e), \
+        f"qk1 es1 collision: {_qk1e_tags & _prior_qk1e}"
+    p = os.path.join(HERE, f"configs_pofd_{QK1_ES1_KEY}.txt")
+    files[p] = rows_qk1e
+    expected[p] = 8
+    cube_subs[os.path.join(HERE, f"at_pofd_{QK1_ES1_KEY}.sub")] = \
+        _qk1e_sub
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY

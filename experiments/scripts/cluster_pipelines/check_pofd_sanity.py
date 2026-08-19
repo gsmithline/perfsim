@@ -463,6 +463,9 @@ def check_run(run_dir):
     # pofdfamsmk_ (3-round b1 smokes) too.
     is_fam = name.startswith("pofdfam")
     is_fam_smk = name.startswith("pofdfamsmk")
+    # full-anchor (k=1) replica of the Section-3 grid (2026-08-19):
+    # same fam surface, plus the es=1 full-peer column
+    is_fam_k1 = name.startswith("pofdfamk1")
     # FULLY-EVOLVING comparison wave (2026-08-18,
     # mistral_bottom20_evolving): the no-clamp b0/d8 companion grid to
     # the bottom-20%-fixed wave -- all 723 agents evolve, symmetric
@@ -1162,9 +1165,18 @@ def check_run(run_dir):
                     m_arm_f.group(1) not in ("b0", "b1"):
                 errs.append(f"CONFIG the es0 extension runs ONLY the "
                             f"b0/b1 arms ({name!r})")
-        if m_es is None or want_es not in (0.0, 0.05, 0.2):
-            errs.append(f"CONFIG fam tag needs an _es0_, _es0p05_ or "
-                        f"_es0p2_ token ({name!r})")
+        # the Section-3 fam surface is es {0, 0.05, 0.2}; the k=1
+        # replica (pofdfamk1_) additionally runs the full-peer es=1
+        # column (2026-08-19). The original fam waves keep the
+        # narrower set -- es=1 was never part of their design.
+        _fam_ess = ((0.0, 0.05, 0.2, 1.0) if is_fam_k1
+                    else (0.0, 0.05, 0.2))
+        if m_es is None or want_es not in _fam_ess:
+            errs.append(f"CONFIG fam tag needs an "
+                        + ("_es0_, _es0p05_, _es0p2_ or _es1_ "
+                           if is_fam_k1
+                           else "_es0_, _es0p05_ or _es0p2_ ")
+                        + f"token ({name!r})")
         want["n_rounds"] = 3 if is_fam_smk else 30
         m_sd_f = re.search(r"_s(\d+)$", name)
         if m_sd_f is None or int(m_sd_f.group(1)) not in (0, 42, 43):

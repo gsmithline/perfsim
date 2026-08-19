@@ -61,6 +61,23 @@ def env_tokens(text):
 
 # -- generator -----------------------------------------------------------
 
+def test_es1_key_is_separate_and_disjoint():
+    """The base 24 were already submitted; the es=1 column must ship
+    as its own key or resubmitting would double-queue in-flight
+    tags (the exec no-ops only COMPLETED runs)."""
+    base = {r.split(",")[0] for r in GEN.qk1_rows()}
+    es1 = {r.split(",")[0] for r in GEN.qk1_rows(GEN.QK1_ES1)}
+    assert len(es1) == 8
+    assert not (base & es1)
+    assert all(t.endswith("_es1_s0") for t in es1)
+    assert all("_w0p5_l1_" in t for t in es1)
+    for arm in ARMS:
+        assert sum(1 for t in es1 if f"_{arm}_" in t) == 4, arm
+    with open(os.path.join(CONDOR, "submit_pofd_sweep.sh")) as fh:
+        sh = fh.read()
+    assert 'qwen_k1_grid_es1) TARGETS="$WHAT" ;;' in sh
+
+
 def test_grid_is_exactly_24_cells():
     rows = GEN.qk1_rows()
     assert len(rows) == 24
@@ -254,8 +271,25 @@ def test_k1_tag_with_the_wrong_anchor_fails(tmp_path):
 
 # -- analyzer ------------------------------------------------------------
 
+def test_es1_column_is_reported_but_not_contrasted():
+    """The Section-3 k=0.2 grid has NO es=1 cells; k=0.2 es=1 runs
+    exist only in other families (pofdctxgrid_ / pofdqgs_) whose
+    surface has not been audited against fam. Pairing across them
+    would silently contrast different experiments."""
+    assert AK.ESS == [0.0, 0.05, 0.2]
+    assert AK.K1_ONLY_ESS == [1.0]
+    src = open(os.path.join(PIPE, "analyze_qwen_k1_grid.py")).read()
+    assert "k=1 ONLY" in src
+    assert "NOT contrasted" in src
+    # the contrast loop must not iterate the unpaired column
+    contrast_block = src.split("contrast = []")[1].split(
+        "os.makedirs")[0]
+    assert "K1_ONLY_ESS" not in contrast_block
+
+
 def test_analyzer_pairs_the_two_anchors():
-    assert AK.ARMS == ARMS and AK.GATES == GATES and AK.ESS == ESS
+    assert AK.ARMS == ARMS and AK.GATES == GATES
+    assert AK.ESS == [0.0, 0.05, 0.2]
     assert AK.LATE == list(range(25, 30))
     assert AK.cell_tag("k0p2", "b1", 1.0, 0.2) == \
         "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0"
