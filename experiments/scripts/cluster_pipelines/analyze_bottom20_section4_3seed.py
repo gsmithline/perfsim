@@ -26,15 +26,35 @@ three-seed mean with the 95% Student-t interval (df=2).
       SD(B platform) / SD(B matched no-platform twin)
 
 The analyzer VERIFIES the structural null: at es=0 the personal-
-history d8 source effect must be exactly zero within numerical
-tolerance for every seed and AI gate (frozen weights + own-history
-prompts + no peer step means the clamp cannot reach B) -- any
-violation is a hard failure.
+history d8 source effect must be zero for every seed and AI gate
+(frozen weights + own-history prompts + no peer step means no A
+opinion can ever enter a B prompt, so the clamp cannot reach B).
+The tolerance is HARDWARE-AWARE, because greedy LM generation is
+only bit-reproducible within one GPU architecture (2026-08-19: the
+d8/es0 cells diverge in cohort B from round 0 iff the fixed and
+evolving runs landed on different architectures -- H100 vs A100 --
+and are bit-identical whenever they match, over all 12 seed x gate
+pairs):
+  same architecture      -> EXACT zero required (tol 1e-9); any
+                            violation is a hard failure, since a
+                            genuine A->B pathway is the only
+                            remaining explanation
+  different / unknown    -> the measured |T_a| IS the empirical
+                            generation-nondeterminism floor for the
+                            whole grid; it is reported per cell and
+                            hard-fails only above NULL_TOL_XHW,
+                            where it would be large enough to
+                            contaminate the effects being estimated
+Every cell records its GPU architecture, and the floor is written
+out so downstream reporting can quote it against the effect sizes.
 
 Outputs (notes/pofd/bottom20_section4_3seed_analysis/ -- a NEW
 directory; the seed-0 analyses are never overwritten):
   section4_per_seed_cells.csv   one row per (seed, condition, arm,
-                                gate, es)
+                                gate, es), incl. GPU architecture
+  section4_null_floor.csv       the d8/es0 structural-null probe per
+                                (seed, gate): T_a, the fixed/evolving
+                                architecture pair, and the verdict
   section4_source_effect.csv    per (arm, gate, es): per-seed T_a,
                                 mean, sd, 95% CI, excludes-zero
   section4_dispersion.csv       per (arm, gate, es): per-seed fixed
@@ -75,7 +95,12 @@ SEEDS = [0, 42, 43]
 LATE = range(25, 30)
 # 95% two-sided Student-t critical value at df = 2 (three seeds)
 T_CRIT = 4.302652729911275
+# structural null: bit-exact within one GPU architecture; across
+# architectures the residual is greedy-generation nondeterminism,
+# empirically <= 2e-3 on the B equilibrium mean vs effects of order
+# 1e-1, so 5e-3 is the "large enough to contaminate" line
 NULL_TOL = 1e-9
+NULL_TOL_XHW = 5e-3
 MANIFEST_DEFAULT = os.path.join(
     REPO, "experiments", "condor",
     "manifest_bottom20_section4_repl.json")
@@ -106,6 +131,23 @@ def repl_tags(manifest):
         tag = c["run_tag"] if c["status"] == "reused" else c["new_tag"]
         out[(c["cond"], c["arm"], c["gate"], c["es"], c["seed"])] = tag
     return out
+
+
+def gpu_arch(run_dir):
+    """Coarse GPU architecture of a run ('H100' / 'A100' / the raw
+    name / 'unknown'). Greedy generation is bit-reproducible only
+    within one architecture, so this is what the structural-null
+    tolerance keys off."""
+    try:
+        with open(os.path.join(run_dir, "config.json")) as fh:
+            hw = json.load(fh).get("hardware") or {}
+    except (OSError, json.JSONDecodeError):
+        return "unknown"
+    name = hw.get("gpu_name") or ""
+    for arch in ("H100", "A100", "A6000", "V100"):
+        if arch in name:
+            return arch
+    return name or "unknown"
 
 
 def tci3(vals):
@@ -261,6 +303,8 @@ def main():
         per_cell.append({"seed": seed, "condition": cond, "arm": arm,
                          "gate": gate, "eps_social": es,
                          "run_tag": tag_of(cond, arm, gate, es, seed),
+                         "gpu_arch": gpu_arch(
+                             run_of[(cond, arm, gate, es, seed)]),
                          **cell_stats(d, mask)})
 
     def st(cond, arm, gate, es, seed):
@@ -278,12 +322,29 @@ def main():
                        - st("fixed", arm, gate, es, s)["mu_b_eq"]
                        for s in SEEDS]
                 m, sd, lo, hi = tci3(t_a)
+                # hardware provenance per seed: greedy generation is
+                # bit-reproducible only within one GPU architecture,
+                # so a cross-architecture pair carries the
+                # nondeterminism floor quantified by the d8/es0 probe
+                hw_pair = {
+                    f"gpu_pair_s{s}":
+                        (st("fixed", arm, gate, es, s)["gpu_arch"]
+                         + "/"
+                         + st("evolving", arm, gate, es, s)["gpu_arch"])
+                    for s in SEEDS}
                 source_rows.append({
                     "arm": arm, "gate": gate, "eps_social": es,
                     **{f"t_a_s{s}": v for s, v in zip(SEEDS, t_a)},
                     "t_a_mean": m, "t_a_sd": sd,
                     "ci_lo": lo, "ci_hi": hi,
-                    "ci_excludes_zero": excludes(lo, hi, 0.0)})
+                    "ci_excludes_zero": excludes(lo, hi, 0.0),
+                    "n_seeds_hardware_matched": sum(
+                        1 for s in SEEDS
+                        if st("fixed", arm, gate, es, s)["gpu_arch"]
+                        == st("evolving", arm, gate, es,
+                              s)["gpu_arch"]
+                        != "unknown"),
+                    **hw_pair})
                 ratios = [st("fixed", arm, gate, es,
                              s)["sd_ratio_late"] for s in SEEDS]
                 m, sd, lo, hi = tci3(ratios)
@@ -318,26 +379,48 @@ def main():
                 "mean": m, "sd": sd, "ci_lo": lo, "ci_hi": hi,
                 "ci_excludes_zero": excludes(lo, hi, 0.0)})
 
-    # STRUCTURAL NULL: no-peer personal-history source effect must
-    # be exactly zero (within tolerance) for every seed and AI gate
-    null_bad = []
-    print("[sec4_3seed] structural null (d8, es=0): |T_a| per "
+    # STRUCTURAL NULL: the no-peer personal-history source effect is
+    # zero by construction (no A opinion can enter a B prompt).
+    # Tolerance is hardware-aware -- see the module docstring.
+    null_rows, null_bad = [], []
+    print("[sec4_3seed] structural null (d8, es=0): T_a per "
           "seed/gate")
     for gate in GATES:
         r = srow("d8", gate, 0.0)
-        vals = [r[f"t_a_s{s}"] for s in SEEDS]
-        print(f"  ea{gate:<4g}: "
-              + "  ".join(f"s{s}={v:.3e}"
-                          for s, v in zip(SEEDS, vals)))
-        for s, v in zip(SEEDS, vals):
-            if abs(v) > NULL_TOL:
-                null_bad.append((gate, s, v))
+        for s in SEEDS:
+            v = r[f"t_a_s{s}"]
+            hw_f = st("fixed", "d8", gate, 0.0, s)["gpu_arch"]
+            hw_e = st("evolving", "d8", gate, 0.0, s)["gpu_arch"]
+            matched = (hw_f == hw_e and hw_f != "unknown")
+            tol = NULL_TOL if matched else NULL_TOL_XHW
+            ok = abs(v) <= tol
+            null_rows.append({
+                "seed": s, "gate": gate, "t_a": v,
+                "gpu_fixed": hw_f, "gpu_evolving": hw_e,
+                "hardware_matched": matched, "tol": tol,
+                "verdict": "PASS" if ok else "FAIL"})
+            print(f"  ea{gate:<4g} s{s:<3}: T_a={v:+.3e}  "
+                  f"{hw_f}/{hw_e}"
+                  f"{'  [matched -> exact]' if matched else ''}"
+                  f"  {'PASS' if ok else 'FAIL'}")
+            if not ok:
+                null_bad.append((gate, s, v, hw_f, hw_e, tol))
+    floor = max((abs(r["t_a"]) for r in null_rows
+                 if not r["hardware_matched"]), default=0.0)
+    n_match = sum(1 for r in null_rows if r["hardware_matched"])
+    print(f"[sec4_3seed] structural null: {n_match}/{len(null_rows)} "
+          f"probes hardware-matched (all bit-exact); "
+          f"generation-nondeterminism floor from the "
+          f"{len(null_rows) - n_match} cross-architecture probes: "
+          f"|T_a| <= {floor:.2e}")
     if null_bad:
         print(f"[sec4_3seed] HARD FAIL: the no-peer personal-history "
-              f"source effect is NOT zero within {NULL_TOL:g}: "
-              f"{null_bad} -- the clamp reached cohort B through a "
-              f"path that must not exist; no output written",
-              file=sys.stderr)
+              f"source effect exceeds its tolerance: {null_bad} -- "
+              f"on a hardware-MATCHED probe this means the clamp "
+              f"reached cohort B through a path that must not "
+              f"exist; across architectures it means generation "
+              f"nondeterminism is large enough to contaminate the "
+              f"effects; no output written", file=sys.stderr)
         sys.exit(1)
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -359,6 +442,7 @@ def main():
     write("section4_source_effect.csv", source_rows)
     write("section4_dispersion.csv", disp_rows)
     write("section4_contrast.csv", contrast_rows)
+    write("section4_null_floor.csv", null_rows)
 
     def grid(rows_fn, arm, key):
         return [[rows_fn(arm, g, e)[key] for g in GATES]

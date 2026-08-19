@@ -317,12 +317,45 @@ def test_analyzer_surface():
     for out in ("section4_per_seed_cells.csv",
                 "section4_source_effect.csv",
                 "section4_dispersion.csv", "section4_contrast.csv",
+                "section4_null_floor.csv",
                 "section4_source_effect.png",
                 "section4_sd_ratio.png"):
         assert out.split(".")[0] in src, out
     # equilibrium window, hard 288-cell requirement, structural null
     assert AS.LATE == range(25, 30)
     assert AS.SEEDS == [0, 42, 43]
-    assert AS.NULL_TOL == 1e-9
     assert "structural null" in src.lower()
     assert AS.T_CRIT == 4.302652729911275
+
+
+def test_structural_null_tolerance_is_hardware_aware():
+    # bit-exactness is required only where greedy generation IS
+    # reproducible (one GPU architecture); across architectures the
+    # residual is generation nondeterminism, not an A->B pathway
+    assert AS.NULL_TOL == 1e-9
+    assert AS.NULL_TOL_XHW == 5e-3
+    # the cross-architecture allowance must stay far below the
+    # effects it guards (seed-0 source effects are order 1e-1)
+    assert AS.NULL_TOL_XHW < 0.01
+    src = open(os.path.join(
+        PIPE, "analyze_bottom20_section4_3seed.py")).read()
+    assert "hardware_matched" in src and "gpu_arch" in src
+
+
+def test_gpu_arch_classifies_and_degrades_safely(tmp_path):
+    for name, want in (("NVIDIA H100 80GB HBM3", "H100"),
+                       ("NVIDIA H100", "H100"),
+                       ("NVIDIA A100-SXM4-80GB", "A100"),
+                       ("NVIDIA RTX A6000", "A6000")):
+        rd = tmp_path / name.replace(" ", "_")
+        rd.mkdir()
+        (rd / "config.json").write_text(
+            json.dumps({"hardware": {"gpu_name": name}}))
+        assert AS.gpu_arch(str(rd)) == want
+    # missing metadata / missing file never crash and never claim a
+    # match (an "unknown" pair is treated as cross-architecture)
+    rd = tmp_path / "nohw"
+    rd.mkdir()
+    (rd / "config.json").write_text(json.dumps({"hardware": {}}))
+    assert AS.gpu_arch(str(rd)) == "unknown"
+    assert AS.gpu_arch(str(tmp_path / "does_not_exist")) == "unknown"
