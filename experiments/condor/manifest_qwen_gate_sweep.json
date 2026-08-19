@@ -1,0 +1,649 @@
+{
+  "key": "qwen_gate_sweep",
+  "models": [
+    "qwen7b",
+    "qwen3_8b"
+  ],
+  "gates": [
+    0.05,
+    0.1,
+    0.2,
+    0.4,
+    1.0
+  ],
+  "ess": [
+    0.0,
+    0.05,
+    0.1,
+    0.2,
+    0.4,
+    1.0
+  ],
+  "seed": 0,
+  "n_cells": 60,
+  "n_reused": 30,
+  "n_new": 30,
+  "cells": [
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdw2f_qwen7b_b1_ea0p05_w0p5_l0p2_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdw2f_qwen7b_b1_ea0p05_w0p5_l0p2_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es0p05_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es0p1_s0",
+      "status": "reused",
+      "run_tag": "pofdesf_qwen7b_b1_ea0p05_w0p5_l0p2_es0p1_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdesf_qwen7b_b1_ea0p05_w0p5_l0p2_es0p1_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdws2f_qwen7b_b1_ea0p05_w0p5_l0p2_es0p2_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdws2f_qwen7b_b1_ea0p05_w0p5_l0p2_es0p2_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.05,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p05_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdw2f_qwen7b_b1_ea0p1_w0p5_l0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es0p1_s0",
+      "status": "reused",
+      "run_tag": "pofdesf_qwen7b_b1_ea0p1_w0p5_l0p2_es0p1_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdesf_qwen7b_b1_ea0p1_w0p5_l0p2_es0p1_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdws2f_qwen7b_b1_ea0p1_w0p5_l0p2_es0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p1_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdw2f_qwen7b_b1_ea0p2_w0p5_l0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es0p1_s0",
+      "status": "reused",
+      "run_tag": "pofdesf_qwen7b_b1_ea0p2_w0p5_l0p2_es0p1_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdesf_qwen7b_b1_ea0p2_w0p5_l0p2_es0p1_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdws2f_qwen7b_b1_ea0p2_w0p5_l0p2_es0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p2_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdw2f_qwen7b_b1_ea0p4_w0p5_l0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es0p1_s0",
+      "status": "reused",
+      "run_tag": "pofdesf_qwen7b_b1_ea0p4_w0p5_l0p2_es0p1_s0_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdesf_qwen7b_b1_ea0p4_w0p5_l0p2_es0p1_s0_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea0p4_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdreach_qwen7b_b1_ea1_w0p5_l0p2_es0_s0"
+      ]
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen7b",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es0_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es0p05_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es0p2_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.05,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p05_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p1_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p2_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea0p4_w0p5_l0p2_es1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es0p1_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen3_8b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es0p4_s0",
+      "status": "new"
+    },
+    {
+      "model": "qwen3_8b",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqgs_qwen3_8b_b1_ea1_w0p5_l0p2_es1_s0",
+      "status": "new"
+    }
+  ]
+}

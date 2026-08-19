@@ -468,6 +468,13 @@ def check_run(run_dir):
     # the bottom-20%-fixed wave -- all 723 agents evolve, symmetric
     # peers, matched twin; cohort A exists only in the analysis.
     is_evo = name.startswith("pofdevo")
+    # QWEN GATE SWEEP (2026-08-19, qwen_gate_sweep): the seed-0
+    # eps_AI x eps_social grid for the two Qwen checkpoints at
+    # lambda=1 (kl_beta=1 forward). Rides the generic social branch
+    # for the environment tokens and the _b token gate above; this
+    # flag adds the two things neither covers -- the exact checkpoint
+    # per slug, and Qwen3's thinking template being pinned OFF.
+    is_qgs = name.startswith("pofdqgs")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -1006,6 +1013,61 @@ def check_run(run_dir):
                         f"{hw_e_missing}")
         elif not (hw_e.get("hostname") and hw_e.get("gpu_name")):
             errs.append("CONFIG hardware metadata empty hostname/gpu_name")
+    elif is_qgs:
+        # QWEN GATE SWEEP: canonical Action loop, regularized SFT at
+        # lambda=1 (kl_beta/direction already gated from the _b token
+        # above; eps/eps_ai/w_plat/innate_lambda/seed from the tag
+        # tokens). Pinned here: the exact checkpoint per slug, the
+        # Qwen3 thinking template OFF, and the shared environment.
+        QGS_BASE = {"qwen7b": "Qwen/Qwen2.5-7B-Instruct",
+                    "qwen3_8b": "Qwen/Qwen3-8B"}
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723,
+                     "icrh": False, "feedback_mode": "none",
+                     "ai_gate_mode": "threshold", "train_cap": 723,
+                     "anchor_mode": "fixed", "n_rounds": 30,
+                     "population_update": "nested_ai_then_social_v1",
+                     "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                     "sft_epochs": 1, "sft_batch_size": 4,
+                     "fresh_each_round": True, "icl_k": 0,
+                     "icl_days": 0})
+        m_slug_q = re.search(r"^pofdqgs_(qwen7b|qwen3_8b)_b1_ea", name)
+        if m_slug_q is None:
+            errs.append(f"CONFIG qgs tag needs a "
+                        f"_<qwen7b|qwen3_8b>_b1_ea token run "
+                        f"({name!r}) -- the sweep is two Qwen "
+                        f"checkpoints at lambda=1 only")
+        else:
+            _slug_q = m_slug_q.group(1)
+            want["base_model"] = QGS_BASE[_slug_q]
+            # Qwen3's hybrid reasoning MUST be pinned OFF. The runner
+            # records chat_thinking ONLY when CHAT_THINKING carries a
+            # directive, so an ABSENT key on a qwen3 run means the
+            # thinking template actually ran.
+            if _slug_q == "qwen3_8b":
+                if cfg.get("chat_thinking") is not False:
+                    errs.append(
+                        f"CONFIG chat_thinking="
+                        f"{cfg.get('chat_thinking')!r} on a qwen3_8b "
+                        f"qgs run ({name!r}) -- CHAT_THINKING=0 is "
+                        f"mandatory; absent means the thinking "
+                        f"template ran")
+            elif "chat_thinking" in cfg:
+                errs.append(f"CONFIG chat_thinking="
+                            f"{cfg.get('chat_thinking')!r} recorded "
+                            f"on a qwen7b qgs run ({name!r}) -- it "
+                            f"must use the default chat template")
+        if re.search(r"_ea(\d+(?:p\d+)?)_", name) is None:
+            errs.append(f"CONFIG qgs tag needs a NUMERIC _ea token "
+                        f"({name!r})")
+        if m_es is None:
+            errs.append(f"CONFIG qgs tag must carry an _es token "
+                        f"({name!r})")
+        if not name.endswith("_s0"):
+            errs.append(f"CONFIG the qwen gate sweep is seed-0 only "
+                        f"({name!r})")
     elif is_fam:
         # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
         # wide-open numeric gate with a live peer step. The checkpoint
@@ -1231,7 +1293,7 @@ def check_run(run_dir):
     # pofdretsmk_ too) is the seedcore retention family -- same grammar,
     # forward at b>0 by construction.
     if name.startswith(("pofdw2f_", "pofdws2f_", "pofdesf_", "pofdrpl_",
-                        "pofdret")):
+                        "pofdret", "pofdqgs_")):
         m_b = re.search(r"_b(\d+(?:p\d+)?)_ea", name)
         if m_b is None:
             errs.append(f"CONFIG no _b token in dirname {name!r}")
