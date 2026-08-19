@@ -1,0 +1,1922 @@
+{
+  "key": "mistral_bottom20_section4_repl",
+  "conds": [
+    "fixed",
+    "evolving"
+  ],
+  "arms": [
+    "b0",
+    "d8"
+  ],
+  "gates": [
+    0.1,
+    0.2,
+    0.4,
+    1.0
+  ],
+  "ess": [
+    0.0,
+    0.05,
+    0.1,
+    0.2,
+    0.4,
+    1.0
+  ],
+  "seeds": [
+    42,
+    43
+  ],
+  "n_cells": 192,
+  "n_reused": 40,
+  "n_new": 152,
+  "cells": [
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p1_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p1_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p2_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p2_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p4_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p4_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea1_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea1_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s42",
+      "status": "reused",
+      "run_tag": "pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s42",
+      "status": "reused",
+      "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s42_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0_s42",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es1_s42",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s42",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s42",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p05_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p2_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p4_s42",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 42,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es1_s42",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p1_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p1_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p2_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p2_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p2_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea0p4_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea0p4_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea0p4_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdclamp_mistral7b_b0_bottom_ea1_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdclamp_mistral7b_b0_bottom_ea1_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_b0_bottom_stub_ea1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p2_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea0p4_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "fixed",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdclamp_mistral7b_d8_bottom_stub_ea1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p1_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s43",
+      "status": "reused",
+      "run_tag": "pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdpeer2_mistral7b_b0_ea0p1_w0p5_l0p2_es0p2_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es0p4_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p1_w0p5_l0p2_es1_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p2_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p2_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es0p4_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p2_w0p5_l0p2_es1_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea0p4_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s43",
+      "status": "reused",
+      "run_tag": "pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdws2f_mistral7b_b0_ea0p4_w0p5_l0p2_es0p2_s43_fresh_data",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es0p4_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea0p4_w0p5_l0p2_es1_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0_s43",
+      "status": "reused",
+      "run_tag": "pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdreach_mistral7b_b0_ea1_w0p5_l0p2_es0_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p2_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es0p4_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "b0",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_b0_ea1_w0p5_l0p2_es1_s43",
+      "status": "reused",
+      "run_tag": "pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s43",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdgate2d_mistral7b_b0_ea1_w0p5_l0p2_es1_s43",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.1,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.2,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p2_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 0.4,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea0p4_w0p5_l0p2_es1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.05,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p05_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.1,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p1_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.2,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p2_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 0.4,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es0p4_s43",
+      "status": "new"
+    },
+    {
+      "cond": "evolving",
+      "arm": "d8",
+      "gate": 1.0,
+      "es": 1.0,
+      "seed": 43,
+      "new_tag": "pofdevo_mistral7b_d8_ea1_w0p5_l0p2_es1_s43",
+      "status": "new"
+    }
+  ]
+}
