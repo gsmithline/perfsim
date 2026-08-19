@@ -2675,6 +2675,202 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# feature_endogenization_n5 (2026-08-19): the FIVE-SEED EXTENSION of
+# the main feature-endogenization figure (panels a/b of
+# plot_feature_endogenization_main.py). The six established Qwen
+# conditions run at seeds {0, 42, 43}; this key adds seeds 44 and 45
+# ONLY -- 12 conceptual cells, all NEW per the field-level audit
+# (audit_feature_endogenization_n5.py ->
+# manifest_feature_endogenization_n5.json, which self-verifies its
+# want surface against all 18 established cells before deciding any
+# reuse, and hard-fails if a new tag is already occupied):
+#   nat_l0    ordinary SFT, KL coefficient lambda=0    2 (pofdws2f_ b0)
+#   nat_l0p5  forward-KL SFT, lambda=0.5               2 (pofdws2f_)
+#   nat_l1    forward-KL SFT, lambda=1                 2 (pofdws2f_)
+#   frozen    frozen weights, K=0                      2 (pofdicls2_)
+#   removed   lambda=1 + PROFILE_DROP_COLS=gender      2 (pofdfegd_)
+#   permuted  lambda=1 + PROFILE_PERMUTE_COLS=gender   2 (pofdfegp_)
+# The runner spells the KL coefficient kl_beta and the tags spell it
+# b<...> -- the established convention, kept byte-identical here so
+# the new seeds land in the same families. Every DISPLAYED analysis
+# label calls it lambda.
+# Four queue schemas ride one umbrella key (the environments differ:
+# natural / frozen-ICL / drop / permute), exactly mirroring the
+# established fes / fef / fegd / fegp subs with two changes: the
+# seeds, and GPU PINNING. Every established run executed on an
+# A100-SXM4-80GB (11 distinct hosts, verified from the condor logs;
+# those configs predate the hardware block), and greedy generation is
+# only bit-reproducible within one architecture, so the new rows pin
+# CUDADeviceName to the same A100 rather than inheriting the pool's
+# H100/B200 mix.
+# NO smoke: all six execution paths are already production-validated.
+FE5_KEY = "feature_endogenization_n5"
+FE5_MANIFEST_PATH = os.path.join(
+    HERE, "manifest_feature_endogenization_n5.json")
+FE5_SEEDS = [44, 45]
+FE5_LAMBDAS = [0.0, 0.5, 1.0]
+FE5_A100 = 'NVIDIA A100-SXM4-80GB'
+FE5_ARMS = {"nat": ("nat_l0", "nat_l0p5", "nat_l1"),
+            "frozen": ("frozen",), "gd": ("removed",),
+            "gp": ("permuted",)}
+
+
+def fe5_tag(cond, seed):
+    """Byte-identical to the established families at the new seeds.
+    (The seed-0 lambda=0 anchor lives in the reverse-era pofdws2_
+    family; seeds 44/45 are pofdws2f_ like 42/43.)"""
+    if cond == "nat_l0":
+        return ("pofdws2f_qwen7b_b0_ea0p4_w0p5_l0p2_es0p2"
+                f"_s{seed}_fresh_data")
+    if cond == "nat_l0p5":
+        return ("pofdws2f_qwen7b_b0p5_ea0p4_w0p5_l0p2_es0p2"
+                f"_s{seed}_fresh_data")
+    if cond == "nat_l1":
+        return ("pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
+                f"_s{seed}_fresh_data")
+    if cond == "frozen":
+        return f"pofdicls2_qwen7b_w0p5_l0p2_es0p2_ea0p4_k0_s{seed}"
+    if cond == "removed":
+        return ("pofdfegd_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
+                f"_s{seed}_fresh_data")
+    return ("pofdfegp_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
+            f"_s{seed}_fresh_data")
+
+
+def fe5_row(cond, seed):
+    """The established row grammar: ROW_WS (15 cols) for the trained
+    arms, ROW_ICL2 (18 cols) for the frozen arm."""
+    if cond == "frozen":
+        return ROW_ICL2.format(
+            tag=fe5_tag(cond, seed), seed=seed, es="0.2",
+            eps_ai="0.4", iclk=0, icldays=0, iclsrc="live")
+    lam = {"nat_l0": 0.0, "nat_l0p5": 0.5}.get(cond, 1.0)
+    return ROW_WS.format(
+        tag=fe5_tag(cond, seed),
+        style="sft" if lam == 0.0 else "sft_kl",
+        beta=f"{lam:g}", seed=seed, eps_ai="0.4")
+
+
+def fe5_rows(arm):
+    """The genuinely-missing rows for one queue schema, straight from
+    the audited manifest -- counts are asserted for CONSISTENCY with
+    the 2026-08-19 audit (0 reused / 12 new), never forced."""
+    mf = json.load(open(FE5_MANIFEST_PATH))
+    cells = mf["cells"]
+    assert mf["n_cells"] == 12 and len(cells) == 12, mf["n_cells"]
+    assert {(c["cond"], c["seed"]) for c in cells} == \
+        {(cd, s) for cd in
+         [c for arms in FE5_ARMS.values() for c in arms]
+         for s in FE5_SEEDS}
+    # the established seeds must never re-queue under this key
+    assert all(c["seed"] in FE5_SEEDS for c in cells)
+    rows = []
+    for c in sorted((c for c in cells if c["cond"] in FE5_ARMS[arm]),
+                    key=lambda c: (c["cond"], c["seed"])):
+        if c["status"] != "new":
+            continue
+        r = fe5_row(c["cond"], c["seed"])
+        assert r.split(",")[0].strip() == c["new_tag"], \
+            (r.split(",")[0], c["new_tag"])
+        rows.append(r)
+    return rows
+
+
+def fe5_sub(arm):
+    return FE5_SUB_TEMPLATE.format(
+        key=f"{FE5_KEY}_{arm}", n_jobs=len(fe5_rows(arm)),
+        what=FE5_SUB_WHAT[arm], extra_env=FE5_SUB_ENV[arm],
+        suffix=FE5_SUB_SUFFIX[arm], gpu=FE5_A100,
+        cols=FE5_SUB_COLS[arm])
+
+
+FE5_SUB_WHAT = {
+    "nat": ("natural-gender arm: ordinary SFT (lambda=0) + forward-KL "
+            "SFT at lambda 0.5 and 1"),
+    "frozen": "frozen-weights control (K=0, never trains)",
+    "gd": "gender-REMOVED control (PROFILE_DROP_COLS=gender)",
+    "gp": "gender-PERMUTED control (PROFILE_PERMUTE_COLS=gender)",
+}
+# byte-identical to the established fes / fef / fegd / fegp envs
+_FE5_TRAINED_ENV = (
+    "KL_DIRECTION=forward INNATE_LAMBDA=0.2 ANS_SAMPLE_K=16 "
+    "ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 FRESH_EACH_ROUND=1 "
+    "TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 "
+    "BASE_MODEL=Qwen/Qwen2.5-7B-Instruct SFT_EPOCHS=1 "
+    "SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 USE_LORA=1 "
+    "SFT_LR=5e-5")
+FE5_SUB_ENV = {
+    "nat": f"EPS_AI=$(eps_ai) {_FE5_TRAINED_ENV}",
+    "frozen": ("EPS_AI=$(eps_ai) ICL_K=$(iclk) ICL_DAYS=$(icldays) "
+               "ICL_SELECT=random ICL_CTX_SOURCE=$(iclsrc) "
+               "INNATE_LAMBDA=0.2 USE_LORA=0 FRESH_EACH_ROUND=0 "
+               "TRAIN_CAP=723 N_ROUNDS=30 EPOCH_SIZE=100 "
+               "BASE_MODEL=Qwen/Qwen2.5-7B-Instruct "
+               "GEN_BATCH_SIZE=32"),
+    "gd": f"PROFILE_DROP_COLS=gender EPS_AI=$(eps_ai) "
+          f"{_FE5_TRAINED_ENV}",
+    "gp": f"PROFILE_PERMUTE_COLS=gender EPS_AI=$(eps_ai) "
+          f"{_FE5_TRAINED_ENV}",
+}
+FE5_SUB_SUFFIX = {"nat": "_qwen7b_lora512_pofdfes",
+                  "frozen": "_qwen7b_pofdfef",
+                  "gd": "_qwen7b_lora512_pofdfegd",
+                  "gp": "_qwen7b_lora512_pofdfegp"}
+_FE5_COLS = ("tag, style, beta, seed, deploy_every, regime, pscale, "
+             "anchor, pop, eps, gamma, wplat, mode, canary, eps_ai")
+FE5_SUB_COLS = {"nat": _FE5_COLS, "gd": _FE5_COLS, "gp": _FE5_COLS,
+                "frozen": _FE5_COLS + ", iclk, icldays, iclsrc"}
+
+
+FE5_SUB_TEMPLATE = """\
+# HTCondor: FEATURE-ENDOGENIZATION FIVE-SEED EXTENSION, {what}.
+# Qwen-7B, seeds 44/45 ONLY. GENERATED by gen_pofd_sweep.py from the
+# FE5 block. Never edit by hand: rerun the script. {n_jobs} job(s).
+# Byte-identical environment to the established seeds {{0,42,43}} of
+# the main feature figure: movielens Action (723 agents), EPS_AI=0.4,
+# EPS_SOCIAL=0.2, W_PLAT=0.5, INNATE_LAMBDA=0.2, 30 rounds, replace +
+# fresh adapter each round, forward KL against the FIXED pristine
+# base on every KL arm, nested AI-then-peer operator, twin forced
+# (eps>0), greedy serving. The runner spells the KL coefficient
+# kl_beta (tags say b<...>); displayed analysis labels call it
+# lambda.
+# GPU PINNED to {gpu}: every established run of this experiment
+# executed on that architecture (verified from the condor logs -- the
+# configs predate the hardware block), and greedy generation is only
+# bit-reproducible within one architecture, so an unpinned job could
+# land on H100/B200 and add cross-architecture noise to a five-seed
+# mean.
+# The 12 cells are ALL new per the audited manifest; no established
+# tag appears here, and the exec is idempotent besides.
+# NO smoke: all six execution paths are production-validated.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env} N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=64 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX={suffix}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue {cols} from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 # fig2_family_prior_scout[_smoke] (2026-08-17): the FIGURE-2 FAMILY-
 # PRIOR SCOUT -- six checkpoints (Qwen2.5-7B-Instruct, Qwen3-8B
 # thinking OFF, OLMo-2-1124-7B-Instruct, Olmo-3-7B-Instruct,
@@ -5950,6 +6146,71 @@ def main():
     expected[p] = 64
     cube_subs[os.path.join(HERE, f"at_pofd_{B20R_EVO_KEY}.sub")] = \
         b20r_evo_sub()
+    # feature-endogenization five-seed extension (see the FE5 block):
+    # exactly 12 conceptual cells (6 conditions x seeds 44/45), all
+    # NEW per the audited manifest, split across the four established
+    # queue schemas. The established seeds {0,42,43} must NEVER
+    # re-queue here.
+    _fe5_all = {}
+    for _arm in ("nat", "frozen", "gd", "gp"):
+        _rows = fe5_rows(_arm)
+        _tags = {r.split(",")[0] for r in _rows}
+        assert len(_tags) == len(_rows), _arm
+        _fe5_all[_arm] = (_rows, _tags)
+    _fe5_tags = set().union(*(t for _, t in _fe5_all.values()))
+    _fe5_n = sum(len(r) for r, _ in _fe5_all.values())
+    # exactly 12 conceptual cells, unique tags, correct per-arm split
+    assert _fe5_n == 12, _fe5_n
+    assert len(_fe5_tags) == 12, len(_fe5_tags)
+    assert len(_fe5_all["nat"][0]) == 6
+    assert all(len(_fe5_all[a][0]) == 2 for a in
+               ("frozen", "gd", "gp"))
+    assert all("_qwen7b_" in t for t in _fe5_tags)
+    assert all(t.endswith("_s44") or t.endswith("_s45")
+               or t.endswith("_s44_fresh_data")
+               or t.endswith("_s45_fresh_data") for t in _fe5_tags)
+    # no established seed may appear anywhere in this key
+    for _sd in (0, 42, 43):
+        assert not any(f"_s{_sd}_" in t or t.endswith(f"_s{_sd}")
+                       for t in _fe5_tags), _sd
+    # the six conditions, one family each
+    for _pre, _nw in (("pofdws2f_qwen7b_b0_", 2),
+                      ("pofdws2f_qwen7b_b0p5_", 2),
+                      ("pofdws2f_qwen7b_b1_", 2),
+                      ("pofdicls2_qwen7b_", 2),
+                      ("pofdfegd_qwen7b_b1_", 2),
+                      ("pofdfegp_qwen7b_b1_", 2)):
+        assert sum(1 for t in _fe5_tags
+                   if t.startswith(_pre)) == _nw, _pre
+    # every established feature tag stays untouched by this key
+    _fe5_base = {fe5_tag(_c, _s)
+                 for _c in ("nat_l0", "nat_l0p5", "nat_l1", "frozen",
+                            "removed", "permuted")
+                 for _s in (0, 42, 43)}
+    assert not (_fe5_tags & _fe5_base), \
+        f"fe5 would re-queue established runs: {_fe5_tags & _fe5_base}"
+    # and collides with nothing anywhere else in the generator
+    _prior_fe5 = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (_fe5_tags & _prior_fe5), \
+        f"fe5 collision: {_fe5_tags & _prior_fe5}"
+    for _arm, (_rows, _tags) in _fe5_all.items():
+        _sub = fe5_sub(_arm)
+        # GPU pinned to the established architecture on every schema
+        assert f'CUDADeviceName == "{FE5_A100}"' in _sub, _arm
+        assert "KL_DIRECTION=forward" in _sub or _arm == "frozen"
+        if _arm == "gd":
+            assert "PROFILE_DROP_COLS=gender" in _sub
+        if _arm == "gp":
+            assert "PROFILE_PERMUTE_COLS=gender" in _sub
+        if _arm in ("nat", "frozen"):
+            assert "PROFILE_DROP_COLS" not in _sub \
+                and "PROFILE_PERMUTE_COLS" not in _sub, _arm
+        p = os.path.join(HERE, f"configs_pofd_{FE5_KEY}_{_arm}.txt")
+        files[p] = _rows
+        expected[p] = len(_rows)
+        cube_subs[os.path.join(
+            HERE, f"at_pofd_{FE5_KEY}_{_arm}.sub")] = _sub
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY
