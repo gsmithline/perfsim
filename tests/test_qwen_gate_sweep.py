@@ -186,7 +186,10 @@ def test_submit_key_registered():
     with open(os.path.join(CONDOR, "submit_pofd_sweep.sh")) as fh:
         sh = fh.read()
     assert 'qwen_gate_sweep) TARGETS="$WHAT" ;;' in sh
-    assert "qwen_gate_sweep|fig2_family_prior_scout" in sh
+    # present in all THREE usage strings (BID prompt, WHAT prompt and
+    # the *) fallback echo), but don't pin the neighbouring key --
+    # later waves insert next to it
+    assert sh.count("|qwen_gate_sweep|") == 3
 
 
 # -- checker (real trajectories, pofdqgs_ branch) ------------------------

@@ -1118,9 +1118,13 @@ def check_run(run_dir):
         # at the high-retention forward-KL doses
         for _fb, _fbeta in (("b2", 2.0), ("b4", 4.0), ("b8", 8.0)):
             FAM_ARM_WANT[_fb] = {**FAM_ARM_WANT["b1"], "kl_beta": _fbeta}
+        # pofdfamk1_ (2026-08-19): the full-anchor k=1 replica of the
+        # Section-3 grid. Same fam surface; the anchor itself is
+        # gated generically off the _l1_ tag token.
         slug_f = next((s for s in FAM_BASE
                        if name.startswith(f"pofdfam_{s}_")
-                       or name.startswith(f"pofdfamsmk_{s}_")), None)
+                       or name.startswith(f"pofdfamsmk_{s}_")
+                       or name.startswith(f"pofdfamk1_{s}_")), None)
         if slug_f is None:
             errs.append(f"CONFIG unknown fam checkpoint slug in {name!r}")
         else:
