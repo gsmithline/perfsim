@@ -181,7 +181,9 @@ def test_analyzer_detects_replicates_and_reports_a_verdict():
     # data (38% -> "seed-driven") before it was corrected.
     assert "sd_w > 0.5 * sd_a" in src
     assert "n_lock_same" in src
-    assert "does NOT pin the trajectory" in src
+    # (the phrase wraps across source lines -- match the
+    # contiguous fragment, not the rendered sentence)
+    assert "does NOT pin the " in src
 
 
 # -- lambda=0.5 / lambda=0 matching runs (FLM) ---------------------------
