@@ -2896,6 +2896,57 @@ FL1_KEY = "feature_lambda1_seeds"
 FL1_SEEDS = list(range(46, 56))
 FL1_EXISTING_SEEDS = [0, 42, 43, 44, 45]
 
+# feature_lambda1_repro (2026-08-20): the REPRODUCIBILITY control the
+# lock-in analysis has been missing, plus four more independent draws.
+#   3 x seed 0 replicates (_rep1/_rep2/_rep3, identical config and
+#     identical RNG seed) -- does a fixed seed reproduce its own
+#     trajectory at all? LoRA training on GPU is not bitwise
+#     deterministic by default, and greedy generation is only
+#     bit-reproducible within one GPU architecture (2026-08-19
+#     finding), so 30 rounds of closed-loop feedback could amplify
+#     numerical noise into a completely different outcome. If the
+#     replicates land near seed 0's late-window 0.006, run-to-run
+#     variation is genuinely seed-driven and the ~20% lock-in rate
+#     means what it says. If they scatter across 0.00-0.10 like
+#     different seeds do, then "seed" is the wrong frame and the
+#     rate is measuring chaotic amplification, which would also
+#     explain why NOTHING at initialisation predicts the outcome
+#     (innate is bit-identical across seeds; round-0 served R^2
+#     correlates -0.16 with the final value).
+#   4 x seeds 1-4 -- four more independent draws, n 15 -> 19. NOTE:
+#     seed values have no metric structure; these are not "closer
+#     to" seed 0 than 46-55 are, they are just four more draws.
+# All 7 are A100-pinned, matching seed 0's original host (g144) --
+# so a replicate that diverges cannot be blamed on architecture.
+FL1R_KEY = "feature_lambda1_repro"
+FL1R_REPLICATES = [1, 2, 3]        # of seed 0
+FL1R_NEW_SEEDS = [1, 2, 3, 4]
+
+
+def fl1r_tag(seed, rep=None):
+    rep_tok = f"_rep{rep}" if rep else ""
+    return ("pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
+            f"_s{seed}{rep_tok}_fresh_data")
+
+
+def fl1r_rows():
+    rows = [ROW_WS.format(tag=fl1r_tag(0, r), style="sft_kl",
+                          beta="1", seed=0, eps_ai="0.4")
+            for r in FL1R_REPLICATES]
+    rows += [ROW_WS.format(tag=fl1r_tag(s), style="sft_kl", beta="1",
+                           seed=s, eps_ai="0.4")
+             for s in FL1R_NEW_SEEDS]
+    return rows
+
+
+def fl1r_sub():
+    return FE5_SUB_TEMPLATE.format(
+        key=FL1R_KEY, n_jobs=len(fl1r_rows()),
+        what=("lambda=1 REPRODUCIBILITY control: 3 seed-0 replicates "
+              "+ seeds 1-4"),
+        extra_env=FE5_SUB_ENV["nat"], suffix=FE5_SUB_SUFFIX["nat"],
+        gpu=FE5_A100, cols=FE5_SUB_COLS["nat"])
+
 
 def fl1_tag(seed):
     return ("pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
@@ -6597,6 +6648,44 @@ def main():
     files[p] = rows_fl1
     expected[p] = 10
     cube_subs[os.path.join(HERE, f"at_pofd_{FL1_KEY}.sub")] = _fl1_sub
+    # reproducibility control + seeds 1-4 (see the FL1R block)
+    rows_fl1r = fl1r_rows()
+    assert len(rows_fl1r) == 7, len(rows_fl1r)
+    _fl1r_tags = [r.split(",")[0] for r in rows_fl1r]
+    assert len(set(_fl1r_tags)) == 7
+    _reps = [t for t in _fl1r_tags if "_rep" in t]
+    _news = [t for t in _fl1r_tags if "_rep" not in t]
+    assert len(_reps) == 3 and len(_news) == 4
+    # the replicates carry seed 0 in BOTH the tag and the queue column
+    for r in rows_fl1r:
+        _cols = [c.strip() for c in r.split(",")]
+        if "_rep" in _cols[0]:
+            assert "_s0_rep" in _cols[0], r
+            assert _cols[3] == "0", r
+        assert _cols[1] == "sft_kl" and _cols[2] == "1", r
+        assert _cols[9] == "0.2" and _cols[14] == "0.4", r
+    assert {int(t.split("_s")[-1].split("_")[0]) for t in _news} == \
+        set(FL1R_NEW_SEEDS)
+    # never re-queue anything already run: the 15 completed lambda=1
+    # seeds, and in particular seed 0 itself (its plain tag is the
+    # published cell)
+    _done = {fl1_tag(s) for s in FL1_EXISTING_SEEDS} | \
+        {fl1_tag(s) for s in FL1_SEEDS}
+    assert not (set(_fl1r_tags) & _done), \
+        f"repro wave would re-queue completed runs: " \
+        f"{set(_fl1r_tags) & _done}"
+    assert fl1_tag(0) not in _fl1r_tags
+    _fl1r_sub = fl1r_sub()
+    assert f'CUDADeviceName == "{FE5_A100}"' in _fl1r_sub
+    _prior_fl1r = {r.split(",")[0]
+                   for rows in files.values() for r in rows}
+    assert not (set(_fl1r_tags) & _prior_fl1r), \
+        f"fl1r collision: {set(_fl1r_tags) & _prior_fl1r}"
+    p = os.path.join(HERE, f"configs_pofd_{FL1R_KEY}.txt")
+    files[p] = rows_fl1r
+    expected[p] = 7
+    cube_subs[os.path.join(HERE, f"at_pofd_{FL1R_KEY}.sub")] = \
+        _fl1r_sub
     # Qwen2.5 full-anchor (k=1) Section-3 grid (see the QK1 block):
     # 24 brand-new cells -- the completed k=0.2 grid with
     # INNATE_LAMBDA 0.2 -> 1 and nothing else.

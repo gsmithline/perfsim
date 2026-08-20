@@ -106,6 +106,15 @@ def main():
     from plot_feature_endogenization_beta_final import (
         RUN_ROOT, TASTE_COLUMNS, load_run, natural_tag)
 
+    def load_run_tag(tag):
+        import json as _json, torch as _torch
+        d = RUN_ROOT / tag
+        return {"tag": tag,
+                "config": _json.load(open(d / "config.json")),
+                "trajectory": _torch.load(d / "trajectory.pt",
+                                          map_location="cpu",
+                                          weights_only=False)}
+
     ref = load_run(natural_tag(1.0, 0))["trajectory"]
     tastes = np.column_stack(
         [np.asarray(ref["profiles"][k], dtype=float)
@@ -115,9 +124,17 @@ def main():
     # every lambda=1 seed present on disk -- the original five plus
     # whatever replication has landed
     seeds = []
-    for s in [0, 42, 43, 44, 45] + list(range(46, 100)):
+    for s in list(range(0, 100)):
         if (RUN_ROOT / natural_tag(1.0, s) / "trajectory.pt").exists():
             seeds.append(s)
+    # seed-0 REPLICATES: identical seed and config, distinct tag. They
+    # measure whether a fixed seed reproduces its own trajectory at
+    # all -- the control the rate estimate depends on.
+    reps = []
+    for r in (1, 2, 3, 4, 5):
+        t = natural_tag(1.0, 0).replace("_s0_", f"_s0_rep{r}_")
+        if (RUN_ROOT / t / "trajectory.pt").exists():
+            reps.append((r, t))
     print(f"[l1] lambda=1 seeds available: {len(seeds)} -> {seeds}")
     if len(seeds) < 5:
         print("[l1] HARD FAIL: fewer than the five known seeds found",
@@ -144,6 +161,36 @@ def main():
               f" late={late:+.4f} gap={rows[-1]['gender_gap_r29']:+.4f}"
               f" {'LOCK-IN' if rows[-1]['locked_in'] else ''}")
 
+    if reps:
+        import plot_feature_endogenization_main as _M
+        base = float(np.mean(series[0][LATE])) if 0 in series else None
+        print(f"\n[l1] REPRODUCIBILITY: {len(reps)} seed-0 replicates "
+              f"(identical seed + config, distinct tag)")
+        rep_lates = []
+        for r, t in reps:
+            run = load_run_tag(t)
+            v = _M.series_for_run(run, tastes, gender)
+            late_r = float(np.mean(v[LATE]))
+            rep_lates.append(late_r)
+            ident = ("BIT-IDENTICAL to seed 0"
+                     if 0 in series
+                     and np.allclose(v, series[0], atol=0, rtol=0)
+                     else "differs from seed 0")
+            print(f"    rep{r}: peak={v.max():+.4f} @r{int(v.argmax()):<3}"
+                  f" late={late_r:+.4f}  {ident}")
+        if base is not None:
+            spread = max(rep_lates + [base]) - min(rep_lates + [base])
+            print(f"    seed-0 original late={base:+.4f}; "
+                  f"spread across original+replicates = {spread:.4f}")
+            across = max(r["late_mean_r2"] for r in rows) - \
+                min(r["late_mean_r2"] for r in rows)
+            print(f"    across-seed spread = {across:.4f}")
+            print(f"    VERDICT: replicate spread is "
+                  f"{spread / across:.0%} of the across-seed spread -- "
+                  + ("the seed does NOT pin the trajectory; the lock-in "
+                     "rate is measuring run-to-run chaos, not seeds"
+                     if spread > 0.5 * across else
+                     "run-to-run variation is genuinely seed-driven"))
     k = sum(r["locked_in"] for r in rows)
     n = len(rows)
     lo, hi = clopper_pearson(k, n)

@@ -127,3 +127,53 @@ def test_rate_interval_narrows_with_more_seeds():
     lo5, hi5 = AL.clopper_pearson(1, 5)
     lo15, hi15 = AL.clopper_pearson(3, 15)
     assert (hi15 - lo15) < (hi5 - lo5) * 0.75
+
+
+# -- reproducibility control (FL1R) --------------------------------------
+
+def test_repro_wave_is_three_replicates_plus_four_seeds():
+    rows = GEN.fl1r_rows()
+    assert len(rows) == 7
+    tags = [r.split(",")[0] for r in rows]
+    assert len(set(tags)) == 7
+    reps = [t for t in tags if "_rep" in t]
+    new = [t for t in tags if "_rep" not in t]
+    assert len(reps) == 3 and len(new) == 4
+    assert {int(t.split("_s")[-1].split("_")[0]) for t in new} == {1, 2, 3, 4}
+
+
+def test_replicates_carry_seed_0_in_tag_and_queue():
+    """A replicate is the SAME seed with a different tag -- if the
+    queue column drifted it would be an ordinary new seed and the
+    control would prove nothing."""
+    for r in GEN.fl1r_rows():
+        cols = [c.strip() for c in r.split(",")]
+        if "_rep" in cols[0]:
+            assert "_s0_rep" in cols[0], r
+            assert cols[3] == "0", r
+
+
+def test_repro_wave_never_requeues_a_completed_run():
+    tags = {r.split(",")[0] for r in GEN.fl1r_rows()}
+    done = {GEN.fl1_tag(s) for s in EXISTING + list(range(46, 56))}
+    assert not (tags & done)
+    # seed 0's plain tag is the PUBLISHED cell -- must never appear
+    assert GEN.fl1_tag(0) not in tags
+    assert "pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_fresh_data" \
+        not in tags
+
+
+def test_repro_wave_is_gpu_pinned():
+    """Seed 0 originally ran on an A100; pinning means a replicate
+    that diverges cannot be blamed on GPU architecture."""
+    assert f'CUDADeviceName == "{GEN.FE5_A100}"' in GEN.fl1r_sub()
+
+
+def test_analyzer_detects_replicates_and_reports_a_verdict():
+    src = open(os.path.join(
+        PIPE, "analyze_feature_lambda1_seeds.py")).read()
+    assert "_rep{r}_" in src or '_rep' in src
+    assert "REPRODUCIBILITY" in src
+    assert "across-seed spread" in src
+    # the verdict must key off replicate spread vs across-seed spread
+    assert "spread > 0.5 * across" in src

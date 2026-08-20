@@ -1,0 +1,7 @@
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_rep1_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_rep2_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s0_rep3_fresh_data, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s1_fresh_data, sft_kl, 1, 1, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s2_fresh_data, sft_kl, 1, 2, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s3_fresh_data, sft_kl, 1, 3, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s4_fresh_data, sft_kl, 1, 4, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
