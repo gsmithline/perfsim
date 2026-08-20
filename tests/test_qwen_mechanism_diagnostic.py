@@ -1100,3 +1100,24 @@ def test_non_finite_training_telemetry_is_caught(setup, tmp_path):
     # absent telemetry is NOT an error
     os.remove(os.path.join(d, "telemetry.json"))
     assert CHK.check_run(d) == []
+
+
+def test_gpu_pinned_waves_exclude_the_known_bad_nodes():
+    """Both new waves are GPU-PINNED, and the pinned template they were
+    built from (FE5) carried no bad-node exclusions -- so the first
+    Wu-limit submission put two jobs straight onto broken silicon (i104,
+    a node ~88 other .sub files already exclude, and i101). Both died in
+    9s with "CUDA unavailable ... exiting 17 for retry".
+
+    (TARGET.Machine =!= MY.LastRemoteHost) does NOT cover this: it
+    compares a slot-qualified name against a bare hostname and is inert,
+    so a retry can land back on the node that just failed."""
+    assert set(GEN.BAD_NODES) >= {"g106", "i104", "i101"}
+    for sub in (GEN.qmech_sub(), GEN.qwu_sub(), GEN.qwu_sub(smoke=True)):
+        req = next(ln for ln in sub.splitlines()
+                   if ln.startswith("requirements"))
+        for host in GEN.BAD_NODES:
+            assert f'TARGET.Machine != "{host}.internal.cluster.is.localnet"' \
+                in req, (host, req)
+        # the architecture pin must survive alongside the exclusions
+        assert f'CUDADeviceName == "{GEN.QMECH_H100}"' in req

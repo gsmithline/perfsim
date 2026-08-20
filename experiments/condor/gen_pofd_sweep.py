@@ -3369,6 +3369,21 @@ QMECH_H100 = "NVIDIA H100 80GB HBM3"
 QMECH_CANONICAL_PRED_SHA = (
     "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb")
 
+# KNOWN-BAD NODES. g106 and i104 are excluded by ~88 other .sub files in
+# this directory; the GPU-pinned template these two waves were built from
+# (FE5) did not carry the list, so the first Wu-limit submission put two
+# jobs straight onto bad silicon -- one of them i104 -- and both died in
+# 9s with "CUDA unavailable ... exiting 17 for retry" (2026-08-20).
+# i101 joins the list from that same submission: same failure mode.
+# Note (TARGET.Machine =!= MY.LastRemoteHost) does NOT help here -- it
+# compares a slot-qualified name against a bare hostname and is inert --
+# so a retry can land right back on the node that just failed. Explicit
+# exclusion is the only thing that actually keeps them off.
+BAD_NODES = ("g106", "i104", "i101")
+BAD_NODE_REQ = "".join(
+    f' && (TARGET.Machine != "{h}.internal.cluster.is.localnet")'
+    for h in BAD_NODES)
+
 # k rides the QUEUE here (unlike every earlier family, which pinned one
 # INNATE_LAMBDA in the sub env) because this grid spans k=.2 AND k=1
 ROW_QMECH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
@@ -3413,7 +3428,7 @@ def qmech_rows():
 def qmech_sub():
     return QMECH_SUB_TEMPLATE.format(key=QMECH_KEY,
                                      n_jobs=len(qmech_rows()),
-                                     gpu=QMECH_H100)
+                                     gpu=QMECH_H100, bad=BAD_NODE_REQ)
 
 
 QMECH_SUB_TEMPLATE = """\
@@ -3455,7 +3470,7 @@ request_cpus      = 4
 request_memory    = $(mem)
 request_disk      = $(disk)
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) PEER_GATE_MODE=threshold INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen_mechanism_frozen"
@@ -3577,7 +3592,7 @@ def qwu_sub(smoke=False):
     key = QWU_SMOKE_KEY if smoke else QWU_KEY
     rows = qwu_smoke_rows() if smoke else qwu_rows()
     return QWU_SUB_TEMPLATE.format(
-        key=key, n_jobs=len(rows), gpu=QWU_H100,
+        key=key, n_jobs=len(rows), gpu=QWU_H100, bad=BAD_NODE_REQ,
         rounds=QWU_SMOKE_ROUNDS if smoke else QWU_ROUNDS,
         kind=("SMOKE (3 rounds, NOT production)" if smoke
               else "PRODUCTION (100 rounds)"))
@@ -3625,7 +3640,7 @@ request_cpus      = 4
 request_memory    = $(mem)
 request_disk      = $(disk)
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
