@@ -3530,12 +3530,22 @@ ROW_QWU = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
            "{chatthink}, {mem}, {disk}, {pplbatch}")
 
 
+# Smoke generation. "smoke" (v1) was submitted before the serving fix of
+# 2026-08-20, so any run wearing that tag decoded with LoRA dropout still
+# active (Trainer.train() leaves the model in training mode and
+# _generate never forced eval), which makes its "greedy" predictions
+# non-deterministic. The idempotent executable no-ops COMPLETED runs, so
+# reusing the tag would silently keep that stale result. Bump the token
+# instead: a new tag can never be satisfied by the old directory.
+QWU_SMOKE_TOKEN = "smoke2"
+
+
 def qwu_tag(arm, w, seed=0, rounds=QWU_ROUNDS, smoke=False):
     """_eaopen_/_esopen_ spell the genuinely open gates -- never _ea1_ or
     _es1_, which are numeric strict-< thresholds that reject a
     distance-1 pair. The horizon is in the tag because 100-round and
     3-round cells of the same condition are different objects."""
-    sm = "smoke" if smoke else ""
+    sm = QWU_SMOKE_TOKEN if smoke else ""
     return (f"pofdqwu_{QWU_MODEL}_{arm}_eaopen_w{_num(w)}_l{_num(QWU_K)}"
             f"_esopen_s{seed}_r{rounds}{sm}")
 
@@ -7316,8 +7326,21 @@ def main():
     rows_qwus = qwu_smoke_rows()
     assert len(rows_qwus) == 1, len(rows_qwus)
     _qwus_tags = {r.split(",")[0] for r in rows_qwus}
-    assert all(t.endswith(f"_s0_r{QWU_SMOKE_ROUNDS}smoke")
-               and "_b1_" in t and "_w1_" in t for t in _qwus_tags)
+    # exactly b1, W=1, k=1, 3 rounds -- the hardest corner of the new
+    # open-peer path, at the boundary itself
+    assert all(t.endswith(f"_s0_r{QWU_SMOKE_ROUNDS}{QWU_SMOKE_TOKEN}")
+               and "_b1_" in t and "_w1_" in t and "_l1_" in t
+               and "_eaopen_" in t and "_esopen_" in t
+               for t in _qwus_tags), _qwus_tags
+    # the pre-fix smoke tag must never reappear: its run decoded with
+    # LoRA dropout active, and the idempotent exec would no-op on it
+    assert not any(t.endswith(f"_r{QWU_SMOKE_ROUNDS}smoke")
+                   for t in _qwus_tags), _qwus_tags
+    for r in rows_qwus:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[1] == "sft_kl" and _cols[2] == "1", r
+        assert _cols[11] == "1" and _cols[14] == "1", r   # W=1, k=1
+        assert _cols[21] == str(QWU_SMOKE_ROUNDS), r
     assert not (_qwus_tags & _qwu_tags), \
         f"smoke would shadow a production cell: {_qwus_tags & _qwu_tags}"
     _qwus_sub = qwu_sub(smoke=True)

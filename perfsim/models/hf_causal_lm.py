@@ -326,6 +326,17 @@ class HFCausalLMModel(Model):
         Toggles grad checkpointing off + KV cache on for generation (HF won't
         populate the cache under checkpointing, costing ~5-10x), restoring both
         in `finally` so the training path keeps checkpointing's memory savings.
+
+        EVALUATION MODE (2026-08-20). Generation also forces module.eval()
+        and restores the previous train/eval flag in `finally`. Without it
+        serving inherits whatever mode the last caller left behind, and
+        HF's Trainer.train() leaves the model in TRAINING mode: with the
+        default lora_dropout=0.05 that leaves dropout ACTIVE during
+        generation, so "greedy" decoding silently becomes stochastic and
+        two identical prompts in the same round can decode differently.
+        The restore is unconditional -- an exception mid-generation must
+        not strand the model in eval and silently disable dropout for the
+        next training round.
         """
         assert self.inner_model is not None
         assert self.tokenizer is not None
@@ -336,9 +347,12 @@ class HFCausalLMModel(Model):
 
         was_grad_ckpt = bool(getattr(self.inner_model, "is_gradient_checkpointing", False))
         was_use_cache = bool(getattr(self.inner_model.config, "use_cache", False))
+        was_training = bool(self.inner_model.training)
         if was_grad_ckpt:
             self.inner_model.gradient_checkpointing_disable()
         self.inner_model.config.use_cache = True
+        # deterministic serving: no dropout, no batchnorm updates
+        self.inner_model.eval()
 
         try:
             out: list[str] = []
@@ -366,6 +380,11 @@ class HFCausalLMModel(Model):
             if was_grad_ckpt:
                 self.inner_model.gradient_checkpointing_enable()
             self.inner_model.config.use_cache = was_use_cache
+            # restore the caller's mode EXACTLY, including on exceptions
+            if was_training:
+                self.inner_model.train()
+            else:
+                self.inner_model.eval()
 
         return out
 

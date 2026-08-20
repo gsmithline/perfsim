@@ -844,3 +844,214 @@ def test_wu_reference_and_correspondence_language_is_recorded():
         # the limit must be stated, not merely the analogy
         assert ("not a replication" in src
                 or "not a proof" in src), f
+
+# ======================================================================
+# QWU checker: arm surface and the smoke pin (2026-08-20)
+# ======================================================================
+
+def _build_qwu(setup, arm="b1", w=1.0, rounds=3, smoke=True):
+    """A genuine open-gate QWU run: REAL operators, both gates all_open,
+    embedded config. The served vector is arbitrary here -- the QWU
+    branch gates the TRAINING surface and the gate modes, not the
+    model's outputs."""
+    n = int(setup["n"])
+    innate = setup["innate"]
+    served = (innate * 0.5 + 0.25).clone()
+    acc = []
+    op, tw, pred = PP.simulate(
+        setup, innate_k=1.0, w_plat=w, eps_social=0.2, eps_ai=1.0,
+        rounds=rounds, seed=0, ai_gate_mode="all_open",
+        peer_gate_mode="all_open", accepted_out=acc,
+        served_fn=lambda x, t: served, require_open_gate=False)
+    gates, traj = [], []
+    for t in range(rounds):
+        x0 = innate if t == 0 else op[t - 1]
+        g = gp.ai_gate(pred[t], x0, 1.0, "all_open")
+        gates.append(g)
+        traj.append({"round": t, "deployment": 0, "is_deploy": 1,
+                     "n_train": 723,
+                     "contact": float(g.float().mean()),
+                     "accepted": acc[t], "s_tag": 0.0,
+                     "peer_gate_mode": "all_open", "peer_pairs": n,
+                     "twin_mean": float(tw[t].mean()),
+                     "twin_std": float(tw[t].std()), "twin_bias": 0.0,
+                     "op_twin_l1": 0.0, "op_twin_w1": 0.0})
+    style, beta = (("sft", 0.0) if arm == "b0" else ("sft_kl", 1.0))
+    tok = "smoke2" if smoke else ""
+    wn = f"{w:g}".replace(".", "p")
+    cfg = {
+        "run_tag": f"pofdqwu_qwen7b_{arm}_eaopen_w{wn}_l1_esopen_s0"
+                   f"_r{rounds}{tok}",
+        "kl_beta": beta, "kl_direction": "forward", "kl_ref_adapter": None,
+        "training_style": style, "rlhf_feedback": False,
+        "base_model": "Qwen/Qwen2.5-7B-Instruct", "n_rounds": rounds,
+        "epoch_size": 100, "deploy_every": 1, "data_regime": "replace",
+        "seed": 0, "n_labeled": 723, "max_steps": 0, "sft_epochs": 1,
+        "sft_batch_size": 4, "lora_r": 512, "use_lora": True,
+        "sft_lr": 5e-5, "hist_bins": 50, "seed_base_data": True,
+        "train_cap": 723, "platform_sus_scale": 1.0, "anchor_mode": "fixed",
+        "pop_model": "ab", "eps": 0.2, "eps_ai": 1.0, "gamma_bias": 0.0,
+        "ai_gate_mode": "all_open", "peer_gate_mode": "all_open",
+        "w_plat": w, "innate_lambda": 1.0,
+        "population_update": "nested_ai_then_social_v1", "run_mode": "loop",
+        "canary_delta": 0.0, "grad_decomp": 1, "save_adapter_rounds": [],
+        "icl_k": 0, "icl_days": 0, "icl_select": "random",
+        "icl_ctx_source": "live", "icl_snapshot_round": -1,
+        "icl_ctx_donor": None, "icl_ctx_donor_tag": None,
+        "icl_ctx_donor_round": None, "icl_ctx_donor_hash": None,
+        "feedback_mode": "none", "icrh": False, "reward_kind": "accuracy",
+        "ab_retain": False, "n_probe": 64, "tel_eval_cap": 64,
+        "grad_norm_n": 8, "fresh_each_round": True, "pristine_frac": 0.0,
+        "replay_frac": 0.0, "pop_reset": False, "ab_sweeps": 1,
+        "pop_order": "peer_first", "profile_shuffle_p": 0.0,
+        "profile_sort_q": 0.0, "profile_drop_cols": [],
+        "profile_permute_cols": [], "teacher_label_delta": 0.0,
+        "teacher_label_col": None, "teacher_label_fav": None,
+        "teacher_group_seed": 0, "log_gender_gaps": False,
+        "dataset": "movielens", "ml_target": "Action", "log_ppl_dist": True,
+        "ppl_dist_cap": 0, "do_sample": False, "gen_temperature": 1.0,
+        "ans_sample_k": 16, "ans_sample_n": 64, "ans_sample_t": 1.0,
+        "host": "gpu-node", "save_raw_gen": True,
+        "hardware": {"hostname": "g001",
+                     "gpu_name": "NVIDIA H100 80GB HBM3", "gpu_cc": "9.0",
+                     "cuda_version": "12.4", "torch_version": "2.5.0",
+                     "transformers_version": "4.46.0"},
+    }
+    return {
+        "trajectory": traj, "config": cfg, "op_raw": op, "pred_raw": pred,
+        "twin_raw": tw, "gate_raw": torch.stack(gates),
+        "ppl_raw": torch.empty(0), "ans_raw": torch.empty(0),
+        "ans_idx": torch.tensor([], dtype=torch.long),
+        "replay_raw": torch.empty(0), "train_y_raw": torch.empty(0),
+        "icl_idx_raw": torch.empty(0), "icl_val_raw": torch.empty(0),
+        "icl_donor_vec": torch.empty(0), "innate": innate, "profiles": {},
+        "probe_idx": torch.tensor([], dtype=torch.long),
+        "canary": torch.zeros(n), "gender_true": None, "gender_disp": None,
+        "teacher_pred": torch.empty(0),
+    }
+
+
+@pytest.fixture(scope="module")
+def clean_qwu(setup):
+    return _build_qwu(setup)
+
+
+def test_clean_qwu_smoke_fixture_passes(clean_qwu):
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(copy.deepcopy(clean_qwu), tmp))
+    assert errs == [], errs
+
+
+def test_clean_qwu_production_arms_pass(setup):
+    for arm in ("b0", "b1"):
+        for w in (0.5, 1.0):
+            p = _build_qwu(setup, arm=arm, w=w, rounds=100, smoke=False)
+            with tempfile.TemporaryDirectory() as tmp:
+                errs = CHK.check_run(_write(p, tmp))
+            assert errs == [], (arm, w, errs)
+
+
+def test_qwu_b0_must_have_no_kl_term(clean_qwu, setup):
+    """b0 is ORDINARY fresh SFT. If it carried a KL term the
+    'regularized minus ordinary' contrast would not measure forward-KL
+    retention at all."""
+    p = _build_qwu(setup, arm="b0", w=1.0, rounds=100, smoke=False)
+    p["config"].update(training_style="sft_kl", kl_beta=1.0)
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(p, tmp))
+    assert _hit(errs, "training_style") or _hit(errs, "kl_beta"), errs
+
+
+def test_qwu_b1_must_carry_kl_weight_one_forward(clean_qwu):
+    for field, bad in (("kl_beta", 0.5), ("kl_direction", "reverse"),
+                       ("training_style", "sft")):
+        errs = _sabotage(clean_qwu, lambda p, f=field, b=bad:
+                         p["config"].update({f: b}),
+                         tag=clean_qwu["config"]["run_tag"])
+        assert _hit(errs, field), (field, errs)
+
+
+def test_qwu_b1_reference_must_be_the_fixed_pristine_base(clean_qwu):
+    """kl_ref_adapter would regularize toward a teacher checkpoint
+    instead of the entering model -- a different experiment wearing the
+    same tag."""
+    errs = _sabotage(
+        clean_qwu,
+        lambda p: p["config"].update(kl_ref_adapter="runs/teacher/adapter_r0"),
+        tag=clean_qwu["config"]["run_tag"])
+    assert _hit(errs, "PRISTINE"), errs
+
+
+def test_qwu_b0_rejects_a_reference_adapter(setup):
+    p = _build_qwu(setup, arm="b0", w=1.0, rounds=100, smoke=False)
+    p["config"]["kl_ref_adapter"] = "runs/teacher/adapter_r0"
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(p, tmp))
+    assert _hit(errs, "no reference model"), errs
+
+
+def test_qwu_fresh_each_round_is_required(clean_qwu):
+    errs = _sabotage(clean_qwu,
+                     lambda p: p["config"].update(fresh_each_round=False),
+                     tag=clean_qwu["config"]["run_tag"])
+    assert _hit(errs, "fresh_each_round"), errs
+
+
+# -- the smoke is ONE specific cell, not "any short run" -----------------
+
+def test_smoke_must_be_b1(setup):
+    p = _build_qwu(setup, arm="b0", w=1.0, rounds=3, smoke=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(p, tmp))
+    assert _hit(errs, "smoke must be the b1 arm"), errs
+
+
+def test_smoke_must_be_w_one(setup):
+    p = _build_qwu(setup, arm="b1", w=0.5, rounds=3, smoke=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(p, tmp))
+    assert _hit(errs, "smoke must be W=1"), errs
+
+
+def test_smoke_must_be_three_rounds(setup):
+    p = _build_qwu(setup, arm="b1", w=1.0, rounds=5, smoke=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        errs = CHK.check_run(_write(p, tmp))
+    assert _hit(errs, "smoke must be 3 rounds"), errs
+
+
+def test_smoke_must_be_k_one(clean_qwu):
+    errs = _sabotage(clean_qwu,
+                     lambda p: p["config"].update(innate_lambda=0.2),
+                     tag=clean_qwu["config"]["run_tag"])
+    assert _hit(errs, "smoke must be k=1") or _hit(errs, "innate_lambda"), errs
+
+
+def test_smoke_must_have_both_gates_open(clean_qwu):
+    for gk in ("ai_gate_mode", "peer_gate_mode"):
+        errs = _sabotage(clean_qwu,
+                         lambda p, g=gk: p["config"].update({g: "threshold"}),
+                         tag=clean_qwu["config"]["run_tag"])
+        assert errs, gk
+        assert _hit(errs, gk) or _hit(errs, "PEER-GATE"), (gk, errs)
+
+
+def test_new_smoke_tag_cannot_be_satisfied_by_the_stale_run():
+    """The pre-fix smoke was submitted before serving was forced into
+    eval mode, so its predictions decoded with LoRA dropout active. The
+    idempotent executable no-ops COMPLETED runs, so the ONLY way to
+    guarantee a rerun is a tag the old directory cannot answer to."""
+    assert GEN.QWU_SMOKE_TOKEN == "smoke2"
+    tag = GEN.qwu_smoke_rows()[0].split(",")[0]
+    stale = "pofdqwu_qwen7b_b1_eaopen_w1_l1_esopen_s0_r3smoke"
+    assert tag != stale
+    assert tag == stale + "2"
+
+
+def test_checker_still_accepts_the_new_smoke_token():
+    """A tag the generator emits must be a tag the checker can parse --
+    otherwise the corrected smoke could never gate clean."""
+    import re as _re
+    tag = GEN.qwu_smoke_rows()[0].split(",")[0]
+    assert _re.match(r"^pofdqwu_qwen7b_(b0|b1)_eaopen_w(0p5|1)_l1_"
+                     r"esopen_s0_r(\d+)(smoke\d*)?$", tag), tag

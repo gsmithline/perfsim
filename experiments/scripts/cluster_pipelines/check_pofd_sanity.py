@@ -1213,17 +1213,76 @@ def check_run(run_dir):
                      "ai_gate_mode": "all_open",
                      "peer_gate_mode": "all_open"})
         m_qwu = re.match(r"^pofdqwu_qwen7b_(b0|b1)_eaopen_w(0p5|1)_l1_"
-                         r"esopen_s0_r(\d+)(smoke)?$", name)
+                         r"esopen_s0_r(\d+)(smoke\d*)?$", name)
         if m_qwu is None:
             errs.append(f"CONFIG qwu tag off-grid ({name!r}) -- want "
                         f"pofdqwu_qwen7b_<b0|b1>_eaopen_w<0p5|1>_l1_"
-                        f"esopen_s0_r<rounds>[smoke]")
+                        f"esopen_s0_r<rounds>[smoke<N>]")
         else:
+            _arm_q, _w_q = m_qwu.group(1), m_qwu.group(2)
+            _is_smoke = m_qwu.group(4) is not None
             want["n_rounds"] = int(m_qwu.group(3))
-            if m_qwu.group(4) is None and want["n_rounds"] != 100:
+            if not _is_smoke and want["n_rounds"] != 100:
                 errs.append(f"CONFIG qwu production horizon is 100 "
                             f"rounds, tag says {want['n_rounds']} "
                             f"({name!r})")
+            # ARM SURFACE, pinned here rather than left to the generic _b
+            # token gate. The two arms are the whole point of the
+            # contrast -- "regularized SFT minus ordinary SFT measures
+            # explicit forward-KL reference retention" is only true if b0
+            # really carries NO KL term and b1 really carries lambda=1
+            # against the FIXED PRISTINE base.
+            if _arm_q == "b0":
+                # ordinary fresh SFT: no KL term at all. kl_direction is
+                # inert without a KL term and is deliberately NOT pinned
+                # (the reverse-era b0 runs are the standing precedent).
+                want.update({"training_style": "sft", "kl_beta": 0.0,
+                             "fresh_each_round": True})
+                if cfg.get("kl_ref_adapter"):
+                    errs.append(f"CONFIG qwu b0 carries kl_ref_adapter="
+                                f"{cfg.get('kl_ref_adapter')!r} -- "
+                                f"ordinary SFT has no reference model")
+            else:
+                want.update({"training_style": "sft_kl", "kl_beta": 1.0,
+                             "kl_direction": "forward",
+                             "fresh_each_round": True})
+                # the FIXED PRISTINE reference: kl_ref_adapter names a
+                # teacher//checkpoint adapter to regularize toward
+                # INSTEAD of the base. It must be absent/empty here, or
+                # the arm is retaining something other than the pristine
+                # entering model and the contrast means something else.
+                if cfg.get("kl_ref_adapter"):
+                    errs.append(
+                        f"CONFIG qwu b1 kl_ref_adapter="
+                        f"{cfg.get('kl_ref_adapter')!r} -- the regularized "
+                        f"arm must retain the FIXED PRISTINE base, not an "
+                        f"adapter checkpoint")
+            # THE SMOKE is one specific cell, not "any short run": the
+            # hardest corner of the new open-peer path (regularized
+            # training AND both gates open) at the boundary itself.
+            if _is_smoke:
+                if _arm_q != "b1":
+                    errs.append(f"CONFIG qwu smoke must be the b1 arm "
+                                f"(regularized SFT), got {_arm_q!r} "
+                                f"({name!r})")
+                if _w_q != "1":
+                    errs.append(f"CONFIG qwu smoke must be W=1 (the "
+                                f"consensus boundary), tag says W="
+                                f"{_w_q!r} ({name!r})")
+                if want["n_rounds"] != 3:
+                    errs.append(f"CONFIG qwu smoke must be 3 rounds, tag "
+                                f"says {want['n_rounds']} ({name!r})")
+                if float(cfg.get("innate_lambda", -1)) != 1.0:
+                    errs.append(f"CONFIG qwu smoke must be k=1, config "
+                                f"says innate_lambda="
+                                f"{cfg.get('innate_lambda')!r}")
+                for _gk, _gv in (("ai_gate_mode", cfg.get("ai_gate_mode")),
+                                 ("peer_gate_mode",
+                                  cfg.get("peer_gate_mode"))):
+                    if _gv != "all_open":
+                        errs.append(f"CONFIG qwu smoke {_gk}={_gv!r} -- "
+                                    f"the smoke exists to exercise BOTH "
+                                    f"gates genuinely open")
         # the tag must NOT spell open gates as the number 1
         if "_ea1_" in name or "_es1_" in name:
             errs.append(f"CONFIG qwu tag {name!r} spells an open gate as "

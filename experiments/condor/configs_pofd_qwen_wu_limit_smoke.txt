@@ -1,1 +1,1 @@
-pofdqwu_qwen7b_b1_eaopen_w1_l1_esopen_s0_r3smoke, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0, -1, 1, 1, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdqwu_qwen7b_b1_eaopen_w1_l1_esopen_s0_r3smoke2, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0, -1, 1, 1, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
