@@ -1055,3 +1055,48 @@ def test_checker_still_accepts_the_new_smoke_token():
     tag = GEN.qwu_smoke_rows()[0].split(",")[0]
     assert _re.match(r"^pofdqwu_qwen7b_(b0|b1)_eaopen_w(0p5|1)_l1_"
                      r"esopen_s0_r(\d+)(smoke\d*)?$", tag), tag
+
+
+def test_open_peer_pass_line_does_not_say_no_peer_updates():
+    """The PASS flavour text is computed separately in main() from the
+    NUMERIC _es token, which _esopen_ does not match -- so an open-peer
+    run printed "no peer updates" even though every sampled pair was
+    accepted. check_run was always right (an open-peer run takes the
+    social branch, and the no-peer branch would have failed on
+    accepted != 0); only the label lied. Caught on the real 2026-08-20
+    smoke."""
+    src = open(os.path.join(PIPE, "check_pofd_sanity.py")).read()
+    i = src.index("n_fail = 0")
+    tail = src[i:]
+    assert 'elif "_esopen_" in name:' in tail
+    # the open branch must come BEFORE the numeric-token branch, or it
+    # can never be reached
+    assert tail.index('elif "_esopen_" in name:') < \
+        tail.index('m_es_p := re.search')
+    assert "peer step OPEN" in tail
+
+
+def test_non_finite_training_telemetry_is_caught(setup, tmp_path):
+    """A NaN CE or KL loss means the round's adapter is garbage, and
+    nothing else downstream would say so -- the population keeps moving
+    and every structural check still passes. Absent telemetry.json is
+    fine (older runs, frozen arms); a non-finite VALUE is not."""
+    p = _build_qwu(setup)
+    d = _write(p, str(tmp_path))
+    # clean: telemetry present and finite
+    with open(os.path.join(d, "telemetry.json"), "w") as fh:
+        for t in range(3):
+            fh.write(json.dumps({"round": t, "grad_norm0": 1.5,
+                                 "grad_kl_norm0": 0.5}) + "\n")
+    assert CHK.check_run(d) == []
+    # sabotage: one NaN KL gradient
+    with open(os.path.join(d, "telemetry.json"), "w") as fh:
+        for t in range(3):
+            fh.write(json.dumps({"round": t, "grad_norm0": 1.5,
+                                 "grad_kl_norm0": (float("nan") if t == 1
+                                                   else 0.5)}) + "\n")
+    errs = CHK.check_run(d)
+    assert _hit(errs, "non-finite training telemetry"), errs
+    # absent telemetry is NOT an error
+    os.remove(os.path.join(d, "telemetry.json"))
+    assert CHK.check_run(d) == []

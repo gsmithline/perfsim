@@ -1901,6 +1901,41 @@ def check_run(run_dir):
             errs.append(f"ROUNDS trajectory has {len(traj)} rows but "
                         f"config declares n_rounds={_want_r}")
 
+    # -- 1a25 TRAINING TELEMETRY FINITE (universal, 2026-08-20) --------------
+    # A NaN/Inf CE or KL loss means the round's adapter is garbage, and
+    # nothing downstream would say so: the population keeps moving, the
+    # trajectory keeps its shape, and every structural check still
+    # passes. Until now this was checked NOWHERE.
+    # telemetry.json is optional (older runs, frozen arms) -- absent is
+    # not an error, matching the convention everywhere else here. But if
+    # a value is present it must be finite.
+    if cfg.get("training_style") not in (None, "frozen"):
+        _tel_p = os.path.join(run_dir, "telemetry.json")
+        if os.path.exists(_tel_p):
+            _LOSSY = ("grad_norm0", "grad_kl_norm0", "grad_ratio0",
+                      "grad_cos0", "l_00", "l_0c", "l_c0", "l_cc",
+                      "l_init", "batch_var", "w_norm")
+            _bad_l = []
+            try:
+                with open(_tel_p) as _fh:
+                    for _ln in _fh:
+                        _ln = _ln.strip()
+                        if not _ln:
+                            continue
+                        _row = json.loads(_ln)
+                        for _k in _LOSSY:
+                            _v = _row.get(_k)
+                            if isinstance(_v, float) and (
+                                    _v != _v or _v in (float("inf"),
+                                                       float("-inf"))):
+                                _bad_l.append((_row.get("round"), _k, _v))
+            except (OSError, json.JSONDecodeError) as _e:
+                errs.append(f"LOSS telemetry.json unreadable: {_e}")
+            if _bad_l:
+                errs.append(f"LOSS non-finite training telemetry "
+                            f"{_bad_l[:5]} -- the adapter for that round "
+                            f"is not trustworthy")
+
     # -- 1a3 ALL-OPEN AI GATE (universal) ------------------------------------
     # The reach family has enforced this since 2026-08-13; make it apply to
     # EVERY family, since the Wu-boundary wave is the second user of the
@@ -3765,7 +3800,19 @@ def main():
             for e in errs:
                 print(f"     - {e}")
         # _es0_ is a no-peer tag (reach family): the peer-alive flavor text
-        # must only print when the tokenized dose is actually > 0
+        # must only print when the tokenized dose is actually > 0.
+        # _esopen_ (2026-08-20) is the GENUINELY OPEN peer channel -- the
+        # most peer-alive condition there is -- but it carries no numeric
+        # token, so it fell through to the no-peer text and printed
+        # "no peer updates" on a run whose every sampled pair was
+        # accepted. check_run itself always had this right (an open-peer
+        # run takes the social branch, and the no-peer branch would have
+        # failed on accepted != 0); only this flavour text was wrong.
+        # Keep the two in step -- a misleading PASS line is how someone
+        # concludes the peer step never fired.
+        elif "_esopen_" in name:
+            print(f"PASS {name}  (peer step OPEN -- every sampled pair "
+                  f"accepted, twin simulated, fresh data only)")
         elif (m_es_p := re.search(r"_es(\d+(?:p\d+)?)_", name)) and \
                 float(m_es_p.group(1).replace("p", ".")) > 0:
             print(f"PASS {name}  (peer step live, twin simulated, fresh data only)")
