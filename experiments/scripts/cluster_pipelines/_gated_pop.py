@@ -24,11 +24,42 @@ AB_MIN_DIST = 1e-5
 PPL_BATCH = int(os.environ.get("PPL_BATCH", "64"))   # micro-batch for per_agent_ppl
 
 
-def ab_sweep(x, adj, eps, gamma, gen=None):
+def peer_gate(dist, eps, mode="threshold"):
+    """The ONE peer (Deffuant) confidence-gate definition (2026-08-20,
+    qwen_wu_limit wave). Mirrors ai_gate below; every peer sweep and the
+    offline replay call it, so the deployed acceptance rule and any
+    reconstruction can never diverge.
+
+      threshold  accept iff |x_i - x_j| < eps   (strict <, byte-identical
+                 to the pre-2026-08-20 inline expression)
+      all_open   accept EVERY sampled pair. NOT encoded as eps=1: the
+                 threshold test is a strict inequality, so a pair at
+                 (0, 1) sits at distance exactly 1 and would be REJECTED
+                 under eps=1. A genuinely open peer channel therefore
+                 needs its own mode, never a numeric stand-in.
+
+    `dist` is the absolute opinion distance of the sampled pairs. The
+    caller draws pairs BEFORE calling this, so the mode changes only the
+    acceptance decision -- never which pairs are sampled, never how much
+    RNG the sweep consumes.
+    """
+    if mode == "all_open":
+        return torch.ones_like(dist, dtype=torch.bool)
+    if mode != "threshold":
+        raise ValueError(f"unknown PEER_GATE_MODE: {mode!r}")
+    return dist < eps
+
+
+def ab_sweep(x, adj, eps, gamma, gen=None, gate_mode="threshold"):
     """Exactly N biased pair selections among graph neighbors; disjoint pairs
     per batch via Luby-style conflict resolution. Mutates x, returns accepted.
     `gen` isolates the population RNG from the global stream, which the HF
-    trainer re-seeds every round (frozen pair patterns otherwise)."""
+    trainer re-seeds every round (frozen pair patterns otherwise).
+
+    gate_mode="threshold" (the default) reproduces every archived run
+    byte-for-byte; "all_open" accepts every sampled pair (see peer_gate).
+    The mode is applied AFTER pair selection, so both modes draw the same
+    pairs from the same generator state."""
     n = x.shape[0]
     device = x.device
     bsz = min(AB_BATCH, n)
@@ -55,7 +86,7 @@ def ab_sweep(x, adj, eps, gamma, gen=None):
         keep = (pri <= best[ini]) & (pri <= best[par])
         idx = keep.nonzero().squeeze(1)[: n - done]
         i1, i2 = ini[idx], par[idx]
-        ok = (x[i1] - x[i2]).abs() < eps
+        ok = peer_gate((x[i1] - x[i2]).abs(), eps, gate_mode)
         a1, a2 = i1[ok], i2[ok]
         mid = 0.5 * (x[a1] + x[a2])
         x[a1] = mid
@@ -65,7 +96,7 @@ def ab_sweep(x, adj, eps, gamma, gen=None):
     return accepted
 
 
-def ab_sweep_stubborn(x, adj, eps, gamma, gen, fixed):
+def ab_sweep_stubborn(x, adj, eps, gamma, gen, fixed, gate_mode="threshold"):
     """One-sided STUBBORN Deffuant sweep (INNATE_CLAMP_PEER_MODE=
     stubborn, 2026-08-17). Mutates x, returns (accepted, stats).
 
@@ -81,6 +112,8 @@ def ab_sweep_stubborn(x, adj, eps, gamma, gen, fixed):
     same Luby resolution, same generator consumption) -- only the pair
     UPDATE branches on the mask, so a no-fixed-agent call reproduces
     the legacy sweep bit-for-bit. Legacy ab_sweep above is untouched.
+
+    gate_mode is passed straight to peer_gate, exactly as in ab_sweep.
 
     stats: fr_sampled / fr_accepted count kept pairs with EXACTLY one
     fixed endpoint (before / after the confidence test); touched is a
@@ -114,7 +147,7 @@ def ab_sweep_stubborn(x, adj, eps, gamma, gen, fixed):
         idx = keep.nonzero().squeeze(1)[: n - done]
         i1, i2 = ini[idx], par[idx]
         one_fixed = fixed[i1] ^ fixed[i2]
-        ok = (x[i1] - x[i2]).abs() < eps
+        ok = peer_gate((x[i1] - x[i2]).abs(), eps, gate_mode)
         a1, a2 = i1[ok], i2[ok]
         f1, f2 = fixed[a1], fixed[a2]
         mid = 0.5 * (x[a1] + x[a2])

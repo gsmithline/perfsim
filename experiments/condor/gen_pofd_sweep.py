@@ -3271,6 +3271,369 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# ===========================================================================
+# QWEN2.5 MECHANISM DIAGNOSTIC (2026-08-20). Two production keys, both
+# small, plus one smoke. Everything else the diagnostic needs -- the
+# perfect-prediction oracle, the long-horizon oracle grid, the offline
+# frozen population replays and the two beta_eff identity checks -- is
+# CPU-only and never touches Condor.
+#
+# THE QUESTION. What actually changes when a population and a platform
+# are put in a feedback loop, and how much of it is the pretrained model
+# rather than the loop itself? The decomposition is a ladder of five
+# conditions at matched (k, eps_social):
+#
+#   twin                     no platform at all
+#   perfect prediction       m(t) = x(t): an exact population echo
+#   frozen Qwen  K = D = 0   the STATIC entering prediction map
+#   ordinary SFT lambda = 0  parametric retraining on the loop's own data
+#   regularized SFT lambda=1 the same, plus explicit forward-KL retention
+#
+# and the contrasts are read strictly as
+#
+#   perfect - twin        effect of CLOSING an exact echo loop
+#   frozen - perfect      effect of replacing that echo with the static
+#                         entering Qwen map
+#   ordinary SFT - perfect   AGGREGATE parametric-retraining gap. NOT
+#                         "optimizer error": ordinary SFT still starts
+#                         from pretrained Qwen weights and a finite-rank
+#                         LoRA, so this contrast bundles pretrained
+#                         initialization, limited capacity, finite
+#                         optimization, shared parameters across agents,
+#                         greedy decoding, parsing, and generalization
+#                         across profiles.
+#   regularized - ordinary   explicit forward-KL reference retention
+#   regularized - frozen     how learning from the EVOLVING population
+#                         changes an already-retained model signal
+#
+# THEORY MAPPING (Wu et al., "Reaching a Consensus in Predictive Loops",
+# arXiv:2603.12137). Our pre-peer update is
+#     z = (1 - W)[k x_innate + (1 - k) x] + W m.
+# Under perfect prediction m = x this is FJ with
+#     z = (1 - beta_eff) x_innate + beta_eff x,  beta_eff = 1 - (1 - W) k,
+# so: the paper setting (k=.2, W=.5) has beta_eff=.9; (k=1, W=.5) has
+# beta_eff=.5, i.e. k=1 ALONE IS NOT A CONSENSUS LIMIT; with imperfect
+# Qwen predictions k=1 gives the direct Wu form z = (1-W)x_innate + W m;
+# the real high-susceptibility boundary is k=1, W=1, where the pre-peer
+# population EQUALS the served vector and k drops out algebraically.
+# Wu et al.'s consensus result needs perfect prediction AND susceptibility
+# -> 1; perfect prediction at finite susceptibility can keep a
+# heterogeneous equilibrium. Our randomized Deffuant midpoint process is
+# not their deterministic FJ operator -- with a connected graph and
+# genuinely open peer interaction it is a randomized-gossip ANALOGUE that
+# should converge under perfect prediction at W=1. Qualitative
+# limiting-case correspondence, not a replication of their theorem.
+#
+# WARNING carried into the analysis: comparing k=.2 with k=1 at fixed
+# W=.5 changes beta_eff (.9 -> .5) as well as innate/state anchoring. It
+# is NOT a pure memory ablation.
+# ===========================================================================
+
+# --- Part A: the five missing/superseding frozen cells ---------------------
+# qwen_mechanism_frozen. The 32-cell paper-regime grid is
+# k {.2, 1} x eps_social {0, .05, .2, 1} x 4 platform arms; 8 of those
+# are the CPU oracle, leaving 24 GPU cells. The field-level audit
+# (audit_qwen_mechanism.py -> manifest_qwen_mechanism.json) found
+# 19 reused / 5 new:
+#   * all 16 ordinary/regularized SFT cells already exist (pofdfam_,
+#     pofdctxgrid_, pofdqgs_ at k=.2; pofdfamk1_ at k=1) -- exact matches
+#     on the full config surface;
+#   * three frozen H100 cells are reusable (k=.2, es .05/.2/1);
+#   * five frozen cells are missing and queue here.
+# THE A100 REFUSAL. The archived k=.2, es=0 frozen cell
+# pofdreach_qwen7b_k0_ea1_w0p5_l0p2_es0_s0 matches on every config field
+# but ran on an A100, and its parsed prediction vector differs from the
+# H100 frozen prior in 17 of 723 agents (MAE .0091, max .5). A frozen
+# K=D=0 model never sees the population, so that vector is a CONSTANT
+# that the whole grid is compared against -- letting one corner carry a
+# different constant would contaminate exactly the k-comparison this
+# diagnostic exists to make. It is superseded by a hardware-matched
+# rerun, not reused.
+# Hence the H100 pin below, and hence the checker requirement that all
+# eight frozen cells share ONE canonical prediction sha256
+# (1674ee5f...da30bb, DERIVED by the audit, not hand-entered) and that
+# every frozen cell's predictions are constant across rounds.
+# NO smoke: frozen K=D=0 Qwen2.5 serving is the most-exercised path in
+# the project; only the anchor value and the hardware pin are new.
+QMECH_KEY = "qwen_mechanism_frozen"
+QMECH_MANIFEST_PATH = os.path.join(HERE, "manifest_qwen_mechanism.json")
+QMECH_MODEL = "qwen7b"
+QMECH_ARM = "k0"                 # frozen, K = D = 0
+QMECH_GATE = 1.0                 # numeric strict-< eps_AI, NOT all_open
+QMECH_KS = [0.2, 1.0]
+QMECH_ESS = [0.0, 0.05, 0.2, 1.0]
+# exact architecture string, not a family: the pool also reports a bare
+# "NVIDIA H100" for a different SKU, and the point of the pin is that
+# every frozen cell decodes on the SAME silicon
+QMECH_H100 = "NVIDIA H100 80GB HBM3"
+QMECH_CANONICAL_PRED_SHA = (
+    "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb")
+
+# k rides the QUEUE here (unlike every earlier family, which pinned one
+# INNATE_LAMBDA in the sub env) because this grid spans k=.2 AND k=1
+ROW_QMECH = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+             "ab, {es}, 0.0, 0.5, loop, 0.0, {eps_ai}, threshold, "
+             "{lam}, {iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
+             "{nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, "
+             "{pplbatch}")
+
+
+def qmech_tag(arm, k, es, seed=0):
+    """The anchor rides the established _l<k>_ token: a bare _k1_ token
+    would collide with the ICL-K grammar, where _k0_ already spells the
+    frozen arm."""
+    return (f"pofdqmech_{QMECH_MODEL}_{arm}_ea{_num(QMECH_GATE)}_w"
+            f"{_num(W_WPLAT)}_l{_num(k)}_es{_num(es)}_s{seed}")
+
+
+def qmech_row(arm, k, es, seed=0, nrounds=30):
+    a = REACH_ARM_COLS[arm]
+    m = FAM_MODELS[QMECH_MODEL]
+    return ROW_QMECH.format(
+        tag=qmech_tag(arm, k, es, seed), style=a["style"], beta=a["beta"],
+        seed=seed, es=f"{es:g}", eps_ai=f"{QMECH_GATE:g}", lam=f"{k:g}",
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=nrounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"], mem=m["mem"],
+        disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def qmech_rows():
+    """ONLY the cells the audited manifest marks new. Counts come from
+    the manifest and are asserted for CONSISTENCY below, never forced:
+    if the archive changes, the assertion fires instead of silently
+    queueing a different grid."""
+    mf = json.load(open(QMECH_MANIFEST_PATH))
+    new = [c for c in mf["cells"] if c["status"] == "new"]
+    return [qmech_row(c["arm"], c["innate_k"], c["eps_social"], c["seed"])
+            for c in sorted(new, key=lambda c: (c["innate_k"],
+                                                c["eps_social"]))]
+
+
+def qmech_sub():
+    return QMECH_SUB_TEMPLATE.format(key=QMECH_KEY,
+                                     n_jobs=len(qmech_rows()),
+                                     gpu=QMECH_H100)
+
+
+QMECH_SUB_TEMPLATE = """\
+# HTCondor: QWEN2.5 MECHANISM DIAGNOSTIC -- FROZEN CELLS ({n_jobs}
+# jobs). GENERATED by gen_pofd_sweep.py from the QMECH block. Never
+# edit by hand: rerun the script.
+# The 32-cell paper-regime grid is k {{.2, 1}} x eps_social
+# {{0, .05, .2, 1}} x {{perfect prediction, frozen, ordinary SFT,
+# regularized SFT}}. Perfect prediction is a CPU oracle (8 cells) and
+# all 16 SFT cells already exist, so the only GPU work is the frozen
+# arm: 3 H100 cells reuse, {n_jobs} queue here, per the audited
+# manifest_qwen_mechanism.json.
+# Frozen = Qwen/Qwen2.5-7B-Instruct, K = D = 0 (plain zero-shot
+# prompting, no LoRA, no memory, nothing trains), eps_AI = 1 on the
+# NUMERIC strict-< threshold gate (never all_open), W = 0.5, gamma = 0,
+# 30 rounds, movielens Action 723 agents, seed 0, nested AI-then-peer
+# operator, matched twin (WITH_TWIN=1), greedy serving. INNATE_LAMBDA
+# rides the QUEUE ($(lam)) because this grid spans k = .2 AND k = 1.
+# GPU PINNED to {gpu}. A frozen K=D=0 model never sees the population,
+# so its prediction vector is a CONSTANT the entire grid is compared
+# against -- and that constant is hardware-specific. The archived A100
+# cell differs from the H100 prior in 17 of 723 agents (MAE .0091, max
+# .5), which is why the k=.2/es=0 corner is RERUN here rather than
+# reused: a mixed-silicon corner would contaminate exactly the
+# k-comparison this diagnostic exists to make. The pin is the exact SKU
+# string, not a family -- the pool also reports a bare "NVIDIA H100".
+# Gate every pull with check_pofd_sanity (QMECH section: constant
+# predictions across rounds, the one canonical prediction sha256 shared
+# by all eight frozen cells, H100 hardware, and the k/gate/es/seed
+# surface read from the tag tokens).
+# NO smoke: frozen Qwen2.5 serving is the most-exercised path here;
+# only the anchor value and the hardware pin are new.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) PEER_GATE_MODE=threshold INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_qwen_mechanism_frozen"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, lam, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+# --- Part C: the exact Wu-style boundary with Qwen -------------------------
+# qwen_wu_limit[_smoke]. Four trained-LLM cells at the TRUE limiting
+# boundary: k = 1, W in {.5, 1}, arms b0 (ordinary SFT) and b1
+# (regularized, forward KL lambda = 1), 100 rounds, seed 0, movielens
+# Action 723 agents, fresh LoRA r512 every round, the same optimizer /
+# rank / training surface / reference model as the paper, matched twin,
+# one peer sweep, gamma = 0, H100-80GB only, raw responses + parsed
+# predictions + training losses + populations + twins all saved.
+#
+# GENUINELY OPEN GATES, AND WHY NOT "1". At the boundary BOTH channels
+# must be truly open. Both gates are STRICT inequalities, so the numeric
+# value 1 does NOT open them: an agent at 0 served 1, or a peer pair at
+# (0, 1), sits at distance exactly 1 and is still REJECTED under a
+# threshold of 1. Representing "open" as 1 would therefore quietly drop
+# exactly the extreme pairs the consensus limit is about. So the AI side
+# uses the existing AI_GATE_MODE=all_open and the peer side uses the NEW
+# PEER_GATE_MODE=all_open (2026-08-20, gp.peer_gate). The tags spell it
+# _eaopen_ / _esopen_, never _ea1_ / _es1_, and the checker rejects any
+# numeric-threshold job wearing an open tag (and vice versa).
+# PEER_GATE_MODE defaults to "threshold" and is applied AFTER pair
+# selection, so every archived run and every threshold-mode run stays
+# byte-identical and consumes identical RNG.
+# EPS is still 0.2 in these rows: it is inert for ACCEPTANCE under
+# all_open, but eps_social = 0 is how "no peer step" is spelled
+# everywhere else in this project, so the runner refuses that
+# combination rather than let one run mean two things.
+#
+# WHAT THIS DOES AND DOES NOT ASSERT. The CPU oracle at k=1, W=1 with
+# both gates open must reach consensus (mean preserved, SD < 1e-5 by
+# round 300) and check_perfect_predictor enforces that. The four Qwen
+# arms here are NOT required to reach consensus -- whether practical
+# retraining does or does not is the phenomenon being measured.
+# THE SMOKE. This wave introduces the first genuinely open PEER path in
+# production, so one short 3-round lambda=1, W=1 cell runs first to
+# exercise the new gate mode, training, adapter re-serving, finite CE/KL
+# losses, complete raw outputs and the twin. It is a SEPARATE key and is
+# NOT part of the four-job production count.
+QWU_KEY = "qwen_wu_limit"
+QWU_SMOKE_KEY = "qwen_wu_limit_smoke"
+QWU_MODEL = "qwen7b"
+QWU_ARMS = ["b0", "b1"]
+QWU_WS = [0.5, 1.0]
+QWU_K = 1.0
+QWU_EPS_SOCIAL = 0.2      # inert under all_open; see the note above
+QWU_ROUNDS = 100
+QWU_SMOKE_ROUNDS = 3
+QWU_H100 = QMECH_H100
+
+# W and k both ride the queue; both gate modes are pinned open in the
+# sub env (every row of this key is the open condition)
+ROW_QWU = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+           "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {iclk}, {snap}, "
+           "{uselora}, {fresh}, {ansk}, {gg}, {nrounds}, {basemodel}, "
+           "{chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def qwu_tag(arm, w, seed=0, rounds=QWU_ROUNDS, smoke=False):
+    """_eaopen_/_esopen_ spell the genuinely open gates -- never _ea1_ or
+    _es1_, which are numeric strict-< thresholds that reject a
+    distance-1 pair. The horizon is in the tag because 100-round and
+    3-round cells of the same condition are different objects."""
+    sm = "smoke" if smoke else ""
+    return (f"pofdqwu_{QWU_MODEL}_{arm}_eaopen_w{_num(w)}_l{_num(QWU_K)}"
+            f"_esopen_s{seed}_r{rounds}{sm}")
+
+
+def qwu_row(arm, w, seed=0, rounds=QWU_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS[arm]
+    m = FAM_MODELS[QWU_MODEL]
+    return ROW_QWU.format(
+        tag=qwu_tag(arm, w, seed, rounds, smoke), style=a["style"],
+        beta=a["beta"], seed=seed, es=f"{QWU_EPS_SOCIAL:g}",
+        wplat=f"{w:g}", lam=f"{QWU_K:g}", iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=rounds, basemodel=m["base_model"],
+        chatthink=m["chatthink"], mem=m["mem"], disk=m["disk"],
+        pplbatch=m["pplbatch"])
+
+
+def qwu_rows():
+    return [qwu_row(arm, w) for w in QWU_WS for arm in QWU_ARMS]
+
+
+def qwu_smoke_rows():
+    """ONE 3-round lambda=1, W=1 cell -- the hardest corner of the new
+    path (regularized training AND both gates open)."""
+    return [qwu_row("b1", 1.0, rounds=QWU_SMOKE_ROUNDS, smoke=True)]
+
+
+def qwu_sub(smoke=False):
+    key = QWU_SMOKE_KEY if smoke else QWU_KEY
+    rows = qwu_smoke_rows() if smoke else qwu_rows()
+    return QWU_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=QWU_H100,
+        rounds=QWU_SMOKE_ROUNDS if smoke else QWU_ROUNDS,
+        kind=("SMOKE (3 rounds, NOT production)" if smoke
+              else "PRODUCTION (100 rounds)"))
+
+
+QWU_SUB_TEMPLATE = """\
+# HTCondor: QWEN2.5 AT THE WU CONSENSUS BOUNDARY -- {kind}, {n_jobs}
+# jobs. GENERATED by gen_pofd_sweep.py from the QWU block. Never edit
+# by hand: rerun the script.
+# k = 1, W rides the queue, BOTH gates GENUINELY OPEN, {rounds} rounds,
+# seed 0, movielens Action 723 agents, Qwen/Qwen2.5-7B-Instruct, fresh
+# LoRA r512 every round, same optimizer / rank / training surface /
+# reference model as the paper, matched twin (WITH_TWIN=1), one peer
+# sweep, gamma = 0, greedy serving, SAVE_RAW_GEN=1.
+# WHY MODES AND NOT THE NUMBER 1. Both gates are STRICT inequalities,
+# so eps = 1 does NOT open them: an agent at 0 served 1, or a peer pair
+# at (0, 1), sits at distance exactly 1 and is still REJECTED. Spelling
+# "open" as 1 would silently drop exactly the extreme pairs the
+# consensus limit is about. AI_GATE_MODE=all_open is the established
+# 2026-08-13 mode; PEER_GATE_MODE=all_open is NEW (2026-08-20,
+# gp.peer_gate), defaults to "threshold", and is applied AFTER pair
+# selection so every archived run stays byte-identical and consumes
+# identical RNG. Tags spell _eaopen_/_esopen_ and the checker rejects
+# any numeric-threshold job wearing an open tag.
+# EPS=0.2 is inert for acceptance under all_open but is set anyway:
+# eps_social=0 is how "no peer step" is spelled everywhere else, and
+# the runner refuses that combination rather than let one run mean two
+# things.
+# THEORY. beta_eff = 1 - (1-W)k, so k=1 alone is NOT a consensus limit
+# (at W=.5 it gives beta_eff=.5); the boundary is k=1 AND W=1, where
+# the pre-peer population equals the served vector. The CPU oracle must
+# reach consensus there and check_perfect_predictor enforces it. These
+# Qwen arms are NOT required to -- whether practical retraining
+# converges is the phenomenon being measured.
+# Gate every pull with check_pofd_sanity (QWU section: both gate modes
+# genuinely open, no numeric threshold masquerading as open, no
+# rejected peer pair, the declared horizon, finite SFT losses, adapter
+# re-served in eval mode).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 # fig2_family_prior_scout[_smoke] (2026-08-17): the FIGURE-2 FAMILY-
 # PRIOR SCOUT -- six checkpoints (Qwen2.5-7B-Instruct, Qwen3-8B
 # thinking OFF, OLMo-2-1124-7B-Instruct, Olmo-3-7B-Instruct,
@@ -6840,6 +7203,137 @@ def main():
     expected[p] = 8
     cube_subs[os.path.join(HERE, f"at_pofd_{QK1_ES1_KEY}.sub")] = \
         _qk1e_sub
+    # ---- Qwen2.5 mechanism diagnostic, Part A frozen cells (QMECH) ----
+    # ONLY the cells the audited manifest marks new. Counts come from the
+    # manifest and are asserted for CONSISTENCY, never forced: if the
+    # archive changes, these fire instead of queueing a different grid.
+    _qmech_mf = json.load(open(QMECH_MANIFEST_PATH))
+    rows_qmech = qmech_rows()
+    assert _qmech_mf["n_gpu_cells"] == 24, _qmech_mf["n_gpu_cells"]
+    assert _qmech_mf["n_reused"] + _qmech_mf["n_new"] == 24
+    assert _qmech_mf["n_conceptual_cells"] == 32
+    assert _qmech_mf["n_perfect_prediction_cells"] == 8
+    assert len(rows_qmech) == _qmech_mf["n_new"], \
+        f"{len(rows_qmech)} rows != manifest n_new {_qmech_mf['n_new']}"
+    _qmech_tags = {r.split(",")[0] for r in rows_qmech}
+    assert len(_qmech_tags) == len(rows_qmech)
+    # every new cell is the FROZEN arm: the 16 SFT cells all exist
+    assert all(t.startswith("pofdqmech_qwen7b_k0_ea1_w0p5_l")
+               and t.endswith("_s0") for t in _qmech_tags), _qmech_tags
+    # the anchor rides _l<k>_; a bare _k1_ token would collide with the
+    # ICL-K grammar (where _k0_ already spells the frozen arm)
+    assert not any("_k1_" in t for t in _qmech_tags)
+    # the canonical frozen prediction hash must be DERIVED by the audit
+    # and must match the constant this block pins
+    assert _qmech_mf["canonical_frozen_pred_sha256"] == \
+        QMECH_CANONICAL_PRED_SHA, \
+        (f"manifest canonical frozen hash "
+         f"{_qmech_mf['canonical_frozen_pred_sha256']} != pinned "
+         f"{QMECH_CANONICAL_PRED_SHA}")
+    # the A100 k=.2/es=0 frozen cell must be REFUSED, not reused
+    _c0 = next(c for c in _qmech_mf["cells"] if c["arm"] == "k0"
+               and c["innate_k"] == 0.2 and c["eps_social"] == 0.0)
+    assert _c0["status"] == "new", _c0
+    assert any("A100" in r["why"] for r in _c0.get("rejected_matches", [])), \
+        "the k=.2/es=0 frozen cell must be superseded for HARDWARE"
+    # queue surface: frozen K=D=0, no LoRA, nothing trains, numeric gate
+    for r in rows_qmech:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[1] == "frozen" and _cols[2] == "0", r
+        assert _cols[3] == "0", r                      # seed 0
+        assert _cols[11] == "0.5", r                   # W
+        assert _cols[14] == "1" and _cols[15] == "threshold", r
+        assert _cols[16] in ("0.2", "1"), r            # k rides the queue
+        assert _cols[17] == "0" and _cols[19] == "0", r  # ICL_K, USE_LORA
+        assert _cols[23] == "30", r
+        assert _cols[24] == "Qwen/Qwen2.5-7B-Instruct", r
+    assert {c.split(",")[16].strip() for c in rows_qmech} == {"0.2", "1"}
+    _qmech_sub = qmech_sub()
+    _qmech_env = next(ln for ln in _qmech_sub.splitlines()
+                      if ln.startswith("environment"))
+    assert "INNATE_LAMBDA=$(lam)" in _qmech_env
+    assert "AI_GATE_MODE=$(gatemode)" in _qmech_env
+    assert "PEER_GATE_MODE=threshold" in _qmech_env
+    assert "WITH_TWIN=1" in _qmech_env and "SAVE_RAW_GEN=1" in _qmech_env
+    assert "POP_RESET" not in _qmech_env
+    assert f'CUDADeviceName == "{QMECH_H100}"' in _qmech_sub
+    _prior_qmech = {r.split(",")[0]
+                    for rows in files.values() for r in rows}
+    assert not (_qmech_tags & _prior_qmech), \
+        f"qmech collision: {_qmech_tags & _prior_qmech}"
+    p = os.path.join(HERE, f"configs_pofd_{QMECH_KEY}.txt")
+    files[p] = rows_qmech
+    expected[p] = _qmech_mf["n_new"]
+    cube_subs[os.path.join(HERE, f"at_pofd_{QMECH_KEY}.sub")] = _qmech_sub
+    # ---- Qwen2.5 at the Wu consensus boundary, Part C (QWU) -----------
+    rows_qwu = qwu_rows()
+    assert len(rows_qwu) == 4, len(rows_qwu)
+    _qwu_tags = {r.split(",")[0] for r in rows_qwu}
+    assert len(_qwu_tags) == 4
+    # genuinely open gates are spelled as MODES in the tag, never as the
+    # numeric value 1 (both gates are strict inequalities, so a
+    # distance-1 pair would still be rejected under a threshold of 1)
+    assert all("_eaopen_" in t and "_esopen_" in t for t in _qwu_tags)
+    assert not any("_ea1_" in t or "_es1_" in t for t in _qwu_tags)
+    assert all(t.startswith("pofdqwu_qwen7b_") and "_l1_" in t
+               and t.endswith(f"_s0_r{QWU_ROUNDS}") for t in _qwu_tags)
+    for _w in QWU_WS:
+        assert sum(1 for t in _qwu_tags if f"_w{_num(_w)}_" in t) == 2, _w
+    for _arm_tok in ("_b0_", "_b1_"):
+        assert sum(1 for t in _qwu_tags if _arm_tok in t) == 2, _arm_tok
+    for r in rows_qwu:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[1] == ("sft" if "_b0_" in _cols[0] else "sft_kl"), r
+        assert _cols[3] == "0", r                       # seed 0
+        assert _cols[9] == "0.2", r                     # eps, inert here
+        assert _cols[11] in ("0.5", "1"), r             # W rides the queue
+        assert _cols[14] == "1", r                      # k = 1
+        assert _cols[15] == "0", r                      # ICL_K: no context
+        # both arms TRAIN: LoRA on, fresh adapter every round
+        assert _cols[17] == "1" and _cols[18] == "1", r
+        assert _cols[21] == str(QWU_ROUNDS), r
+        assert _cols[22] == "Qwen/Qwen2.5-7B-Instruct", r
+    _qwu_sub = qwu_sub()
+    _qwu_env = next(ln for ln in _qwu_sub.splitlines()
+                    if ln.startswith("environment"))
+    assert "AI_GATE_MODE=all_open" in _qwu_env
+    assert "PEER_GATE_MODE=all_open" in _qwu_env
+    assert "INNATE_LAMBDA=$(lam)" in _qwu_env
+    assert "KL_DIRECTION=forward" in _qwu_env
+    assert "WITH_TWIN=1" in _qwu_env and "SAVE_RAW_GEN=1" in _qwu_env
+    assert "POP_RESET" not in _qwu_env
+    assert f'CUDADeviceName == "{QWU_H100}"' in _qwu_sub
+    _prior_qwu = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (_qwu_tags & _prior_qwu), \
+        f"qwu collision: {_qwu_tags & _prior_qwu}"
+    p = os.path.join(HERE, f"configs_pofd_{QWU_KEY}.txt")
+    files[p] = rows_qwu
+    expected[p] = 4
+    cube_subs[os.path.join(HERE, f"at_pofd_{QWU_KEY}.sub")] = _qwu_sub
+    # the 3-round smoke for the NEW open-peer path -- a SEPARATE key, and
+    # deliberately NOT part of the four-job production count
+    rows_qwus = qwu_smoke_rows()
+    assert len(rows_qwus) == 1, len(rows_qwus)
+    _qwus_tags = {r.split(",")[0] for r in rows_qwus}
+    assert all(t.endswith(f"_s0_r{QWU_SMOKE_ROUNDS}smoke")
+               and "_b1_" in t and "_w1_" in t for t in _qwus_tags)
+    assert not (_qwus_tags & _qwu_tags), \
+        f"smoke would shadow a production cell: {_qwus_tags & _qwu_tags}"
+    _qwus_sub = qwu_sub(smoke=True)
+    _qwus_env = next(ln for ln in _qwus_sub.splitlines()
+                     if ln.startswith("environment"))
+    assert "AI_GATE_MODE=all_open" in _qwus_env
+    assert "PEER_GATE_MODE=all_open" in _qwus_env
+    _prior_qwus = {r.split(",")[0]
+                   for rows in files.values() for r in rows}
+    assert not (_qwus_tags & _prior_qwus), \
+        f"qwu smoke collision: {_qwus_tags & _prior_qwus}"
+    p = os.path.join(HERE, f"configs_pofd_{QWU_SMOKE_KEY}.txt")
+    files[p] = rows_qwus
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{QWU_SMOKE_KEY}.sub")] = \
+        _qwus_sub
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY

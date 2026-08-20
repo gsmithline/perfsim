@@ -289,6 +289,49 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               internally consistent). NO expected scientific outcome
               is a validity condition.
 
+  QMECH       pofdqmech_ runs (Qwen2.5 mechanism diagnostic, frozen
+              cells, 2026-08-20): frozen Qwen2.5 K=D=0 prompting at the
+              wide-open NUMERIC gate (EPS_AI=1 strict-<, never
+              all_open), W=0.5, seed 0, 30 rounds, with the innate
+              anchor k riding the _l token across {0.2, 1} and es
+              across {0, .05, .2, 1}. A frozen K=D=0 model never sees
+              the population, so its served vector is a CONSTANT the
+              whole grid is compared against. Verified: predictions
+              bit-constant across ALL rounds, that constant equal to
+              the ONE canonical H100 prior (sha256 1674ee5f...da30bb,
+              derived by audit_qwen_mechanism.py and pinned in three
+              places), H100 hardware, the exact on-grid tag, default
+              chat template, and both gates on their numeric
+              thresholds. The archived A100 cell differs from the H100
+              prior in 17 of 723 agents (MAE .0091, max .5) and is
+              REFUSED rather than reused -- that contamination would
+              land squarely on the k=.2 vs k=1 comparison.
+
+  QWU         pofdqwu_ runs (Qwen2.5 at the Wu consensus boundary,
+              2026-08-20): k=1, W in {.5, 1}, b0/b1, seed 0, 100 rounds
+              (3 for the smoke), H100 only, with BOTH gates GENUINELY
+              OPEN. Open is a MODE, never the number 1: both gates are
+              strict inequalities, so eps=1 REJECTS a pair at distance
+              exactly 1 -- the very pairs a consensus limit is about.
+              Verified: ai_gate_mode AND peer_gate_mode both all_open,
+              _eaopen_/_esopen_ in the tag with no numeric _ea1_/_es1_
+              disguise, eps_social > 0 (0 is the no-peer condition),
+              the declared horizon, and the universal all-open peer
+              invariant below.
+
+  PEER-GATE   (universal, 2026-08-20) PEER_GATE_MODE joins AI_GATE_MODE
+              as an explicit mode. Absent -> "threshold", which is the
+              pre-2026-08-20 inline expression byte-for-byte, so every
+              archived run is unaffected. Checked on EVERY family: the
+              mode is known; the tag and the mode agree (no numeric
+              threshold masquerading as open and no open mode hiding
+              behind a numeric tag); under all_open the sweep accepted
+              EVERY sampled pair (accepted == n_agents * ab_sweeps in
+              every round -- one rejected pair breaks it and cannot
+              hide in an aggregate) and carried the all-open telemetry;
+              under threshold, accepted never exceeds the sampled pair
+              slots and no all-open telemetry is present.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -324,6 +367,15 @@ def _bit_eq(a, b):
 
 ATOL = 2e-6   # float32 blend arithmetic; W=1 makes the copy exact but the
               # stored tensors round-trip through cpu float32
+
+# The ONE canonical frozen Qwen2.5 K=D=0 prediction vector on H100-80GB
+# (mechanism diagnostic, 2026-08-20). sha256 over the float32 bytes.
+# DERIVED by audit_qwen_mechanism.py from the archived H100 cells and
+# pinned here so a drifting or mis-hardwared frozen cell cannot enter the
+# grid unnoticed; gen_pofd_sweep.py asserts the same constant against the
+# manifest, so the three copies must agree or generation fails.
+QMECH_CANONICAL_PRED_SHA = (
+    "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb")
 
 # model slug -> base checkpoint (seedcore wave, 2026-08-07): the slug is
 # tag-encoded in every family, so the pairing is gated universally.
@@ -478,6 +530,19 @@ def check_run(run_dir):
     # flag adds the two things neither covers -- the exact checkpoint
     # per slug, and Qwen3's thinking template being pinned OFF.
     is_qgs = name.startswith("pofdqgs")
+    # QWEN2.5 MECHANISM DIAGNOSTIC -- frozen cells (2026-08-20,
+    # qwen_mechanism_frozen). Frozen K=D=0 Qwen2.5 at the wide-open
+    # NUMERIC gate (EPS_AI=1 strict-<, never all_open), W=0.5, k rides
+    # the _l token across {0.2, 1}, es {0, .05, .2, 1}, seed 0, H100
+    # only. A frozen model never sees the population, so its served
+    # vector must be CONSTANT across rounds and must equal the one
+    # canonical H100 prior that every other frozen cell in the grid
+    # carries -- section 2n enforces both.
+    is_qmech = name.startswith("pofdqmech")
+    # QWEN2.5 AT THE WU CONSENSUS BOUNDARY (2026-08-20, qwen_wu_limit).
+    # k=1, W in {.5, 1}, BOTH gates genuinely open via MODES
+    # (_eaopen_/_esopen_), 100 rounds (3 for the smoke), b0/b1, seed 0.
+    is_qwu = name.startswith("pofdqwu")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -487,7 +552,19 @@ def check_run(run_dir):
     want_w = float(m_w.group(1).replace("p", ".")) if m_w else 1.0
     want_l = float(m_l.group(1).replace("p", ".")) if m_l else 0.0
     want_es = float(m_es.group(1).replace("p", ".")) if m_es else 0.0
-    is_social = want_es > 0.0
+    # _esopen_ = the genuinely open PEER channel (PEER_GATE_MODE=
+    # all_open), which is NOT a numeric threshold and must never be
+    # spelled _es1_: the Deffuant test is a strict inequality, so a pair
+    # at (0, 1) sits at distance exactly 1 and eps_social=1 would still
+    # REJECT it. An open-peer run IS social -- the peer step runs and
+    # accepts everything -- so is_social must be true for it even though
+    # no numeric _es token exists.
+    peer_open = "_esopen_" in name
+    if peer_open and m_es is not None:
+        errs.append(f"CONFIG {name!r} carries BOTH a numeric _es token "
+                    f"and _esopen_ -- an open peer channel is a mode, "
+                    f"not a threshold")
+    is_social = peer_open or want_es > 0.0
     want = {"eps": want_es, "w_plat": want_w, "innate_lambda": want_l,
             "canary_delta": 0.0,
             "data_regime": "accumulate" if (is_pfrac or is_bp) else "replace",
@@ -1071,6 +1148,109 @@ def check_run(run_dir):
         if not name.endswith("_s0"):
             errs.append(f"CONFIG the qwen gate sweep is seed-0 only "
                         f"({name!r})")
+    elif is_qmech:
+        # QWEN2.5 MECHANISM DIAGNOSTIC, frozen arm. Frozen K=D=0
+        # prompting: nothing trains, no LoRA, no context, no memory.
+        # eps_ai=1 is the NUMERIC strict-< threshold (never all_open);
+        # k rides the _l token across {0.2, 1}; es rides _es across
+        # {0, .05, .2, 1}. The prediction-constancy and canonical-hash
+        # checks live in section 2n, which needs pred_raw.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723,
+                     "icrh": False, "feedback_mode": "none",
+                     "ai_gate_mode": "threshold",
+                     "peer_gate_mode": "threshold", "train_cap": 723,
+                     "anchor_mode": "fixed", "n_rounds": 30,
+                     "population_update": "nested_ai_then_social_v1",
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct",
+                     "training_style": "frozen", "kl_beta": 0.0,
+                     "use_lora": 0, "fresh_each_round": False,
+                     "icl_k": 0, "icl_days": 0})
+        if re.match(r"^pofdqmech_qwen7b_k0_ea1_w0p5_l(0p2|1)_"
+                    r"es(0|0p05|0p2|1)_s0$", name) is None:
+            errs.append(f"CONFIG qmech tag off-grid ({name!r}) -- want "
+                        f"pofdqmech_qwen7b_k0_ea1_w0p5_l<0p2|1>_"
+                        f"es<0|0p05|0p2|1>_s0")
+        if "chat_thinking" in cfg:
+            errs.append(f"CONFIG chat_thinking="
+                        f"{cfg.get('chat_thinking')!r} recorded on a "
+                        f"qwen2.5 qmech run ({name!r}) -- it must use "
+                        f"the default chat template")
+        # HARDWARE. A frozen K=D=0 model never sees the population, so
+        # its served vector is a CONSTANT the entire grid is compared
+        # against -- and greedy decoding is bit-reproducible only within
+        # one GPU architecture. The archived A100 frozen cell differs
+        # from the H100 prior in 17 of 723 agents (MAE .0091, max .5),
+        # which is exactly why this wave exists.
+        _gn = ((cfg.get("hardware") or {}).get("gpu_name") or "")
+        if "H100" not in _gn:
+            errs.append(f"CONFIG qmech ran on {_gn or 'unknown GPU'}, not "
+                        f"an H100 -- every frozen cell in this grid must "
+                        f"decode on the same silicon")
+    elif is_qwu:
+        # QWEN2.5 AT THE WU CONSENSUS BOUNDARY. k=1, W rides the _w
+        # token across {0.5, 1}, BOTH gates genuinely open, 100 rounds
+        # (3 for the smoke), b0/b1, seed 0, H100 only.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723,
+                     "icrh": False, "feedback_mode": "none",
+                     "train_cap": 723, "anchor_mode": "fixed",
+                     "population_update": "nested_ai_then_social_v1",
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct",
+                     "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                     "sft_epochs": 1, "sft_batch_size": 4,
+                     "fresh_each_round": True, "icl_k": 0,
+                     "icl_days": 0,
+                     # BOTH channels genuinely open -- as MODES. Neither
+                     # may be a numeric threshold: both tests are strict
+                     # inequalities, so eps=1 still rejects a distance-1
+                     # pair, i.e. exactly the extreme pairs the
+                     # consensus limit is about.
+                     "ai_gate_mode": "all_open",
+                     "peer_gate_mode": "all_open"})
+        m_qwu = re.match(r"^pofdqwu_qwen7b_(b0|b1)_eaopen_w(0p5|1)_l1_"
+                         r"esopen_s0_r(\d+)(smoke)?$", name)
+        if m_qwu is None:
+            errs.append(f"CONFIG qwu tag off-grid ({name!r}) -- want "
+                        f"pofdqwu_qwen7b_<b0|b1>_eaopen_w<0p5|1>_l1_"
+                        f"esopen_s0_r<rounds>[smoke]")
+        else:
+            want["n_rounds"] = int(m_qwu.group(3))
+            if m_qwu.group(4) is None and want["n_rounds"] != 100:
+                errs.append(f"CONFIG qwu production horizon is 100 "
+                            f"rounds, tag says {want['n_rounds']} "
+                            f"({name!r})")
+        # the tag must NOT spell open gates as the number 1
+        if "_ea1_" in name or "_es1_" in name:
+            errs.append(f"CONFIG qwu tag {name!r} spells an open gate as "
+                        f"the numeric value 1. Both gates are STRICT "
+                        f"inequalities, so a distance-1 pair is still "
+                        f"REJECTED at a threshold of 1 -- use "
+                        f"_eaopen_/_esopen_ with the explicit modes")
+        # eps_social is INERT for acceptance under all_open (gp.peer_gate
+        # never reads it), so its exact value is not pinned -- only that
+        # it is positive, because 0 is how the no-peer condition is
+        # spelled everywhere else in this project. The tag carries no
+        # numeric _es token, so drop the token-derived want and check the
+        # sign directly rather than leave a self-comparison that looks
+        # like a test but always passes.
+        want.pop("eps", None)
+        if float(cfg.get("eps", 0.0)) <= 0:
+            errs.append(f"CONFIG qwu eps={cfg.get('eps')!r} -- "
+                        f"eps_social=0 is the NO-PEER condition and must "
+                        f"not double as an open peer channel")
+        if "chat_thinking" in cfg:
+            errs.append(f"CONFIG chat_thinking="
+                        f"{cfg.get('chat_thinking')!r} recorded on a "
+                        f"qwen2.5 qwu run ({name!r})")
+        _gn = ((cfg.get("hardware") or {}).get("gpu_name") or "")
+        if "H100" not in _gn:
+            errs.append(f"CONFIG qwu ran on {_gn or 'unknown GPU'}, not "
+                        f"an H100 (the wave is H100-pinned)")
     elif is_fam:
         # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
         # wide-open numeric gate with a live peer step. The checkpoint
@@ -1616,6 +1796,116 @@ def check_run(run_dir):
     # which reproduces the pre-mode inline gate expression byte-for-byte.
     # Every gate replay below goes through the SHARED gp.ai_gate definition.
     gate_mode = cfg.get("ai_gate_mode") or "threshold"
+    # PEER gate mode (2026-08-20): absent in every config written before
+    # that date -> "threshold", which is the pre-mode inline expression
+    # byte-for-byte. Same shared-definition discipline as the AI gate
+    # (gp.peer_gate).
+    peer_mode = cfg.get("peer_gate_mode") or "threshold"
+
+    # -- 1a2 PEER-GATE MODE (universal) --------------------------------------
+    # Two things can go wrong and both must be caught for EVERY family:
+    #   (i)  an unknown mode string silently falling back to threshold;
+    #   (ii) a NUMERIC threshold masquerading as an open peer channel, or
+    #        an open channel wearing a numeric tag. Both gates are STRICT
+    #        inequalities, so eps_social=1 REJECTS a pair at distance
+    #        exactly 1 -- precisely the extreme pairs an "open" condition
+    #        is supposed to include. The mode and the tag must agree.
+    if peer_mode not in ("threshold", "all_open"):
+        errs.append(f"PEER-GATE unknown peer_gate_mode {peer_mode!r} "
+                    f"(want 'threshold' or 'all_open')")
+    if peer_open and peer_mode != "all_open":
+        errs.append(f"PEER-GATE tag {name!r} says _esopen_ but "
+                    f"peer_gate_mode={peer_mode!r} -- a numeric threshold "
+                    f"must never masquerade as an open peer channel")
+    if peer_mode == "all_open" and not peer_open:
+        errs.append(f"PEER-GATE peer_gate_mode=all_open but the tag "
+                    f"{name!r} carries no _esopen_ token -- an open peer "
+                    f"channel must be visible in the tag")
+    # -- 1a1 DECLARED HORIZON (universal, 2026-08-20) ------------------------
+    # config.n_rounds is what the tag and every audit key off, but until
+    # now nothing compared it to the STORED length. A truncated run --
+    # killed mid-flight, or a partial copy -- therefore passed every
+    # config gate while carrying fewer rounds than it claimed, and any
+    # analyzer reading "the last round" would silently read a different
+    # round for that cell. Found by the mechanism-diagnostic sabotage
+    # fixtures (2026-08-20).
+    _want_r = cfg.get("n_rounds")
+    if isinstance(_want_r, int) and _want_r > 0:
+        if op_raw.shape[0] != _want_r:
+            errs.append(f"ROUNDS op_raw has {op_raw.shape[0]} rounds but "
+                        f"config declares n_rounds={_want_r} (truncated or "
+                        f"partial run?)")
+        if pred_raw.shape[0] != _want_r:
+            errs.append(f"ROUNDS pred_raw has {pred_raw.shape[0]} rounds "
+                        f"but config declares n_rounds={_want_r}")
+        if len(traj) != _want_r:
+            errs.append(f"ROUNDS trajectory has {len(traj)} rows but "
+                        f"config declares n_rounds={_want_r}")
+
+    # -- 1a3 ALL-OPEN AI GATE (universal) ------------------------------------
+    # The reach family has enforced this since 2026-08-13; make it apply to
+    # EVERY family, since the Wu-boundary wave is the second user of the
+    # mode. Under all_open the saved mask must contain no False bit and the
+    # logged contact must be exactly 1.0 -- a gate that is "open" but
+    # rejects somebody is the failure this mode exists to rule out.
+    if gate_mode == "all_open":
+        _gr_o = d.get("gate_raw")
+        if _gr_o is not None and _gr_o.numel() > 0:
+            _gr_o = _gr_o.bool()
+            if not bool(_gr_o.all()):
+                _bt = int((~_gr_o).flatten(1).any(dim=1).nonzero()[0])
+                errs.append(f"AI-GATE all_open: gate_raw has False bits "
+                            f"(first at round {_bt}) -- an open gate must "
+                            f"contain no false values")
+        _bad_c = [r["round"] for r in traj if r.get("contact") != 1.0]
+        if _bad_c:
+            errs.append(f"AI-GATE all_open: contact != 1.0 exactly in "
+                        f"rounds {_bad_c[:5]}")
+
+    if peer_mode == "all_open":
+        if float(cfg.get("eps", 0.0)) <= 0:
+            errs.append(f"PEER-GATE all_open with eps={cfg.get('eps')!r}: "
+                        f"eps_social=0 is the NO-PEER condition and cannot "
+                        f"also mean an open peer channel")
+        # THE INVARIANT. ab_sweep fills exactly n disjoint-pair slots per
+        # sweep and, under all_open, accepts every one of them. So
+        # accepted must equal n * ab_sweeps in EVERY round. One rejected
+        # pair breaks it and cannot hide inside an aggregate.
+        _n_ag = int(op_raw.shape[1])
+        _sw = int(cfg.get("ab_sweeps", 1) or 1)
+        _want_acc = _n_ag * _sw
+        _bad_acc = [(r.get("round"), r.get("accepted"))
+                    for r in traj if r.get("accepted") != _want_acc]
+        if _bad_acc:
+            errs.append(
+                f"PEER-GATE all_open rejected sampled pairs: accepted != "
+                f"{_want_acc} in {len(_bad_acc)} round(s), first "
+                f"{_bad_acc[:3]} -- under all_open every sampled pair must "
+                f"be accepted")
+        _bad_mode = [r.get("round") for r in traj
+                     if r.get("peer_gate_mode") != "all_open"]
+        if _bad_mode:
+            errs.append(f"PEER-GATE all_open telemetry missing "
+                        f"peer_gate_mode in rounds {_bad_mode[:5]}")
+        _bad_pairs = [r.get("round") for r in traj
+                      if r.get("peer_pairs") != _want_acc]
+        if _bad_pairs:
+            errs.append(f"PEER-GATE all_open peer_pairs != {_want_acc} in "
+                        f"rounds {_bad_pairs[:5]}")
+    else:
+        # threshold mode must never carry the all-open telemetry, and the
+        # peer step can only ever accept a SUBSET of the sampled pairs
+        _n_ag = int(op_raw.shape[1])
+        _sw = int(cfg.get("ab_sweeps", 1) or 1)
+        _over = [(r.get("round"), r.get("accepted")) for r in traj
+                 if (r.get("accepted") or 0) > _n_ag * _sw]
+        if _over:
+            errs.append(f"PEER-GATE threshold: accepted exceeds the "
+                        f"{_n_ag * _sw} sampled pair slots in rounds "
+                        f"{_over[:3]}")
+        if any("peer_gate_mode" in r for r in traj):
+            errs.append("PEER-GATE threshold run carries all-open peer "
+                        "telemetry (peer_gate_mode in trajectory rows)")
 
     # -- 1b GATE-MASK (gate_raw, runner 2026-08-05) --------------------------
     # When present, the saved per-agent AI gate/contact mask must be exactly
@@ -3180,6 +3470,35 @@ def check_run(run_dir):
                                 "served pred_raw[0] -- raw/parsed "
                                 "provenance broken")
 
+    # -- 2n FROZEN PREDICTION CONSTANCY + CANONICAL HASH (qmech) -------------
+    # A frozen K=D=0 model never sees the population: the prompt is the
+    # agent's static profile, decoding is greedy, nothing trains. Its
+    # parsed prediction vector must therefore be a CONSTANT -- identical
+    # in every round and independent of eps_AI and eps_social -- and,
+    # across the whole mechanism grid, must be the SAME constant. Both
+    # halves matter:
+    #   * non-constant predictions mean the run is not what it claims;
+    #   * a different constant means a different served map, which would
+    #     contaminate exactly the k = .2 vs k = 1 comparison the
+    #     diagnostic exists to make. The archived A100 frozen cell
+    #     differs from the H100 prior in 17 of 723 agents (MAE .0091,
+    #     max .5), which is why that cell was superseded rather than
+    #     reused.
+    if is_qmech:
+        if not bool((pred_raw == pred_raw[0]).all()):
+            _nv = int((pred_raw != pred_raw[0]).any(dim=0).sum())
+            errs.append(f"QMECH-FROZEN predictions are NOT constant across "
+                        f"rounds ({_nv} of {pred_raw.shape[1]} agents vary) "
+                        f"-- a frozen K=D=0 model cannot see the population")
+        _sha = hashlib.sha256(
+            pred_raw[0].contiguous().numpy().tobytes()).hexdigest()
+        if _sha != QMECH_CANONICAL_PRED_SHA:
+            errs.append(
+                f"QMECH-FROZEN prediction sha256 {_sha[:16]}... != the "
+                f"canonical H100 prior {QMECH_CANONICAL_PRED_SHA[:16]}... "
+                f"-- every frozen cell in the grid must serve the SAME "
+                f"constant vector")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -3249,9 +3568,38 @@ def check_run(run_dir):
         elif tuple(tw.shape) != tuple(op_raw.shape):
             errs.append(f"SOCIAL twin_raw shape {tuple(tw.shape)} != "
                         f"op_raw {tuple(op_raw.shape)}")
+        elif nested and not is_clamp:
+            # TWIN MEAN CONSERVATION (2026-08-20). The twin's peer moves
+            # are RNG-pairwise and cannot be replayed offline, but every
+            # Deffuant move sends a pair to its midpoint, so the sweep
+            # conserves the twin's mean exactly. The twin runs the human
+            # component and then the same peer dynamics, so
+            #     mean(twin[t]) == mean(k innate + (1-k) twin[t-1])
+            # with twin[-1] = innate. Until now the twin was only checked
+            # for PRESENCE and SHAPE -- a tampered or mismatched twin
+            # passed. Clamp runs break total-mean conservation by design
+            # and are excluded, exactly as in the deployed-population
+            # check above.
+            twf = tw.float()
+            for t in range(twf.shape[0]):
+                prev = innate if t == 0 else twf[t - 1]
+                want_m = float((lam * innate + (1.0 - lam) * prev).mean())
+                dm = abs(float(twf[t].mean()) - want_m)
+                if dm > 1e-4:
+                    errs.append(
+                        f"SOCIAL twin round {t}: mean(twin_raw) differs "
+                        f"from mean(k innate + (1-k) twin[t-1]) by "
+                        f"{dm:.2e} -- the peer sweep is mean-conserving, "
+                        f"so this twin is not the matched no-platform run "
+                        f"of this cell (k={lam:g})")
+                    break
+            if not (torch.isfinite(twf).all()
+                    and float(twf.min()) >= -1e-6
+                    and float(twf.max()) <= 1 + 1e-6):
+                errs.append("SOCIAL twin_raw non-finite or out of [0,1]")
         if is_icl or is_iclf or is_ctf or \
                 ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp
-                  or is_fam or is_evo)
+                  or is_fam or is_evo or is_qmech)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),

@@ -1,0 +1,346 @@
+{
+  "key": "qwen_mechanism_frozen",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "ks": [
+    0.2,
+    1.0
+  ],
+  "ess": [
+    0.0,
+    0.05,
+    0.2,
+    1.0
+  ],
+  "arms": [
+    "k0",
+    "b0",
+    "b1"
+  ],
+  "gate": 1.0,
+  "seed": 0,
+  "n_rounds": 30,
+  "n_gpu_cells": 24,
+  "n_reused": 19,
+  "n_new": 5,
+  "n_perfect_prediction_cells": 8,
+  "n_conceptual_cells": 32,
+  "canonical_frozen_pred_sha256": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+  "cells": [
+    {
+      "arm": "k0",
+      "innate_k": 0.2,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l0p2_es0_s0",
+      "status": "new",
+      "rejected_matches": [
+        {
+          "run_tag": "pofdreach_qwen7b_k0_ea1_w0p5_l0p2_es0_s0",
+          "why": "frozen cell on NVIDIA A100-SXM4-80GB, not H100 -- superseded"
+        }
+      ]
+    },
+    {
+      "arm": "k0",
+      "innate_k": 0.2,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l0p2_es0p05_s0",
+      "pred_sha256": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_k0_ea1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_k0_ea1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "k0",
+      "innate_k": 0.2,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l0p2_es0p2_s0",
+      "pred_sha256": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "status": "reused",
+      "run_tag": "pofdctxgrid_qwen7b_k0_ea1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdctxgrid_qwen7b_k0_ea1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdfam_qwen7b_k0_ea1_w0p5_l0p2_es0p2_s0"
+      ]
+    },
+    {
+      "arm": "k0",
+      "innate_k": 0.2,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l0p2_es1_s0",
+      "pred_sha256": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "status": "reused",
+      "run_tag": "pofdctxgrid_qwen7b_k0_ea1_w0p5_l0p2_es1_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdctxgrid_qwen7b_k0_ea1_w0p5_l0p2_es1_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "k0",
+      "innate_k": 1.0,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0_s0",
+      "status": "new"
+    },
+    {
+      "arm": "k0",
+      "innate_k": 1.0,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p05_s0",
+      "status": "new"
+    },
+    {
+      "arm": "k0",
+      "innate_k": 1.0,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p2_s0",
+      "status": "new"
+    },
+    {
+      "arm": "k0",
+      "innate_k": 1.0,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es1_s0",
+      "status": "new"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 0.2,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b0_ea1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b0_ea1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdreach_qwen7b_b0_ea1_w0p5_l0p2_es0_s0"
+      ]
+    },
+    {
+      "arm": "b0",
+      "innate_k": 0.2,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b0_ea1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b0_ea1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 0.2,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdctxgrid_qwen7b_b0_ea1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdctxgrid_qwen7b_b0_ea1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdfam_qwen7b_b0_ea1_w0p5_l0p2_es0p2_s0"
+      ]
+    },
+    {
+      "arm": "b0",
+      "innate_k": 0.2,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l0p2_es1_s0",
+      "status": "reused",
+      "run_tag": "pofdctxgrid_qwen7b_b0_ea1_w0p5_l0p2_es1_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdctxgrid_qwen7b_b0_ea1_w0p5_l0p2_es1_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 1.0,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l1_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 1.0,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l1_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 1.0,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l1_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b0",
+      "innate_k": 1.0,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b0_ea1_w0p5_l1_es1_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es1_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b0_ea1_w0p5_l1_es1_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 0.2,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0_s0",
+      "verdict": "PASS",
+      "note": "complete",
+      "extra_matches": [
+        "pofdreach_qwen7b_b1_ea1_w0p5_l0p2_es0_s0"
+      ]
+    },
+    {
+      "arm": "b1",
+      "innate_k": 0.2,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 0.2,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfam_qwen7b_b1_ea1_w0p5_l0p2_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 0.2,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l0p2_es1_s0",
+      "status": "reused",
+      "run_tag": "pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es1_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdqgs_qwen7b_b1_ea1_w0p5_l0p2_es1_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 1.0,
+      "eps_social": 0.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l1_es0_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 1.0,
+      "eps_social": 0.05,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l1_es0p05_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0p05_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0p05_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 1.0,
+      "eps_social": 0.2,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l1_es0p2_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0p2_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es0p2_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    },
+    {
+      "arm": "b1",
+      "innate_k": 1.0,
+      "eps_social": 1.0,
+      "gate": 1.0,
+      "seed": 0,
+      "new_tag": "pofdqmech_qwen7b_b1_ea1_w0p5_l1_es1_s0",
+      "status": "reused",
+      "run_tag": "pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es1_s0",
+      "run_dir": "/lustre/home/gsmithline/perfsim/runs/pokec_gated_lm/pofdfamk1_qwen7b_b1_ea1_w0p5_l1_es1_s0",
+      "verdict": "PASS",
+      "note": "complete"
+    }
+  ]
+}

@@ -669,6 +669,18 @@ def main() -> int:
     if ai_gate_mode not in ("threshold", "all_open"):
         raise ValueError(f"AI_GATE_MODE must be 'threshold' or 'all_open'; "
                          f"got {ai_gate_mode!r}")
+    # PEER_GATE_MODE (2026-08-20, qwen_wu_limit wave): the same opt-in for
+    # the PEER (Deffuant) side. "threshold" (default/absent) = the strict
+    # |x_i - x_j| < eps confidence gate, byte-identical to every earlier
+    # run; "all_open" = every sampled pair is accepted. As with the AI
+    # gate, an open peer channel must never be spelled eps_social=1: the
+    # test is a strict inequality, so a (0, 1) pair sits at distance
+    # exactly 1 and would still be REJECTED. One shared definition
+    # (gp.peer_gate) feeds the deployed sweep, the twin, and the checker.
+    peer_gate_mode = os.environ.get("PEER_GATE_MODE", "threshold")
+    if peer_gate_mode not in ("threshold", "all_open"):
+        raise ValueError(f"PEER_GATE_MODE must be 'threshold' or "
+                         f"'all_open'; got {peer_gate_mode!r}")
     gamma_bias = _env_float("GAMMA_BIAS", 1.5)
     w_plat = _env_float("W_PLAT", 0.3)
     # population innate re-anchor: each round x <- (1-lambda) x + lambda innate
@@ -830,6 +842,17 @@ def main() -> int:
     if ai_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "eps_ai gate exists only in the ab population)")
+    if peer_gate_mode != "threshold" and pop_model != "ab":
+        raise ValueError("PEER_GATE_MODE=all_open requires POP_MODEL=ab (the "
+                         "Deffuant confidence gate exists only in the ab "
+                         "population)")
+    if peer_gate_mode == "all_open" and eps <= 0:
+        # eps_social=0 is how "no peer step" is spelled everywhere else; an
+        # all-open peer channel with a zero width would read as both at once
+        raise ValueError("PEER_GATE_MODE=all_open with EPS=0 is contradictory "
+                         "(eps_social=0 is the NO-PEER condition). Set a "
+                         "positive EPS -- it is inert under all_open, but it "
+                         "keeps the no-peer arm unambiguous.")
     if run_mode not in ("loop", "no_feedback", "direct"):
         raise ValueError(f"unknown RUN_MODE: {run_mode!r}")
     if canary_delta > 0 and not (pop_model == "ab" and run_mode == "loop"):
@@ -1060,6 +1083,12 @@ def main() -> int:
         # it); the mode field, not the number, defines the gate. Absent in
         # configs written before 2026-08-13 -> "threshold".
         "ai_gate_mode": ai_gate_mode,
+        # the PEER-side twin of ai_gate_mode (2026-08-20). Under all_open
+        # the recorded eps is inert for ACCEPTANCE (the gate never reads
+        # it) though it still marks the run as social; the mode field, not
+        # the number, defines the gate. Absent in configs written before
+        # 2026-08-20 -> "threshold", exactly as for the AI gate.
+        "peer_gate_mode": peer_gate_mode,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
         # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
@@ -2125,14 +2154,15 @@ def main() -> int:
                 if clamp_mask_dev is not None and innate_clamp_peer_mode:
                     _acc, _cst = gp.ab_sweep_stubborn(
                         ab_x, ab_adj, eps, gamma_bias, gen=ab_gen,
-                        fixed=clamp_mask_dev)
+                        fixed=clamp_mask_dev, gate_mode=peer_gate_mode)
                     accepted += _acc
                     clamp_fr_sampled_rd += _cst["fr_sampled"]
                     clamp_fr_accepted_rd += _cst["fr_accepted"]
                     clamp_touch_rd |= _cst["touched"]
                 else:
                     accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias,
-                                            gen=ab_gen)
+                                            gen=ab_gen,
+                                            gate_mode=peer_gate_mode)
                 if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
                     relax_trace.append(round(float(ab_x.std()), 4))
             if clamp_mask_dev is not None:
@@ -2177,10 +2207,11 @@ def main() -> int:
                         # (ab_gen_cf shares ab_gen's seed construction)
                         gp.ab_sweep_stubborn(
                             ab_x_cf, ab_adj, eps, gamma_bias,
-                            gen=ab_gen_cf, fixed=clamp_mask_dev)
+                            gen=ab_gen_cf, fixed=clamp_mask_dev,
+                            gate_mode=peer_gate_mode)
                     else:
                         gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias,
-                                    gen=ab_gen_cf)
+                                    gen=ab_gen_cf, gate_mode=peer_gate_mode)
                 if clamp_mask_dev is not None:
                     # the twin carries the SAME frozen cohort bit-exactly
                     ab_x_cf[clamp_mask_dev] = ab_innate[clamp_mask_dev]
@@ -2254,6 +2285,17 @@ def main() -> int:
             row["contact"] = contact
             row["accepted"] = accepted
             row["s_tag"] = s_tag
+            if peer_gate_mode == "all_open":
+                # all-open peer telemetry (2026-08-20), written ONLY in
+                # this mode so legacy rows stay byte-identical: the mode
+                # itself plus the pair budget the sweep loop drew.
+                # ab_sweep fills exactly n disjoint-pair slots per sweep
+                # and accepts every one of them under all_open, so
+                # peer_pairs == accepted is the invariant the checker
+                # gates on -- one rejected pair breaks it and cannot hide
+                # inside an aggregate.
+                row["peer_gate_mode"] = peer_gate_mode
+                row["peer_pairs"] = int(n) * int(ab_sweeps)
             if ab_sweeps > 1:
                 row["relax_trace"] = relax_trace   # op_std at sweeps 1/3/10/30/100/k
             if ab_x_cf is not None:
