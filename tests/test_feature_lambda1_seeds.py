@@ -174,6 +174,48 @@ def test_analyzer_detects_replicates_and_reports_a_verdict():
         PIPE, "analyze_feature_lambda1_seeds.py")).read()
     assert "_rep{r}_" in src or '_rep' in src
     assert "REPRODUCIBILITY" in src
-    assert "across-seed spread" in src
-    # the verdict must key off replicate spread vs across-seed spread
-    assert "spread > 0.5 * across" in src
+    # the verdict compares SDs and counts same-seed threshold
+    # crossings. It must NOT key off RANGES: 3-4 replicates cannot
+    # span as wide a range as 19 seeds even when the seed is
+    # irrelevant, and that mistake produced a wrong call on the real
+    # data (38% -> "seed-driven") before it was corrected.
+    assert "sd_w > 0.5 * sd_a" in src
+    assert "n_lock_same" in src
+    assert "does NOT pin the trajectory" in src
+
+
+# -- lambda=0.5 / lambda=0 matching runs (FLM) ---------------------------
+
+def test_match_wave_is_six_jobs_two_arms_three_runs():
+    rows = GEN.flm_rows()
+    assert len(rows) == 6
+    tags = [r.split(",")[0] for r in rows]
+    assert len(set(tags)) == 6
+    assert sum(1 for t in tags if "_b0p5_" in t) == 3
+    assert sum(1 for t in tags if "_b0_" in t) == 3
+    # exactly the three run identities that exist only for lambda=1
+    for arm in ("b0p5", "b0"):
+        assert GEN.flm_tag(arm, 1, None) in tags
+        assert GEN.flm_tag(arm, 0, 2) in tags
+        assert GEN.flm_tag(arm, 0, 3) in tags
+
+
+def test_match_wave_arm_surface():
+    for r in GEN.flm_rows():
+        cols = [c.strip() for c in r.split(",")]
+        if "_b0p5_" in cols[0]:
+            assert cols[1] == "sft_kl" and cols[2] == "0.5", r
+        else:
+            assert cols[1] == "sft" and cols[2] == "0", r
+        assert cols[9] == "0.2" and cols[14] == "0.4", r
+        if "_rep" in cols[0]:
+            assert cols[3] == "0", r      # replicate = seed 0
+
+
+def test_match_wave_touches_no_lambda1_run():
+    """These are the OTHER two arms; a stray _b1_ tag would overwrite
+    a completed lambda=1 run."""
+    tags = {r.split(",")[0] for r in GEN.flm_rows()}
+    assert not any("_b1_" in t for t in tags)
+    for other in (GEN.fl1_rows(), GEN.fl1r_rows()):
+        assert not (tags & {r.split(",")[0] for r in other})

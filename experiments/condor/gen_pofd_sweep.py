@@ -2922,6 +2922,43 @@ FL1R_KEY = "feature_lambda1_repro"
 FL1R_REPLICATES = [1, 2, 3]        # of seed 0
 FL1R_NEW_SEEDS = [1, 2, 3, 4]
 
+# feature_lambda_match (2026-08-20, user): fill in lambda=0.5 and
+# lambda=0 at the three runs that exist only for lambda=1 -- seed 1
+# and seed-0 replicates 2 and 3 -- so Figure 3 can draw every lambda
+# curve from the same set of runs. 2 conditions x 3 runs = 6 jobs.
+# After this, lambda=0.5 and lambda=0 each have s0, s1, s0_rep2,
+# s0_rep3, s42, s43, s44, s45 available (8 runs), all of which also
+# exist for lambda=1.
+# The replicate tags reuse the _rep<N>_ infix proven on the lambda=1
+# repro wave (gates clean, universal seed regex still reads _s0_).
+# Same family, same environment, A100-pinned; only the KL arm and the
+# run identity differ.
+FLM_KEY = "feature_lambda_match"
+FLM_ARMS = [("b0p5", "sft_kl", "0.5"), ("b0", "sft", "0")]
+FLM_RUNS = [(1, None), (0, 2), (0, 3)]   # (seed, replicate-or-None)
+
+
+def flm_tag(arm, seed, rep):
+    rep_tok = f"_rep{rep}" if rep else ""
+    return (f"pofdws2f_qwen7b_{arm}_ea0p4_w0p5_l0p2_es0p2"
+            f"_s{seed}{rep_tok}_fresh_data")
+
+
+def flm_rows():
+    return [ROW_WS.format(tag=flm_tag(arm, s, r), style=style,
+                          beta=beta, seed=s, eps_ai="0.4")
+            for arm, style, beta in FLM_ARMS
+            for s, r in FLM_RUNS]
+
+
+def flm_sub():
+    return FE5_SUB_TEMPLATE.format(
+        key=FLM_KEY, n_jobs=len(flm_rows()),
+        what=("lambda=0.5 and lambda=0 at seed 1 and seed-0 "
+              "replicates 2/3, to match the lambda=1 run set"),
+        extra_env=FE5_SUB_ENV["nat"], suffix=FE5_SUB_SUFFIX["nat"],
+        gpu=FE5_A100, cols=FE5_SUB_COLS["nat"])
+
 
 def fl1r_tag(seed, rep=None):
     rep_tok = f"_rep{rep}" if rep else ""
@@ -6686,6 +6723,39 @@ def main():
     expected[p] = 7
     cube_subs[os.path.join(HERE, f"at_pofd_{FL1R_KEY}.sub")] = \
         _fl1r_sub
+    # lambda=0.5 / lambda=0 at the three lambda=1-only runs (FLM)
+    rows_flm = flm_rows()
+    assert len(rows_flm) == 6, len(rows_flm)
+    _flm_tags = [r.split(",")[0] for r in rows_flm]
+    assert len(set(_flm_tags)) == 6
+    for _arm, _n in (("_b0p5_", 3), ("_b0_", 3)):
+        assert sum(1 for t in _flm_tags if _arm in t) == _n, _arm
+    # exactly the three run identities that exist only for lambda=1
+    for _arm in ("b0p5", "b0"):
+        assert flm_tag(_arm, 1, None) in _flm_tags
+        assert flm_tag(_arm, 0, 2) in _flm_tags
+        assert flm_tag(_arm, 0, 3) in _flm_tags
+    # arm surface: b0p5 = forward-KL at 0.5, b0 = plain SFT
+    for r in rows_flm:
+        _cols = [c.strip() for c in r.split(",")]
+        if "_b0p5_" in _cols[0]:
+            assert _cols[1] == "sft_kl" and _cols[2] == "0.5", r
+        else:
+            assert _cols[1] == "sft" and _cols[2] == "0", r
+        assert _cols[9] == "0.2" and _cols[14] == "0.4", r
+        # the replicates carry seed 0 in the queue column too
+        if "_rep" in _cols[0]:
+            assert "_s0_rep" in _cols[0] and _cols[3] == "0", r
+    # never touch a completed lambda=1 run or the published cells
+    assert not any("_b1_" in t for t in _flm_tags)
+    _prior_flm = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (set(_flm_tags) & _prior_flm), \
+        f"flm collision: {set(_flm_tags) & _prior_flm}"
+    p = os.path.join(HERE, f"configs_pofd_{FLM_KEY}.txt")
+    files[p] = rows_flm
+    expected[p] = 6
+    cube_subs[os.path.join(HERE, f"at_pofd_{FLM_KEY}.sub")] = flm_sub()
     # Qwen2.5 full-anchor (k=1) Section-3 grid (see the QK1 block):
     # 24 brand-new cells -- the completed k=0.2 grid with
     # INNATE_LAMBDA 0.2 -> 1 and nothing else.
