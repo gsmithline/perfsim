@@ -2871,6 +2871,52 @@ queue {cols} from experiments/condor/configs_pofd_{key}.txt
 """
 
 
+# feature_lambda1_seeds (2026-08-20): REPLICATION of the natural
+# lambda=1 feature-endogenization cell at 10 further seeds (46-55).
+# WHY: across the five existing seeds the lambda=1 condition is
+# BIMODAL, not noisy-around-a-mean. Four seeds show a transient
+# incremental-R^2 spike at an arbitrary round that decays back to
+# ~0 by round 29 (late-window means 0.005 / 0.014 / 0.010 / 0.000);
+# one seed (45) locks in late and STAYS there (late-window 0.105,
+# round-29 gender gap +0.067 vs +0.000..+0.009 elsewhere). One
+# lock-in in five draws is consistent with anything from ~5% to
+# ~50%, so the rate is the thing worth measuring.
+# Scope: the lambda=1 natural cell ONLY -- 1 job per seed. The
+# controls do not need re-replication: across the same five seeds
+# lambda=0 and lambda=0.5 sit at the noise floor (|peak| <= 0.003)
+# and the frozen arm is stable (peak 0.011-0.015, final
+# 0.008-0.013). Panels (a)/(b) of the main figure need MATCHED
+# seeds across all six conditions, so these seeds extend the RATE
+# estimate, not the figure; extending the figure would be 6x the
+# jobs.
+# Byte-identical to the existing natural cells apart from the seed
+# (same pofdws2f_ family, same fes environment, A100-pinned like the
+# seed-44/45 runs).
+FL1_KEY = "feature_lambda1_seeds"
+FL1_SEEDS = list(range(46, 56))
+FL1_EXISTING_SEEDS = [0, 42, 43, 44, 45]
+
+
+def fl1_tag(seed):
+    return ("pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2"
+            f"_s{seed}_fresh_data")
+
+
+def fl1_rows():
+    return [ROW_WS.format(tag=fl1_tag(s), style="sft_kl", beta="1",
+                          seed=s, eps_ai="0.4")
+            for s in FL1_SEEDS]
+
+
+def fl1_sub():
+    return FE5_SUB_TEMPLATE.format(
+        key=FL1_KEY, n_jobs=len(fl1_rows()),
+        what=("natural lambda=1 REPLICATION seeds 46-55, for the "
+              "lock-in rate"),
+        extra_env=FE5_SUB_ENV["nat"], suffix=FE5_SUB_SUFFIX["nat"],
+        gpu=FE5_A100, cols=FE5_SUB_COLS["nat"])
+
+
 # qwen_k1_grid (2026-08-19, user via Celestine): the FULL-ANCHOR
 # (k=1) replica of the Section-3 equilibrium grid for Qwen2.5-7B.
 # Byte-identical to the completed k=0.2 Qwen2.5 cells except
@@ -6518,6 +6564,39 @@ def main():
     files[p] = rows_qgs
     expected[p] = 30
     cube_subs[os.path.join(HERE, f"at_pofd_{QGS_KEY}.sub")] = _qgs_sub
+    # lambda=1 replication seeds (see the FL1 block): 10 new seeds of
+    # the natural lambda=1 cell, for the lock-in RATE.
+    rows_fl1 = fl1_rows()
+    assert len(rows_fl1) == 10, len(rows_fl1)
+    _fl1_tags = {r.split(",")[0] for r in rows_fl1}
+    assert len(_fl1_tags) == 10
+    assert all(t.startswith("pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_")
+               and t.endswith("_fresh_data") for t in _fl1_tags)
+    # the five EXISTING seeds must never re-queue -- they are done
+    # and four of them are load-bearing for the published figure
+    for _sd in FL1_EXISTING_SEEDS:
+        assert fl1_tag(_sd) not in _fl1_tags, _sd
+    assert {int(t.split("_s")[-1].split("_")[0])
+            for t in _fl1_tags} == set(FL1_SEEDS)
+    # same row grammar as the established natural cells
+    for r in rows_fl1:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[1] == "sft_kl" and _cols[2] == "1", r
+        assert _cols[9] == "0.2" and _cols[14] == "0.4", r
+    _fl1_sub = fl1_sub()
+    _fl1_env = next(ln for ln in _fl1_sub.splitlines()
+                    if ln.startswith("environment"))
+    assert "KL_DIRECTION=forward" in _fl1_env
+    assert "INNATE_LAMBDA=0.2" in _fl1_env      # k stays at 0.2 here
+    assert f'CUDADeviceName == "{FE5_A100}"' in _fl1_sub
+    _prior_fl1 = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (_fl1_tags & _prior_fl1), \
+        f"fl1 collision: {_fl1_tags & _prior_fl1}"
+    p = os.path.join(HERE, f"configs_pofd_{FL1_KEY}.txt")
+    files[p] = rows_fl1
+    expected[p] = 10
+    cube_subs[os.path.join(HERE, f"at_pofd_{FL1_KEY}.sub")] = _fl1_sub
     # Qwen2.5 full-anchor (k=1) Section-3 grid (see the QK1 block):
     # 24 brand-new cells -- the completed k=0.2 grid with
     # INNATE_LAMBDA 0.2 -> 1 and nothing else.

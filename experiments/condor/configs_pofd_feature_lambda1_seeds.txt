@@ -1,0 +1,10 @@
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s46_fresh_data, sft_kl, 1, 46, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s47_fresh_data, sft_kl, 1, 47, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s48_fresh_data, sft_kl, 1, 48, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s49_fresh_data, sft_kl, 1, 49, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s50_fresh_data, sft_kl, 1, 50, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s51_fresh_data, sft_kl, 1, 51, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s52_fresh_data, sft_kl, 1, 52, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s53_fresh_data, sft_kl, 1, 53, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s54_fresh_data, sft_kl, 1, 54, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
+pofdws2f_qwen7b_b1_ea0p4_w0p5_l0p2_es0p2_s55_fresh_data, sft_kl, 1, 55, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.4
