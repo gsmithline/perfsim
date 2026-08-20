@@ -2,7 +2,16 @@
 """LOCK-IN RATE of feature endogenization at lambda=1 (2026-08-20,
 feature_lambda1_seeds).
 
-Across the first five seeds the natural lambda=1 cell is BIMODAL
+NOTE (2026-08-20, after the reproducibility control): the seed does
+NOT determine the trajectory. Running seed 0 four times with an
+identical config on identical hardware gives late-window values
+0.0002 / 0.0063 / 0.0306 / 0.0633 -- two of the four cross the
+lock-in threshold. Within-seed SD (0.029) is 0.68x the across-seed
+SD (0.042), so most of the apparent between-seed variation is really
+run-to-run nondeterminism. The lock-in rate is therefore a rate over
+RUNS, not over seeds, and no seed can be said to reproduce a curve.
+
+Across the first five seeds the natural lambda=1 cell looked BIMODAL
 rather than noisy-around-a-mean:
 
   seed  peak    round  late(25-29)  round-29 gender gap
@@ -185,12 +194,33 @@ def main():
             across = max(r["late_mean_r2"] for r in rows) - \
                 min(r["late_mean_r2"] for r in rows)
             print(f"    across-seed spread = {across:.4f}")
-            print(f"    VERDICT: replicate spread is "
-                  f"{spread / across:.0%} of the across-seed spread -- "
-                  + ("the seed does NOT pin the trajectory; the lock-in "
-                     "rate is measuring run-to-run chaos, not seeds"
-                     if spread > 0.5 * across else
-                     "run-to-run variation is genuinely seed-driven"))
+            # Compare SDs, not ranges, and count how many of the
+            # SAME seed's runs cross the threshold. A range ratio is
+            # a bad statistic here: 3-4 replicates cannot span as
+            # wide a range as 19 seeds even if the seed is entirely
+            # irrelevant, so it understates within-seed variation.
+            allw = np.array(rep_lates + [base])
+            acrossv = np.array([r["late_mean_r2"] for r in rows])
+            sd_w = float(allw.std(ddof=1))
+            sd_a = float(acrossv.std(ddof=1))
+            n_lock_same = int((allw > LOCKIN_THRESHOLD).sum())
+            print(f"    within-seed-0 SD = {sd_w:.4f} over "
+                  f"{len(allw)} runs; across-seed SD = {sd_a:.4f} "
+                  f"over {len(acrossv)} seeds; ratio = "
+                  f"{sd_w / sd_a:.2f}")
+            print(f"    {n_lock_same}/{len(allw)} runs of the SAME "
+                  f"seed cross the lock-in threshold")
+            if sd_w > 0.5 * sd_a or 0 < n_lock_same < len(allw):
+                print("    VERDICT: the seed does NOT pin the "
+                      "trajectory. Identical seed + config gives "
+                      "both lock-in and non-lock-in outcomes, so the "
+                      "rate is a property of the SYSTEM's run-to-run "
+                      "instability, not of seeds. Report it as a "
+                      "rate over RUNS; do not describe any seed as "
+                      "reproducing a particular curve.")
+            else:
+                print("    VERDICT: run-to-run variation is "
+                      "genuinely seed-driven.")
     k = sum(r["locked_in"] for r in rows)
     n = len(rows)
     lo, hi = clopper_pearson(k, n)
