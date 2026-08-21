@@ -197,6 +197,84 @@ class FJWorld(StatefulPopulationWorld):
         y = x.unsqueeze(-1) if self._is_scalar else x
         return {"x": x_data, "y": y, "agent_idx": self._agent_idx.clone()}
 
+    # ------------------------------------------------------------------
+    # WU-STYLE FJ UPDATE (fj_update_version="wu1", 2026-08-21)
+    #
+    # OPT-IN AND ADDITIVE. `run()` above is the archived operator and is
+    # left exactly as it was; every existing FJ artifact replays through
+    # it unchanged. This method is reached only when the runner is asked
+    # for it explicitly, so no historical result silently changes.
+    #
+    # It differs from `run()` in three ways, each a documented blocker of
+    # the archived path:
+    #
+    #   1  IT DOES NOT QUERY THE MODEL. The served vector is passed in.
+    #      `run()` calls _predict() itself, while the runner separately
+    #      records its own served vector in pred_raw -- so the vector
+    #      applied to the population was not guaranteed to be the vector
+    #      on record, and generation happened twice per round.
+    #
+    #   2  THE INNER LOOP STARTS AT THE NEW ANCHOR, x^0_inner(t) = x^0(t).
+    #      `run()` starts from the PREVIOUS round's state, which carries
+    #      population memory across rounds and is not the Wu recurrence.
+    #      Starting at the anchor is what makes the human component
+    #      stateless (k = 1): the only channel from round t-1 to round t
+    #      is the model, never the population.
+    #
+    #   3  alpha IS NAMED. The stored field `peer_sus` is the ANCHOR
+    #      weight, so the neighbour weight is alpha = 1 - peer_sus. The
+    #      caller passes alpha and this method maps it, rather than
+    #      letting a field called "peer_sus" quietly stand in for it --
+    #      MovieLens ships peer_sus = 1, which under the archived
+    #      operator means FULLY ANCHORED, i.e. no neighbour mixing at all.
+    #
+    # The recurrence, exactly:
+    #     x^0(t)      = (1 - beta) * innate + beta * m(t)
+    #     x^{l+1}(t)  = (1 - alpha) * x^0(t) + alpha * P x^l(t)
+    # with beta carried per agent in platform_sus (the runner folds
+    # W_PLAT and PLATFORM_SUS_SCALE into it) and P = self._W.
+    # ------------------------------------------------------------------
+    def run_wu(self, predictions: Tensor, *, alpha: float,
+               n_inner: int = 1) -> Data:
+        """One outer round of the Wu-style FJ update from a SERVED vector.
+
+        Returns the emitted Data and leaves `state["opinion"]` at x^n_inner.
+        """
+        if not isinstance(n_inner, int) or n_inner < 1:
+            raise ValueError(f"n_inner must be a positive int; got {n_inner!r}")
+        if not (0.0 <= float(alpha) <= 1.0):
+            raise ValueError(f"alpha must be in [0, 1]; got {alpha!r}")
+        preds = predictions.to(dtype=self._dtype).detach()
+        if self._is_scalar and preds.ndim == 2 and preds.shape[-1] == 1:
+            preds = preds.squeeze(-1)
+        if preds.shape != self._innate.shape:
+            raise ValueError(
+                f"predictions shape {tuple(preds.shape)} must match innate "
+                f"shape {tuple(self._innate.shape)}")
+        if not torch.isfinite(preds).all():
+            raise ValueError("predictions contain non-finite values")
+
+        a = float(alpha)
+        x_zero = ((1.0 - self._platform_sus) * self._innate
+                  + self._platform_sus * preds)
+        x = x_zero                      # x^0_inner(t) = x^0(t), NOT the
+        for _ in range(n_inner):        # previous round's state
+            x = (1.0 - a) * x_zero + a * (self._W @ x)
+        self._state = {"opinion": x}
+        x_data = (self._features.unsqueeze(-1) if self._features.ndim == 1
+                  else self._features)
+        y = x.unsqueeze(-1) if self._is_scalar else x
+        return {"x": x_data, "y": y, "agent_idx": self._agent_idx.clone()}
+
+    @staticmethod
+    def alpha_to_peer_sus(alpha: float) -> float:
+        """Neighbour weight -> the anchor weight this class stores.
+
+        Named so the mapping is stated once, in the class that owns the
+        convention, instead of being re-derived wherever alpha is used.
+        """
+        return 1.0 - float(alpha)
+
     def fj_equilibrium(self, x_zero: Tensor | None = None) -> Tensor:
         """Closed-form FJ fixed point: solve (I - diag(1-a) W) x* = diag(a) x_zero.
 

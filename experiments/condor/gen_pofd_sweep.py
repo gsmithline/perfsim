@@ -3865,6 +3865,247 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 # canonical frozen-Qwen served hash, and greedy generation is only
 # bit-reproducible within one GPU architecture.
 # =========================================================================
+# =========================================================================
+# FRIEDKIN-JOHNSEN ROBUSTNESS WAVE (FJR, 2026-08-21)
+#
+# THE QUESTION. Does the main ordinary-SFT (b0) vs forward-KL-SFT (b1)
+# result survive when the Deffuant bounded-confidence peer process is
+# replaced by a LINEAR FJ operator? Smallest useful appendix comparison:
+# six models x two arms, one seed, one configuration. Not a new sweep.
+#
+# THE OPERATOR (FJ_UPDATE_VERSION=wu1, opt-in; "legacy" is untouched):
+#     x^0(t)     = (1 - beta) innate + beta m(t)
+#     x^{l+1}(t) = (1 - alpha) x^0(t) + alpha P x^l(t),  x^0_inner = x^0
+# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE = .5 on MovieLens;
+# alpha = .5 is the NEIGHBOUR weight, stored as peer_sus = 1 - alpha.
+# One inner step per outer round. The human component is the raw innate
+# opinion with no carryover, i.e. stateless k = 1.
+#
+# WHY THE ARCHIVED FJ PATH COULD NOT BE USED AS-IS. Four blockers, all
+# verified in source before this wave was written:
+#   * W_PLAT never reached FJ -- it is applied only in the ab branch, so
+#     a tag claiming beta=.5 would have run at beta=1.
+#   * MovieLens ships peer_sus=1, and peer_sus is the ANCHOR weight, so
+#     the archived operator does no neighbour mixing at all.
+#   * world.run() re-queried the model, so the vector recorded in
+#     pred_raw was not guaranteed to be the vector applied.
+#   * the inner loop started from the PREVIOUS round's state, carrying
+#     population memory the Wu recurrence does not have.
+#
+# NO GATE TOKENS IN THE TAG. FJ has no confidence gates -- platform
+# exposure and graph mixing are unconditional -- so _ea / _es would name
+# something the operator never applies. The runner REFUSES a non-default
+# gate mode under wu1 rather than letting it sit inert.
+# =========================================================================
+FJR_KEY = "fj_robustness"
+FJR_SMOKE_KEY = "fj_robustness_smoke"
+FJR_FROZEN_KEY = "fj_robustness_frozen"
+FJR_BETA1_KEY = "fj_robustness_beta1"      # optional, NOT part of the core
+FJR_H100 = QMECH_H100
+FJR_BETA = 0.5
+FJR_ALPHA = 0.5
+FJR_INNER = 1
+FJR_ROUNDS = 30
+FJR_SMOKE_ROUNDS = 3
+FJR_ARMS = ["b0", "b1"]
+FJR_MODELS = ["qwen7b", "qwen3_8b", "olmo7b", "olmo3_7b",
+              "mistral7b", "ministral8b"]
+# frozen zero-shot vectors verified field by field (model, dataset,
+# n_labeled, profiles, style=frozen, no LoRA, icl_k=icl_days=0, constant
+# across rounds, H100 80GB HBM3, transformers 5.5.4, torch 2.5.1) and
+# found to carry ONE distinct prediction hash per model. These need no
+# job; the FJ replay is model-independent and runs locally on CPU.
+FJR_FROZEN_REUSE = {
+    "qwen7b": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p05_s0",
+    "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0",
+    "olmo7b": "pofdctxgrid_olmo7b_k0_ea0p05_w0p5_l0p2_es0p4_s0",
+    "olmo3_7b": "pofdzsprior_olmo3_7b_w0p5_l0p2_es0_s0",
+    "ministral8b": "pofdzsprior_ministral8b_w0p5_l0p2_es0_s0",
+}
+# Mistral-7B has 393 frozen runs and NOT ONE qualifies: the 20 that are
+# K=0 and constant ran on A100, and the H100 ones report the SKU
+# "NVIDIA H100" (not "NVIDIA H100 80GB HBM3") and carry context. Greedy
+# decoding is only bit-reproducible within one architecture -- the
+# archived A100 frozen cell differs from the H100 prior in 17/723 agents
+# -- so reusing an A100 vector would measure this one model against a
+# different-hardware reference. Hence exactly one extraction job.
+FJR_FROZEN_NEW = ["mistral7b"]
+
+
+def fjr_tag(model, arm, rounds=FJR_ROUNDS, beta=FJR_BETA, alpha=FJR_ALPHA,
+            inner=FJR_INNER, seed=0, smoke=False):
+    """model, arm, beta, alpha, inner steps, k, seed, horizon -- no gate
+    tokens, and a family prefix shared with nothing else."""
+    return (f"pofdfj_{model}_{arm}_beta{_num(beta)}_alpha{_num(alpha)}"
+            f"_in{inner}_k1_s{seed}_r{rounds}{'smoke' if smoke else ''}")
+
+
+def fjr_frozen_tag(model, seed=0):
+    """A zero-shot EXTRACTION, not an FJ run: it produces the static
+    prediction vector, and the FJ replay is model-independent and happens
+    locally on CPU. So the tag carries no beta/alpha/inner/k tokens --
+    naming FJ parameters here would claim the job applied them."""
+    return f"pofdfjzs_{model}_s{seed}_r1"
+
+
+ROW_FJR = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+           "fj, 0.0, 0.0, {wplat}, loop, 0.0, {alpha}, {inner}, "
+           "{uselora}, {fresh}, {ansk}, {gg}, {nrounds}, {basemodel}, "
+           "{chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def fjr_row(model, arm, rounds=FJR_ROUNDS, beta=FJR_BETA, smoke=False):
+    a = REACH_ARM_COLS[arm]
+    m = FAM_MODELS[model]
+    return ROW_FJR.format(
+        tag=fjr_tag(model, arm, rounds, beta=beta, smoke=smoke),
+        style=a["style"], beta=a["beta"], seed=0, wplat=f"{beta:g}",
+        alpha=f"{FJR_ALPHA:g}", inner=FJR_INNER, uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"], mem=m["mem"],
+        disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def fjr_rows(beta=FJR_BETA):
+    return [fjr_row(mo, ar, beta=beta)
+            for mo in FJR_MODELS for ar in FJR_ARMS]
+
+
+def fjr_smoke_rows():
+    """One 3-round Qwen2.5 forward-KL cell: exercises the whole wu1 path
+    (beta applied, alpha mixing, inner reset, served-vector identity)
+    before any 30-round job runs."""
+    return [fjr_row("qwen7b", "b1", rounds=FJR_SMOKE_ROUNDS, smoke=True)]
+
+
+ROW_FJR_FROZEN = ("{tag}, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, "
+                  "0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, "
+                  "1, {basemodel}, {chatthink}")
+
+
+def fjr_frozen_rows():
+    """Zero-shot extraction for the models with no qualifying archived
+    vector. Uses the ZSPRIOR envelope exactly -- frozen, no LoRA, no
+    context, EPS_AI=0 under the strict-< gate so no agent is ever
+    contacted -- so pred_raw[0] IS the zero-shot prior. It is an
+    EXTRACTION, not an FJ run: the FJ replay is model-independent and
+    happens locally on CPU."""
+    return [ROW_FJR_FROZEN.format(tag=fjr_frozen_tag(mo),
+                                  basemodel=FAM_MODELS[mo]["base_model"],
+                                  chatthink=FAM_MODELS[mo]["chatthink"])
+            for mo in FJR_FROZEN_NEW]
+
+
+FJR_FROZEN_SUB_TEMPLATE = """\
+# HTCondor: FJ ROBUSTNESS -- ZERO-SHOT EXTRACTION, {n_jobs} job(s).
+# GENERATED by gen_pofd_sweep.py from the FJR block. Never edit by hand.
+# Produces the frozen (lambda -> infinity) prediction vector for the
+# model(s) with NO qualifying archived vector. Mistral-7B-v0.3 has 393
+# frozen runs and none qualify: the K=0 constant ones are A100, and the
+# H100 ones report SKU "NVIDIA H100" and carry context. Greedy decoding
+# is only bit-reproducible within an architecture, so reusing an A100
+# vector would measure one model against a different-hardware reference.
+# ENVELOPE = the ZSPRIOR screen exactly (frozen, no LoRA, no context,
+# EPS_AI=0 under the strict-< gate so no agent is ever contacted), which
+# is what makes pred_raw[0] the zero-shot prior AND keeps this vector
+# comparable to the four zsprior-derived ones. INNATE_LAMBDA rides along
+# at 0.2 for that byte-comparability; it is inert here because no agent
+# is ever contacted and the population cannot move.
+# The one deliberate difference from ZSPRIOR: this pins the EXACT H100
+# SKU, which the zsprior sub does not.
+# NOT an FJ run -- the FJ replay is model-independent and local.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 40G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+def fjr_frozen_sub(key, rows):
+    return FJR_FROZEN_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=FJR_H100, bad=BAD_NODE_REQ)
+
+
+def fjr_sub(key, rows, smoke=False):
+    return FJR_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=FJR_H100, bad=BAD_NODE_REQ,
+        rounds=FJR_SMOKE_ROUNDS if smoke else FJR_ROUNDS)
+
+
+FJR_SUB_TEMPLATE = """\
+# HTCondor: FRIEDKIN-JOHNSEN ROBUSTNESS WAVE -- {n_jobs} jobs, {rounds}
+# rounds each. GENERATED by gen_pofd_sweep.py from the FJR block. Never
+# edit by hand: rerun the script.
+# Asks whether the ordinary-SFT (b0) vs forward-KL-SFT (b1) result
+# survives when Deffuant bounded-confidence peers are replaced by a
+# LINEAR FJ operator. Six models x two arms, seed 0, MovieLens Action,
+# 723 agents, replace-only data, fresh LoRA r=512 each round, 1 epoch,
+# batch 4, lr 5e-5, greedy eval-mode serving.
+# FJ_UPDATE_VERSION=wu1 is the OPT-IN operator; "legacy" is the archived
+# one and is untouched, so no existing FJ artifact changes.
+#   x0 = (1-beta) innate + beta m;  x_l+1 = (1-alpha) x0 + alpha P x_l
+# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE; alpha is the
+# NEIGHBOUR weight (stored as peer_sus = 1 - alpha); x0_inner = x0, so
+# the human component is stateless (k=1) and the ONLY channel between
+# rounds is the model.
+# NO GATES. FJ platform exposure and graph mixing are unconditional, so
+# there are no _ea/_es tokens and the runner REFUSES a non-default gate
+# mode under wu1 rather than letting it sit inert in the environment.
+# ONE INNER STEP is the production setting. That is a single application
+# of (1-alpha)I + alpha P, NOT the FJ equilibrium, so a round-{rounds}
+# state must not be called one without a convergence check. The
+# model-independent CPU controls sweep n_inner to bound that choice.
+# Gate every pull with check_pofd_sanity (FJR section) and hard-fail the
+# analyzer until the whole conceptual grid is present.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 POP_MODEL=fj FJ_UPDATE_VERSION=wu1 FJ_ALPHA=$(alpha) FJ_INNER_STEPS=$(inner) PLATFORM_SUS_SCALE=1.0 KL_DIRECTION=forward SFT_EPOCHS=1 SFT_LR=5e-5 LORA_R=512 USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, alpha, inner, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 AKL_KEY = "qwen_adapter_kl_probe"
 AKL_SMOKE_KEY = "qwen_adapter_kl_probe_smoke"
 AKL_H100 = QMECH_H100
@@ -8233,6 +8474,83 @@ def main():
     expected[p] = ZSPRIOR_EXPECT_NEW
     cube_subs[os.path.join(HERE, f"at_pofd_{ZSPRIOR_KEY}.sub")] = \
         zsprior_sub()
+    # ---- Friedkin-Johnsen robustness wave (FJR) ---------------------
+    _fjr = {FJR_KEY: (fjr_rows(), 12),
+            FJR_SMOKE_KEY: (fjr_smoke_rows(), 1),
+            FJR_FROZEN_KEY: (fjr_frozen_rows(), 1),
+            # OPTIONAL, not part of the core wave: the same 12 trained
+            # cells at beta=1 (the consensus limit, where the innate
+            # anchor drops out of x0 entirely). Generated so it is ready,
+            # never bundled into any umbrella target.
+            FJR_BETA1_KEY: (fjr_rows(beta=1.0), 12)}
+    _all_fjr = set()
+    for _key, (_rows, _n) in _fjr.items():
+        assert len(_rows) == _n, (_key, len(_rows), _n)
+        _tags = {r.split(",")[0] for r in _rows}
+        assert len(_tags) == _n, f"duplicate tags in {_key}"
+        # no gate tokens: FJ applies neither an AI nor a bounded-confidence
+        # gate, so a tag carrying _ea/_es would name something that never ran
+        for _t in _tags:
+            assert "_ea" not in _t and "_es" not in _t, _t
+        if _key != FJR_FROZEN_KEY:
+            for r in _rows:
+                _c = [x.strip() for x in r.split(",")]
+                assert _c[8] == "fj", r                 # POP_MODEL
+                assert _c[3] == "0", r                  # seed 0
+                assert _c[5] == "replace", r            # replace-only data
+                assert _c[14] == f"{FJR_ALPHA:g}", r    # alpha
+                assert _c[15] == str(FJR_INNER), r      # inner steps
+                assert _c[1] in ("sft", "sft_kl"), r
+            # arm is read from the tag's _<arm>_beta token, NOT by
+            # splitting on "_": model slugs contain underscores
+            # (qwen3_8b, olmo3_7b) so positional splitting picks "8b"
+            def _arm_of(tag):
+                hits = [a for a in FJR_ARMS if f"_{a}_beta" in tag]
+                assert len(hits) == 1, (tag, hits)
+                return hits[0]
+            if _key == FJR_KEY or _key == FJR_BETA1_KEY:
+                _models = {t.split("_")[1] + ("_" + t.split("_")[2]
+                                              if t.split("_")[2] not in FJR_ARMS
+                                              else "")
+                           for t in _tags}
+                assert len(_models) == 6, _models
+                assert sum(1 for t in _tags if _arm_of(t) == "b0") == _n // 2
+            # b0 is ordinary SFT at KL weight 0; b1 is forward KL at 1
+            for r in _rows:
+                _c = [x.strip() for x in r.split(",")]
+                assert (_arm_of(_c[0]), _c[1], _c[2]) in (
+                    ("b0", "sft", "0"), ("b1", "sft_kl", "1")), r
+            _sub = fjr_sub(_key, _rows,
+                           smoke=(_key == FJR_SMOKE_KEY))
+            _env = next(ln for ln in _sub.splitlines()
+                        if ln.startswith("environment"))
+            assert "POP_MODEL=fj" in _env and "FJ_UPDATE_VERSION=wu1" in _env
+            assert "FJ_ALPHA=$(alpha)" in _env
+            assert "FJ_INNER_STEPS=$(inner)" in _env
+            assert "KL_DIRECTION=forward" in _env
+            assert "KL_REF_ADAPTER" not in _env      # no reference adapter
+            assert "AI_GATE_MODE" not in _env and "PEER_GATE_MODE" not in _env
+            assert "LORA_R=512" in _env and "SFT_EPOCHS=1" in _env
+            assert "SFT_BATCH_SIZE=4" in _env and "SFT_LR=5e-5" in _env
+            assert "N_LABELED=723" in _env and "TRAIN_CAP=723" in _env
+        else:
+            _sub = fjr_frozen_sub(_key, _rows)
+            assert "FJ_" not in _sub.split("environment")[1].split("\n")[0]
+        assert f'CUDADeviceName == "{FJR_H100}"' in _sub
+        _prior = {r.split(",")[0] for rows in files.values() for r in rows}
+        assert not (_tags & _prior), f"fjr collision {_key}: {_tags & _prior}"
+        assert not (_tags & _all_fjr), f"fjr internal collision {_key}"
+        _all_fjr |= _tags
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = _n
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    # the beta=1 key must be DISJOINT from the core wave: same models and
+    # arms, different beta, so the tags must differ or submitting both
+    # would double-queue one set of run dirs
+    assert not ({r.split(",")[0] for r in fjr_rows()}
+                & {r.split(",")[0] for r in fjr_rows(beta=1.0)})
+
     # ---- adapter KL / soft-decode probe (AKL) -----------------------
     # One job per key, no grid. The checks that matter here are not about
     # a grid at all: the executable must be the probe's own (there is no

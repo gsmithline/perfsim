@@ -1,0 +1,1 @@
+pofdfj_qwen7b_b1_beta0p5_alpha0p5_in1_k1_s0_r3smoke, sft_kl, 1, 0, 1, replace, 1.0, fixed, fj, 0.0, 0.0, 0.5, loop, 0.0, 0.5, 1, 1, 1, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

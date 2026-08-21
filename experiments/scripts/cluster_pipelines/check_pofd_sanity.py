@@ -384,6 +384,7 @@ import importlib.util
 import json
 import os
 import re
+from pathlib import Path
 import sys
 
 import torch
@@ -430,6 +431,218 @@ SLUG_BASE = {
     # 4th model, promoted 2026-08-12 off the mlatZ_cand prior screen
     "mistral7b": "mistralai/Mistral-7B-Instruct-v0.3",
 }
+
+
+FJR_H100 = "NVIDIA H100 80GB HBM3"
+FJR_ARM_SEMANTICS = {"b0": ("sft", 0.0), "b1": ("sft_kl", 1.0)}
+FJR_REPLAY_TOL = 2e-5      # float32 accumulation over 30 rounds
+
+
+def _fjr_arm(name):
+    hits = [a for a in FJR_ARM_SEMANTICS if f"_{a}_beta" in name]
+    return hits[0] if len(hits) == 1 else None
+
+
+def check_fjr(name, cfg, d, op_raw, pred_raw, innate, expect_rounds=30,
+              expect_agents=723):
+    """Strict FJ-robustness checks.
+
+    The point of this section is that a tag can CLAIM beta=.5, alpha=.5,
+    one inner step and a stateless human component while the operator did
+    something else entirely -- which is exactly what the archived FJ path
+    did (W_PLAT dropped, peer_sus=1 so no mixing, model re-queried, inner
+    loop started from the previous state). So nothing here trusts a
+    config field on its own: the declared recurrence is REPLAYED against
+    the saved trajectory, round by round, from the saved graph.
+    """
+    errs = []
+    n = innate.shape[0]
+
+    # -- arm semantics, read from the tag and checked against the config
+    arm = _fjr_arm(name)
+    if arm is None:
+        return [f"FJR {name}: cannot read a unique arm token from the tag"]
+    want_style, want_beta = FJR_ARM_SEMANTICS[arm]
+    if cfg.get("training_style") != want_style:
+        errs.append(f"FJR {name}: arm {arm} declares training_style="
+                    f"{cfg.get('training_style')!r}, expected {want_style!r}")
+    if float(cfg.get("kl_beta", -1)) != want_beta:
+        errs.append(f"FJR {name}: arm {arm} has kl_beta="
+                    f"{cfg.get('kl_beta')}, expected {want_beta}")
+    if arm == "b1":
+        if cfg.get("kl_direction") != "forward":
+            errs.append(f"FJR {name}: b1 must be FORWARD KL, got "
+                        f"{cfg.get('kl_direction')!r}")
+        if cfg.get("kl_ref_adapter"):
+            errs.append(f"FJR {name}: b1 must have NO reference adapter, "
+                        f"got {cfg.get('kl_ref_adapter')!r}")
+
+    # -- horizon and shape
+    if op_raw.shape != (expect_rounds, n) or pred_raw.shape != (expect_rounds, n):
+        errs.append(f"FJR {name}: op_raw {tuple(op_raw.shape)} / pred_raw "
+                    f"{tuple(pred_raw.shape)} != ({expect_rounds}, {n})")
+        return errs
+    if n != expect_agents:
+        errs.append(f"FJR {name}: {n} agents != {expect_agents}")
+
+    # -- hardware: greedy decoding is only bit-reproducible per architecture
+    gpu = (cfg.get("hardware") or {}).get("gpu_name")
+    if gpu != FJR_H100:
+        errs.append(f"FJR {name}: gpu {gpu!r} != {FJR_H100!r}")
+
+    # -- serving hygiene
+    if not torch.isfinite(pred_raw).all():
+        errs.append(f"FJR {name}: pred_raw has non-finite entries")
+    if float(pred_raw.min()) < 0.0 or float(pred_raw.max()) > 1.0:
+        errs.append(f"FJR {name}: pred_raw outside [0, 1]")
+    if cfg.get("serve_eval_mode") is not True:
+        errs.append(f"FJR {name}: serve_eval_mode={cfg.get('serve_eval_mode')!r}"
+                    f" -- serving must run in eval mode")
+    for row in (d.get("trajectory") or []):
+        pf = row.get("parse_fail")
+        if pf is not None and float(pf) != 0.0:
+            errs.append(f"FJR {name}: round {row.get('t')} parse_fail={pf}")
+            break
+
+    # -- THE RECORDED VECTOR IS THE APPLIED VECTOR.
+    # The archived path recorded pred_raw from one call and drove the
+    # population from a second call inside world.run(); this is the check
+    # that rules that out.
+    used = d.get("fj_served_used")
+    if used is None or not torch.is_tensor(used) or used.numel() == 0:
+        errs.append(f"FJR {name}: no fj_served_used -- cannot prove pred_raw "
+                    f"is the vector the operator actually consumed")
+    else:
+        used = used.float()
+        if used.shape != pred_raw.shape:
+            errs.append(f"FJR {name}: fj_served_used {tuple(used.shape)} != "
+                        f"pred_raw {tuple(pred_raw.shape)}")
+        elif not torch.equal(used, pred_raw):
+            gap = float((used - pred_raw).abs().max())
+            errs.append(f"FJR {name}: the vector applied to the population "
+                        f"differs from the vector recorded in pred_raw by up "
+                        f"to {gap:.3e} -- generation happened more than once")
+
+    # -- REPLAY THE DECLARED RECURRENCE, ROUND BY ROUND
+    beta = float(cfg.get("w_plat", -1))
+    alpha = float(cfg.get("fj_alpha", -1))
+    n_inner = int(cfg.get("fj_inner_steps", -1))
+    W = d.get("fj_graph")
+    if W is None:
+        setup = _fjr_graph_from_repo()
+        if setup is None:
+            errs.append(f"FJR {name}: no graph available to replay against")
+            return errs
+        W = setup
+    if cfg.get("fj_graph_sha256") and _sha_t(W) != cfg["fj_graph_sha256"]:
+        errs.append(f"FJR {name}: the replay graph does not match the "
+                    f"fj_graph_sha256 recorded by the run")
+        return errs
+    plat = float(cfg.get("fj_beta_mean", beta))
+    for t in range(expect_rounds):
+        x0 = (1.0 - plat) * innate + plat * pred_raw[t]
+        x = x0.clone()
+        for _ in range(n_inner):
+            x = (1.0 - alpha) * x0 + alpha * (W @ x)
+        gap = float((x - op_raw[t]).abs().max())
+        if gap > FJR_REPLAY_TOL:
+            errs.append(f"FJR {name}: round {t} does not replay the declared "
+                        f"recurrence (max |dx| {gap:.3e} > {FJR_REPLAY_TOL}); "
+                        f"beta={beta} alpha={alpha} inner={n_inner}")
+            break
+
+    # -- beta is ACTUALLY applied: with beta=0 the predictions cannot move
+    #    the population, so a nonzero beta must leave a visible trace
+    if beta > 0:
+        no_plat = torch.stack([
+            _fjr_apply(innate, innate, 0.0, alpha, n_inner, W)
+            for _ in range(1)])[0]
+        if float((op_raw[0] - no_plat).abs().max()) <= 1e-9:
+            errs.append(f"FJR {name}: beta={beta} but round 0 equals the "
+                        f"beta=0 (no-platform) state -- the prediction had "
+                        f"no effect, so beta was not applied")
+
+    # -- alpha causes GENUINE neighbour mixing: alpha=0 would leave the
+    #    population exactly at the anchor
+    if alpha > 0:
+        x0_0 = (1.0 - plat) * innate + plat * pred_raw[0]
+        if float((op_raw[0] - x0_0).abs().max()) <= 1e-9:
+            errs.append(f"FJR {name}: alpha={alpha} but the post-FJ "
+                        f"population equals the anchor -- no neighbour "
+                        f"mixing happened (peer_sus convention inverted?)")
+
+    # -- THE INNER LOOP RESET. Under x^0_inner = x^0 the population is a
+    #    function of THIS round's anchor alone. If it had been seeded from
+    #    the previous round's state, replaying from the anchor would fail
+    #    -- so the replay above already covers it -- but a stale-state run
+    #    with alpha small can replay within tolerance, so check the
+    #    stale-state alternative is DISTINGUISHABLE and rejected.
+    if expect_rounds >= 2 and alpha > 0:
+        stale = op_raw[0].clone()
+        x0_1 = (1.0 - plat) * innate + plat * pred_raw[1]
+        for _ in range(n_inner):
+            stale = (1.0 - alpha) * x0_1 + alpha * (W @ stale)
+        if float((stale - op_raw[1]).abs().max()) <= FJR_REPLAY_TOL:
+            fresh = x0_1.clone()
+            for _ in range(n_inner):
+                fresh = (1.0 - alpha) * x0_1 + alpha * (W @ fresh)
+            if float((stale - fresh).abs().max()) > FJR_REPLAY_TOL:
+                errs.append(f"FJR {name}: round 1 matches a PREVIOUS-STATE "
+                            f"initialisation of the inner loop, not the "
+                            f"round's new anchor")
+
+    # -- SFT labels: round 0 trains on innate, later rounds on the
+    #    preceding post-FJ population
+    ty = d.get("train_y_raw")
+    if torch.is_tensor(ty) and ty.numel() and ty.shape[0] >= 1:
+        ty = ty.float()
+        if float((ty[0] - innate).abs().max()) > 1e-6:
+            errs.append(f"FJR {name}: round-0 SFT labels are not the innate "
+                        f"opinions")
+        for t in range(1, min(ty.shape[0], expect_rounds)):
+            if float((ty[t] - op_raw[t - 1]).abs().max()) > 1e-6:
+                errs.append(f"FJR {name}: round-{t} SFT labels are not the "
+                            f"round-{t-1} post-FJ population")
+                break
+    return errs
+
+
+def _fjr_apply(innate, preds, beta, alpha, n_inner, W):
+    x0 = (1.0 - beta) * innate + beta * preds
+    x = x0.clone()
+    for _ in range(n_inner):
+        x = (1.0 - alpha) * x0 + alpha * (W @ x)
+    return x
+
+
+def _sha_t(t):
+    import hashlib
+    a = torch.as_tensor(t).detach().cpu().float().contiguous().numpy()
+    return hashlib.sha256(a.tobytes()).hexdigest()
+
+
+_FJR_GRAPH_CACHE = {}
+
+
+def _fjr_graph_from_repo():
+    """The normalized MovieLens graph, rebuilt from the dataset so the
+    replay does not depend on the run having saved it."""
+    if "W" in _FJR_GRAPH_CACHE:
+        return _FJR_GRAPH_CACHE["W"]
+    try:
+        import importlib.util
+        here = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location(
+            "run_gated_fjr", os.path.join(here, "run_pokec_gated_lm.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        setup = mod.load_movielens_setup(
+            Path(here).parent.parent.parent
+            / "experiments/data/movielens/ml-100k", "Action")
+        _FJR_GRAPH_CACHE["W"] = setup["W"].float()
+    except Exception:
+        _FJR_GRAPH_CACHE["W"] = None
+    return _FJR_GRAPH_CACHE["W"]
 
 
 def check_run(run_dir):
@@ -591,6 +804,16 @@ def check_run(run_dir):
     # sweeping optimizer updates / learning rate / LoRA rank on the QWU
     # boundary surface. Read BEFORE any feedback exists.
     is_sftd = name.startswith("pofdsftdose")
+    # FRIEDKIN-JOHNSEN ROBUSTNESS WAVE (2026-08-21, fj_robustness):
+    # POP_MODEL=fj under the OPT-IN wu1 operator, six models x b0/b1,
+    # beta=alpha=.5, one inner step, stateless k=1, 30 rounds, seed 0,
+    # H100. NO gate tokens: FJ applies no AI or bounded-confidence gate,
+    # so a _ea/_es token here would name something that never ran.
+    is_fjr = name.startswith("pofdfj_")
+    # the zero-shot EXTRACTION for a model with no qualifying archived
+    # vector. Not an FJ run at all -- it produces the static prediction
+    # and the FJ replay happens locally on CPU.
+    is_fjzs = name.startswith("pofdfjzs_")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -619,6 +842,37 @@ def check_run(run_dir):
             "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
             "platform_sus_scale": 1.0, "dataset": "movielens"}
+    if is_fjr:
+        # the FJ tag has no _w/_l/_es tokens by design, so the token
+        # defaults above are meaningless here. beta rides the _beta token
+        # and lands in w_plat; eps and innate_lambda are INERT under wu1
+        # (the operator reads neither) and are dropped rather than
+        # compared against a default that means something else.
+        m_beta = re.search(r"_beta(\d+(?:p\d+)?)_", name)
+        m_alpha = re.search(r"_alpha(\d+(?:p\d+)?)_", name)
+        m_in = re.search(r"_in(\d+)_", name)
+        if not (m_beta and m_alpha and m_in):
+            errs.append(f"CONFIG {name!r} is an FJ tag but lacks a "
+                        f"_beta/_alpha/_in token")
+        want.pop("eps", None)
+        want.pop("innate_lambda", None)
+        want.update({
+            "pop_model": "fj",
+            "fj_update_version": "wu1",
+            "w_plat": (float(m_beta.group(1).replace("p", "."))
+                       if m_beta else 0.5),
+            "fj_alpha": (float(m_alpha.group(1).replace("p", "."))
+                         if m_alpha else 0.5),
+            "fj_inner_steps": int(m_in.group(1)) if m_in else 1,
+            "fj_human_component": "stateless_innate_k1",
+            "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
+            "data_regime": "replace", "n_labeled": 723, "train_cap": 723,
+            "fresh_each_round": True, "lora_r": 512, "use_lora": True,
+            "sft_epochs": 1, "sft_batch_size": 4, "sft_lr": 5e-5,
+            "serve_eval_mode": True, "do_sample": False,
+            "icl_k": 0, "icl_days": 0, "kl_direction": "forward",
+            "kl_ref_adapter": "", "platform_sus_scale": 1.0,
+        })
     if peer_open:
         # an _esopen_ tag carries no numeric _es token, so the
         # token-derived eps want above is meaningless. eps is INERT for
@@ -1458,6 +1712,13 @@ def check_run(run_dir):
         if "chat_thinking" in cfg:
             errs.append("CONFIG chat_thinking recorded on a qwen2.5 qss "
                         "run")
+    elif is_fjr:
+        # the whole FJ contract in one place: arm semantics, horizon,
+        # hardware, serving hygiene, served-vector identity, and a
+        # round-by-round replay of the declared recurrence
+        want_rounds = 3 if name.endswith("smoke") else 30
+        errs += check_fjr(name, cfg, d, op_raw, pred_raw, innate,
+                          expect_rounds=want_rounds)
     elif is_sftd:
         # SFT TRAINING-DOSE. Ordinary SFT (lambda_KL=0) on the QWU
         # boundary surface, ONE adaptation round, with exactly one of

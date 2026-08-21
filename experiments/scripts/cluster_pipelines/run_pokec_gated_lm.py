@@ -231,6 +231,13 @@ def translate_alcohol(val) -> str:
     return "unknown"
 
 
+def _sha_tensor(t) -> str:
+    """sha256 of a float32 tensor's bytes. Used for FJ provenance: the
+    normalized graph and the effective beta / anchor-weight vectors."""
+    a = torch.as_tensor(t).detach().cpu().float().contiguous().numpy()
+    return hashlib.sha256(a.tobytes()).hexdigest()
+
+
 def load_pokec_setup(pokec_dir: Path):
     """Real Pokec LCC, aligned row-for-row with the profiles order."""
     with open(pokec_dir / "lcc_profiles_relation_to_smoking.pk", "rb") as fh:
@@ -704,6 +711,24 @@ def main() -> int:
     # POP_MODEL: "fj" = unchanged run_pokec_fj_lm behavior; "ab" = one gated
     # Deffuant-with-bias sweep per round on the Pokec graph edges.
     pop_model = os.environ.get("POP_MODEL", "fj")
+    # FJ_UPDATE_VERSION (2026-08-21, FJ robustness wave). "legacy" is the
+    # archived FJ operator, bit-for-bit: model re-queried inside run(), the
+    # inner loop started from the previous round's state, W_PLAT ignored,
+    # and peer_sus taken from the dataset (MovieLens ships 1 = fully
+    # anchored = NO neighbour mixing). Every archived FJ artifact replays
+    # under it and it stays the default so none of them change.
+    # "wu1" is the opt-in Wu-style operator:
+    #     x^0(t)     = (1 - beta) innate + beta m(t),  beta = W_PLAT *
+    #                  platform_sus * PLATFORM_SUS_SCALE
+    #     x^{l+1}(t) = (1 - alpha) x^0(t) + alpha P x^l(t),  x^0_inner = x^0
+    # with the SERVED vector fed straight in (one generation per round) and
+    # peer_sus constructed as 1 - alpha rather than read from the dataset.
+    fj_update_version = os.environ.get("FJ_UPDATE_VERSION", "legacy")
+    fj_alpha = _env_float("FJ_ALPHA", 0.5)
+    # deliberately NOT EPOCH_SIZE: that knob means the archived FJ inner
+    # count (100) and is shared with other code paths, so reusing it would
+    # silently give this wave a 100-step inner loop
+    fj_inner_steps = _env_int("FJ_INNER_STEPS", 1)
     eps = _env_float("EPS", 0.3)
     eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
     # AI_GATE_MODE (2026-08-13, sft_icl_reach wave): "threshold" (default) =
@@ -888,6 +913,26 @@ def main() -> int:
 
     if pop_model not in ("fj", "ab"):
         raise ValueError(f"unknown POP_MODEL: {pop_model!r}")
+    if fj_update_version not in ("legacy", "wu1"):
+        raise ValueError(f"unknown FJ_UPDATE_VERSION: {fj_update_version!r}")
+    if fj_update_version == "wu1":
+        if pop_model != "fj":
+            raise ValueError("FJ_UPDATE_VERSION=wu1 requires POP_MODEL=fj")
+        if run_mode != "loop":
+            raise ValueError("FJ_UPDATE_VERSION=wu1 requires RUN_MODE=loop")
+        if not (0.0 <= fj_alpha <= 1.0):
+            raise ValueError(f"FJ_ALPHA must be in [0, 1]; got {fj_alpha}")
+        if fj_inner_steps < 1:
+            raise ValueError(f"FJ_INNER_STEPS must be >= 1; got "
+                             f"{fj_inner_steps}")
+        # FJ has no confidence gates: platform exposure and graph mixing are
+        # unconditional. Accepting a gate env here would let a tag claim a
+        # gate that the operator never applies.
+        if ai_gate_mode != "threshold" or peer_gate_mode != "threshold":
+            raise ValueError("FJ_UPDATE_VERSION=wu1 has NO gates; leave "
+                             "AI_GATE_MODE/PEER_GATE_MODE at threshold")
+        if canary_delta != 0.0:
+            raise ValueError("FJ_UPDATE_VERSION=wu1 does not apply CANARY_DELTA")
     if ai_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "eps_ai gate exists only in the ab population)")
@@ -1171,6 +1216,16 @@ def main() -> int:
         # 2026-08-20 -> "threshold", exactly as for the AI gate.
         "peer_gate_mode": peer_gate_mode,
         "w_plat": w_plat, "innate_lambda": innate_lambda,
+        # --- FJ robustness wave provenance (2026-08-21) ---
+        "fj_update_version": fj_update_version,
+        "fj_alpha": fj_alpha,
+        "fj_peer_sus_convention": "peer_sus = 1 - alpha (anchor weight)",
+        "fj_inner_steps": fj_inner_steps,
+        # the human component is the raw innate opinion, with no carryover
+        # of the previous population: k = 1 in the beta_eff = 1-(1-W)k sense
+        "fj_human_component": "stateless_innate_k1",
+        "fj_recurrence": ("x0 = (1-beta) innate + beta m; "
+                          "x_{l+1} = (1-alpha) x0 + alpha P x_l; x0_inner = x0"),
         # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
         # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
         # used the legacy per-sweep order (peers, gated blend, anchor over all).
@@ -1603,12 +1658,51 @@ def main() -> int:
     w_agent = None
     if run_mode != "direct":
         if pop_model == "fj":
-            world = FJWorld(
-                innate=innate, graph=setup["W"], peer_sus=setup["peer_sus"],
-                platform_sus=plat_sus_eff,
-                features=innate, profiles=setup["profiles"],
-            )
+            if fj_update_version == "wu1":
+                # beta_i = W_PLAT * platform_sus_i * PLATFORM_SUS_SCALE.
+                # The archived FJ path passes plat_sus_eff straight through
+                # and drops W_PLAT entirely, so a tag saying beta=.5 would
+                # have run at beta=1 on MovieLens (platform_sus = 1).
+                fj_beta = (w_plat * plat_sus_eff).clamp(0.0, 1.0)
+                # peer_sus is the ANCHOR weight; the neighbour weight is
+                # alpha. Built here rather than taken from the dataset:
+                # MovieLens ships peer_sus = 1, which means fully anchored
+                # and therefore no neighbour mixing whatsoever.
+                fj_peer_sus = torch.full(
+                    (n,), FJWorld.alpha_to_peer_sus(fj_alpha),
+                    dtype=torch.float32)
+                world = FJWorld(
+                    innate=innate, graph=setup["W"], peer_sus=fj_peer_sus,
+                    platform_sus=fj_beta,
+                    features=innate, profiles=setup["profiles"],
+                )
+                print(f"[run] FJ wu1: beta in "
+                      f"[{float(fj_beta.min()):.3f}, {float(fj_beta.max()):.3f}]"
+                      f" (W_PLAT={w_plat} x platform_sus x {platform_scale}), "
+                      f"alpha={fj_alpha} (peer_sus="
+                      f"{FJWorld.alpha_to_peer_sus(fj_alpha):.3f}), "
+                      f"inner={fj_inner_steps}", flush=True)
+            else:
+                fj_beta = plat_sus_eff
+                fj_peer_sus = setup["peer_sus"]
+                world = FJWorld(
+                    innate=innate, graph=setup["W"], peer_sus=fj_peer_sus,
+                    platform_sus=fj_beta,
+                    features=innate, profiles=setup["profiles"],
+                )
             world.reset(seed=seed)
+            # effective-weight and graph hashes: a tag can claim beta=.5
+            # and alpha=.5, but only these prove the operator actually got
+            # them, and that every arm ran on one normalized graph
+            config["fj_graph_sha256"] = _sha_tensor(setup["W"])
+            config["fj_beta_sha256"] = _sha_tensor(fj_beta)
+            config["fj_peer_sus_sha256"] = _sha_tensor(fj_peer_sus)
+            config["fj_beta_mean"] = float(
+                torch.as_tensor(fj_beta).float().mean())
+            config["fj_peer_sus_mean"] = float(
+                torch.as_tensor(fj_peer_sus).float().mean())
+            with open(out_dir / "config.json", "w") as _fh:
+                json.dump(config, _fh, indent=2, default=str)
         else:
             ab_device = torch.device(device)
             ab_x = innate.to(ab_device).clone()
@@ -1718,6 +1812,9 @@ def main() -> int:
     trajectory = []
     op_raw = []      # per-round raw per-agent opinions (for subgroup / tail analysis)
     pred_raw = []    # per-round raw per-agent model predictions (current deployment)
+    # the exact vectors handed to the FJ operator, so the checker can prove
+    # pred_raw IS what moved the population rather than taking it on trust
+    fj_served_used = []
     ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
@@ -2230,7 +2327,18 @@ def main() -> int:
             # no population: the model's own output is the next training target
             op = last_preds.clone()
         elif pop_model == "fj":
-            world.run(lm, n_steps=epoch_size)
+            if fj_update_version == "wu1":
+                # last_preds IS the vector recorded in pred_raw this round.
+                # The archived path calls world.run(lm, ...), which queries
+                # the model a SECOND time, so the vector driving the
+                # population was not guaranteed to be the vector on record.
+                if last_preds is None:
+                    raise RuntimeError("FJ wu1: no served vector this round")
+                world.run_wu(last_preds.detach().cpu().float(),
+                             alpha=fj_alpha, n_inner=fj_inner_steps)
+                fj_served_used.append(last_preds.detach().cpu().float().clone())
+            else:
+                world.run(lm, n_steps=epoch_size)
             op = world.state["opinion"].float()
         else:
             if pop_reset:
@@ -2644,6 +2752,13 @@ def main() -> int:
             "config": config,
             "op_raw": torch.stack(op_raw) if op_raw else torch.empty(0),
             "pred_raw": torch.stack(pred_raw) if pred_raw else torch.empty(0),
+            # the vectors ACTUALLY handed to the FJ operator. Saved
+            # separately from pred_raw on purpose: the checker asserts the
+            # two are bit-identical, which is the only way to rule out the
+            # archived path's failure of recording one vector and applying
+            # another.
+            "fj_served_used": (torch.stack(fj_served_used)
+                               if fj_served_used else torch.empty(0)),
             "ppl_raw": torch.stack(ppl_raw) if ppl_raw else torch.empty(0),
             "ans_raw": torch.stack(ans_raw) if ans_raw else torch.empty(0),
             "ans_idx": torch.tensor(ans_idx, dtype=torch.long),
