@@ -160,6 +160,19 @@ def _env_int(name, default): return int(os.environ.get(name, str(default)))
 def _env_float(name, default): return float(os.environ.get(name, str(default)))
 
 
+def _git_sha():
+    """Short SHA of the tree that produced this run, or "" off a repo.
+    Metadata only -- nothing in the simulation path reads it."""
+    try:
+        import subprocess
+        r = subprocess.run(["git", "rev-parse", "HEAD"],
+                           cwd=os.path.dirname(os.path.abspath(__file__)),
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def _hardware_meta():
     """Hardware/software provenance for config.json (2026-08-13): hostname,
     GPU model + compute capability, CUDA/torch/transformers versions. Pure
@@ -669,6 +682,13 @@ def main() -> int:
     # same draw they see. Seeding per round rather than advancing one
     # long stream keeps every subset reconstructible offline from
     # (seed, round) alone.
+    # SAVE_SFT_ORDER (2026-08-21, training-dose families): persist the
+    # ORDERED (agent ids, labels) handed to the SFT learner each round.
+    # The trainer then shuffles those rows with its own fixed seed, so
+    # this order plus that seed is what determines every minibatch --
+    # and it is what makes smaller-U arms consume nested prefixes of the
+    # same stream. Off by default; absent == byte-identical legacy.
+    save_sft_order = _env_int("SAVE_SFT_ORDER", 0) == 1
     sft_sample_n = _env_int("SFT_SAMPLE_N", 0)
     # dedicated offset, distinct from the population stream's 424243, so
     # the sampling draw can never shadow or be shadowed by peer pairing
@@ -1186,6 +1206,17 @@ def main() -> int:
         "ans_sample_k": ans_sample_k, "ans_sample_n": ans_sample_n,
         "ans_sample_t": ans_sample_t,
         "host": os.uname().nodename,
+        # SERVING PROVENANCE (2026-08-21). The 2026-08-20 fix forces
+        # eval() for the duration of generation, so greedy decoding is
+        # deterministic and LoRA dropout is off while serving. That fix
+        # left NO trace in the artifact, so runs before and after it are
+        # indistinguishable from trajectory.pt alone -- only git history
+        # plus timestamps separate them. This field makes every later run
+        # self-certifying; its ABSENCE means "written before 2026-08-21
+        # and not verifiable from the artifact".
+        "serve_eval_mode": True,
+        # git provenance: the exact tree that produced this run
+        "git_sha": _git_sha(),
         # hardware provenance (2026-08-13, sft_icl_reach wave): borderline
         # generations flip across GPU architectures (2026-08-07 iclf finding),
         # so every run records where it computed. Metadata only -- no
@@ -1210,6 +1241,8 @@ def main() -> int:
             # convention): the completed included-SFT clamp waves stay
             # byte-identical
             config["sft_exclude_clamped"] = True
+    if save_sft_order:
+        config["save_sft_order"] = True
     if sft_sample_n > 0:
         # recorded ONLY when on (absent == off, the audit convention), so
         # every pre-2026-08-21 config stays byte-identical
@@ -1703,6 +1736,9 @@ def main() -> int:
                      # each deploy round ([n_labeled] float), so the batch
                      # composition is checkable end-to-end offline
     sft_idx_raw = []
+    sft_dose_rows = []        # per-round optimizer-step provenance
+    sft_order_idx_raw = []    # SAVE_SFT_ORDER: dataset row order
+    sft_order_y_raw = []      # ... and the labels those rows carried
     sft_sample_idx_raw = []   # SFT_SAMPLE_N: ordered ids per round
     sft_sample_y_raw = []     # ... and the labels those rows carried # SFT_EXCLUDE_CLAMPED=1 only: per deploy round the ORDERED
                      # agent ids fed to the learner (the post-exclusion batch)
@@ -1970,7 +2006,24 @@ def main() -> int:
                             ab_x_cf.detach().cpu().float()[_idx.long()])
                     learner.train(_dpo_data)
                 else:
+                    if save_sft_order:
+                        sft_order_idx_raw.append(
+                            train_data["agent_idx"].detach().cpu()
+                            .long().clone())
+                        _yo = train_data["y"]
+                        sft_order_y_raw.append(
+                            (_yo.squeeze(-1) if _yo.ndim > 1 else _yo)
+                            .detach().cpu().float().clone())
                     learner.train(train_data)
+                    # TRAINING-DOSE PROVENANCE: the optimizer steps that
+                    # ACTUALLY ran, the sampler seed that fixed the
+                    # minibatch order, and the row count fed in. Recorded
+                    # only when the learner exposes them, so nothing
+                    # changes for learners that do not.
+                    _tstats = dict(getattr(learner, "last_train_stats", {})
+                                   or {})
+                    if _tstats:
+                        sft_dose_rows.append({"round": t, **_tstats})
             cur_dep += 1
             if t == 0:
                 # round-0 adapter + batch, kept on disk for the 2x2 evals
@@ -2614,6 +2667,11 @@ def main() -> int:
             "teacher_pred": (teacher_pred if teacher_pred is not None
                              else torch.empty(0)),
         }
+    if sft_dose_rows:
+        traj_payload["sft_dose"] = sft_dose_rows
+    if save_sft_order and sft_order_idx_raw:
+        traj_payload["sft_order_idx_raw"] = torch.stack(sft_order_idx_raw)
+        traj_payload["sft_order_y_raw"] = torch.stack(sft_order_y_raw)
     if sft_sample_n > 0:
         # the exact ORDERED (ids, labels) the optimizer consumed each
         # round -- the offline proof that the observed subset was what

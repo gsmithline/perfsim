@@ -3653,6 +3653,193 @@ def qwu_rows():
 # agents, tiled to exactly 723 rows, giving 181 steps -- identical
 # compute to the full-data arm, on 72 distinct agents.
 # =========================================================================
+
+# =========================================================================
+# SFT TRAINING-DOSE FAMILIES (2026-08-21). Three one-round STATIC scouts
+# that ask the same question three ways: does a weaker SFT fit leave the
+# served vector closer to the entering Qwen model?
+#
+#   qwen_sft_update_dose   U   optimizer updates    {1,5,20,50,100,181}
+#   qwen_sft_lr_dose       LR  learning rate        {1e-6,3e-6,1e-5,3e-5}
+#   qwen_sft_rank_dose     r   LoRA rank            {1,4,8,32,128}
+#
+# ZERO IS FROZEN QWEN in all three families -- U=0, LR=0 and rank=0 all
+# mean "no adaptation happened", which is the entering model exactly, so
+# none of them needs a GPU job. The upper endpoint of each family is the
+# paper's current setting. Note rank 512 is the PAPER DEFAULT and is
+# unusually large for a LoRA, which is why the informative band is
+# 8-32 rather than the top end.
+#
+# WHY ONE ROUND. The 100-round subsample wave showed the closed loop
+# drives the population to an absorbing constant, after which the
+# projection a is 1 BY CONSTRUCTION and measures nothing. These cells
+# train ONCE on the innate labels and serve once, so the served vector is
+# read before any feedback exists. That is the only regime in which
+# "closer to frozen Qwen" is a statement about the model rather than
+# about the loop.
+#
+# THE SHARED ENDPOINT. U=181 / LR=5e-5 / rank=512 is the standard
+# complete one-epoch SFT fit for 723 examples at batch 4, and it is the
+# full-dose end of ALL THREE families. It is queued exactly once, in the
+# update-dose key; the other two reuse it. U=0, LR=0 and (conceptually)
+# rank=0 are all the canonical frozen-Qwen vector and need no GPU job.
+#
+# WHAT THE ARMS ACTUALLY VARY -- state it plainly rather than overclaim:
+#   U   is a TRAINING-DOSE intervention, not a pure optimizer-step one:
+#       fewer updates also means fewer EXAMPLES were processed (U steps
+#       at batch 4 sees 4U rows of the 723).
+#   LR  limits how far the weights move. It does NOT test preservation
+#       of broad semantic capability -- only of the entering prediction
+#       map on these prompts.
+#   r   limits WHAT the update can represent, with alpha = 2r so the
+#       LoRA scaling alpha/r is constant across ranks. This is the
+#       cleanest capacity test of the three; a small adapter may instead
+#       learn only a global scalar shift, which is why the analysis
+#       reports prediction SD, unique values and max mode share.
+#
+# TAG GRAMMAR. _l1_ keeps its established meaning (innate anchor k=1) --
+# it is NOT reused for the KL coefficient. The dose dials get their own
+# unambiguous tokens: _u<updates>_, _lr<rate>_, _rank<r>_. The trailing
+# _r1 is the ROUND count, which is why the rank token is spelled "rank"
+# and not "r".
+# =========================================================================
+SFTD_UPDATE_KEY = "qwen_sft_update_dose"
+SFTD_LR_KEY = "qwen_sft_lr_dose"
+SFTD_RANK_KEY = "qwen_sft_rank_dose"
+SFTD_SMOKE_KEY = "qwen_sft_dose_smoke"
+SFTD_MODEL = "qwen7b"
+SFTD_W = 1.0
+SFTD_K = 1.0
+SFTD_EPS_SOCIAL = 0.2          # inert under all_open
+SFTD_ROUNDS = 1                # ONE adaptation round: static diagnostic
+SFTD_H100 = QMECH_H100
+SFTD_STD_U = 181               # ceil(723/4): one complete epoch
+SFTD_STD_LR = "5e-5"
+SFTD_STD_RANK = 512
+SFTD_UPDATES = [1, 5, 20, 50, 100, 181]
+SFTD_LRS = ["1e-6", "3e-6", "1e-5", "3e-5"]
+SFTD_RANKS = [1, 4, 8, 32, 128]
+
+
+def _lrtok(lr):
+    """5e-5 -> 5em5, 1.25e-5 -> 1p25em5. Unambiguous and filename-safe."""
+    return str(lr).replace("-", "m").replace(".", "p")
+
+
+def sftd_tag(u, lr, rank, rounds=SFTD_ROUNDS, smoke=False):
+    return (f"pofdsftdose_{SFTD_MODEL}_u{u}_lr{_lrtok(lr)}_rank{rank}"
+            f"_eaopen_w{_num(SFTD_W)}_l{_num(SFTD_K)}_esopen_s0"
+            f"_r{rounds}{'smoke' if smoke else ''}")
+
+
+def sftd_row(u, lr, rank, rounds=SFTD_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS["b0"]          # ordinary SFT, lambda_KL = 0
+    m = FAM_MODELS[SFTD_MODEL]
+    return ROW_SFTD.format(
+        tag=sftd_tag(u, lr, rank, rounds, smoke), style=a["style"],
+        beta=a["beta"], seed=0, es=f"{SFTD_EPS_SOCIAL:g}",
+        wplat=f"{SFTD_W:g}", lam=f"{SFTD_K:g}", steps=u, lr=lr, rank=rank,
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"], mem=m["mem"],
+        disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+ROW_SFTD = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+            "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {steps}, {lr}, "
+            "{rank}, {iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
+            "{nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, "
+            "{pplbatch}")
+
+
+def sftd_update_rows():
+    """U sweep at the standard LR and rank. Includes the shared U=181
+    endpoint, which the LR and rank families REUSE rather than re-queue."""
+    return [sftd_row(u, SFTD_STD_LR, SFTD_STD_RANK) for u in SFTD_UPDATES]
+
+
+def sftd_lr_rows():
+    """LR sweep at the standard U and rank. LR=5e-5 is the shared
+    endpoint and is deliberately absent."""
+    return [sftd_row(SFTD_STD_U, lr, SFTD_STD_RANK) for lr in SFTD_LRS]
+
+
+def sftd_rank_rows():
+    """Rank sweep at the standard U and LR. rank=512 is the shared
+    endpoint and is deliberately absent."""
+    return [sftd_row(SFTD_STD_U, SFTD_STD_LR, r) for r in SFTD_RANKS]
+
+
+def sftd_smoke_rows():
+    """ONE tiny cell exercising the new SFT_MAX_STEPS + SAVE_SFT_ORDER
+    path end to end before any production job runs."""
+    return [sftd_row(5, SFTD_STD_LR, SFTD_STD_RANK, smoke=True)]
+
+
+def sftd_sub(key):
+    rows = {SFTD_UPDATE_KEY: sftd_update_rows,
+            SFTD_LR_KEY: sftd_lr_rows,
+            SFTD_RANK_KEY: sftd_rank_rows,
+            SFTD_SMOKE_KEY: sftd_smoke_rows}[key]()
+    return SFTD_SUB_TEMPLATE.format(key=key, n_jobs=len(rows),
+                                    gpu=SFTD_H100, bad=BAD_NODE_REQ)
+
+
+SFTD_SUB_TEMPLATE = """\
+# HTCondor: SFT TRAINING-DOSE SCOUT -- {n_jobs} jobs, ONE adaptation
+# round each. GENERATED by gen_pofd_sweep.py from the SFTD block. Never
+# edit by hand: rerun the script.
+# Asks whether a WEAKER SFT fit leaves the served vector closer to the
+# entering Qwen model, three ways: optimizer updates (U), learning rate,
+# and LoRA rank. Shared surface = the QWU boundary configuration:
+# Qwen/Qwen2.5-7B-Instruct, ordinary SFT (lambda_KL=0), k=1, W=1, BOTH
+# gates all_open, one peer sweep, gamma=0, fresh LoRA, batch 4, greedy
+# eval-mode serving, replace-only data, no ICL/replay/pristine/reference
+# adapter, movielens Action 723 agents, seed 0, matched twin.
+# ONE ROUND ON PURPOSE. The 100-round subsample wave showed the closed
+# loop drives the population to an absorbing constant, after which the
+# projection a equals 1 by construction and measures nothing. These
+# cells train once on the INNATE labels and serve once, so the served
+# vector is read before any feedback exists.
+# SFT_EPOCHS=0 + SFT_MAX_STEPS=$(steps) is the EXISTING step-cap path
+# (the pofdbud_ budget wave used it); no new knob was invented for it.
+# SAVE_SFT_ORDER=1 persists the ordered (ids, labels) handed to the
+# learner, and the learner records the optimizer steps that ACTUALLY
+# ran plus the sampler seed that fixes the minibatch order.
+# U is a TRAINING-DOSE dial, not a pure step dial: U updates at batch 4
+# processes 4U of the 723 rows. LoRA alpha = 2r throughout, so alpha/r
+# is constant across ranks.
+# Gate every pull with check_pofd_sanity (SFTD section: exact step
+# count, one round, shared dataset order, eval-mode serving, finite
+# in-range predictions, zero parse failures).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) SFT_EPOCHS=0 SFT_MAX_STEPS=$(steps) SFT_LR=$(lr) LORA_R=$(rank) SAVE_SFT_ORDER=1 ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, steps, lr, rank, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 QSS_KEY = "qwen_subsample"
 QSS_SMOKE_KEY = "qwen_subsample_smoke"
 QSS_MODEL = "qwen7b"
@@ -7715,6 +7902,66 @@ def main():
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{QSS_SMOKE_KEY}.sub")] = \
         qss_sub(smoke=True)
+    # ---- SFT training-dose scouts (SFTD): U / LR / rank -------------
+    _sftd = {SFTD_UPDATE_KEY: (sftd_update_rows(), 6),
+             SFTD_LR_KEY: (sftd_lr_rows(), 4),
+             SFTD_RANK_KEY: (sftd_rank_rows(), 5),
+             SFTD_SMOKE_KEY: (sftd_smoke_rows(), 1)}
+    _all_sftd = set()
+    for _key, (_rows, _n) in _sftd.items():
+        assert len(_rows) == _n, (_key, len(_rows))
+        _tags = {r.split(",")[0] for r in _rows}
+        assert len(_tags) == _n
+        # every cell is ONE round, ordinary SFT, k=1, W=1, both gates open
+        for r in _rows:
+            _c = [x.strip() for x in r.split(",")]
+            assert _c[1] == "sft" and _c[2] == "0", r      # lambda_KL = 0
+            assert _c[3] == "0", r                          # seed 0
+            assert _c[11] == "1" and _c[14] == "1", r       # W = 1, k = 1
+            assert _c[24] == str(SFTD_ROUNDS) == "1", r     # ONE round
+            assert _c[25] == "Qwen/Qwen2.5-7B-Instruct", r
+            assert int(_c[15]) > 0, r                       # SFT_MAX_STEPS
+        # exactly ONE dial moves per family; the other two stay standard
+        if _key == SFTD_UPDATE_KEY:
+            assert {c.split(",")[15].strip() for c in _rows} == \
+                {str(u) for u in SFTD_UPDATES}
+            assert {c.split(",")[16].strip() for c in _rows} == {SFTD_STD_LR}
+            assert {c.split(",")[17].strip() for c in _rows} == \
+                {str(SFTD_STD_RANK)}
+        elif _key == SFTD_LR_KEY:
+            assert {c.split(",")[16].strip() for c in _rows} == set(SFTD_LRS)
+            assert SFTD_STD_LR not in {c.split(",")[16].strip()
+                                       for c in _rows}, "shared endpoint"
+            assert {c.split(",")[15].strip() for c in _rows} == \
+                {str(SFTD_STD_U)}
+        elif _key == SFTD_RANK_KEY:
+            assert {c.split(",")[17].strip() for c in _rows} == \
+                {str(r) for r in SFTD_RANKS}
+            assert str(SFTD_STD_RANK) not in {c.split(",")[17].strip()
+                                              for c in _rows}
+            assert {c.split(",")[16].strip() for c in _rows} == {SFTD_STD_LR}
+        _sub = sftd_sub(_key)
+        _env = next(ln for ln in _sub.splitlines()
+                    if ln.startswith("environment"))
+        assert "SFT_EPOCHS=0 SFT_MAX_STEPS=$(steps)" in _env
+        assert "SFT_LR=$(lr)" in _env and "LORA_R=$(rank)" in _env
+        assert "SAVE_SFT_ORDER=1" in _env
+        assert "AI_GATE_MODE=all_open" in _env
+        assert "PEER_GATE_MODE=all_open" in _env
+        assert f'CUDADeviceName == "{SFTD_H100}"' in _sub
+        _prior = {r.split(",")[0] for rows in files.values() for r in rows}
+        assert not (_tags & _prior), f"sftd collision {_key}: {_tags & _prior}"
+        assert not (_tags & _all_sftd), f"sftd internal collision {_key}"
+        _all_sftd |= _tags
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = _n
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    # the shared full-dose endpoint is queued EXACTLY once, in the
+    # update-dose key -- the LR and rank families reuse it
+    _shared = sftd_tag(SFTD_STD_U, SFTD_STD_LR, SFTD_STD_RANK)
+    assert sum(1 for t in _all_sftd if t == _shared) == 1
+    assert _shared in {r.split(",")[0] for r in sftd_update_rows()}
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY

@@ -351,6 +351,27 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               the full-data row count -- same optimizer steps, less
               unique data.
 
+  SFTD        pofdsftdose_ runs (SFT training-dose scouts, 2026-08-21):
+              ordinary SFT on the QWU boundary surface, ONE adaptation
+              round, sweeping exactly one of {optimizer updates U,
+              learning rate, LoRA rank}. Read before any feedback
+              exists, because the 100-round loop drives the population
+              to an absorbing constant after which the projection a is
+              1 by construction. Verified: the optimizer steps that
+              ACTUALLY ran equal the requested U, the learner saw all
+              723 rows at batch 4 with the config's LR, the ordered
+              dataset covers every agent once and carries the innate
+              labels at round 0, serve_eval_mode is recorded, the served
+              vector is finite and in [0,1], and every one of the 723
+              raw generations contains a digit (a digit-free generation
+              parses to the 0.5 default and would be read as a real
+              prediction).
+              LIMITATION: the per-STEP minibatch composition is NOT
+              logged. Nesting across U rests on all arms sharing one
+              dataset order and one sampler seed, both of which ARE
+              recorded and checked -- it is an argument from determinism
+              plus two recorded facts, not a byte-level per-step log.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -566,6 +587,10 @@ def check_run(run_dir):
     # completed Wu-boundary b0 cell with only the SFT batch cut to a
     # fresh nested random subset each round. Serving is untouched.
     is_qss = name.startswith("pofdqss")
+    # SFT TRAINING-DOSE SCOUTS (2026-08-21): one-round static cells
+    # sweeping optimizer updates / learning rate / LoRA rank on the QWU
+    # boundary surface. Read BEFORE any feedback exists.
+    is_sftd = name.startswith("pofdsftdose")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -1432,6 +1457,69 @@ def check_run(run_dir):
                         f"not an H100 (the wave is H100-pinned)")
         if "chat_thinking" in cfg:
             errs.append("CONFIG chat_thinking recorded on a qwen2.5 qss "
+                        "run")
+    elif is_sftd:
+        # SFT TRAINING-DOSE. Ordinary SFT (lambda_KL=0) on the QWU
+        # boundary surface, ONE adaptation round, with exactly one of
+        # {updates, learning rate, LoRA rank} moved off standard.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723,
+                     "icrh": False, "feedback_mode": "none",
+                     "train_cap": 723, "anchor_mode": "fixed",
+                     "population_update": "nested_ai_then_social_v1",
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct",
+                     "training_style": "sft", "kl_beta": 0.0,
+                     "use_lora": 1, "sft_batch_size": 4,
+                     "fresh_each_round": True, "icl_k": 0, "icl_days": 0,
+                     "innate_lambda": 1.0, "w_plat": 1.0,
+                     "ai_gate_mode": "all_open",
+                     "peer_gate_mode": "all_open",
+                     # the step cap is the EXISTING SFT_EPOCHS=0 path
+                     "sft_epochs": 0, "save_sft_order": True})
+        m_sd = re.match(r"^pofdsftdose_qwen7b_u(\d+)_lr([0-9pem]+)_"
+                        r"rank(\d+)_eaopen_w1_l1_esopen_s0_r(\d+)"
+                        r"(smoke)?$", name)
+        if m_sd is None:
+            errs.append(f"CONFIG sftd tag off-grid ({name!r}) -- want "
+                        f"pofdsftdose_qwen7b_u<U>_lr<rate>_rank<r>_"
+                        f"eaopen_w1_l1_esopen_s0_r<rounds>[smoke]")
+        else:
+            _u = int(m_sd.group(1))
+            _rank = int(m_sd.group(3))
+            _rounds = int(m_sd.group(4))
+            want["n_rounds"] = _rounds
+            want["max_steps"] = _u
+            want["lora_r"] = _rank
+            # LR rides the tag: 5em5 -> 5e-5, 1p25em5 -> 1.25e-5
+            _lr = float(m_sd.group(2).replace("p", ".").replace("m", "-"))
+            if abs(float(cfg.get("sft_lr", -1)) - _lr) > 1e-12:
+                errs.append(f"CONFIG sftd sft_lr={cfg.get('sft_lr')!r} "
+                            f"(tag says {_lr})")
+            if _rounds != 1:
+                errs.append(f"CONFIG sftd is a ONE-round static scout; "
+                            f"tag says {_rounds} rounds ({name!r}). The "
+                            f"whole point is reading the served vector "
+                            f"before feedback exists.")
+            if _u <= 0:
+                errs.append(f"CONFIG sftd U={_u} -- U=0 is the frozen "
+                            f"control and needs no GPU job")
+        if float(cfg.get("eps", 0.0)) <= 0:
+            errs.append(f"CONFIG sftd eps={cfg.get('eps')!r} -- "
+                        f"eps_social=0 is the NO-PEER condition")
+        _gn_d = ((cfg.get("hardware") or {}).get("gpu_name") or "")
+        if "H100" not in _gn_d:
+            errs.append(f"CONFIG sftd ran on {_gn_d or 'unknown GPU'}, "
+                        f"not an H100")
+        # SERVING PROVENANCE: these cells exist to measure the served
+        # vector, so eval-mode serving must be recorded, not inferred
+        if cfg.get("serve_eval_mode") is not True:
+            errs.append("CONFIG sftd serve_eval_mode missing -- these "
+                        "cells measure the served vector and must "
+                        "self-certify that generation ran in eval mode")
+        if "chat_thinking" in cfg:
+            errs.append("CONFIG chat_thinking recorded on a qwen2.5 sftd "
                         "run")
     elif is_fam:
         # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
@@ -3715,6 +3803,91 @@ def check_run(run_dir):
                 f"canonical H100 prior {QMECH_CANONICAL_PRED_SHA[:16]}... "
                 f"-- every frozen cell in the grid must serve the SAME "
                 f"constant vector")
+
+    # -- 2d SFT TRAINING-DOSE PROVENANCE -----------------------------------
+    # These cells exist to compare served vectors across training doses,
+    # so the dose itself has to be provable rather than assumed. Checked:
+    # the optimizer steps that ACTUALLY ran (requesting max_steps=U is
+    # not the same as taking U steps), the ordered dataset handed to the
+    # learner, the sampler seed that fixes the minibatch order, and a
+    # served vector that is finite, in range, and parses cleanly.
+    if is_sftd:
+        _dose = d.get("sft_dose") or []
+        _want_u = int(cfg.get("max_steps") or 0)
+        if not _dose:
+            errs.append("SFTD sft_dose provenance missing -- the actual "
+                        "optimizer-step count is unprovable")
+        else:
+            for _r in _dose:
+                _got = int(_r.get("global_step", -1))
+                if _got != _want_u:
+                    errs.append(
+                        f"SFTD round {_r.get('round')}: {_got} optimizer "
+                        f"steps actually ran, config requested "
+                        f"{_want_u} -- the training dose is not what the "
+                        f"tag claims")
+                if int(_r.get("n_rows", -1)) != 723:
+                    errs.append(f"SFTD round {_r.get('round')}: learner "
+                                f"saw {_r.get('n_rows')} rows, want 723 "
+                                f"(every dose arm gets the FULL dataset)")
+                if abs(float(_r.get("learning_rate", -1))
+                       - float(cfg.get("sft_lr", -2))) > 1e-12:
+                    errs.append(f"SFTD round {_r.get('round')}: learner "
+                                f"LR {_r.get('learning_rate')} != config "
+                                f"{cfg.get('sft_lr')}")
+                if int(_r.get("per_device_batch_size", -1)) != 4:
+                    errs.append("SFTD batch size != 4")
+        # the ORDERED dataset handed to the learner. The trainer shuffles
+        # these rows with its own fixed seed, so this order plus that
+        # seed is what makes smaller-U arms consume nested prefixes of
+        # the same stream. NOTE the per-STEP minibatch composition is not
+        # logged -- see the module docstring for that limitation.
+        _oi, _oy = d.get("sft_order_idx_raw"), d.get("sft_order_y_raw")
+        if _oi is None or _oi.numel() == 0:
+            errs.append("SFTD sft_order_idx_raw missing -- the dataset "
+                        "order handed to the optimizer is unprovable")
+        elif tuple(_oi.shape) != (op_raw.shape[0], 723):
+            errs.append(f"SFTD sft_order_idx_raw shape {tuple(_oi.shape)} "
+                        f"!= {(op_raw.shape[0], 723)}")
+        elif int(torch.unique(_oi[0]).numel()) != 723:
+            errs.append("SFTD the dataset order does not cover all 723 "
+                        "agents exactly once")
+        elif _oy is not None and _oy.numel():
+            # round 0 trains on the INNATE labels, by construction
+            _exp_y = innate[_oi[0].long()]
+            if float((_oy[0].float() - _exp_y).abs().max()) > ATOL:
+                errs.append("SFTD round-0 labels are not the innate "
+                            "opinions of the ordered agents")
+        # the served vector: this is the measurement, so it must be clean
+        if not bool(torch.isfinite(pred_raw).all()):
+            errs.append("SFTD served vector has non-finite values")
+        elif float(pred_raw.min()) < -1e-6 or float(pred_raw.max()) > 1 + 1e-6:
+            errs.append(f"SFTD served vector out of [0,1]: "
+                        f"[{float(pred_raw.min()):.3f}, "
+                        f"{float(pred_raw.max()):.3f}]")
+        _rg = os.path.join(run_dir, "raw_gen_log.json.gz")
+        if not os.path.exists(_rg):
+            errs.append("SFTD raw_gen_log.json.gz missing -- the raw "
+                        "generations behind the measured vector are "
+                        "mandatory here")
+        else:
+            with gzip.open(_rg, "rt") as fh:
+                _rows_g = [json.loads(ln) for ln in fh]
+            for _rg_row in _rows_g:
+                _raw = _rg_row.get("raw") or []
+                if len(_raw) != 723:
+                    errs.append(f"SFTD round {_rg_row.get('round')}: "
+                                f"{len(_raw)} raw generations, want 723")
+                    break
+                _nod = sum(1 for x in _raw
+                           if re.search(r"\d", str(x)) is None)
+                if _nod:
+                    errs.append(
+                        f"SFTD round {_rg_row.get('round')}: {_nod} of "
+                        f"723 generations contain no digit -- those "
+                        f"parse to the 0.5 default and would be read as "
+                        f"a real prediction")
+                    break
 
     # -- 2s OBSERVATION-RATE SUBSAMPLING (reconstruct every subset) ---------
     # The claim is that each round's SFT batch was a fresh random subset

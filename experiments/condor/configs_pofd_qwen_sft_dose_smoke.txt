@@ -1,0 +1,1 @@
+pofdsftdose_qwen7b_u5_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1smoke, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 5, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

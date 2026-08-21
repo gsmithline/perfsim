@@ -1,0 +1,6 @@
+pofdsftdose_qwen7b_u1_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 1, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdsftdose_qwen7b_u5_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 5, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdsftdose_qwen7b_u20_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 20, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdsftdose_qwen7b_u50_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 50, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdsftdose_qwen7b_u100_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 100, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdsftdose_qwen7b_u181_lr5em5_rank512_eaopen_w1_l1_esopen_s0_r1, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 181, 5e-5, 512, 0, -1, 1, 1, 16, 0, 1, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

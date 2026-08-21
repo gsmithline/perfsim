@@ -67,6 +67,8 @@ class SFTLearner(Learner):
         self._response_template = response_template
         self._trainer_kwargs = trainer_kwargs or {}
         self._sanity_printed = False
+        # filled by train(); see the provenance note there
+        self.last_train_stats: dict[str, Any] = {}
 
     @property
     def model(self) -> HFCausalLMModel:  # type: ignore[override]
@@ -144,6 +146,30 @@ class SFTLearner(Learner):
         trainer = self._build_trainer(cfg=cfg, ds=ds)
         self._maybe_print_sanity(trainer)
         trainer.train()
+        # TRAINING-DOSE PROVENANCE (2026-08-21). The update-dose and
+        # learning-rate families need the number of optimizer steps that
+        # ACTUALLY ran -- requesting max_steps=N is not the same as taking
+        # N steps if the dataloader is short -- plus the sampler seed,
+        # which is what makes smaller-U arms consume nested prefixes of
+        # the same minibatch order. Pure bookkeeping: nothing here feeds
+        # back into training, and a caller that ignores the attribute
+        # sees byte-identical behaviour.
+        self.last_train_stats = {
+            "global_step": int(getattr(trainer.state, "global_step", -1)),
+            "trainer_seed": int(getattr(cfg, "seed", -1)),
+            "n_rows": int(len(ds)),
+            "per_device_batch_size": self._per_device_batch_size,
+            "learning_rate": float(self._learning_rate),
+            "max_steps_requested": int(self._max_steps),
+            "num_train_epochs": float(
+                getattr(cfg, "num_train_epochs", -1.0)),
+        }
+        _log = getattr(trainer.state, "log_history", None) or []
+        for _row in reversed(_log):
+            if "train_loss" in _row:
+                self.last_train_stats["train_loss"] = float(
+                    _row["train_loss"])
+                break
 
     def _maybe_print_sanity(self, trainer: Any) -> None:
         """If SFT_SANITY=1, dump one training batch's label-masking summary."""
