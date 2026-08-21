@@ -319,6 +319,8 @@ def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
             "kl_rev_sum": np.full(N, 0.01 * scale),
             "kl_fwd_tstar": np.full(N, 0.005 * scale),
             "kl_rev_tstar": np.full(N, 0.005 * scale),
+            "kl_served_sum": np.full(N, 0.011 * scale),
+            "kl_served_tstar": np.full(N, 0.006 * scale),
             "soft_base_recheck": soft_base + recheck_drift,
             "soft_adapter": soft_base + 0.01 * scale,
             "tail_adapter": np.full(N, tail),
@@ -328,6 +330,7 @@ def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
         }, tmp / f"adapter_{tag}.pt")
     json.dump({"n_agents": N, "hash_gate": "enforced", "tags": tags,
                "base_top1_mean": 0.5, "base_margin_mean": 0.02,
+               "repetition_penalty": 1.05,
                "tf_mismatch": {"n": mismatch_n, "frac_of_agents": 0.1,
                                "max_margin": mismatch_margin,
                                "median_margin": 1e-4, "positions": [2],
@@ -518,3 +521,91 @@ def test_teacher_forced_batch_matches_the_generation_batch():
     argmax disagreement that has nothing to do with the model."""
     src = (PIPE / "probe_adapter_kl.py").read_text()
     assert '"--tf-batch", type=int, default=GEN_BATCH' in src
+
+
+# ------------------------------------------- the serving frame (penalty)
+
+def test_repetition_penalty_matches_huggingface():
+    """HF divides a positive logit by the penalty and multiplies a
+    negative one, for every token already in the prefix."""
+    logits = torch.tensor([[2.0, -2.0, 1.0, 0.0]])
+    prefix = torch.tensor([[0, 1]])
+    got = AKL.apply_repetition_penalty(logits, prefix, 1.05)
+    assert got[0, 0].item() == pytest.approx(2.0 / 1.05)   # positive: /
+    assert got[0, 1].item() == pytest.approx(-2.0 * 1.05)  # negative: *
+    assert got[0, 2].item() == pytest.approx(1.0)          # untouched
+    assert got[0, 3].item() == pytest.approx(0.0)
+
+
+def test_repetition_penalty_is_identity_at_one():
+    logits = torch.tensor([[2.0, -2.0, 1.0]])
+    prefix = torch.tensor([[0, 1, 2]])
+    assert torch.equal(AKL.apply_repetition_penalty(logits, prefix, 1.0),
+                       logits)
+
+
+def test_repetition_penalty_does_not_mutate_its_input():
+    logits = torch.tensor([[2.0, -2.0, 1.0]])
+    before = logits.clone()
+    AKL.apply_repetition_penalty(logits, torch.tensor([[0]]), 1.05)
+    assert torch.equal(logits, before)
+
+
+def test_repetition_penalty_handles_duplicate_prefix_tokens():
+    """A digit repeated in the prompt must be penalized once, not twice:
+    HF's processor is idempotent in the index, not cumulative."""
+    logits = torch.tensor([[2.0, 1.0]])
+    once = AKL.apply_repetition_penalty(logits, torch.tensor([[0]]), 1.05)
+    twice = AKL.apply_repetition_penalty(logits, torch.tensor([[0, 0]]), 1.05)
+    assert torch.equal(once, twice)
+
+
+def test_repetition_penalty_can_reorder_the_argmax():
+    """Why this bug hit the decision digit specifically: the prompt
+    contains digits ('e.g. 0.42', '3.5 out of 5'), so the penalty lands
+    on exactly the tokens that set the served value."""
+    logits = torch.tensor([[3.00, 2.95]])          # raw argmax = token 0
+    pen = AKL.apply_repetition_penalty(logits, torch.tensor([[0]]), 1.05)
+    assert int(pen.argmax()) == 1                   # served argmax flips
+
+
+def test_penalty_is_read_from_the_generation_config_not_hard_coded():
+    """Hard-coding 1.05 would silently mis-frame any other base model.
+    Checked on the AST, not the text: the value is named in comments on
+    purpose, and a comment is documentation, not a default."""
+    src = (PIPE / "probe_adapter_kl.py").read_text()
+    assert 'generation_config, "repetition_penalty"' in src
+    assert '--repetition-penalty' in src
+    lits = [n.value for n in ast.walk(ast.parse(src))
+            if isinstance(n, ast.Constant) and isinstance(n.value, float)]
+    assert 1.05 not in lits, f"penalty hard-coded as a literal: {lits}"
+
+
+def test_span_logp_returns_both_frames():
+    fn = next(n for n in ast.walk(_probe_ast())
+              if isinstance(n, ast.FunctionDef) and n.name == "_span_logp")
+    rets = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    assert rets and all(isinstance(r.value, ast.Tuple) and
+                        len(r.value.elts) == 2 for r in rets)
+
+
+def test_penalty_prefix_is_the_sequence_generate_would_have_seen():
+    """At answer position t the processor must see the padded prompt plus
+    the t tokens already emitted -- full[:, :p + t]. Off by one here and
+    the penalty is applied against the wrong history."""
+    src = ast.unparse(next(
+        n for n in ast.walk(_probe_ast())
+        if isinstance(n, ast.FunctionDef) and n.name == "_span_logp"))
+    assert "full[:, :p + t]" in src
+
+
+def test_checker_rejects_a_probe_with_no_serving_frame(tmp_path, pinned_hash):
+    """Without the penalty on record there is no way to tell whether the
+    probe scored the distribution the runs actually served from."""
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash)
+    mf = json.load(open(d / "probe_manifest.json"))
+    del mf["repetition_penalty"]
+    json.dump(mf, open(d / "probe_manifest.json", "w"))
+    errs, _ = CHK.check(d, tmp_path / "no_runs")
+    assert any("repetition_penalty" in e for e in errs), errs

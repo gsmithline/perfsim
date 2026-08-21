@@ -136,6 +136,11 @@ def analyse(probe_dir, out_dir):
                                      / np.asarray(r["n_tok"])).mean()),
             "kl_fwd_tstar": float(np.mean(r["kl_fwd_tstar"])),
             "kl_rev_tstar": float(np.mean(r["kl_rev_tstar"])),
+            # kl_fwd_* is the RAW model distribution; kl_served_* is after
+            # the decoder's repetition penalty, the frame the served
+            # opinions actually come from
+            "kl_served_tstar": float(np.mean(r["kl_served_tstar"]))
+            if "kl_served_tstar" in r else float("nan"),
             "flip_rate": float(np.mean(r["flip_tstar"])),
             "flip_rate_vs_generated": float(np.mean(
                 r["flip_vs_generated"])) if "flip_vs_generated" in r
@@ -205,6 +210,9 @@ def report(rows, mf):
         # the frozen base disagreeing with ITSELF across two numerically
         # equivalent decoding paths is a direct, model-only measurement of
         # how knife-edge the served map is -- no adapter involved
+        print(f"[akl] serving frame: repetition_penalty="
+              f"{mf.get('repetition_penalty', 'UNRECORDED')} -- served "
+              f"opinions are the argmax of the PENALIZED distribution")
         print(f"[akl] the FROZEN base flips its own argmax for "
               f"{tm['n']} agent-positions ({100 * tm['frac_of_agents']:.1f}%"
               f" of agents) between cached generation and a full forward, "

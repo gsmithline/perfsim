@@ -321,15 +321,58 @@ def _batch_tensors(tokenizer, prompts, ans_ids, sl, device):
     return full, attn, int(pids.shape[1]), lmax, lens
 
 
-def _span_logp(model, full, attn, p, lmax):
+def apply_repetition_penalty(logits, prefix_ids, penalty):
+    """HuggingFace's RepetitionPenaltyLogitsProcessor, exactly.
+
+    Divides the logit of every token already in the prefix by `penalty`
+    when positive and multiplies when negative. Duplicate indices in the
+    prefix all write the same value, so scatter order does not matter.
+    """
+    if penalty == 1.0:
+        return logits
+    score = torch.gather(logits, 1, prefix_ids)
+    score = torch.where(score < 0, score * penalty, score / penalty)
+    return logits.scatter(1, prefix_ids, score)
+
+
+def _span_logp(model, full, attn, p, lmax, penalty=1.0):
+    """(raw, served) log-probs over the answer span.
+
+    THE SERVED FRAME IS NOT THE MODEL'S RAW DISTRIBUTION. Qwen2.5-Instruct
+    ships repetition_penalty=1.05 in its generation config, and generate()
+    applies it even under do_sample=False (only temperature/top_k/top_p
+    are dropped there -- that is what the "generation flags are not valid"
+    warning means). Every archived served value in this project is
+    therefore the argmax of a PENALIZED distribution, and the prompts are
+    full of digits ("e.g. 0.42", "3.5 out of 5", ages), so the penalty
+    lands squarely on the tokens that decide the answer.
+
+    Both frames are returned because they answer different questions:
+      raw     the model's own next-token distribution -- the right object
+              for "did SFT stay near the prior in distribution"
+      served  what the decoder actually argmaxes -- the right object for
+              the flip rate and the soft-decoded value, which have to sit
+              in the same frame as the served opinions being explained
+    """
     out = model(input_ids=full, attention_mask=attn,
                 position_ids=_position_ids(attn)).logits
     # position p-1+t predicts answer token t
-    return torch.log_softmax(out[:, p - 1:p - 1 + lmax, :].float(), dim=-1)
+    sel = out[:, p - 1:p - 1 + lmax, :].float()
+    raw = torch.log_softmax(sel, dim=-1)
+    if penalty == 1.0:
+        return raw, raw
+    pen = torch.empty_like(sel)
+    for t in range(lmax):
+        # the prefix generate() would have seen at this step: the padded
+        # prompt plus the answer tokens already emitted
+        pen[:, t, :] = apply_repetition_penalty(sel[:, t, :],
+                                                full[:, :p + t], penalty)
+    return raw, torch.log_softmax(pen, dim=-1)
 
 
 @torch.no_grad()
-def span_logprobs(model, tokenizer, prompts, ans_ids, device, batch):
+def span_logprobs(model, tokenizer, prompts, ans_ids, device, batch,
+                  penalty=1.0):
     """Teacher-forced log-probs over each agent's answer span.
 
     Yields (slice, logp[B, Lmax, V], lengths) batch by batch instead of
@@ -340,12 +383,12 @@ def span_logprobs(model, tokenizer, prompts, ans_ids, device, batch):
         sl = slice(i, min(i + batch, len(prompts)))
         full, attn, p, lmax, lens = _batch_tensors(
             tokenizer, prompts, ans_ids, sl, device)
-        yield sl, _span_logp(model, full, attn, p, lmax), lens
+        yield sl, _span_logp(model, full, attn, p, lmax, penalty), lens
 
 
 @torch.no_grad()
 def dual_span_logprobs(peft_model, tokenizer, prompts, ans_ids, device,
-                       batch):
+                       batch, penalty=1.0):
     """Adapter and base log-probs from the SAME batch tensors.
 
     The base pass is the adapter pass with peft's adapters switched off,
@@ -359,10 +402,11 @@ def dual_span_logprobs(peft_model, tokenizer, prompts, ans_ids, device,
         sl = slice(i, min(i + batch, len(prompts)))
         full, attn, p, lmax, lens = _batch_tensors(
             tokenizer, prompts, ans_ids, sl, device)
-        logp_a = _span_logp(peft_model, full, attn, p, lmax)
+        a_raw, a_srv = _span_logp(peft_model, full, attn, p, lmax, penalty)
         with peft_model.disable_adapter():
-            logp_b = _span_logp(peft_model, full, attn, p, lmax)
-        yield sl, logp_a, logp_b, lens
+            b_raw, b_srv = _span_logp(peft_model, full, attn, p, lmax,
+                                      penalty)
+        yield sl, (a_raw, a_srv), (b_raw, b_srv), lens
 
 
 def base_stage(model, tokenizer, prompts, device, args, parse_fn):
@@ -423,9 +467,13 @@ def base_stage(model, tokenizer, prompts, device, args, parse_fn):
     tf_mm = np.zeros(n)
     mismatched = []
 
-    for sl, logp, lens in span_logprobs(model, tokenizer, prompts, ans_ids,
-                                        device, args.tf_batch):
-        probs = logp.exp().cpu().numpy()
+    for sl, (logp_raw, logp_srv), lens in span_logprobs(
+            model, tokenizer, prompts, ans_ids, device, args.tf_batch,
+            args.repetition_penalty):
+        # the SERVED frame throughout the base stage: t*, the soft value
+        # and the margins all have to sit in the same frame as the served
+        # opinions this probe exists to explain
+        probs = logp_srv.exp().cpu().numpy()
         idx0 = sl.start
         for r, L in enumerate(lens):
             i = idx0 + r
@@ -525,25 +573,37 @@ def adapter_stage(peft_model, tokenizer, prompts, device, args, base, tag):
     out = {k: np.zeros(n) for k in
            ("kl_fwd_sum", "kl_rev_sum", "kl_fwd_tstar", "kl_rev_tstar",
             "soft_adapter", "tail_adapter", "greedy_tf", "flip_tstar",
-            "flip_vs_generated", "first_div", "n_tok")}
+            "flip_vs_generated", "first_div", "n_tok",
+            "kl_served_sum", "kl_served_tstar")}
     out["first_div"][:] = -1.0
     out["soft_base_recheck"] = np.zeros(n)
     ans_ids = base["ans_ids"]
 
-    for sl, logp_a, logp_b, lens in dual_span_logprobs(
-            peft_model, tokenizer, prompts, ans_ids, device, args.tf_batch):
-        la = logp_a.cpu().numpy()
-        lb = logp_b.cpu().numpy()
+    for sl, (a_raw, a_srv), (b_raw, b_srv), lens in dual_span_logprobs(
+            peft_model, tokenizer, prompts, ans_ids, device, args.tf_batch,
+            args.repetition_penalty):
+        la = a_srv.cpu().numpy()          # served frame: argmax, soft value
+        lb = b_srv.cpu().numpy()
+        la_r = a_raw.cpu().numpy()        # raw frame: the distributional KL
+        lb_r = b_raw.cpu().numpy()
         i0 = sl.start
         for r, L in enumerate(lens):
             i = i0 + r
             k = int(base["tstar"][i])
-            kf = kl_rows(lb[r, :L], la[r, :L])
-            kr = kl_rows(la[r, :L], lb[r, :L])
+            # KL is reported in BOTH frames. The raw one is the
+            # distributional question ("did SFT stay near the prior");
+            # the served one is what the decoder actually sees. The
+            # penalty is the same reshaping for base and adapter, but it
+            # is non-linear, so the two KLs are not interchangeable.
+            kf = kl_rows(lb_r[r, :L], la_r[r, :L])
+            kr = kl_rows(la_r[r, :L], lb_r[r, :L])
             out["kl_fwd_sum"][i] = kf.sum()
             out["kl_rev_sum"][i] = kr.sum()
             out["kl_fwd_tstar"][i] = kf[k]
             out["kl_rev_tstar"][i] = kr[k]
+            ks = kl_rows(lb[r, :L], la[r, :L])
+            out["kl_served_sum"][i] = ks.sum()
+            out["kl_served_tstar"][i] = ks[k]
             out["n_tok"][i] = L
             sup = base["support"]
             val = base["values_at_tstar"][i]
@@ -595,6 +655,10 @@ def main():
     # width as generation did; different widths change the bf16
     # reduction order and add avoidable argmax disagreement
     ap.add_argument("--tf-batch", type=int, default=GEN_BATCH)
+    # read from the model's generation config at runtime, never hard-coded:
+    # a different base model ships a different processor and the probe must
+    # reproduce whatever the archived runs actually served under
+    ap.add_argument("--repetition-penalty", type=float, default=None)
     ap.add_argument("--limit-agents", type=int, default=0)
     ap.add_argument("--max-adapters", type=int, default=0)
     ap.add_argument("--only", default="", help="comma-separated tag filter")
@@ -632,6 +696,20 @@ def main():
         args.base_model, torch_dtype=torch.bfloat16).to(device)
     base_model.config.pad_token_id = tok.pad_token_id
     base_model.eval()
+
+    # THE SERVING FRAME. generate() applies the model's own logits
+    # processors; under do_sample=False temperature/top_k/top_p are
+    # dropped but repetition_penalty is NOT. Qwen2.5-Instruct ships 1.05,
+    # so every archived served value in this project is the argmax of a
+    # penalized distribution. The teacher-forced pass has to reproduce
+    # that or it is scoring a different object than the runs served --
+    # which is exactly how the first two probe attempts failed, with
+    # argmax disagreement concentrated at the decision digit.
+    if args.repetition_penalty is None:
+        args.repetition_penalty = float(getattr(
+            base_model.generation_config, "repetition_penalty", 1.0) or 1.0)
+    print(f"[akl] serving frame: repetition_penalty="
+          f"{args.repetition_penalty}", flush=True)
 
     prompts = build_prompts(setup, tok,
                             args.limit_agents or None)
@@ -712,6 +790,7 @@ def main():
         "base_margin_median": float(np.median(base["base_margin"])),
         "tail_base_max": float(base["tail_base"].max()),
         "support_size": int(len(base["support"])),
+        "repetition_penalty": float(args.repetition_penalty),
         "topm_outside_support_max": float(base["topm_outside_support"].max()),
         "tf_mismatch": base["tf_mismatch"],
         "tf_mismatch_at_tstar_frac": float(base["tf_mismatch_at_tstar"].mean()),

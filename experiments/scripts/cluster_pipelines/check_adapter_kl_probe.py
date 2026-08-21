@@ -97,12 +97,24 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
     if mf.get("hash_gate") != "enforced" and mf["n_agents"] == expect_agents:
         errs.append(f"hash_gate={mf.get('hash_gate')!r} on a full run")
 
+    # -- 1a the serving frame ---------------------------------------------
+    # generate() applies the model's logits processors; under
+    # do_sample=False that still includes repetition_penalty. A probe that
+    # scored the RAW distribution while the runs served a PENALIZED one is
+    # measuring a different object -- which is how the first two attempts
+    # failed, with argmax disagreement concentrated at the decision digit.
+    if "repetition_penalty" not in mf:
+        errs.append("manifest does not record repetition_penalty -- cannot "
+                    "tell which decoding frame this probe scored")
+    else:
+        notes.append(f"serving frame: repetition_penalty="
+                     f"{mf['repetition_penalty']}")
+
     # -- 1b teacher-forced alignment --------------------------------------
-    # generate() (KV-cached, incremental) and the probe's full-sequence
-    # forward differ in the last bf16 bits, so a nearly tied position can
-    # pick different argmaxes. That is expected here and is itself a
-    # measurement. What must NOT happen is a mismatch at a CONFIDENT
-    # position: that would mean the span is misaligned.
+    # With the serving frame reproduced, a residual mismatch is bf16 noise
+    # between cached incremental decoding and one full-sequence forward,
+    # which can only flip a nearly tied position. A mismatch at a
+    # CONFIDENT position means the span is misaligned.
     tm = mf.get("tf_mismatch")
     if tm is None:
         errs.append("manifest has no tf_mismatch record -- this probe "
@@ -163,7 +175,8 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
             continue
         r = torch.load(p, map_location="cpu", weights_only=False)
         per_tag[tag] = r
-        for k in ("kl_fwd_sum", "kl_rev_sum", "kl_fwd_tstar", "kl_rev_tstar"):
+        for k in ("kl_fwd_sum", "kl_rev_sum", "kl_fwd_tstar", "kl_rev_tstar",
+                  "kl_served_sum", "kl_served_tstar"):
             v = np.asarray(r[k], dtype=np.float64)
             if not np.isfinite(v).all():
                 errs.append(f"{tag}: {k} has non-finite entries")
