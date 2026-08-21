@@ -66,6 +66,11 @@ OUT_DIR = REPO / "notes" / "pofd" / "fj_robustness"
 CONDOR = REPO / "experiments" / "condor"
 LATE = (26, 30)          # inclusive, 1-indexed rounds
 CONV_TOL = 1e-6
+COLLAPSE_SD = 0.02       # below this the population is a point, not a spread
+# theta is a ratio; when lambda=0 and lambda->infinity land in nearly the
+# same place there is no baseline to interpolate along and the ratio
+# explodes. Reported as undetermined rather than as an overshoot.
+THETA_MIN_DENOM = 0.03
 
 
 def w1(a, b):
@@ -207,6 +212,7 @@ def analyse(roots, out_dir, frozen_dir=None, key="fj_robustness"):
             "converged": bool(final_step <= CONV_TOL),
         })
 
+    add_theta(cell_rows, frozen)
     out_dir.mkdir(parents=True, exist_ok=True)
     _csv(out_dir / "fj_robustness_rounds.csv", rounds_rows)
     _csv(out_dir / "fj_robustness_cells.csv", cell_rows)
@@ -250,6 +256,47 @@ def load_frozen(frozen_dir, models):
     return out, betas
 
 
+def add_theta(rows, frozen):
+    """theta: where each arm's CONSENSUS VALUE sits between plain SFT
+    (lambda=0 -> 0) and no training (lambda -> infinity -> 1).
+
+    WHY THIS IS THE HEADLINE WHEN CELLS COLLAPSE. At beta=1 the
+    population contracts to a point, so SD and every centered
+    distributional metric go to ~0 and stop discriminating. What is left
+    is WHERE each arm collapsed, and the natural coordinate for that is
+    the interval between the two endpoints already in hand. theta turns a
+    scatter of means into one number per cell with a fixed meaning, and
+    it is signed by the endpoints -- the frozen model can sit above or
+    below plain SFT and theta still reads "fraction of the way toward no
+    training".
+
+    It is a RATIO, so it means nothing when the endpoints nearly
+    coincide; below THETA_MIN_DENOM it is reported as UNDETERMINED
+    rather than as a large number. It is deliberately NOT clamped to
+    [0, 1]: an arm overshooting past no-training is a real outcome and
+    must stay visible.
+    """
+    base = {r["model"]: r for r in rows if r["arm"] == "b0"}
+    for r in rows:
+        b0, fz = base.get(r["model"]), frozen.get(r["model"])
+        if b0 is None or fz is None:
+            r["theta"] = float("nan")
+            r["theta_denom"] = float("nan")
+            r["theta_status"] = ("no lambda=0 reference" if b0 is None
+                                 else "no frozen reference")
+            continue
+        den = float(np.mean(fz)) - b0["late_mean"]
+        r["theta_denom"] = den
+        if abs(den) < THETA_MIN_DENOM:
+            r["theta"] = float("nan")
+            r["theta_status"] = (f"undetermined: lambda=0 and lambda->inf "
+                                 f"differ by only {den:+.4f}")
+        else:
+            r["theta"] = (r["late_mean"] - b0["late_mean"]) / den
+            r["theta_status"] = "ok"
+    return rows
+
+
 def _csv(path, rows):
     keys, seen = [], set()
     for r in rows:
@@ -271,9 +318,15 @@ def report(rows):
     print(f"\n[fjr] seed 0, DESCRIPTIVE. Late window = rounds {lo}-{hi}.")
     print(f"[fjr] converged (final step <= {CONV_TOL}): {nconv}/{len(rows)} "
           f"cells. Where False, round 30 is round 30, not an equilibrium.")
+    ncol = sum(1 for r in rows if r["late_sd"] < COLLAPSE_SD)
+    if ncol:
+        print(f"[fjr] {ncol}/{len(rows)} cells have late SD < {COLLAPSE_SD}: "
+              f"the population is a POINT there, so SD and centered W1 stop "
+              f"discriminating and theta (where it collapsed, 0 = plain SFT, "
+              f"1 = no training) is the live quantity.")
     print(f"\n[fjr] {'model':<14} {'arm':>4} {'late mean':>10} {'late SD':>9} "
           f"{'W1 innate':>10} {'W1 cent':>9} {'W1 frozen':>10} "
-          f"{'final step':>11} {'conv':>5}")
+          f"{'theta':>7} {'final step':>11} {'conv':>5}")
     for m in sorted({r["model"] for r in rows}):
         for a in ARMS:
             sel = [r for r in rows if r["model"] == m and r["arm"] == a]
@@ -283,8 +336,11 @@ def report(rows):
             print(f"[fjr] {m:<14} {a:>4} {r['late_mean']:>10.4f} "
                   f"{r['late_sd']:>9.4f} {r['late_w1_from_innate']:>10.4f} "
                   f"{r['late_w1_from_innate_centered']:>9.4f} "
-                  f"{r['late_w1_to_frozen']:>10.4f} {r['final_step']:>11.2e} "
-                  f"{str(r['converged']):>5}")
+                  f"{r['late_w1_to_frozen']:>10.4f} "
+                  f"{r.get('theta', float('nan')):>7.3f} "
+                  f"{r['final_step']:>11.2e} {str(r['converged']):>5}")
+            if r.get("theta_status") not in (None, "ok"):
+                print(f"[fjr] {'':<14} {'':>4} theta {r['theta_status']}")
         b0 = [r for r in rows if r["model"] == m and r["arm"] == "b0"]
         b1 = [r for r in rows if r["model"] == m and r["arm"] == "b1"]
         if b0 and b1:

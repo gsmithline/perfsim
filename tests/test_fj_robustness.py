@@ -832,3 +832,52 @@ def test_ladder_arms_must_still_be_forward_kl_without_a_reference(tmp_path):
                          d["pred_raw"].float(), d["innate"].float(),
                          expect_rounds=4, expect_agents=N)
     assert any("FORWARD" in e for e in errs), errs
+
+
+# ------------------------------------------------- theta: where it collapsed
+
+def _theta_rows(means, frozen_mean):
+    rows = [{"model": "m", "arm": a, "late_mean": v, "late_sd": 0.001}
+            for a, v in means.items()]
+    return ANA.add_theta(rows, {"m": np.array([frozen_mean])})
+
+
+def test_theta_is_zero_at_plain_sft_and_one_at_no_training():
+    r = {x["arm"]: x for x in _theta_rows({"b0": 0.60, "b1": 0.40}, 0.40)}
+    assert r["b0"]["theta"] == pytest.approx(0.0)
+    assert r["b1"]["theta"] == pytest.approx(1.0)
+
+
+def test_theta_is_signed_by_the_endpoints_not_by_direction():
+    """The frozen endpoint can sit ABOVE or BELOW plain SFT; theta must
+    read 'halfway toward no training' either way."""
+    up = {x["arm"]: x for x in _theta_rows({"b0": 0.60, "b1": 0.70}, 0.80)}
+    down = {x["arm"]: x for x in _theta_rows({"b0": 0.60, "b1": 0.50}, 0.40)}
+    assert up["b1"]["theta"] == pytest.approx(0.5)
+    assert down["b1"]["theta"] == pytest.approx(0.5)
+
+
+def test_theta_is_undetermined_when_the_endpoints_nearly_coincide():
+    """Ministral's real case: lambda=0 and lambda->inf differ by .011, so
+    the ratio explodes. It must report undetermined, not a big number."""
+    r = {x["arm"]: x for x in _theta_rows({"b0": 0.6169, "b1": 0.5110},
+                                          0.6058)}
+    assert math.isnan(r["b1"]["theta"])
+    assert "undetermined" in r["b1"]["theta_status"]
+
+
+def test_theta_reports_a_missing_reference_rather_than_guessing():
+    rows = [{"model": "m", "arm": "b8", "late_mean": 0.5, "late_sd": 0.001}]
+    out = ANA.add_theta(rows, {"m": np.array([0.4])})
+    assert math.isnan(out[0]["theta"])
+    assert "no lambda=0 reference" in out[0]["theta_status"]
+    rows = [{"model": "m", "arm": "b0", "late_mean": 0.6, "late_sd": 0.001}]
+    out = ANA.add_theta(rows, {})
+    assert "no frozen reference" in out[0]["theta_status"]
+
+
+def test_theta_can_exceed_one_when_an_arm_overshoots():
+    """Not clamped: overshooting past no-training is a real outcome and
+    must be visible, not folded back into [0,1]."""
+    r = {x["arm"]: x for x in _theta_rows({"b0": 0.60, "b1": 0.30}, 0.40)}
+    assert r["b1"]["theta"] == pytest.approx(1.5)
