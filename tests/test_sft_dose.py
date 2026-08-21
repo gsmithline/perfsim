@@ -44,7 +44,7 @@ def test_grids_are_the_requested_ones():
     assert GEN.SFTD_RANKS == [1, 4, 8, 32, 128]
     # the analyzer carries the FULL grids including the shared endpoint
     assert AN.UPDATES == [1, 5, 20, 50, 100, 181]
-    assert AN.LRS == [1e-6, 3e-6, 1e-5, 3e-5, 5e-5]
+    assert AN.LRS == ["1e-6", "3e-6", "1e-5", "3e-5", "5e-5"]
     assert AN.RANKS == [1, 4, 8, 32, 128, 512]
 
 
@@ -287,3 +287,20 @@ def test_every_registered_key_parses_to_itself():
              + '\nprintf "%s|%s" "$BID" "$WHAT"', "_", "50", key],
             capture_output=True, text=True)
         assert r.stdout == f"50|{key}", (key, r.stdout[:80], r.stderr[:80])
+
+
+def test_analyzer_and_generator_build_identical_tags():
+    """REGRESSION: the analyzer formatted LR from a float ("%g" of 5e-5
+    renders "5e-05" -> token "5em05") while the generator used the string
+    literal "5e-5" -> "5em5". Every lookup missed and the analyzer
+    hard-failed claiming the cells were unsubmitted. Both sides must
+    build the SAME tag."""
+    for u in GEN.SFTD_UPDATES:
+        assert AN.tag_of(u, GEN.SFTD_STD_LR, GEN.SFTD_STD_RANK) == \
+            GEN.sftd_tag(u, GEN.SFTD_STD_LR, GEN.SFTD_STD_RANK)
+    for lr in GEN.SFTD_LRS + [GEN.SFTD_STD_LR]:
+        assert AN.tag_of(GEN.SFTD_STD_U, lr, GEN.SFTD_STD_RANK) == \
+            GEN.sftd_tag(GEN.SFTD_STD_U, lr, GEN.SFTD_STD_RANK)
+    for rk in GEN.SFTD_RANKS + [GEN.SFTD_STD_RANK]:
+        assert AN.tag_of(GEN.SFTD_STD_U, GEN.SFTD_STD_LR, rk) == \
+            GEN.sftd_tag(GEN.SFTD_STD_U, GEN.SFTD_STD_LR, rk)

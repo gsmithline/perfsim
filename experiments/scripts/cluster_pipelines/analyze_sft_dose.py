@@ -100,14 +100,19 @@ CANON_SHA = ("1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce"
 FROZEN_SOURCES = ["pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p05_s0",
                   "pofdfam_qwen7b_k0_ea1_w0p5_l0p2_es0p05_s0"]
 N_AGENTS = 723
-STD_U, STD_LR, STD_RANK = 181, 5e-5, 512
+# LR is carried as the STRING the generator used, not a float: the tag
+# token comes from that literal, and "%g" of 5e-5 renders "5e-05" ->
+# "5em05", which is not the tag the generator wrote ("5em5"). Formatting
+# the float independently is exactly how the analyzer and the generator
+# drifted apart the first time.
+STD_U, STD_LR, STD_RANK = 181, "5e-5", 512
 UPDATES = [1, 5, 20, 50, 100, 181]
-LRS = [1e-6, 3e-6, 1e-5, 3e-5, 5e-5]
+LRS = ["1e-6", "3e-6", "1e-5", "3e-5", "5e-5"]
 RANKS = [1, 4, 8, 32, 128, 512]
 
 
 def _lrtok(lr):
-    return f"{lr:g}".replace("-", "m").replace(".", "p")
+    return str(lr).replace("-", "m").replace(".", "p")
 
 
 def tag_of(u, lr, rank):
@@ -301,7 +306,8 @@ def analyse(roots, out_dir):
             if rd is None:
                 missing.append(f"{fam}={v} -> {tag_of(u, lr, rk)}")
             else:
-                rows.append(cell_metrics(rd, m_base, target, fam, float(v)))
+                rows.append(cell_metrics(rd, m_base, target, fam,
+                                         float(v)))
     if missing:
         raise SystemExit(
             f"[sftd] HARD FAIL: {len(missing)} cell(s) unavailable:\n  "
