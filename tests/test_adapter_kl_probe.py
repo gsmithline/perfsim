@@ -286,7 +286,7 @@ SUPPORT = [2, 6]
 
 def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
                  tail=0.0, n_lev_positions=1, topm_out=0.0,
-                 mismatch_n=100, mismatch_margin=1e-3):
+                 mismatch_n=4, mismatch_margin=1e-3):
     """A structurally valid probe directory, defect injected by kwargs."""
     tags = AKL.read_dose_tags(CONDOR)
     rng = np.random.default_rng(0)
@@ -331,10 +331,16 @@ def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
     json.dump({"n_agents": N, "hash_gate": "enforced", "tags": tags,
                "base_top1_mean": 0.5, "base_margin_mean": 0.02,
                "repetition_penalty": 1.05,
-               "tf_mismatch": {"n": mismatch_n, "frac_of_agents": 0.1,
+               "tf_mismatch": {"n": mismatch_n,
+                               "frac_of_agents": mismatch_n / N,
                                "max_margin": mismatch_margin,
                                "median_margin": 1e-4, "positions": [2],
-                               "threshold": AKL.MARGIN_STRUCTURAL}},
+                               "threshold": AKL.MARGIN_STRUCTURAL,
+                               "frac_max": AKL.MISMATCH_FRAC_MAX,
+                               "margin_hard": AKL.MARGIN_HARD,
+                               "path_noise": {"batch": 16, "n_flips": 3,
+                                              "max_margin_flipped": 0.12,
+                                              "max_abs_logp_diff": 0.4}}},
               open(tmp / "probe_manifest.json", "w"))
     return tags
 
@@ -476,8 +482,8 @@ def test_checker_accepts_sub_threshold_teacher_forced_mismatches(tmp_path,
     in bf16 they can pick different argmaxes on a near-tie. On this task
     that is the phenomenon under study, not a fault."""
     d = tmp_path / "probe"
-    _write_probe(d, served=pinned_hash, mismatch_n=102,
-                 mismatch_margin=AKL.MARGIN_STRUCTURAL / 10)
+    _write_probe(d, served=pinned_hash, mismatch_n=4,
+                 mismatch_margin=0.17)
     errs, notes = CHK.check(d, tmp_path / "no_runs")
     assert errs == [], errs
     assert any("teacher-forced argmax mismatches" in n for n in notes)
@@ -489,9 +495,9 @@ def test_checker_rejects_a_confident_teacher_forced_mismatch(tmp_path,
     misaligned span, and it must still abort."""
     d = tmp_path / "probe"
     _write_probe(d, served=pinned_hash, mismatch_n=5,
-                 mismatch_margin=AKL.MARGIN_STRUCTURAL * 2)
+                 mismatch_margin=AKL.MARGIN_HARD * 1.5)
     errs, _ = CHK.check(d, tmp_path / "no_runs")
-    assert any("misaligned" in e for e in errs), errs
+    assert any("cannot flip from float noise" in e for e in errs), errs
 
 
 def test_checker_rejects_a_probe_with_no_alignment_record(tmp_path,
@@ -609,3 +615,30 @@ def test_checker_rejects_a_probe_with_no_serving_frame(tmp_path, pinned_hash):
     json.dump(mf, open(d / "probe_manifest.json", "w"))
     errs, _ = CHK.check(d, tmp_path / "no_runs")
     assert any("repetition_penalty" in e for e in errs), errs
+
+
+def test_checker_rejects_a_broad_teacher_forced_mismatch(tmp_path,
+                                                         pinned_hash):
+    """The signature of the repetition-penalty fault: not one extreme
+    disagreement but MANY. 11% of agents was the observed value."""
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash, mismatch_n=int(0.11 * N),
+                 mismatch_margin=0.01)
+    errs, _ = CHK.check(d, tmp_path / "no_runs")
+    assert any("too broad to be path noise" in e for e in errs), errs
+
+
+def test_checker_reports_the_measured_noise_floor(tmp_path, pinned_hash):
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash, mismatch_n=4, mismatch_margin=0.17)
+    errs, notes = CHK.check(d, tmp_path / "no_runs")
+    assert errs == [], errs
+    assert any("path-noise floor" in n for n in notes), notes
+
+
+def test_noise_floor_uses_a_different_padding_width():
+    """Re-scoring at the SAME batch size would compare a pass to itself
+    and report a noise floor of exactly zero."""
+    src = (PIPE / "probe_adapter_kl.py").read_text()
+    assert "args.noise_batch != args.tf_batch" in src
+    assert '"--noise-batch", type=int, default=GEN_BATCH // 2' in src

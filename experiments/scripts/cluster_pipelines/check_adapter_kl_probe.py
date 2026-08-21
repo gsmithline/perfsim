@@ -125,11 +125,26 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
             f"({100 * tm['frac_of_agents']:.1f}% of agents) at positions "
             f"{tm['positions']}, max margin {tm['max_margin']:.2e}, median "
             f"{tm['median_margin']:.2e}")
-        if float(tm["max_margin"]) > float(tm["threshold"]):
+        pn = tm.get("path_noise")
+        if pn:
+            notes.append(
+                f"measured path-noise floor (re-scored at batch "
+                f"{pn['batch']}): {pn['n_flips']} argmax flips at t*, worst "
+                f"flipped margin {pn['max_margin_flipped']:.3e}, max |dlogp| "
+                f"{pn['max_abs_logp_diff']:.3e}")
+        # a real misalignment is BROAD and CONFIDENT; path noise is
+        # neither. Both bounds come from the observed signature of the
+        # repetition-penalty fault (11% of agents, margins to 0.50).
+        fmax = float(tm.get("frac_max", 0.02))
+        hard = float(tm.get("margin_hard", 0.30))
+        if float(tm["frac_of_agents"]) > fmax:
+            errs.append(f"teacher-forced mismatch reaches "
+                        f"{100 * tm['frac_of_agents']:.1f}% of agents > "
+                        f"{100 * fmax:.0f}% -- too broad to be path noise")
+        if float(tm["max_margin"]) > hard:
             errs.append(f"a teacher-forced mismatch sits at margin "
-                        f"{tm['max_margin']:.4f} > {tm['threshold']} -- a "
-                        f"confident position cannot flip from float noise, "
-                        f"so the span is misaligned")
+                        f"{tm['max_margin']:.4f} > {hard} -- a position that "
+                        f"confident cannot flip from float noise")
 
     # -- 4 t* carries the value uncertainty -------------------------------
     shares = []
