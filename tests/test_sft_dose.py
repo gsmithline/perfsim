@@ -238,3 +238,52 @@ def test_structure_metrics_are_in_the_csv_and_figure():
         assert f'"{field}"' in src, field
     assert "structure vs collapse" in src
     assert "IMPLICIT ANCHOR" in src and "MODE COLLAPSE" in src
+
+
+def test_usage_strings_contain_no_braces():
+    """REGRESSION (2026-08-21). The usage text lives inside
+    BID="${1:?usage: ...}" and WHAT="${2:?usage: ...}". Bash terminates
+    a ${x:?word} expansion at the FIRST unescaped '}', so a brace
+    anywhere in that word silently truncates the expansion and
+    concatenates the remainder as literal text.
+
+    Abbreviating the new keys as qwen_sft_{update,lr,rank}_dose did
+    exactly that: BID became "50" + the tail of the usage string and
+    WHAT became the key + the same tail, so EVERY key fell through to
+    the catch-all -- the script was broken for the whole project, not
+    just the new wave. Caught only by tracing the real invocation.
+
+    Braces are banned from those lines outright: it is the one character
+    that cannot appear safely, and no abbreviation is worth it."""
+    import re
+    lines = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read().split("\n")
+    checked = 0
+    for ln in lines:
+        m = re.match(r'^(BID|WHAT)="\$\{[12]:\?(.*)\}"$', ln)
+        if not m:
+            continue
+        checked += 1
+        body = m.group(2)
+        assert "{" not in body and "}" not in body, (
+            f"{m.group(1)} usage text contains a brace, which truncates "
+            f"the ${{n:?...}} expansion and corrupts the variable")
+    assert checked == 2, f"expected BID and WHAT lines, found {checked}"
+
+
+def test_every_registered_key_parses_to_itself():
+    """The end-to-end consequence of the brace bug: a corrupted WHAT
+    matches nothing. Simulate the two parameter expansions for a sample
+    of keys across the file, including old ones, since the bug broke
+    them all."""
+    import subprocess
+    head = subprocess.run(
+        ["sed", "-n", "17,18p", os.path.join(CONDOR, "submit_pofd_sweep.sh")],
+        capture_output=True, text=True).stdout
+    for key in ("smoke", "qwen_subsample", "qwen_wu_limit",
+                "qwen_sft_update_dose", "qwen_sft_dose_smoke"):
+        r = subprocess.run(
+            ["bash", "-c",
+             'set -euo pipefail\n' + head
+             + '\nprintf "%s|%s" "$BID" "$WHAT"', "_", "50", key],
+            capture_output=True, text=True)
+        assert r.stdout == f"50|{key}", (key, r.stdout[:80], r.stderr[:80])
