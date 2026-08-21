@@ -1121,3 +1121,264 @@ def test_gpu_pinned_waves_exclude_the_known_bad_nodes():
                 in req, (host, req)
         # the architecture pin must survive alongside the exclusions
         assert f'CUDADeviceName == "{GEN.QMECH_H100}"' in req
+
+
+# ======================================================================
+# Wu-boundary PERSONAL-HISTORY ICL arm (d8), 2026-08-21
+# ======================================================================
+
+def test_icl_key_is_exactly_two_jobs():
+    rows = GEN.qwu_icl_rows()
+    assert len(rows) == 2, len(rows)
+    tags = {r.split(",")[0] for r in rows}
+    assert len(tags) == 2
+    for w in GEN.QWU_WS:
+        assert sum(1 for t in tags if f"_w{GEN._num(w)}_" in t) == 1, w
+    assert all("_d8_" in t and "_l1_" in t and t.endswith("_s0_r100")
+               for t in tags), tags
+
+
+def test_icl_key_never_requeues_the_completed_trained_cells():
+    """The four trained cells are DONE. A separate key means they cannot
+    be touched at all -- not even as idempotent no-ops."""
+    icl = {r.split(",")[0] for r in GEN.qwu_icl_rows()}
+    trained = {r.split(",")[0] for r in GEN.qwu_rows()}
+    smoke = {r.split(",")[0] for r in GEN.qwu_smoke_rows()}
+    assert not (icl & trained) and not (icl & smoke)
+    assert GEN.QWU_ICL_KEY != GEN.QWU_KEY
+
+
+def test_icl_rows_are_frozen_with_no_lora_and_no_cross_user_context():
+    for r in GEN.qwu_icl_rows():
+        c = [x.strip() for x in r.split(",")]
+        assert c[1] == "frozen" and c[2] == "0", r     # nothing trains
+        assert c[14] == "1", r                          # k = 1
+        assert c[15] == "0", r                          # ICL_K = 0
+        assert c[17] == "0" and c[18] == "0", r         # no LoRA/fresh
+        assert c[21] == "100", r
+        assert c[11] in ("0.5", "1"), r
+
+
+def test_icl_sub_pins_days_eight_and_both_gates_open():
+    env = next(ln for ln in GEN.qwu_icl_sub().splitlines()
+               if ln.startswith("environment"))
+    assert f"ICL_DAYS={GEN.QWU_ICL_DAYS}" in env
+    assert GEN.QWU_ICL_DAYS == 8
+    assert "AI_GATE_MODE=all_open" in env
+    assert "PEER_GATE_MODE=all_open" in env
+    assert "WITH_TWIN=1" in env
+    assert f'CUDADeviceName == "{GEN.QWU_H100}"' in GEN.qwu_icl_sub()
+
+
+def test_trained_keys_still_render_icl_days_zero():
+    """Parameterizing the shared template must not have changed the
+    completed wave's sub files."""
+    for sub in (GEN.qwu_sub(), GEN.qwu_sub(smoke=True)):
+        env = next(ln for ln in sub.splitlines()
+                   if ln.startswith("environment"))
+        assert "ICL_DAYS=0 " in env
+
+
+def test_submit_registers_the_icl_key():
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    assert 'qwen_wu_limit_icl) TARGETS=' in src
+
+
+# -- checker: a REAL d8 fixture, then sabotage --------------------------
+
+def _build_qwu_icl(setup, w=1.0, rounds=100, days=8, tmp=None,
+                   leak_exemplars=False, bad_ctx_round=None):
+    """A genuine d8 run: real operators, real rendered contexts built the
+    way the runner builds them (hist = [innate] + op_raw, sliced to the
+    last D), all-open gates, frozen weights."""
+    import gzip as _gz
+    n = int(setup["n"])
+    innate = setup["innate"]
+    served = (innate * 0.4 + 0.3).clone()
+    acc = []
+    op, tw, pred = PP.simulate(
+        setup, innate_k=1.0, w_plat=w, eps_social=0.2, eps_ai=1.0,
+        rounds=rounds, seed=0, ai_gate_mode="all_open",
+        peer_gate_mode="all_open", accepted_out=acc,
+        served_fn=lambda x, t: served, require_open_gate=False)
+    gates, traj = [], []
+    for t in range(rounds):
+        x0 = innate if t == 0 else op[t - 1]
+        gates.append(gp.ai_gate(pred[t], x0, 1.0, "all_open"))
+        traj.append({"round": t, "deployment": 0, "is_deploy": 1,
+                     "contact": 1.0, "accepted": acc[t], "s_tag": 0.0,
+                     "perplexity": 12.5,      # frozen -> constant
+                     "peer_gate_mode": "all_open", "peer_pairs": n,
+                     "twin_mean": float(tw[t].mean()),
+                     "twin_std": float(tw[t].std()), "twin_bias": 0.0,
+                     "op_twin_l1": 0.0, "op_twin_w1": 0.0})
+    wn = f"{w:g}".replace(".", "p")
+    cfg = {
+        "run_tag": f"pofdqwu_qwen7b_d8_eaopen_w{wn}_l1_esopen_s0"
+                   f"_r{rounds}",
+        "kl_beta": 0.0, "kl_direction": "forward", "kl_ref_adapter": None,
+        "training_style": "frozen", "rlhf_feedback": False,
+        "base_model": "Qwen/Qwen2.5-7B-Instruct", "n_rounds": rounds,
+        "epoch_size": 100, "deploy_every": 1, "data_regime": "replace",
+        "seed": 0, "n_labeled": 723, "max_steps": 0, "sft_epochs": 1,
+        "sft_batch_size": 4, "lora_r": 512, "use_lora": False,
+        "sft_lr": 5e-5, "hist_bins": 50, "seed_base_data": True,
+        "train_cap": 723, "platform_sus_scale": 1.0, "anchor_mode": "fixed",
+        "pop_model": "ab", "eps": 0.2, "eps_ai": 1.0, "gamma_bias": 0.0,
+        "ai_gate_mode": "all_open", "peer_gate_mode": "all_open",
+        "w_plat": w, "innate_lambda": 1.0,
+        "population_update": "nested_ai_then_social_v1", "run_mode": "loop",
+        "canary_delta": 0.0, "grad_decomp": 1, "save_adapter_rounds": [],
+        "icl_k": (8 if leak_exemplars else 0), "icl_days": days,
+        "icl_select": "random", "icl_ctx_source": "live",
+        "icl_snapshot_round": -1, "icl_ctx_donor": None,
+        "icl_ctx_donor_tag": None, "icl_ctx_donor_round": None,
+        "icl_ctx_donor_hash": None, "feedback_mode": "none",
+        "icrh": False, "reward_kind": "accuracy", "ab_retain": False,
+        "n_probe": 64, "tel_eval_cap": 64, "grad_norm_n": 8,
+        "fresh_each_round": False, "pristine_frac": 0.0,
+        "replay_frac": 0.0, "pop_reset": False, "ab_sweeps": 1,
+        "pop_order": "peer_first", "profile_shuffle_p": 0.0,
+        "profile_sort_q": 0.0, "profile_drop_cols": [],
+        "profile_permute_cols": [], "teacher_label_delta": 0.0,
+        "teacher_label_col": None, "teacher_label_fav": None,
+        "teacher_group_seed": 0, "log_gender_gaps": True,
+        "dataset": "movielens", "ml_target": "Action", "log_ppl_dist": True,
+        "ppl_dist_cap": 0, "do_sample": False, "gen_temperature": 1.0,
+        "ans_sample_k": 0, "ans_sample_n": 64, "ans_sample_t": 1.0,
+        "host": "gpu-node", "save_raw_gen": True,
+        "hardware": {"hostname": "g001",
+                     "gpu_name": "NVIDIA H100 80GB HBM3", "gpu_cc": "9.0",
+                     "cuda_version": "12.4", "torch_version": "2.5.0",
+                     "transformers_version": "4.46.0"},
+    }
+    payload = {
+        "trajectory": traj, "config": cfg, "op_raw": op, "pred_raw": pred,
+        "twin_raw": tw, "gate_raw": torch.stack(gates),
+        "ppl_raw": torch.empty(0), "ans_raw": torch.empty(0),
+        "ans_idx": torch.tensor([], dtype=torch.long),
+        "replay_raw": torch.empty(0), "train_y_raw": torch.empty(0),
+        "icl_idx_raw": torch.empty(0), "icl_val_raw": torch.empty(0),
+        "icl_donor_vec": torch.empty(0), "innate": innate, "profiles": {},
+        "probe_idx": torch.tensor([], dtype=torch.long),
+        "canary": torch.zeros(n), "gender_true": None, "gender_disp": None,
+        "teacher_pred": torch.empty(0),
+    }
+    rd = _write(payload, tmp)
+    # the rendered personal-history contexts, exactly as the runner
+    # renders them: own values only, oldest to newest, window == D
+    hist = [innate]
+    with _gz.open(os.path.join(rd, "icl_days_log.json.gz"), "wt") as fh:
+        for t in range(rounds):
+            win = hist[-days:]
+            ctx = []
+            for i in range(n):
+                vals = ", ".join(f"{float(h[i]):.2f}" for h in win)
+                ctx.append("This user's own opinion of Action movies "
+                           "over the most recent days (oldest to "
+                           f"newest): {vals}.")
+            if bad_ctx_round == t:
+                ctx[5] = "This user's own opinion of Action movies " \
+                         "over the most recent days (oldest to " \
+                         "newest): 0.99."
+            fh.write(json.dumps({"round": t, "ctx": ctx}) + "\n")
+            hist.append(op[t])
+    return rd
+
+
+def test_clean_d8_fixture_passes_the_real_checker(setup, tmp_path):
+    """If this fails every sabotage below is meaningless."""
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path))
+    errs = CHK.check_run(rd)
+    assert errs == [], errs
+
+
+def test_d8_sabotage_context_off_the_replay(setup, tmp_path):
+    """A single agent's rendered history off the (innate, op_raw)
+    reconstruction must be caught -- that is the arm's entire claim."""
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path), bad_ctx_round=2)
+    errs = CHK.check_run(rd)
+    assert any("off the (innate, op_raw) replay" in e for e in errs), errs
+
+
+def test_d8_sabotage_cross_user_exemplars_leak(setup, tmp_path):
+    """ICL_K > 0 turns 'own memory' into 'social context'."""
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path), leak_exemplars=True)
+    errs = CHK.check_run(rd)
+    assert any("icl_k" in e for e in errs), errs
+
+
+def test_d8_sabotage_missing_days_log(setup, tmp_path):
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path))
+    os.remove(os.path.join(rd, "icl_days_log.json.gz"))
+    errs = CHK.check_run(rd)
+    assert any("icl_days_log.json.gz missing" in e for e in errs), errs
+
+
+def test_d8_sabotage_wrong_window(setup, tmp_path):
+    """D=4 contexts under a D=8 config must not pass."""
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path), days=8)
+    # rebuild the log with a 4-day window while the config still says 8
+    import gzip as _gz
+    d = torch.load(os.path.join(rd, "trajectory.pt"), map_location="cpu",
+                   weights_only=False)
+    op, innate = d["op_raw"], d["innate"]
+    n = innate.numel()
+    hist = [innate]
+    with _gz.open(os.path.join(rd, "icl_days_log.json.gz"), "wt") as fh:
+        for t in range(op.shape[0]):
+            win = hist[-4:]
+            ctx = ["This user's own opinion of Action movies over the "
+                   "most recent days (oldest to newest): "
+                   + ", ".join(f"{float(h[i]):.2f}" for h in win) + "."
+                   for i in range(n)]
+            fh.write(json.dumps({"round": t, "ctx": ctx}) + "\n")
+            hist.append(op[t])
+    errs = CHK.check_run(rd)
+    assert any("off the (innate, op_raw) replay" in e for e in errs), errs
+
+
+def test_d8_sabotage_weights_not_frozen(setup, tmp_path):
+    """Frozen weights mean the fixed-text perplexity is identical every
+    round; a varying one says something trained."""
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path))
+    d = torch.load(os.path.join(rd, "trajectory.pt"), map_location="cpu",
+                   weights_only=False)
+    d["trajectory"][2]["perplexity"] = 99.0
+    torch.save(d, os.path.join(rd, "trajectory.pt"))
+    errs = CHK.check_run(rd)
+    assert any("perplexity varies" in e for e in errs), errs
+
+
+def test_d8_sabotage_lora_on(setup, tmp_path):
+    rd = _build_qwu_icl(setup, tmp=str(tmp_path))
+    d = torch.load(os.path.join(rd, "trajectory.pt"), map_location="cpu",
+                   weights_only=False)
+    d["config"]["use_lora"] = True
+    torch.save(d, os.path.join(rd, "trajectory.pt"))
+    errs = CHK.check_run(rd)
+    assert any("use_lora" in e for e in errs), errs
+
+
+def test_d8_cannot_be_the_smoke_arm():
+    src = open(os.path.join(PIPE, "check_pofd_sanity.py")).read()
+    assert "smoke must be the b1 arm, " in src
+
+
+def test_analyzer_adds_icl_to_part_c_only():
+    """The ICL curve belongs in both W columns of the Wu figure, and
+    NOWHERE in Figure 1 -- Part A has no ICL cells."""
+    assert AN.WU_CONDITIONS == AN.CONDITIONS + ["icl"]
+    assert "icl" not in AN.CONDITIONS
+    assert AN.WU_ARMS == {"b0": "sft", "b1": "sft_kl", "d8": "icl"}
+    assert "icl" in AN.COLORS and "icl" in AN.LABELS
+    assert AN.wu_tag("d8", 1.0) == \
+        "pofdqwu_qwen7b_d8_eaopen_w1_l1_esopen_s0_r100"
+
+
+def test_analyzer_hard_fails_without_the_icl_cells(tmp_path):
+    with pytest.raises(SystemExit) as ei:
+        AN.resolve_wu_cells([str(tmp_path)])
+    msg = str(ei.value)
+    assert "HARD FAIL" in msg and "6 Wu-limit GPU cells" in msg
+    assert "qwen_wu_limit_icl" in msg

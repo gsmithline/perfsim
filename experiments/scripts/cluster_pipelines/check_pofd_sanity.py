@@ -1192,7 +1192,13 @@ def check_run(run_dir):
     elif is_qwu:
         # QWEN2.5 AT THE WU CONSENSUS BOUNDARY. k=1, W rides the _w
         # token across {0.5, 1}, BOTH gates genuinely open, 100 rounds
-        # (3 for the smoke), b0/b1, seed 0, H100 only.
+        # (3 for the smoke), seed 0, H100 only. Three platform arms:
+        #   b0  ordinary fresh SFT, KL weight 0
+        #   b1  fresh forward-KL SFT, KL weight 1, fixed pristine base
+        #   d8  PERSONAL-HISTORY ICL, D=8 K=0, frozen weights -- memory
+        #       without learning (2026-08-21)
+        # Everything except the arm is shared, so the arm-specific
+        # surface is set inside the match below, not here.
         want.update({"ml_target": "Action", "gamma_bias": 0.0,
                      "teacher_label_delta": 0.0, "pristine_frac": 0.0,
                      "replay_frac": 0.0, "do_sample": False,
@@ -1201,10 +1207,6 @@ def check_run(run_dir):
                      "train_cap": 723, "anchor_mode": "fixed",
                      "population_update": "nested_ai_then_social_v1",
                      "base_model": "Qwen/Qwen2.5-7B-Instruct",
-                     "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
-                     "sft_epochs": 1, "sft_batch_size": 4,
-                     "fresh_each_round": True, "icl_k": 0,
-                     "icl_days": 0,
                      # BOTH channels genuinely open -- as MODES. Neither
                      # may be a numeric threshold: both tests are strict
                      # inequalities, so eps=1 still rejects a distance-1
@@ -1212,11 +1214,11 @@ def check_run(run_dir):
                      # consensus limit is about.
                      "ai_gate_mode": "all_open",
                      "peer_gate_mode": "all_open"})
-        m_qwu = re.match(r"^pofdqwu_qwen7b_(b0|b1)_eaopen_w(0p5|1)_l1_"
+        m_qwu = re.match(r"^pofdqwu_qwen7b_(b0|b1|d8)_eaopen_w(0p5|1)_l1_"
                          r"esopen_s0_r(\d+)(smoke\d*)?$", name)
         if m_qwu is None:
             errs.append(f"CONFIG qwu tag off-grid ({name!r}) -- want "
-                        f"pofdqwu_qwen7b_<b0|b1>_eaopen_w<0p5|1>_l1_"
+                        f"pofdqwu_qwen7b_<b0|b1|d8>_eaopen_w<0p5|1>_l1_"
                         f"esopen_s0_r<rounds>[smoke<N>]")
         else:
             _arm_q, _w_q = m_qwu.group(1), m_qwu.group(2)
@@ -1232,12 +1234,40 @@ def check_run(run_dir):
             # explicit forward-KL reference retention" is only true if b0
             # really carries NO KL term and b1 really carries lambda=1
             # against the FIXED PRISTINE base.
-            if _arm_q == "b0":
+            _TRAIN_SURF = {"use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                           "sft_epochs": 1, "sft_batch_size": 4,
+                           "icl_k": 0, "icl_days": 0}
+            if _arm_q == "d8":
+                # PERSONAL-HISTORY ICL: each agent's prompt carries ONLY
+                # their own last D opinions. Frozen weights, so lora_r /
+                # sft_* are inert and deliberately NOT matched -- but
+                # use_lora and fresh_each_round must be OFF, because a
+                # LoRA that trains would make this a different arm
+                # wearing the d8 tag. ICL_K must be 0: a single
+                # cross-user exemplar turns "own memory" into "social
+                # context" and breaks the contrast the arm exists for.
+                want.update({"training_style": "frozen", "kl_beta": 0.0,
+                             # want[] here is STRICT equality, not the
+                             # audit's tuple-of-allowed form; False == 0
+                             # in Python so 0 accepts both spellings
+                             "use_lora": 0, "fresh_each_round": False,
+                             "icl_k": 0, "icl_days": 8,
+                             "icl_select": "random",
+                             "icl_ctx_source": "live",
+                             "icl_snapshot_round": -1})
+                if cfg.get("kl_ref_adapter"):
+                    errs.append(f"CONFIG qwu d8 carries kl_ref_adapter="
+                                f"{cfg.get('kl_ref_adapter')!r} -- "
+                                f"nothing trains in this arm")
+                if _is_smoke:
+                    errs.append(f"CONFIG qwu smoke must be the b1 arm, "
+                                f"not d8 ({name!r})")
+            elif _arm_q == "b0":
                 # ordinary fresh SFT: no KL term at all. kl_direction is
                 # inert without a KL term and is deliberately NOT pinned
                 # (the reverse-era b0 runs are the standing precedent).
                 want.update({"training_style": "sft", "kl_beta": 0.0,
-                             "fresh_each_round": True})
+                             "fresh_each_round": True, **_TRAIN_SURF})
                 if cfg.get("kl_ref_adapter"):
                     errs.append(f"CONFIG qwu b0 carries kl_ref_adapter="
                                 f"{cfg.get('kl_ref_adapter')!r} -- "
@@ -1245,7 +1275,7 @@ def check_run(run_dir):
             else:
                 want.update({"training_style": "sft_kl", "kl_beta": 1.0,
                              "kl_direction": "forward",
-                             "fresh_each_round": True})
+                             "fresh_each_round": True, **_TRAIN_SURF})
                 # the FIXED PRISTINE reference: kl_ref_adapter names a
                 # teacher//checkpoint adapter to regularize toward
                 # INSTEAD of the base. It must be absent/empty here, or
@@ -3691,9 +3721,20 @@ def check_run(run_dir):
                     and float(twf.min()) >= -1e-6
                     and float(twf.max()) <= 1 + 1e-6):
                 errs.append("SOCIAL twin_raw non-finite or out of [0,1]")
+        if is_qwu and int(cfg.get("icl_days") or 0) > 0:
+            # BYTE-EXACT personal-history replay for the d8 arm, plus
+            # the frozen-weights evidence: with nothing training, the
+            # fixed-text perplexity must be identical every round.
+            errs += _d8_replay_errs("QWU", run_dir, cfg, d, innate,
+                                    op_raw)
+            _ppls_q = [r["perplexity"] for r in traj if "perplexity" in r]
+            if _ppls_q and len(set(_ppls_q)) != 1:
+                errs.append(f"QWU d8 fixed-text perplexity varies "
+                            f"({len(set(_ppls_q))} distinct values) -- "
+                            f"weights not frozen?")
         if is_icl or is_iclf or is_ctf or \
                 ((is_peer2 or is_gate2d or is_ctxgrid or is_clamp
-                  or is_fam or is_evo or is_qmech)
+                  or is_fam or is_evo or is_qmech or is_qwu)
                  and cfg.get("training_style") == "frozen"):
             # frozen weights: nothing trains, no n_train ever (same skip as
             # the no-peer path below) -- peer-env icl runs (pofdicls2_),
@@ -3760,6 +3801,81 @@ def check_run(run_dir):
              and cfg.get("training_style") == "frozen"):
         return errs
     return errs + _fresh_errs(cfg, traj, is_dpo)
+
+
+def _d8_replay_errs(prefix, run_dir, cfg, d, innate, op_raw):
+    """BYTE-EXACT personal-history replay for a D>0, K=0 ICL run.
+
+    A d8 run's whole claim is that each agent saw ONLY their own last D
+    opinions. That is checkable to the byte: icl_days_log.json.gz stores
+    the rendered context per agent per round, and it must equal the
+    sentence rebuilt from (innate, op_raw) -- own values only, oldest to
+    newest, innate-first in the early rounds, window == icl_days. The
+    runner builds hist = [innate] + op_raw and slices hist[-D:], so the
+    reconstruction here mirrors that exactly.
+
+    Also enforced: no cross-user exemplar artifact may exist at all
+    (icl_k == 0, empty icl_idx_raw/icl_val_raw, no icl_ctx_log.json.gz).
+    One leaked exemplar would turn "own memory" into "social context".
+
+    Extracted 2026-08-21 for the Wu-boundary ICL arm. The CLAMP and EVO
+    families still carry their own inline copies of this logic; they are
+    deliberately untouched here rather than refactored, since rewriting
+    two blocks that gate hundreds of archived runs is risk without
+    benefit to this wave.
+    """
+    errs = []
+    icl_d = int(cfg.get("icl_days") or 0)
+    if icl_d <= 0:
+        return errs
+    if int(cfg.get("icl_k") or 0) != 0:
+        errs.append(f"{prefix} personal-history arm carries icl_k>0 -- "
+                    f"cross-user exemplars are forbidden in d8")
+    for _bad_k in ("icl_idx_raw", "icl_val_raw"):
+        _bad_v = d.get(_bad_k)
+        if _bad_v is not None and _bad_v.numel():
+            errs.append(f"{prefix} d8: {_bad_k} non-empty -- cross-user "
+                        f"exemplar artifacts must not exist")
+    if os.path.exists(os.path.join(run_dir, "icl_ctx_log.json.gz")):
+        errs.append(f"{prefix} d8: icl_ctx_log.json.gz present -- no "
+                    f"cross-user context may be rendered")
+    dl_path = os.path.join(run_dir, "icl_days_log.json.gz")
+    if not os.path.exists(dl_path):
+        errs.append(f"{prefix} d8: icl_days_log.json.gz missing (the "
+                    f"rendered personal-history contexts are mandatory)")
+        return errs
+    with gzip.open(dl_path, "rt") as fh:
+        dl_rows = [json.loads(line) for line in fh]
+    n_rounds = op_raw.shape[0]
+    n_ag = innate.numel()
+    tgt = cfg.get("ml_target") or "Action"
+    if [r.get("round") for r in dl_rows] != list(range(n_rounds)):
+        errs.append(f"{prefix} d8: icl_days_log holds rounds "
+                    f"{[r.get('round') for r in dl_rows][:5]}... "
+                    f"(want 0..{n_rounds - 1})")
+        return errs
+    hist, bad = [innate], None
+    for tt, dr in enumerate(dl_rows):
+        ctxs = dr.get("ctx") or []
+        if len(ctxs) != n_ag:
+            bad = (tt, None, f"{len(ctxs)} contexts (want {n_ag})")
+            break
+        win = hist[-icl_d:]
+        for i in range(n_ag):
+            days_s = ", ".join(f"{float(h[i]):.2f}" for h in win)
+            want_s = (f"This user's own opinion of {tgt} movies over the "
+                      f"most recent days (oldest to newest): {days_s}.")
+            if ctxs[i] != want_s:
+                bad = (tt, i, f"got {ctxs[i][:90]!r} want {want_s[:90]!r}")
+                break
+        if bad is not None:
+            break
+        hist.append(op_raw[tt])
+    if bad is not None:
+        errs.append(f"{prefix} d8: personal-history context off the "
+                    f"(innate, op_raw) replay at round {bad[0]} agent "
+                    f"{bad[1]}: {bad[2]}")
+    return errs
 
 
 def _fresh_errs(cfg, traj, is_dpo):

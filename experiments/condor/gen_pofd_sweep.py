@@ -3582,6 +3582,49 @@ def qwu_rows():
     return [qwu_row(arm, w) for w in QWU_WS for arm in QWU_ARMS]
 
 
+# --- Part C addendum: the PERSONAL-HISTORY ICL arm at the boundary --------
+# qwen_wu_limit_icl (2026-08-21). Two more cells of the SAME Wu-boundary
+# experiment: k=1, W in {.5, 1}, both gates genuinely open, 100 rounds,
+# seed 0, H100, matched twin -- everything identical to the four trained
+# cells except the platform arm.
+#
+# THE ARM. d8 = personal-history in-context learning: D=8, K=0. Each
+# agent's prompt carries THEIR OWN last 8 opinions, oldest to newest, and
+# NOTHING about anyone else (K=0, so no cross-user exemplars at all).
+# Weights are frozen -- no SFT, no LoRA, no gradients. So this is a third
+# kind of platform, distinct from the three already in the figure:
+#   frozen K=D=0   a STATIC map: the same prediction forever
+#   d8 (this)      a MEMORY map: no learning, but the served value tracks
+#                  the agent's own recent trajectory
+#   b0 / b1        PARAMETRIC retraining on the population's labels
+# It isolates whether the loop needs weight updates at all, or whether
+# per-agent history alone reproduces the feedback dynamics.
+#
+# ITS OWN KEY, deliberately. The four trained cells are COMPLETE; adding
+# these rows to qwen_wu_limit would make that key queue six jobs, and
+# while the idempotent exec no-ops completed runs, a separate key means
+# the finished wave cannot be touched at all -- no reliance on the
+# no-op, and one submit command that queues exactly these two.
+# NO SMOKE: the all-open production path is already validated by the four
+# completed cells, and frozen personal-history ICL is the established d8
+# path from the bottom-20% waves. Nothing here is a new code path.
+QWU_ICL_KEY = "qwen_wu_limit_icl"
+QWU_ICL_ARM = "d8"
+QWU_ICL_DAYS = 8
+
+
+def qwu_icl_rows():
+    return [qwu_row(QWU_ICL_ARM, w) for w in QWU_WS]
+
+
+def qwu_icl_sub():
+    return QWU_SUB_TEMPLATE.format(
+        key=QWU_ICL_KEY, n_jobs=len(qwu_icl_rows()), gpu=QWU_H100,
+        bad=BAD_NODE_REQ, rounds=QWU_ROUNDS, icldays=QWU_ICL_DAYS,
+        kind=(f"PERSONAL-HISTORY ICL (D={QWU_ICL_DAYS}, K=0), "
+              f"{QWU_ROUNDS} rounds"))
+
+
 def qwu_smoke_rows():
     """ONE 3-round lambda=1, W=1 cell -- the hardest corner of the new
     path (regularized training AND both gates open)."""
@@ -3593,6 +3636,7 @@ def qwu_sub(smoke=False):
     rows = qwu_smoke_rows() if smoke else qwu_rows()
     return QWU_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=QWU_H100, bad=BAD_NODE_REQ,
+        icldays=0,
         rounds=QWU_SMOKE_ROUNDS if smoke else QWU_ROUNDS,
         kind=("SMOKE (3 rounds, NOT production)" if smoke
               else "PRODUCTION (100 rounds)"))
@@ -3643,7 +3687,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS={icldays} ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
@@ -7372,6 +7416,62 @@ def main():
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{QWU_SMOKE_KEY}.sub")] = \
         _qwus_sub
+    # ---- Wu-boundary PERSONAL-HISTORY ICL arm (QWU_ICL) ---------------
+    # Two cells, own key, so the four COMPLETED trained cells are never
+    # re-queued -- not even as idempotent no-ops.
+    rows_qwui = qwu_icl_rows()
+    assert len(rows_qwui) == 2, len(rows_qwui)
+    _qwui_tags = {r.split(",")[0] for r in rows_qwui}
+    assert len(_qwui_tags) == 2
+    assert all(t.startswith("pofdqwu_qwen7b_d8_eaopen_w") and "_l1_" in t
+               and t.endswith(f"_s0_r{QWU_ROUNDS}")
+               for t in _qwui_tags), _qwui_tags
+    # open gates as MODES, never the numeric 1 -- same rule as the
+    # trained cells
+    assert all("_eaopen_" in t and "_esopen_" in t for t in _qwui_tags)
+    assert not any("_ea1_" in t or "_es1_" in t for t in _qwui_tags)
+    for _w in QWU_WS:
+        assert sum(1 for t in _qwui_tags if f"_w{_num(_w)}_" in t) == 1, _w
+    # MUST be disjoint from the completed four and from the smoke
+    assert not (_qwui_tags & _qwu_tags), \
+        f"ICL arm would re-queue trained cells: {_qwui_tags & _qwu_tags}"
+    assert not (_qwui_tags & _qwus_tags)
+    # queue surface: FROZEN, no LoRA, nothing trains, no cross-user
+    # exemplars (ICL_K=0 -- personal history only)
+    for r in rows_qwui:
+        _cols = [c.strip() for c in r.split(",")]
+        assert _cols[1] == "frozen" and _cols[2] == "0", r
+        assert _cols[3] == "0", r                        # seed 0
+        assert _cols[9] == "0.2", r                      # eps, inert
+        assert _cols[11] in ("0.5", "1"), r              # W rides the queue
+        assert _cols[14] == "1", r                       # k = 1
+        assert _cols[15] == "0", r                       # ICL_K = 0
+        assert _cols[17] == "0" and _cols[18] == "0", r  # no LoRA, no fresh
+        assert _cols[21] == str(QWU_ROUNDS), r
+        assert _cols[22] == "Qwen/Qwen2.5-7B-Instruct", r
+    _qwui_sub = qwu_icl_sub()
+    _qwui_env = next(ln for ln in _qwui_sub.splitlines()
+                     if ln.startswith("environment"))
+    assert f"ICL_DAYS={QWU_ICL_DAYS}" in _qwui_env
+    assert "ICL_K=$(iclk)" in _qwui_env      # the queue pins it to 0
+    assert "AI_GATE_MODE=all_open" in _qwui_env
+    assert "PEER_GATE_MODE=all_open" in _qwui_env
+    assert "INNATE_LAMBDA=$(lam)" in _qwui_env
+    assert "WITH_TWIN=1" in _qwui_env and "SAVE_RAW_GEN=1" in _qwui_env
+    assert "POP_RESET" not in _qwui_env
+    assert f'CUDADeviceName == "{QWU_H100}"' in _qwui_sub
+    # the trained keys must STILL render with ICL_DAYS=0
+    for _s in (qwu_sub(), qwu_sub(smoke=True)):
+        assert "ICL_DAYS=0 " in next(
+            ln for ln in _s.splitlines() if ln.startswith("environment"))
+    _prior_qwui = {r.split(",")[0]
+                   for rows in files.values() for r in rows}
+    assert not (_qwui_tags & _prior_qwui), \
+        f"qwu icl collision: {_qwui_tags & _prior_qwui}"
+    p = os.path.join(HERE, f"configs_pofd_{QWU_ICL_KEY}.txt")
+    files[p] = rows_qwui
+    expected[p] = 2
+    cube_subs[os.path.join(HERE, f"at_pofd_{QWU_ICL_KEY}.sub")] = _qwui_sub
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY

@@ -10,6 +10,17 @@ form a ladder from "no platform at all" to "a real retrained LLM":
   sft         ordinary fresh SFT, lambda = 0
   sft_kl      fresh forward-KL SFT, lambda = 1
 
+At the Wu boundary (Part C only) a SIXTH condition joins them:
+
+  icl         personal-history ICL, D = 8, K = 0, frozen weights
+
+which is MEMORY WITHOUT LEARNING: no gradients touch the model, but the
+served value tracks each agent's own last 8 opinions. It sits between the
+static frozen map (no adaptation at all) and b0/b1 (parametric
+retraining), and answers whether the loop needs weight updates at all or
+whether per-agent history alone reproduces the feedback dynamics. It has
+no Part-A counterpart, so it appears only in the Wu-boundary figure.
+
 and the contrasts are read STRICTLY as follows. These strings are the
 ones written into mechanism_contrasts.csv, so the causal language cannot
 drift between the code and the write-up:
@@ -137,11 +148,19 @@ KS = [0.2, 1.0]
 ESS = [0.0, 0.05, 0.2, 1.0]
 ARMS = {"k0": "frozen", "b0": "sft", "b1": "sft_kl"}
 CONDITIONS = ["twin", "perfect", "frozen", "sft", "sft_kl"]
+# Part C carries one extra arm that has no Part-A counterpart: d8 =
+# personal-history ICL (D=8, K=0, frozen weights). It is memory WITHOUT
+# learning, sitting between the static frozen map and parametric
+# retraining, so it gets its own colour and only appears in the
+# Wu-boundary figure.
+WU_CONDITIONS = CONDITIONS + ["icl"]
 COLORS = {"twin": "#8c8c8c", "perfect": "#111111", "frozen": "#e8820c",
-          "sft": "#2a6fb5", "sft_kl": "#c0392b"}
+          "sft": "#2a6fb5", "sft_kl": "#c0392b", "icl": "#2e8b57"}
 LABELS = {"twin": "no-platform twin", "perfect": "perfect prediction",
           "frozen": "frozen Qwen", "sft": "ordinary SFT",
-          "sft_kl": "regularized SFT"}
+          "sft_kl": "regularized SFT",
+          "icl": "personal-history ICL ($D{=}8$)"}
+WU_ARMS = {"b0": "sft", "b1": "sft_kl", "d8": "icl"}
 # declared tolerance for the numerical cluster count: two opinions are in
 # the same cluster when they are within this of each other
 CLUSTER_TOL = 1e-4
@@ -320,7 +339,7 @@ def wu_tag(arm, w):
 def resolve_wu_cells(roots):
     out, missing = {}, []
     for w in WU_WS:
-        for arm in ("b0", "b1"):
+        for arm in WU_ARMS:
             tag = wu_tag(arm, w)
             rd = None
             for root in roots:
@@ -331,11 +350,12 @@ def resolve_wu_cells(roots):
             if rd is None:
                 missing.append(tag)
             else:
-                out[(ARMS[arm], w)] = rd
+                out[(WU_ARMS[arm], w)] = rd
     if missing:
         raise SystemExit(
-            f"[qmech] HARD FAIL: {len(missing)} of 4 Wu-limit GPU cells "
-            f"unavailable (submit qwen_wu_limit first):\n  "
+            f"[qmech] HARD FAIL: {len(missing)} of "
+            f"{len(WU_WS) * len(WU_ARMS)} Wu-limit GPU cells unavailable "
+            f"(submit qwen_wu_limit / qwen_wu_limit_icl first):\n  "
             + "\n  ".join(missing))
     return out
 
@@ -593,7 +613,7 @@ def analyse_part_c(roots, out_dir):
                        ORACLE_ROUNDS),
             "twin": (np_(ppd["twin_raw"]), None, ORACLE_ROUNDS),
         }
-        for cond in ("sft", "sft_kl"):
+        for cond in ("sft", "sft_kl", "icl"):
             d = load_traj(runs[(cond, w)])
             op = np_(d["op_raw"])
             series[cond] = (op, np_(d["pred_raw"]), op.shape[0])
@@ -627,7 +647,7 @@ def report_wu_rounds(rows):
           f"{'sd':>11} {'range':>11} {'clusters':>8}"
     print("[qmech] " + hdr)
     for w in WU_WS:
-        for cond in CONDITIONS:
+        for cond in WU_CONDITIONS:
             for r in (30, 100, ORACLE_ROUNDS):
                 sel = [x for x in rows if x["condition"] == cond
                        and x["w_plat"] == w and x["round"] == r - 1]
@@ -729,7 +749,7 @@ def figure_wu(rows, oracle, out_dir):
     for j, w in enumerate(WU_WS):
         for i, (field, ylab, logy) in enumerate(ROWS):
             ax = fig.add_subplot(gs[i, j])
-            for cond in CONDITIONS:
+            for cond in WU_CONDITIONS:
                 sel = [r for r in rows if r["condition"] == cond
                        and r["w_plat"] == w]
                 if not sel:
@@ -773,7 +793,7 @@ def figure_wu(rows, oracle, out_dir):
     axl = fig.add_subplot(gs[4, 1])
     axl.axis("off")
     axl.legend(handles, labels, loc="center", ncol=2, frameon=False,
-               fontsize=9)
+               fontsize=8.5)
     for ext in ("png", "pdf"):
         p = out_dir / f"qwen_wu_limit.{ext}"
         fig.savefig(p, dpi=200, bbox_inches="tight")
