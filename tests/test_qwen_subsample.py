@@ -52,6 +52,29 @@ def _perm(t, seed=SEED0):
     return torch.randperm(N, generator=g)
 
 
+def test_observation_grid_is_the_intended_percentages():
+    """14/36/72/181/362/542 of 723 = 2/5/10/25/50/75%. 542 joined on
+    2026-08-21, before any production job was submitted, which is why it
+    could go into the existing key instead of needing its own."""
+    want = {14: 0.02, 36: 0.05, 72: 0.10, 181: 0.25, 362: 0.50, 542: 0.75}
+    assert GEN.QSS_COUNTS == sorted(want)
+    for c, frac in want.items():
+        assert abs(c / N - frac) < 0.006, (c, frac, c / N)
+        assert round(frac * N) == c or abs(round(frac * N) - c) <= 1, c
+
+
+def test_audit_and_generator_agree_on_the_grid():
+    """Two modules carry the count list -- the audit runs standalone on
+    the cluster, so it cannot import the generator. A silent divergence
+    would queue one grid and audit another."""
+    AUD = _load("aud_qss", os.path.join(PIPE, "audit_qwen_subsample.py"))
+    assert AUD.COUNTS == GEN.QSS_COUNTS
+    assert AUD.FULL == GEN.QSS_FULL
+    assert (AUD.CM_N, AUD.CM_REPEAT) == (GEN.QSS_CM_N, GEN.QSS_CM_REPEAT)
+    assert AUD.REUSED_TAG == GEN.QSS_REUSED_TAG
+    assert MF["counts"] == GEN.QSS_COUNTS
+
+
 def test_subsets_are_nested_across_every_arm_and_round():
     """THE property that makes the arms comparable: at a given round the
     14 sit inside the 36 sit inside the 72... If the draw depended on the
@@ -114,13 +137,13 @@ def test_compute_matched_tiling_matches_full_data_steps():
 
 
 # =============================================================== generator
-def test_six_new_jobs_and_the_full_arm_is_reused():
+def test_seven_new_jobs_and_the_full_arm_is_reused():
     rows = GEN.qss_rows()
-    assert len(rows) == 6
-    assert MF["n_reused"] == 1 and MF["n_new"] == 6
-    assert MF["n_conceptual_cells"] == 7
+    assert len(rows) == 7
+    assert MF["n_reused"] == 1 and MF["n_new"] == 7
+    assert MF["n_conceptual_cells"] == 8
     tags = [r.split(",")[0] for r in rows]
-    assert len(set(tags)) == 6
+    assert len(set(tags)) == 7
     # the 100% arm is the completed QWU cell, NOT a queued job
     assert MF["reused_tag"] == GEN.QSS_REUSED_TAG
     assert GEN.QSS_REUSED_TAG not in tags

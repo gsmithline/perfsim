@@ -297,10 +297,11 @@ case "$WHAT" in
   # OBSERVATION-RATE SUBSAMPLING (2026-08-21): does ordinary SFT lean
   # more on the pretrained model when it sees less of the population?
   # The completed Wu-boundary b0 cell unchanged except how many agents'
-  # labels reach the optimizer: 14/36/72/181/362 (2/5/10/25/50%), plus
+  # labels reach the optimizer: 14/36/72/181/362/542 (2/5/10/25/50/75%),
+  # plus
   # one compute-matched control (72 agents tiled to 723 rows = 181
   # steps, identical compute to full data on 72 distinct agents).
-  # 6 jobs. The 100% arm is NOT rerun -- it IS the completed
+  # 7 jobs. The 100% arm is NOT rerun -- it IS the completed
   # pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100.
   # Serving is untouched: all 723 agents are served every round in
   # every arm; only the SFT batch is cut. Subsets are NESTED across

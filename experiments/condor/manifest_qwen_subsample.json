@@ -6,7 +6,8 @@
     36,
     72,
     181,
-    362
+    362,
+    542
   ],
   "full": 723,
   "n_agents": 723,
@@ -16,9 +17,9 @@
   },
   "n_rounds": 100,
   "reused_tag": "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
-  "n_conceptual_cells": 7,
+  "n_conceptual_cells": 8,
   "n_reused": 1,
-  "n_new": 6,
+  "n_new": 7,
   "cells": [
     {
       "observed": 723,
@@ -69,6 +70,14 @@
       "role": "observation arm",
       "status": "new",
       "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n362_s0_r100"
+    },
+    {
+      "observed": 542,
+      "frac": 0.7497,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n542_s0_r100"
     },
     {
       "observed": 72,

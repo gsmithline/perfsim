@@ -5,12 +5,12 @@ qwen_subsample).
 The conceptual grid is six observation rates on the completed
 Wu-boundary ordinary-SFT cell:
 
-    2%    5%   10%   25%   50%   100%
-    14    36    72   181   362    723
+    2%    5%   10%   25%   50%   75%   100%
+    14    36    72   181   362   542    723
 
 plus one compute-matched control at 10% (the same 72 agents tiled to 723
 rows, so the optimizer takes the full-data number of steps on a tenth of
-the unique data) = 7 conceptual cells.
+the unique data) = 8 conceptual cells.
 
 The 100% cell is NOT a new job. It IS the completed
 pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100 -- ordinary SFT, k=1, W=1,
@@ -19,7 +19,7 @@ all, which is exactly what "observes everyone" means. Reusing it rather
 than re-running a 723-sample cell also keeps the reference arm free of
 the new code path.
 
-So the expected split is 1 reused / 6 new. Nothing is forced: the audit
+So the expected split is 1 reused / 7 new. Nothing is forced: the audit
 reports whatever the archive holds and fails loudly on a mismatch.
 
 Usage:
@@ -43,7 +43,7 @@ _spec.loader.exec_module(AR)
 ABSENT = AR.ABSENT
 
 MODEL = "Qwen/Qwen2.5-7B-Instruct"
-COUNTS = [14, 36, 72, 181, 362]
+COUNTS = [14, 36, 72, 181, 362, 542]
 FULL = 723
 CM_N, CM_REPEAT = 72, 723
 N_ROUNDS = 100

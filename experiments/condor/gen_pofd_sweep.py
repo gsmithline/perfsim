@@ -3619,15 +3619,18 @@ def qwu_rows():
 # genuinely all_open, fresh LoRA every round, 100 rounds, seed 0, H100,
 # greedy eval-mode serving -- and change ONE thing: the number of agents
 # whose labels enter the SFT batch each round.
-#     2%   5%   10%   25%   50%   100%
-#     14   36    72   181   362    723
+#     2%   5%   10%   25%   50%   75%   100%
+#     14   36    72   181   362   542    723
 # The platform still SERVES all 723 agents every round in every arm; only
 # the training batch is cut. So the population dynamics see the same
 # closed loop and the arms differ purely in observation.
+# (75% -> 542 = round(.75*723); the grid is the spec's, and 542 was added
+# 2026-08-21 before any production job was submitted, so it joins the
+# existing key rather than needing one of its own.)
 #
 # THE 100% ARM IS NOT RERUN. It IS the completed
 # pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100 -- same config, no
-# sampling -- so five observation arms queue, not six.
+# sampling -- so six observation arms queue, not seven.
 #
 # WHY A NEW KNOB. N_LABELED takes a fixed PREFIX of agents: the same
 # people every round, which asks "who is observed", not "how many".
@@ -3661,7 +3664,7 @@ QSS_SMOKE_ROUNDS = 3
 QSS_N_AGENTS = 723
 # exact counts, given rather than derived: round(.02*723)=14 etc, but the
 # grid is the spec's, not a rounding rule
-QSS_COUNTS = [14, 36, 72, 181, 362]        # 723 = the reused QWU cell
+QSS_COUNTS = [14, 36, 72, 181, 362, 542]   # 723 = the reused QWU cell
 QSS_FULL = 723
 QSS_CM_N = 72                              # compute-matched arm
 QSS_CM_REPEAT = 723
@@ -3701,7 +3704,7 @@ def qss_row(count, repeat_to=0, rounds=QSS_ROUNDS, smoke=False):
 
 
 def qss_rows():
-    """Five observation arms + one compute-matched control = 6 jobs.
+    """Six observation arms + one compute-matched control = 7 jobs.
     The 100% arm is the REUSED QWU cell and is deliberately absent."""
     return ([qss_row(c) for c in QSS_COUNTS]
             + [qss_row(QSS_CM_N, QSS_CM_REPEAT)])
@@ -3732,7 +3735,8 @@ QSS_SUB_TEMPLATE = """\
 # (lambda=0), k=1, W=1, BOTH gates genuinely all_open, fresh LoRA r512
 # every round, {rounds} rounds, seed 0, movielens Action 723 agents,
 # matched twin, greedy eval-mode serving -- except how many agents'
-# labels reach the optimizer: 14 / 36 / 72 / 181 / 362 (2/5/10/25/50%).
+# labels reach the optimizer: 14/36/72/181/362/542
+# (2/5/10/25/50/75%).
 # The 100% arm is NOT rerun: it IS the completed
 # pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100.
 # SERVING IS UNTOUCHED: all 723 agents are served every round in every
@@ -7648,9 +7652,9 @@ def main():
     cube_subs[os.path.join(HERE, f"at_pofd_{QWU_ICL_KEY}.sub")] = _qwui_sub
     # ---- observation-rate subsampling (QSS) ---------------------------
     rows_qss = qss_rows()
-    assert len(rows_qss) == len(QSS_COUNTS) + 1 == 6, len(rows_qss)
+    assert len(rows_qss) == len(QSS_COUNTS) + 1 == 7, len(rows_qss)
     _qss_tags = [r.split(",")[0] for r in rows_qss]
-    assert len(set(_qss_tags)) == 6
+    assert len(set(_qss_tags)) == 7
     # the 100% arm is the REUSED QWU cell and must NOT be queued
     assert QSS_FULL not in QSS_COUNTS
     assert not any(f"_n{QSS_FULL}_" in t for t in _qss_tags), _qss_tags
@@ -7694,7 +7698,7 @@ def main():
         f"qss collision: {set(_qss_tags) & _prior_qss}"
     p = os.path.join(HERE, f"configs_pofd_{QSS_KEY}.txt")
     files[p] = rows_qss
-    expected[p] = 6
+    expected[p] = 7
     cube_subs[os.path.join(HERE, f"at_pofd_{QSS_KEY}.sub")] = _qss_sub
     # 3-round smoke for the NEW sampling path
     rows_qsss = qss_smoke_rows()
