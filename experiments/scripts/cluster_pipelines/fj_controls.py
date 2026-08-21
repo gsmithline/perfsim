@@ -251,11 +251,16 @@ def main():
                     help="npz of model -> zero-shot vector; builds the "
                          "frozen (lambda -> infinity) FJ controls")
     ap.add_argument("--frozen-out", type=Path, default=None)
+    # the frozen control is beta-SPECIFIC: x_init = (1-beta) innate +
+    # beta m, so the beta=.5 reference is simply wrong for the beta=1
+    # wave. Built per beta, and the artifact records which.
+    ap.add_argument("--frozen-beta", type=float, default=BETA)
     args = ap.parse_args()
     if args.frozen_npz:
         build_frozen(args.frozen_npz,
                      args.frozen_out or (OUT_DIR.parent / "fj_robustness"
-                                         / "frozen"))
+                                         / "frozen"),
+                     beta=args.frozen_beta)
         return 0
     analyse(args.out_dir)
     print(f"[fjctl] outputs in {args.out_dir}")

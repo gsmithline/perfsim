@@ -750,3 +750,38 @@ def test_fj_runs_skip_the_deffuant_exact_copy_replay():
     guard = body.index("if is_fjr:\n        return errs + _fresh_errs")
     copy_loop = body.index("EXACT-COPY round {t}: non-finite predictions")
     assert guard < copy_loop, "the FJ guard must precede the EXACT-COPY loop"
+
+
+def test_frozen_control_is_beta_specific(tmp_path):
+    """x_init = (1-beta) innate + beta m, so a beta=.5 frozen reference
+    is the WRONG vector for the beta=1 wave -- and every 'distance to
+    frozen' would be quietly measured against it."""
+    innate, W = _toy()
+    fz = torch.tensor([0.2, 0.4, 0.6, 0.8])
+    half = CTL.fj_step(innate, fz, 0.5, CTL.ALPHA, CTL.PRODUCTION_INNER, W)
+    one = CTL.fj_step(innate, fz, 1.0, CTL.ALPHA, CTL.PRODUCTION_INNER, W)
+    assert float((half - one).abs().max()) > 1e-3, \
+        "the two beta references must be distinguishable"
+
+
+def test_build_frozen_records_the_beta_it_used(tmp_path):
+    import numpy as np
+    npz = tmp_path / "v.npz"
+    np.savez(npz, sources=np.array({}, dtype=object),
+             **{"qwen7b": np.linspace(0.2, 0.8, 723).astype("float32")})
+    for beta in (0.5, 1.0):
+        out = tmp_path / f"f{beta}"
+        CTL.build_frozen(npz, out, beta=beta)
+        d = torch.load(out / "frozen_qwen7b.pt", weights_only=False)
+        assert d["beta"] == beta
+        assert d["n_inner"] == CTL.PRODUCTION_INNER
+        assert d["alpha"] == CTL.ALPHA
+
+
+def test_analyzer_reads_either_waves_grid():
+    core = ANA.read_tags(key="fj_robustness")
+    boundary = ANA.read_tags(key="fj_robustness_beta1")
+    assert len(core) == len(boundary) == 12
+    assert set(core) & set(boundary) == set()
+    assert all("beta0p5" in t for t in core)
+    assert all("beta1_" in t for t in boundary)

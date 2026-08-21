@@ -77,7 +77,13 @@ def w1_centered(a, b):
     return w1(a - a.mean(), b - b.mean())
 
 
-def read_tags(path=CONDOR / "configs_pofd_fj_robustness.txt"):
+def read_tags(path=None, key="fj_robustness"):
+    if path is None:
+        path = CONDOR / f"configs_pofd_{key}.txt"
+    return _read_tags(path)
+
+
+def _read_tags(path):
     """The conceptual grid, read from the ON-DISK config the jobs run
     from. Never re-derived from a tag grammar here -- deriving one string
     in two places is how the 5em05/5em5 mismatch happened."""
@@ -110,8 +116,8 @@ def load_cell(roots, tag):
     return None
 
 
-def analyse(roots, out_dir, frozen_dir=None):
-    tags = read_tags()
+def analyse(roots, out_dir, frozen_dir=None, key="fj_robustness"):
+    tags = read_tags(key=key)
     models = sorted({model_of(t) for t in tags})
     cells, missing = {}, []
     for t in tags:
@@ -126,13 +132,30 @@ def analyse(roots, out_dir, frozen_dir=None):
             f"absent -- a partial grid is a different claim.\n  "
             + "\n  ".join(missing))
 
-    frozen = load_frozen(frozen_dir or (out_dir / "frozen"), models)
+    frozen, frozen_beta = load_frozen(frozen_dir or (out_dir / "frozen"),
+                                      models)
     absent = [m for m in models if m not in frozen]
     if absent:
         raise SystemExit(
             f"[fjr] HARD FAIL: no frozen (lambda -> infinity) control for "
-            f"{absent}. Build them with fj_controls.py from the archived "
-            f"zero-shot vectors (five reused) plus the extraction job.")
+            f"{absent}. Build them with fj_controls.py --frozen-npz from "
+            f"the archived zero-shot vectors plus the extraction job.")
+    # THE FROZEN CONTROL IS BETA-SPECIFIC. x_init = (1-beta) innate +
+    # beta m, so a beta=.5 reference is simply the wrong vector for the
+    # beta=1 wave -- and every "distance to frozen" would be quietly
+    # measured against it.
+    cell_betas = {round(float(d["config"].get("w_plat", -1)), 6)
+                  for d in cells.values()}
+    if len(cell_betas) != 1:
+        raise SystemExit(f"[fjr] HARD FAIL: mixed beta across cells: "
+                         f"{cell_betas}")
+    cb = next(iter(cell_betas))
+    for m, b in frozen_beta.items():
+        if abs(float(b) - cb) > 1e-9:
+            raise SystemExit(
+                f"[fjr] HARD FAIL: the frozen control for {m} was built at "
+                f"beta={b} but these cells ran at beta={cb}. Rebuild with "
+                f"fj_controls.py --frozen-beta {cb}.")
 
     innate = next(iter(cells.values()))["innate"].float().numpy()
     rounds_rows, cell_rows = [], []
@@ -209,17 +232,19 @@ def _assert_shared_environment(cells):
 
 
 def load_frozen(frozen_dir, models):
-    """Frozen FJ controls, one static post-FJ vector per model."""
-    out = {}
+    """Frozen FJ controls, one static post-FJ vector per model, plus the
+    beta each was built at so the caller can refuse a mismatch."""
+    out, betas = {}, {}
     p = Path(frozen_dir)
     if not p.exists():
-        return out
+        return out, betas
     for m in models:
         f = p / f"frozen_{m}.pt"
         if f.exists():
-            out[m] = torch.load(f, map_location="cpu",
-                                weights_only=False)["post_fj"].float().numpy()
-    return out
+            d = torch.load(f, map_location="cpu", weights_only=False)
+            out[m] = d["post_fj"].float().numpy()
+            betas[m] = d.get("beta", float("nan"))
+    return out, betas
 
 
 def _csv(path, rows):
@@ -315,8 +340,10 @@ def main():
                              REPO / "runs" / "pokec_gated_lm"])
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     ap.add_argument("--frozen-dir", type=Path, default=None)
+    ap.add_argument("--key", default="fj_robustness",
+                    help="fj_robustness or fj_robustness_beta1")
     args = ap.parse_args()
-    analyse(args.roots, args.out_dir, args.frozen_dir)
+    analyse(args.roots, args.out_dir, args.frozen_dir, key=args.key)
     print(f"[fjr] outputs in {args.out_dir}")
     return 0
 
