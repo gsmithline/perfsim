@@ -325,6 +325,8 @@ def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
             "soft_adapter": soft_base + 0.01 * scale,
             "tail_adapter": np.full(N, tail),
             "greedy_tf": np.full(N, 0.65),
+            "flip_tstar": np.full(N, 0.1 * min(scale, 5)),
+            "flip_vs_generated": np.full(N, 0.1 * min(scale, 5)),
             "first_div": np.full(N, -1.0),
             "n_tok": np.full(N, 4.0),
         }, tmp / f"adapter_{tag}.pt")
@@ -642,3 +644,51 @@ def test_noise_floor_uses_a_different_padding_width():
     src = (PIPE / "probe_adapter_kl.py").read_text()
     assert "args.noise_batch != args.tf_batch" in src
     assert '"--noise-batch", type=int, default=GEN_BATCH // 2' in src
+
+
+def test_probe_writes_every_field_the_analyzer_reads():
+    """The fixture drifting from the probe's real schema would let the
+    analyzer pass its tests and then KeyError on live data -- which is
+    exactly what happened on the first dry run."""
+    fn = next(n for n in ast.walk(_probe_ast())
+              if isinstance(n, ast.FunctionDef) and n.name == "adapter_stage")
+    written = {n.slice.value for n in ast.walk(fn)
+               if isinstance(n, ast.Subscript)
+               and isinstance(n.value, ast.Name) and n.value.id == "out"
+               and isinstance(n.slice, ast.Constant)}
+    for lit in ast.walk(fn):
+        if isinstance(lit, ast.Tuple):
+            written |= {e.value for e in lit.elts
+                        if isinstance(e, ast.Constant)
+                        and isinstance(e.value, str)}
+    # scope to analyse(): dose_lookup() also binds `r`, to rows of the
+    # dose CSV, whose keys legitimately are not probe fields
+    ana = next(n for n in ast.walk(ast.parse(
+        (PIPE / "analyze_adapter_kl_probe.py").read_text()))
+        if isinstance(n, ast.FunctionDef) and n.name == "analyse")
+    read = {n.slice.value for n in ast.walk(ana)
+            if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)
+            and n.value.id == "r" and isinstance(n.slice, ast.Constant)
+            and isinstance(n.slice.value, str)}
+    missing = read - written
+    assert not missing, f"analyzer reads fields the probe never writes: {missing}"
+
+
+def test_every_dose_cell_joins_to_the_dose_csv():
+    """The join that produces the greedy-vs-soft comparison, checked
+    against the REAL dose CSV. It silently produced nan for all 15 cells
+    because the tag says "5e-5" and the CSV says "5e-05"."""
+    csv_path = ANA.DOSE_CSV
+    if not csv_path.exists():
+        pytest.skip("dose CSV not present")
+    dose = ANA.dose_lookup()
+    assert dose, "dose CSV parsed to nothing"
+    missing = [t for t in AKL.read_dose_tags(CONDOR)
+               if ANA.cell_key(*ANA.parse_tag(t)[:3]) not in dose]
+    assert not missing, f"{len(missing)} cells fail to join: {missing[:3]}"
+
+
+def test_cell_key_is_insensitive_to_lr_spelling():
+    assert ANA.cell_key(181, "5e-5", 512) == ANA.cell_key(181, "5e-05", 512)
+    assert ANA.cell_key(181, "1e-6", 512) == ANA.cell_key(181, "1.0e-06", 512)
+    assert ANA.cell_key(181, "5e-5", 512) != ANA.cell_key(181, "3e-5", 512)

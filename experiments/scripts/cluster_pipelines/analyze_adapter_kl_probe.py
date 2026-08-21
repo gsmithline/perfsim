@@ -92,8 +92,17 @@ def parse_tag(tag):
     return u, lr, rank, fam
 
 
+def cell_key(u, lr, rank):
+    """Canonical join key. lr goes through float() on BOTH sides: the tag
+    says "5e-5" and the dose CSV says "5e-05", and keying on the strings
+    silently joins NOTHING -- every greedy column comes out nan and the
+    greedy-vs-soft comparison, which is the entire point, quietly
+    disappears. Same failure family as the 5em05/5em5 tag bug."""
+    return (int(u), float(lr), int(rank))
+
+
 def dose_lookup(path=DOSE_CSV):
-    """(U, lr, rank) -> the dose wave's greedy metrics."""
+    """cell_key -> the dose wave's greedy metrics."""
     if not Path(path).exists():
         print(f"[akl] NOTE: {path} absent -- greedy columns will be blank; "
               f"run analyze_sft_dose.py to fill them", file=sys.stderr)
@@ -102,7 +111,7 @@ def dose_lookup(path=DOSE_CSV):
     for r in csv.DictReader(open(path)):
         if r["family"] == "reference":
             continue
-        out[(int(r["U"]), r["lr"], int(r["rank"]))] = r
+        out[cell_key(r["U"], r["lr"], r["rank"])] = r
     return out
 
 
@@ -114,11 +123,13 @@ def analyse(probe_dir, out_dir):
     dose = dose_lookup()
 
     rows = []
+    joined = 0
     for tag in mf["tags"]:
         r = torch.load(Path(probe_dir) / f"adapter_{tag}.pt",
                        map_location="cpu", weights_only=False)
         u, lr, rank, fam = parse_tag(tag)
-        d = dose.get((u, lr, rank), {})
+        d = dose.get(cell_key(u, lr, rank), {})
+        joined += bool(d)
         soft = np.asarray(r["soft_adapter"], dtype=np.float64)
         rows.append({
             "family": fam, "U": u, "lr": lr, "rank": rank, "tag": tag,
@@ -151,6 +162,13 @@ def analyse(probe_dir, out_dir):
                    < np.asarray(base["tstar"])))),
             "tail_adapter_max": float(np.max(r["tail_adapter"])),
         })
+
+    if dose and joined < len(rows):
+        # loud, not silent: a partial join means the headline comparison
+        # is missing cells and the figure would just draw fewer points
+        print(f"[akl] WARNING: only {joined}/{len(rows)} cells joined to "
+              f"{DOSE_CSV.name}; greedy columns are nan for the rest",
+              file=sys.stderr)
 
     # kl_frac: this cell's KL at t* over the shared full-dose cell's. The
     # normalized form is what makes "KL still small where greedy has
