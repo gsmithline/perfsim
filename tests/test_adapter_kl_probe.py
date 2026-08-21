@@ -285,7 +285,8 @@ SUPPORT = [2, 6]
 
 
 def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
-                 tail=0.0, n_lev_positions=1, topm_out=0.0):
+                 tail=0.0, n_lev_positions=1, topm_out=0.0,
+                 mismatch_n=100, mismatch_margin=1e-3):
     """A structurally valid probe directory, defect injected by kwargs."""
     tags = AKL.read_dose_tags(CONDOR)
     rng = np.random.default_rng(0)
@@ -326,7 +327,11 @@ def _write_probe(tmp, *, served=None, kl_scale=None, recheck_drift=0.0,
             "n_tok": np.full(N, 4.0),
         }, tmp / f"adapter_{tag}.pt")
     json.dump({"n_agents": N, "hash_gate": "enforced", "tags": tags,
-               "base_top1_mean": 0.5, "base_margin_mean": 0.02},
+               "base_top1_mean": 0.5, "base_margin_mean": 0.02,
+               "tf_mismatch": {"n": mismatch_n, "frac_of_agents": 0.1,
+                               "max_margin": mismatch_margin,
+                               "median_margin": 1e-4, "positions": [2],
+                               "threshold": AKL.MARGIN_STRUCTURAL}},
               open(tmp / "probe_manifest.json", "w"))
     return tags
 
@@ -460,3 +465,56 @@ def test_submit_usage_strings_have_no_brace():
         if ln.startswith(("BID=", "WHAT=")):
             body = ln.split("usage:", 1)[1]
             assert "{" not in body[:-2] and body.count("}") == 1, ln[:120]
+
+
+def test_checker_accepts_sub_threshold_teacher_forced_mismatches(tmp_path,
+                                                                 pinned_hash):
+    """generate() is KV-cached and the probe's pass is one full forward;
+    in bf16 they can pick different argmaxes on a near-tie. On this task
+    that is the phenomenon under study, not a fault."""
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash, mismatch_n=102,
+                 mismatch_margin=AKL.MARGIN_STRUCTURAL / 10)
+    errs, notes = CHK.check(d, tmp_path / "no_runs")
+    assert errs == [], errs
+    assert any("teacher-forced argmax mismatches" in n for n in notes)
+
+
+def test_checker_rejects_a_confident_teacher_forced_mismatch(tmp_path,
+                                                             pinned_hash):
+    """A CONFIDENT position cannot flip from float noise -- that is a
+    misaligned span, and it must still abort."""
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash, mismatch_n=5,
+                 mismatch_margin=AKL.MARGIN_STRUCTURAL * 2)
+    errs, _ = CHK.check(d, tmp_path / "no_runs")
+    assert any("misaligned" in e for e in errs), errs
+
+
+def test_checker_rejects_a_probe_with_no_alignment_record(tmp_path,
+                                                          pinned_hash):
+    d = tmp_path / "probe"
+    _write_probe(d, served=pinned_hash)
+    mf = json.load(open(d / "probe_manifest.json"))
+    del mf["tf_mismatch"]
+    json.dump(mf, open(d / "probe_manifest.json", "w"))
+    errs, _ = CHK.check(d, tmp_path / "no_runs")
+    assert any("no tf_mismatch record" in e for e in errs), errs
+
+
+def test_flip_rate_is_measured_against_the_teacher_forced_base():
+    """Folding the cached-vs-full numerical difference into every
+    adapter's flip rate would inflate it by the base's own tie-break
+    rate, identically for all 15 cells."""
+    fn = next(n for n in ast.walk(_probe_ast())
+              if isinstance(n, ast.FunctionDef) and n.name == "adapter_stage")
+    src = ast.unparse(fn)
+    assert "out['flip_tstar'][i] = float(am != int(base['tf_argmax'][i]))" in src
+    assert "flip_vs_generated" in src
+
+
+def test_teacher_forced_batch_matches_the_generation_batch():
+    """Different padding widths change the bf16 reduction order and add
+    argmax disagreement that has nothing to do with the model."""
+    src = (PIPE / "probe_adapter_kl.py").read_text()
+    assert '"--tf-batch", type=int, default=GEN_BATCH' in src

@@ -97,6 +97,28 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
     if mf.get("hash_gate") != "enforced" and mf["n_agents"] == expect_agents:
         errs.append(f"hash_gate={mf.get('hash_gate')!r} on a full run")
 
+    # -- 1b teacher-forced alignment --------------------------------------
+    # generate() (KV-cached, incremental) and the probe's full-sequence
+    # forward differ in the last bf16 bits, so a nearly tied position can
+    # pick different argmaxes. That is expected here and is itself a
+    # measurement. What must NOT happen is a mismatch at a CONFIDENT
+    # position: that would mean the span is misaligned.
+    tm = mf.get("tf_mismatch")
+    if tm is None:
+        errs.append("manifest has no tf_mismatch record -- this probe "
+                    "predates the alignment diagnostic and cannot be gated")
+    else:
+        notes.append(
+            f"teacher-forced argmax mismatches vs generate(): {tm['n']} "
+            f"({100 * tm['frac_of_agents']:.1f}% of agents) at positions "
+            f"{tm['positions']}, max margin {tm['max_margin']:.2e}, median "
+            f"{tm['median_margin']:.2e}")
+        if float(tm["max_margin"]) > float(tm["threshold"]):
+            errs.append(f"a teacher-forced mismatch sits at margin "
+                        f"{tm['max_margin']:.4f} > {tm['threshold']} -- a "
+                        f"confident position cannot flip from float noise, "
+                        f"so the span is misaligned")
+
     # -- 4 t* carries the value uncertainty -------------------------------
     shares = []
     for levs in base["leverage"]:

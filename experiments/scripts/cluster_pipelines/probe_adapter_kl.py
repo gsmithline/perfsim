@@ -59,22 +59,35 @@ not evidence for the implicit anchor. The informative comparison is
 between the SHAPES of the greedy and soft curves over the same dial,
 which is why both are written to the same CSV.
 
-TRUNCATED SUPPORT, STATED PLAINLY. The value map is built on a support
-set S = (every token that decodes to something starting with a digit)
-union (the base's top-M tokens at that position). Soft values are
-expectations over S renormalized, and the mass falling OUTSIDE S is
-recorded per agent per model as tail_mass. The checker refuses the run
-if that mass is not negligible; it is never silently renormalized away.
+TRUNCATED SUPPORT, STATED PLAINLY. The value map is built on ONE fixed
+support set S: every token that decodes to something starting with a
+digit. It is deliberately the same at every position and for every
+agent, so soft values are comparable across cells; folding each
+position's top-M into S would give each cell its own reference frame.
+Soft values are expectations over S renormalized, and the mass falling
+OUTSIDE S is recorded per agent per model as tail_mass -- alongside how
+much of the base's own top-M sits outside S. The checker refuses the run
+if either is non-negligible; it is never silently renormalized away.
 
 SELF-CHECKS THAT MAKE THE NUMBERS TRUSTWORTHY (all hard failures):
   * the base's parsed served vector must reproduce the canonical frozen
     Qwen2.5 K=D=0 sha256 -- the same pin the dose analyzer uses. This
     proves the probe's serving path is the archived runs' path, not a
     lookalike. It is hardware-specific, hence H100 only.
-  * teacher-forced base argmax must equal the generated answer token at
-    every position. Left padding plus a plain forward silently uses the
-    wrong RoPE positions unless position_ids are supplied; this check
-    fails loudly if that (or any other batching slip) happens.
+  * teacher-forced base argmax vs the generated answer token. Left
+    padding plus a plain forward silently uses the wrong RoPE positions
+    unless position_ids are supplied, and this catches it -- but only
+    when the disagreement is STRUCTURAL. generate() decodes with a KV
+    cache; this pass is one full-sequence forward. In bf16 the two differ
+    in the last bits, so on a nearly tied position they can pick
+    different argmaxes, which is not a fault in either and on this task
+    is the phenomenon under study. So a mismatch aborts only when the
+    base's top1-top2 margin there exceeds MARGIN_STRUCTURAL -- a
+    confident position cannot flip from float noise. Sub-threshold
+    mismatches are counted and carried in the manifest, and everything
+    downstream (flip rate, the greedy counterpart of the soft value) is
+    referred to the TEACHER-FORCED base argmax so no adapter's numbers
+    absorb that difference.
   * the adapter list is read from the ON-DISK condor config files the
     jobs actually ran from, never re-derived from a tag grammar.
 
@@ -110,7 +123,10 @@ N_AGENTS = 723
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 MAX_NEW_TOKENS = 6          # MAX_NEW_TOKENS in every dose job
 GEN_BATCH = 32              # GEN_BATCH_SIZE=32 in every dose job
-SUPPORT_TOP_M = 16          # base top-M tokens folded into the support
+SUPPORT_TOP_M = 16          # base top-M mass reported against the support
+# a teacher-forced argmax that disagrees with the generated token is a
+# numerical tie-break BELOW this margin and a structural fault above it
+MARGIN_STRUCTURAL = 0.05
 DOSE_CONFIGS = ("configs_pofd_qwen_sft_update_dose.txt",
                 "configs_pofd_qwen_sft_lr_dose.txt",
                 "configs_pofd_qwen_sft_rank_dose.txt")
@@ -402,6 +418,9 @@ def base_stage(model, tokenizer, prompts, device, args, parse_fn):
     marg = np.zeros(n)
     val_at = [None] * n
     topm_out = np.zeros(n)
+    tf_arg = np.zeros(n, dtype=np.int64)
+    tf_val = np.zeros(n)
+    tf_mm = np.zeros(n)
     mismatched = []
 
     for sl, logp, lens in span_logprobs(model, tokenizer, prompts, ans_ids,
@@ -417,7 +436,7 @@ def base_stage(model, tokenizer, prompts, device, args, parse_fn):
             for t in range(L):
                 pr = probs[r, t]
                 if int(np.argmax(pr)) != int(a[t]):
-                    mismatched.append((i, t))
+                    mismatched.append((i, t, top2_margin(pr)[1]))
                 v = vmap(a, t)
                 levs.append(leverage(pr, support, v))
                 vals.append(v)
@@ -427,6 +446,19 @@ def base_stage(model, tokenizer, prompts, device, args, parse_fn):
             val_at[i] = vals[k]
             soft_b[i], tail_b[i] = soft_value(probs[r, k], support, vals[k])
             top1[i], marg[i] = top2_margin(probs[r, k])
+            # the base's argmax IN THIS PASS. Everything downstream --
+            # the adapter flip test, the greedy counterpart of the soft
+            # value -- is referred to this rather than to the token
+            # generate() emitted, so the comparison is internal to one
+            # forward and cannot be contaminated by the cached-vs-full
+            # numerical difference documented below.
+            am_b = int(np.argmax(probs[r, k]))
+            tf_arg[i] = am_b
+            jb = int(np.searchsorted(support, am_b))
+            tf_val[i] = (float(vals[k][jb])
+                         if jb < len(support) and support[jb] == am_b
+                         else float("nan"))
+            tf_mm[i] = float(am_b != int(a[k]))
             # how much of the base's own top-M sits OUTSIDE the numeric
             # support: a companion to tail mass that says whether the
             # truncation is dropping anything the model actually favours
@@ -434,18 +466,54 @@ def base_stage(model, tokenizer, prompts, device, args, parse_fn):
             topm_out[i] = float(sum(probs[r, k][j] for j in topm
                                     if int(j) not in sup_set))
 
-    if mismatched:
+    # TEACHER-FORCED ARGMAX vs THE GENERATED TOKEN.
+    #
+    # generate() and this pass compute the same quantity two different
+    # ways: cached incremental decoding over a batch of GEN_BATCH, versus
+    # one full-sequence forward over a batch of tf_batch. In bf16 those
+    # differ in the last bits, so on a position where the model is nearly
+    # tied the two paths can pick different argmaxes. That is not a bug in
+    # either -- it is what "nearly tied" MEANS, and on this task it is the
+    # very phenomenon under investigation.
+    #
+    # So the mismatch is classified rather than fatal. A mismatch at a
+    # position where the base's top-1 and top-2 are separated by a real
+    # margin cannot be numerical: that is a structural fault (wrong
+    # position_ids, misaligned span, wrong padding side) and still aborts.
+    # A mismatch inside MARGIN_STRUCTURAL is reported, counted, and
+    # carried in the manifest, because the rate and the margins are
+    # themselves evidence about how knife-edge the base is.
+    big = [m for m in mismatched if m[2] > MARGIN_STRUCTURAL]
+    if big:
         raise SystemExit(
             f"[akl] TEACHER-FORCING BROKEN: base argmax != generated token "
-            f"at {len(mismatched)} (agent, pos) pairs, first "
-            f"{mismatched[:5]} -- the teacher-forced pass is not scoring "
-            f"the greedy path (check position_ids / padding)")
+            f"at {len(big)} (agent, pos) pairs with a top1-top2 margin "
+            f"ABOVE {MARGIN_STRUCTURAL} (worst "
+            f"{max(m[2] for m in big):.4f}, first {big[:5]}) -- a confident "
+            f"position cannot flip from float noise, so the teacher-forced "
+            f"pass is misaligned (check position_ids / padding / span)")
+    mm = {"n": len(mismatched),
+          "frac_of_agents": len(mismatched) / max(n, 1),
+          "max_margin": max((m[2] for m in mismatched), default=0.0),
+          "median_margin": float(np.median([m[2] for m in mismatched]))
+          if mismatched else 0.0,
+          "positions": sorted({int(m[1]) for m in mismatched}),
+          "threshold": MARGIN_STRUCTURAL}
+    if mismatched:
+        print(f"[akl] NOTE: {mm['n']} teacher-forced argmax mismatches vs "
+              f"the generated token, all with margin <= "
+              f"{mm['max_margin']:.2e} (median {mm['median_margin']:.2e}) "
+              f"at positions {mm['positions']}. These are numerical "
+              f"tie-breaks on a near-tied base, not misalignment -- and "
+              f"the rate is itself a measurement.", flush=True)
 
     return {"ans_ids": ans_ids, "ans_txt": ans_txt, "served": served,
             "support": support, "values_at_tstar": val_at,
             "tstar": tstar, "leverage": lev_all, "soft_base": soft_b,
             "tail_base": tail_b, "base_top1": top1, "base_margin": marg,
-            "topm_outside_support": topm_out}
+            "topm_outside_support": topm_out, "tf_argmax": tf_arg,
+            "tf_greedy_value": tf_val, "tf_mismatch_at_tstar": tf_mm,
+            "tf_mismatch": mm}
 
 
 def adapter_stage(peft_model, tokenizer, prompts, device, args, base, tag):
@@ -457,7 +525,7 @@ def adapter_stage(peft_model, tokenizer, prompts, device, args, base, tag):
     out = {k: np.zeros(n) for k in
            ("kl_fwd_sum", "kl_rev_sum", "kl_fwd_tstar", "kl_rev_tstar",
             "soft_adapter", "tail_adapter", "greedy_tf", "flip_tstar",
-            "first_div", "n_tok")}
+            "flip_vs_generated", "first_div", "n_tok")}
     out["first_div"][:] = -1.0
     out["soft_base_recheck"] = np.zeros(n)
     ans_ids = base["ans_ids"]
@@ -490,7 +558,12 @@ def adapter_stage(peft_model, tokenizer, prompts, device, args, base, tag):
             out["soft_base_recheck"][i] = soft_value(
                 np.exp(lb[r, k]), sup, val)[0]
             am = int(np.argmax(pa))
-            out["flip_tstar"][i] = float(am != int(ans_ids[i][k]))
+            # flip relative to the BASE'S ARGMAX IN THE SAME KIND OF PASS,
+            # not to the token generate() emitted: comparing against the
+            # generated token would fold the cached-vs-full numerical
+            # difference into every adapter's flip rate.
+            out["flip_tstar"][i] = float(am != int(base["tf_argmax"][i]))
+            out["flip_vs_generated"][i] = float(am != int(ans_ids[i][k]))
             # value the adapter WOULD serve if it took the base's prefix
             # and its own argmax at t*: the teacher-forced greedy
             # counterpart of the soft value
@@ -499,7 +572,7 @@ def adapter_stage(peft_model, tokenizer, prompts, device, args, base, tag):
                                    if j < len(sup) and sup[j] == am
                                    else float("nan"))
             for t in range(L):
-                if int(np.argmax(la[r, t])) != int(ans_ids[i][t]):
+                if int(np.argmax(la[r, t])) != int(np.argmax(lb[r, t])):
                     out["first_div"][i] = float(t)
                     break
     out["tag"] = tag
@@ -518,7 +591,10 @@ def main():
                     default=REPO / "experiments/data/movielens/ml-100k")
     ap.add_argument("--target", default="Action")
     ap.add_argument("--base-model", default=BASE_MODEL)
-    ap.add_argument("--tf-batch", type=int, default=8)
+    # match GEN_BATCH so the teacher-forced pass sees the SAME padding
+    # width as generation did; different widths change the bf16
+    # reduction order and add avoidable argmax disagreement
+    ap.add_argument("--tf-batch", type=int, default=GEN_BATCH)
     ap.add_argument("--limit-agents", type=int, default=0)
     ap.add_argument("--max-adapters", type=int, default=0)
     ap.add_argument("--only", default="", help="comma-separated tag filter")
@@ -637,6 +713,8 @@ def main():
         "tail_base_max": float(base["tail_base"].max()),
         "support_size": int(len(base["support"])),
         "topm_outside_support_max": float(base["topm_outside_support"].max()),
+        "tf_mismatch": base["tf_mismatch"],
+        "tf_mismatch_at_tstar_frac": float(base["tf_mismatch_at_tstar"].mean()),
         "summary": rows,
         "note": ("soft values are expectations over the base-defined "
                  "numeric support, renormalized; tail_* records the mass "
