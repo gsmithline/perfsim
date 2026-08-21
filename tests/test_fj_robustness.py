@@ -532,8 +532,13 @@ def test_on_disk_configs_match_the_generator():
 
 def test_submit_script_knows_the_fj_keys():
     s = (CONDOR / "submit_pofd_sweep.sh").read_text()
-    assert "fj_robustness|fj_robustness_smoke|fj_robustness_frozen|" \
-           "fj_robustness_beta1)" in s
+    # match the routed keys individually: the case line grows as waves
+    # are added, and pinning it verbatim breaks on every addition
+    case = next(ln for ln in s.splitlines()
+                if ln.strip().startswith("fj_robustness|"))
+    for k in ("fj_robustness", "fj_robustness_smoke", "fj_robustness_frozen",
+              "fj_robustness_beta1", "fj_robustness_kl_ladder"):
+        assert f"{k}|" in case or f"{k})" in case, k
     # the optional beta=1 key must not ride any umbrella
     for ln in s.splitlines():
         if "TARGETS=" in ln and "fj_robustness_beta1" in ln:
@@ -785,3 +790,45 @@ def test_analyzer_reads_either_waves_grid():
     assert set(core) & set(boundary) == set()
     assert all("beta0p5" in t for t in core)
     assert all("beta1_" in t for t in boundary)
+
+
+def test_kl_ladder_is_beta1_lambda_2_and_8_across_six_models():
+    rows = GEN.fjr_kl_rows()
+    assert len(rows) == 12
+    tags = [r.split(",")[0] for r in rows]
+    assert len(set(tags)) == 12
+    assert len({ANA.model_of(t) for t in tags}) == 6
+    assert sorted({ANA.arm_of(t) for t in tags}) == ["b2", "b8"]
+    for r in rows:
+        c = [x.strip() for x in r.split(",")]
+        assert c[1] == "sft_kl", r                    # forward-KL only
+        assert c[11] == "1", r                        # beta = 1
+        assert c[14] == "0.9" and c[15] == "100", r   # Wu's alpha, K
+    assert {r.split(",")[2].strip() for r in rows} == {"2", "8"}
+
+
+def test_kl_ladder_is_disjoint_from_every_other_fj_key():
+    core = {r.split(",")[0] for r in GEN.fjr_rows()}
+    b1 = {r.split(",")[0] for r in GEN.fjr_rows(beta=GEN.FJR_BETA_BOUNDARY)}
+    lad = {r.split(",")[0] for r in GEN.fjr_kl_rows()}
+    assert lad & core == set() and lad & b1 == set()
+
+
+def test_checker_knows_the_ladder_arm_semantics(tmp_path):
+    for arm, kl in (("b2", 2.0), ("b8", 8.0)):
+        errs = _check(tmp_path, arm=arm, style="sft_kl", kl_beta=kl, beta=1.0)
+        assert errs == [], (arm, errs)
+        # and rejects the wrong dose under that tag
+        errs = _check(tmp_path, arm=arm, style="sft_kl", kl_beta=1.0, beta=1.0)
+        assert any("kl_beta" in e for e in errs), (arm, errs)
+
+
+def test_ladder_arms_must_still_be_forward_kl_without_a_reference(tmp_path):
+    tag, d, W = _mk_run(tmp_path, arm="b8", style="sft_kl", kl_beta=8.0,
+                        beta=1.0)
+    CHK._FJR_GRAPH_CACHE["W"] = W
+    d["config"]["kl_direction"] = "reverse"
+    errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
+                         d["pred_raw"].float(), d["innate"].float(),
+                         expect_rounds=4, expect_agents=N)
+    assert any("FORWARD" in e for e in errs), errs

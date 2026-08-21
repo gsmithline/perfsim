@@ -93,8 +93,11 @@ def _read_tags(path):
             for ln in Path(path).read_text().splitlines() if ln.strip()]
 
 
+ARMS = ("b0", "b1", "b2", "b8")
+
+
 def arm_of(tag):
-    hits = [a for a in ("b0", "b1") if f"_{a}_beta" in tag]
+    hits = [a for a in ARMS if f"_{a}_beta" in tag]
     if len(hits) != 1:
         raise SystemExit(f"[fjr] cannot read arm from {tag!r}")
     return hits[0]
@@ -272,7 +275,7 @@ def report(rows):
           f"{'W1 innate':>10} {'W1 cent':>9} {'W1 frozen':>10} "
           f"{'final step':>11} {'conv':>5}")
     for m in sorted({r["model"] for r in rows}):
-        for a in ("b0", "b1"):
+        for a in ARMS:
             sel = [r for r in rows if r["model"] == m and r["arm"] == a]
             if not sel:
                 continue
@@ -298,9 +301,10 @@ def figure(rounds_rows, cell_rows, frozen, models, out_dir):
     fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.1 * nrow),
                              sharex=True)
     axes = np.atleast_1d(axes).ravel()
-    col = {"b0": "#c1443c", "b1": "#2a6fb5"}
+    col = {"b0": "#c1443c", "b1": "#2a6fb5", "b2": "#6a9a56",
+           "b8": "#8a5fa8"}
     for ax, m in zip(axes, models):
-        for a in ("b0", "b1"):
+        for a in ARMS:
             sel = sorted([r for r in rounds_rows
                           if r["model"] == m and r["arm"] == a],
                          key=lambda r: r["t"])
@@ -308,7 +312,8 @@ def figure(rounds_rows, cell_rows, frozen, models, out_dir):
                 continue
             ax.plot([r["t"] for r in sel], [r["w1_from_innate"] for r in sel],
                     lw=1.7, color=col[a],
-                    label=("ordinary SFT" if a == "b0" else "forward-KL SFT"))
+                    label=("ordinary SFT" if a == "b0"
+                           else f"forward-KL $\\lambda$={a[1:]}"))
         if m in frozen:
             innate_v = None
             # the frozen control is a POINT: constant from round 1, so it

@@ -3913,6 +3913,7 @@ FJR_KEY = "fj_robustness"
 FJR_SMOKE_KEY = "fj_robustness_smoke"
 FJR_FROZEN_KEY = "fj_robustness_frozen"
 FJR_BETA1_KEY = "fj_robustness_beta1"      # optional, NOT part of the core
+FJR_KL_KEY = "fj_robustness_kl_ladder"     # beta=1 KL-dose ladder
 FJR_H100 = QMECH_H100
 FJR_BETA = 0.5             # core; the optional boundary wave uses 1.0
 FJR_BETA_BOUNDARY = 1.0
@@ -3921,6 +3922,15 @@ FJR_INNER = 100            # K inner FJ steps per outer round
 FJR_ROUNDS = 30
 FJR_SMOKE_ROUNDS = 3
 FJR_ARMS = ["b0", "b1"]
+# KL-DOSE LADDER (2026-08-21). The beta=1 wave showed that the frozen
+# (lambda -> infinity) endpoint does NOT collapse -- it retains SD
+# .014-.054 through the same operator -- while both lambda=0 and
+# lambda=1 do. Compared at a MATCHED round, lambda=1 preserves LESS
+# spread than plain SFT in four of six models, so the collapse is not
+# monotone in the KL dose and nothing between lambda=1 and infinity has
+# been measured. b2/b8 bracket that gap. beta=1 only: it is the only
+# surface where anything collapses.
+FJR_KL_ARMS = ["b2", "b8"]
 FJR_MODELS = ["qwen7b", "qwen3_8b", "olmo7b", "olmo3_7b",
               "mistral7b", "ministral8b"]
 # frozen zero-shot vectors verified field by field (model, dataset,
@@ -3979,9 +3989,15 @@ def fjr_row(model, arm, rounds=FJR_ROUNDS, beta=FJR_BETA, smoke=False):
         disk=m["disk"], pplbatch=m["pplbatch"])
 
 
-def fjr_rows(beta=FJR_BETA):
+def fjr_rows(beta=FJR_BETA, arms=None):
     return [fjr_row(mo, ar, beta=beta)
-            for mo in FJR_MODELS for ar in FJR_ARMS]
+            for mo in FJR_MODELS for ar in (arms or FJR_ARMS)]
+
+
+def fjr_kl_rows():
+    """The beta=1 KL ladder: lambda in {2, 8} across all six models, so
+    the shape is not a one-model story."""
+    return fjr_rows(beta=FJR_BETA_BOUNDARY, arms=FJR_KL_ARMS)
 
 
 def fjr_smoke_rows():
@@ -8507,7 +8523,8 @@ def main():
             # trained cells at beta=1, where 1-beta=0 removes the innate
             # component from x_init entirely. Same alpha=.9 and K=100.
             # Generated so it is ready, never bundled into any umbrella.
-            FJR_BETA1_KEY: (fjr_rows(beta=FJR_BETA_BOUNDARY), 12)}
+            FJR_BETA1_KEY: (fjr_rows(beta=FJR_BETA_BOUNDARY), 12),
+            FJR_KL_KEY: (fjr_kl_rows(), 12)}
     _all_fjr = set()
     for _key, (_rows, _n) in _fjr.items():
         assert len(_rows) == _n, (_key, len(_rows), _n)
@@ -8529,22 +8546,25 @@ def main():
             # arm is read from the tag's _<arm>_beta token, NOT by
             # splitting on "_": model slugs contain underscores
             # (qwen3_8b, olmo3_7b) so positional splitting picks "8b"
+            _all_arms = FJR_ARMS + FJR_KL_ARMS
             def _arm_of(tag):
-                hits = [a for a in FJR_ARMS if f"_{a}_beta" in tag]
+                hits = [a for a in _all_arms if f"_{a}_beta" in tag]
                 assert len(hits) == 1, (tag, hits)
                 return hits[0]
-            if _key == FJR_KEY or _key == FJR_BETA1_KEY:
+            if _key in (FJR_KEY, FJR_BETA1_KEY, FJR_KL_KEY):
                 _models = {t.split("_")[1] + ("_" + t.split("_")[2]
-                                              if t.split("_")[2] not in FJR_ARMS
+                                              if t.split("_")[2] not in _all_arms
                                               else "")
                            for t in _tags}
                 assert len(_models) == 6, _models
-                assert sum(1 for t in _tags if _arm_of(t) == "b0") == _n // 2
+                _lo = FJR_KL_ARMS[0] if _key == FJR_KL_KEY else "b0"
+                assert sum(1 for t in _tags if _arm_of(t) == _lo) == _n // 2
             # b0 is ordinary SFT at KL weight 0; b1 is forward KL at 1
             for r in _rows:
                 _c = [x.strip() for x in r.split(",")]
                 assert (_arm_of(_c[0]), _c[1], _c[2]) in (
-                    ("b0", "sft", "0"), ("b1", "sft_kl", "1")), r
+                    ("b0", "sft", "0"), ("b1", "sft_kl", "1"),
+                    ("b2", "sft_kl", "2"), ("b8", "sft_kl", "8")), r
             _sub = fjr_sub(_key, _rows,
                            smoke=(_key == FJR_SMOKE_KEY))
             _env = next(ln for ln in _sub.splitlines()
@@ -8577,7 +8597,7 @@ def main():
                 & {r.split(",")[0] for r in fjr_rows(beta=FJR_BETA_BOUNDARY)})
     # the corrected configuration must not leave any row from the earlier
     # unsubmitted alpha=.5 / K=1 draft behind under a primary key
-    for _k in (FJR_KEY, FJR_SMOKE_KEY, FJR_BETA1_KEY):
+    for _k in (FJR_KEY, FJR_SMOKE_KEY, FJR_BETA1_KEY, FJR_KL_KEY):
         for _r in files[os.path.join(HERE, f"configs_pofd_{_k}.txt")]:
             assert "alpha0p5" not in _r and "_in1_" not in _r, (_k, _r)
 

@@ -434,7 +434,11 @@ SLUG_BASE = {
 
 
 FJR_H100 = "NVIDIA H100 80GB HBM3"
-FJR_ARM_SEMANTICS = {"b0": ("sft", 0.0), "b1": ("sft_kl", 1.0)}
+# b0 = ordinary SFT; b1/b2/b8 = forward-KL at that lambda. b2/b8 are the
+# beta=1 KL-dose ladder filling the gap between lambda=1 (which collapses)
+# and lambda -> infinity (which does not).
+FJR_ARM_SEMANTICS = {"b0": ("sft", 0.0), "b1": ("sft_kl", 1.0),
+                     "b2": ("sft_kl", 2.0), "b8": ("sft_kl", 8.0)}
 FJR_REPLAY_TOL = 2e-5      # float32 accumulation over 30 rounds
 # non-fatal observations the FJ section wants surfaced with the results
 _FJR_NOTES = []
@@ -471,12 +475,12 @@ def check_fjr(name, cfg, d, op_raw, pred_raw, innate, expect_rounds=30,
     if float(cfg.get("kl_beta", -1)) != want_beta:
         errs.append(f"FJR {name}: arm {arm} has kl_beta="
                     f"{cfg.get('kl_beta')}, expected {want_beta}")
-    if arm == "b1":
+    if arm != "b0":
         if cfg.get("kl_direction") != "forward":
-            errs.append(f"FJR {name}: b1 must be FORWARD KL, got "
+            errs.append(f"FJR {name}: {arm} must be FORWARD KL, got "
                         f"{cfg.get('kl_direction')!r}")
         if cfg.get("kl_ref_adapter"):
-            errs.append(f"FJR {name}: b1 must have NO reference adapter, "
+            errs.append(f"FJR {name}: {arm} must have NO reference adapter, "
                         f"got {cfg.get('kl_ref_adapter')!r}")
 
     # -- horizon and shape
