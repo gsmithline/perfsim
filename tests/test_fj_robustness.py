@@ -239,21 +239,25 @@ def test_run_wu_rejects_bad_arguments():
 
 # --------------------------------------------------- checker sabotage
 
-def _mk_run(tmp, *, beta=0.5, alpha=0.5, n_inner=1, rounds=4, arm="b0",
+def _mk_run(tmp, *, beta=0.5, alpha=0.9, n_inner=3, rounds=4, arm="b0",
             model="qwen7b", gpu="NVIDIA H100 80GB HBM3", stale=False,
             served_mismatch=False, style=None, kl_beta=None, corrupt=False):
     """A structurally valid FJ run, defect injected by kwargs."""
     innate, W = _toy()
     rng = np.random.default_rng(0)
-    preds, ops, trainy = [], [], []
+    preds, ops, trainy, u1s = [], [], [], []
     x_prev = None
     for t in range(rounds):
         p = torch.tensor(rng.uniform(0.1, 0.9, N), dtype=torch.float32)
         x0 = (1 - beta) * innate + beta * p
         seed = (x_prev if (stale and x_prev is not None) else x0).clone()
         x = seed
+        u1 = None
         for _ in range(n_inner):
             x = (1 - alpha) * x0 + alpha * (W @ x)
+            if u1 is None:
+                u1 = x.clone()
+        u1s.append(u1)
         preds.append(p)
         ops.append(x)
         trainy.append(innate.clone() if t == 0 else ops[t - 1].clone())
@@ -269,8 +273,10 @@ def _mk_run(tmp, *, beta=0.5, alpha=0.5, n_inner=1, rounds=4, arm="b0",
         kl_beta if kl_beta is not None else (0.0 if arm == "b0" else 1.0))
     cfg = {
         "training_style": st, "kl_beta": kb, "kl_direction": "forward",
-        "kl_ref_adapter": "", "w_plat": beta, "fj_alpha": alpha,
+        "kl_ref_adapter": "", "w_plat": beta,
         "fj_inner_steps": n_inner, "fj_update_version": "wu1",
+        "fj_peer_alpha": alpha, "fj_internal_anchor_coef": 1.0 - alpha,
+        "fj_peer_sus_mean": 1.0 - alpha, "fj_model": "wu_homogeneous",
         "fj_beta_mean": beta, "fj_human_component": "stateless_innate_k1",
         "fj_graph_sha256": CHK._sha_t(W),
         "hardware": {"gpu_name": gpu}, "serve_eval_mode": True,
@@ -278,6 +284,7 @@ def _mk_run(tmp, *, beta=0.5, alpha=0.5, n_inner=1, rounds=4, arm="b0",
     }
     d = {"config": cfg, "op_raw": op_raw, "pred_raw": torch.stack(preds),
          "innate": innate, "fj_served_used": used,
+         "fj_u1": torch.stack(u1s),
          "train_y_raw": torch.stack(trainy),
          "trajectory": [{"t": t, "parse_fail": 0.0} for t in range(rounds)]}
     tag = (f"pofdfj_{model}_{arm}_beta{GEN._num(beta)}"
@@ -309,18 +316,20 @@ def test_checker_rejects_wrong_beta(tmp_path):
     errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
                          d["pred_raw"].float(), d["innate"].float(),
                          expect_rounds=4, expect_agents=N)
-    assert any("replay the declared recurrence" in e for e in errs), errs
+    assert any("replay the recurrence" in e for e in errs), errs
 
 
 def test_checker_rejects_inverted_alpha_convention(tmp_path):
     """peer_sus vs alpha swapped: the run mixed with 1-alpha."""
-    tag, d, W = _mk_run(tmp_path, alpha=0.25)
+    tag, d, W = _mk_run(tmp_path, alpha=0.25, n_inner=3)
     CHK._FJR_GRAPH_CACHE["W"] = W
-    d["config"]["fj_alpha"] = 0.75           # 1 - 0.25
+    d["config"]["fj_peer_alpha"] = 0.75      # 1 - 0.25
+    d["config"]["fj_internal_anchor_coef"] = 0.25
+    d["config"]["fj_peer_sus_mean"] = 0.25
     errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
                          d["pred_raw"].float(), d["innate"].float(),
                          expect_rounds=4, expect_agents=N)
-    assert any("replay the declared recurrence" in e for e in errs), errs
+    assert any("replay the recurrence" in e for e in errs), errs
 
 
 def test_checker_rejects_wrong_inner_step_count(tmp_path):
@@ -330,7 +339,7 @@ def test_checker_rejects_wrong_inner_step_count(tmp_path):
     errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
                          d["pred_raw"].float(), d["innate"].float(),
                          expect_rounds=4, expect_agents=N)
-    assert any("replay the declared recurrence" in e for e in errs), errs
+    assert any("replay the recurrence" in e for e in errs), errs
 
 
 def test_checker_rejects_stale_previous_state_initialisation(tmp_path):
@@ -401,7 +410,7 @@ def test_checker_rejects_a_truncated_horizon(tmp_path):
 
 def test_checker_rejects_a_corrupted_trajectory(tmp_path):
     errs = _check(tmp_path, corrupt=True)
-    assert any("replay the declared recurrence" in e for e in errs), errs
+    assert any("replay the recurrence" in e for e in errs), errs
 
 
 def test_checker_rejects_non_eval_mode_serving(tmp_path):
@@ -465,7 +474,7 @@ def test_tags_carry_no_gate_tokens():
 
 def test_tags_encode_the_full_configuration():
     t = GEN.fjr_tag("qwen7b", "b0")
-    for token in ("qwen7b", "_b0_", "beta0p5", "alpha0p5", "_in1_",
+    for token in ("qwen7b", "_b0_", "beta0p5", "alpha0p9", "_in100_",
                   "_k1_", "_s0_", "_r30"):
         assert token in t, (token, t)
 
@@ -575,3 +584,151 @@ def test_production_agent_count_is_still_gated():
     sig = inspect.signature(CHK.check_fjr)
     assert sig.parameters["expect_agents"].default == 723
     assert sig.parameters["expect_rounds"].default == 30
+
+
+# ============================================================ Wu's model
+# alpha = .9 peer susceptibility, K = 100 inner steps, beta the only
+# population-side quantity that varies.
+
+def test_run_wu_refuses_alpha_passed_without_its_complement():
+    """THE required guard. FJWorld.peer_sus is STUBBORNNESS. Building the
+    world with .9 and then asking for peer susceptibility .9 would run
+    .1 mixing -- the near-opposite dynamics -- and every downstream
+    number would still look well-formed."""
+    innate, W = _toy()
+    wrong = FJWorld(innate=innate, graph=W,
+                    peer_sus=torch.full((N,), 0.9),      # alpha passed raw
+                    platform_sus=torch.full((N,), 0.5), features=innate)
+    with pytest.raises(ValueError, match="STUBBORNNESS"):
+        wrong.run_wu(torch.full((N,), 0.5), alpha=0.9, n_inner=100)
+
+    right = FJWorld(innate=innate, graph=W,
+                    peer_sus=torch.full((N,), FJWorld.alpha_to_peer_sus(0.9)),
+                    platform_sus=torch.full((N,), 0.5), features=innate)
+    right.run_wu(torch.full((N,), 0.5), alpha=0.9, n_inner=100)   # accepted
+    assert torch.isfinite(right.state["opinion"]).all()
+
+
+def test_production_constants_are_wus():
+    assert GEN.FJR_ALPHA == 0.9
+    assert GEN.FJR_INNER == 100
+    assert GEN.FJR_BETA == 0.5
+    assert GEN.FJR_BETA_BOUNDARY == 1.0
+    assert GEN.FJR_ROUNDS == 30
+    assert CTL.ALPHA == 0.9 and CTL.PRODUCTION_INNER == 100
+
+
+def test_no_primary_key_references_the_retired_configuration():
+    """The alpha=.5 / K=1 draft was never submitted and must not survive
+    under any primary key."""
+    for key in (GEN.FJR_KEY, GEN.FJR_SMOKE_KEY, GEN.FJR_BETA1_KEY):
+        body = (CONDOR / f"configs_pofd_{key}.txt").read_text()
+        assert "alpha0p5" not in body, key
+        assert "_in1_" not in body, key
+        assert "alpha0p9" in body and "_in100_" in body, key
+
+
+def test_beta_is_the_only_population_side_quantity_that_varies():
+    core = GEN.fjr_rows()
+    boundary = GEN.fjr_rows(beta=GEN.FJR_BETA_BOUNDARY)
+    for rows in (core, boundary):
+        assert {r.split(",")[14].strip() for r in rows} == {"0.9"}   # alpha
+        assert {r.split(",")[15].strip() for r in rows} == {"100"}   # K
+    assert {r.split(",")[11].strip() for r in core} == {"0.5"}
+    assert {r.split(",")[11].strip() for r in boundary} == {"1"}
+
+
+def test_u1_pins_the_initialisation_where_the_final_state_cannot(tmp_path):
+    """At alpha=.9, K=100 the inner loop contracts by ~0.9^100, so u^(K)
+    forgets its start. u^(1) is affine in u^(0), so it still carries it."""
+    innate, W = _toy()
+    beta, alpha, K = 0.5, 0.9, 100
+    preds = torch.tensor([0.2, 0.4, 0.6, 0.8])
+    x_init = (1 - beta) * innate + beta * preds
+    other = torch.tensor([0.9, 0.9, 0.1, 0.1])       # a stale-state start
+    a_final, b_final = x_init.clone(), other.clone()
+    a_u1 = b_u1 = None
+    for _ in range(K):
+        a_final = (1 - alpha) * x_init + alpha * (W @ a_final)
+        b_final = (1 - alpha) * x_init + alpha * (W @ b_final)
+        if a_u1 is None:
+            a_u1, b_u1 = a_final.clone(), b_final.clone()
+    # the finals are indistinguishable ...
+    assert float((a_final - b_final).abs().max()) < 1e-4
+    # ... and the first iterates are not
+    assert float((a_u1 - b_u1).abs().max()) > 1e-2
+
+
+def test_checker_rejects_a_missing_u1_record(tmp_path):
+    tag, d, W = _mk_run(tmp_path)
+    CHK._FJR_GRAPH_CACHE["W"] = W
+    d.pop("fj_u1")
+    errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
+                         d["pred_raw"].float(), d["innate"].float(),
+                         expect_rounds=4, expect_agents=N)
+    assert any("no fj_u1" in e for e in errs), errs
+
+
+def test_checker_rejects_a_stale_start_via_u1(tmp_path):
+    """The blocker made falsifiable again at production K."""
+    errs = _check(tmp_path, stale=True, n_inner=100)
+    assert any("u^(1)" in e for e in errs), errs
+
+
+def test_checker_rejects_a_mismatched_internal_coefficient(tmp_path):
+    tag, d, W = _mk_run(tmp_path)
+    CHK._FJR_GRAPH_CACHE["W"] = W
+    d["config"]["fj_internal_anchor_coef"] = 0.9      # not 1 - alpha
+    errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
+                         d["pred_raw"].float(), d["innate"].float(),
+                         expect_rounds=4, expect_agents=N)
+    assert any("without taking its complement" in e for e in errs), errs
+
+
+def test_checker_rejects_a_world_built_with_the_wrong_stubbornness(tmp_path):
+    tag, d, W = _mk_run(tmp_path)
+    CHK._FJR_GRAPH_CACHE["W"] = W
+    d["config"]["fj_peer_sus_mean"] = 0.9
+    errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
+                         d["pred_raw"].float(), d["innate"].float(),
+                         expect_rounds=4, expect_agents=N)
+    assert any("built with stubbornness" in e for e in errs), errs
+
+
+def test_checker_rejects_deffuant_parameters(tmp_path):
+    for key, bad in (("ai_gate_mode", "all_open"), ("peer_gate_mode", "all_open"),
+                     ("canary_delta", 0.1), ("gamma_bias", 1.5),
+                     ("ab_sweeps", 4), ("pop_reset", True)):
+        tag, d, W = _mk_run(tmp_path)
+        CHK._FJR_GRAPH_CACHE["W"] = W
+        d["config"][key] = bad
+        errs = CHK.check_fjr(tag, d["config"], d, d["op_raw"].float(),
+                             d["pred_raw"].float(), d["innate"].float(),
+                             expect_rounds=4, expect_agents=N)
+        assert errs, f"{key}={bad} must be rejected"
+
+
+def test_beta_half_is_an_equal_innate_model_mix(tmp_path):
+    errs = _check(tmp_path, beta=0.5)
+    assert not any("equally" in e for e in errs), errs
+    innate, W = _toy()
+    p = torch.tensor([0.2, 0.4, 0.6, 0.8])
+    assert torch.allclose(0.5 * innate + 0.5 * p,
+                          CTL.fj_step(innate, p, 0.5, 0.0, 1, W), atol=1e-6)
+
+
+def test_beta_one_removes_the_innate_component(tmp_path):
+    """The boundary wave: 1 - beta = 0, so x_init is the model alone."""
+    innate, W = _toy()
+    p = torch.tensor([0.2, 0.4, 0.6, 0.8])
+    assert torch.allclose(CTL.fj_step(innate, p, 1.0, 0.0, 1, W), p, atol=1e-6)
+    errs = _check(tmp_path, beta=1.0)
+    assert not any("innate component" in e for e in errs), errs
+
+
+def test_beta1_key_is_the_boundary_wave_at_wus_alpha_and_k():
+    rows = GEN.fjr_rows(beta=GEN.FJR_BETA_BOUNDARY)
+    assert len(rows) == 12
+    for r in rows:
+        t = r.split(",")[0]
+        assert "beta1_alpha0p9_in100_k1_s0_r30" in t, t

@@ -221,29 +221,53 @@ class FJWorld(StatefulPopulationWorld):
     #      stateless (k = 1): the only channel from round t-1 to round t
     #      is the model, never the population.
     #
-    #   3  alpha IS NAMED. The stored field `peer_sus` is the ANCHOR
-    #      weight, so the neighbour weight is alpha = 1 - peer_sus. The
-    #      caller passes alpha and this method maps it, rather than
-    #      letting a field called "peer_sus" quietly stand in for it --
-    #      MovieLens ships peer_sus = 1, which under the archived
-    #      operator means FULLY ANCHORED, i.e. no neighbour mixing at all.
+    #   3  alpha IS NAMED, AND THE COMPLEMENT IS ENFORCED. The stored
+    #      field `peer_sus` is STUBBORNNESS, i.e. the anchor weight, so
+    #      the peer susceptibility is alpha = 1 - peer_sus. MovieLens
+    #      ships peer_sus = 1, which under the archived operator means
+    #      FULLY ANCHORED -- no neighbour mixing at all. Passing alpha
+    #      straight into the internal coefficient is therefore the single
+    #      most damaging mistake available here: at alpha = .9 it would
+    #      run a stubbornness of .9, i.e. a peer susceptibility of .1,
+    #      the near-opposite of the intended dynamics. This method
+    #      REFUSES that: the caller passes the peer susceptibility, and
+    #      run_wu checks the world was constructed with its complement.
     #
-    # The recurrence, exactly:
-    #     x^0(t)      = (1 - beta) * innate + beta * m(t)
-    #     x^{l+1}(t)  = (1 - alpha) * x^0(t) + alpha * P x^l(t)
+    # Jiduan Wu's model, homogeneous-parameter specialization:
+    #     x_init^(t)  = (1 - beta) x^innate + beta m_t
+    #     u^(0)       = x_init^(t)
+    #     u^(l+1)     = (1 - alpha) x_init^(t) + alpha P u^(l),
+    #                   l = 0 .. K-1
     # with beta carried per agent in platform_sus (the runner folds
     # W_PLAT and PLATFORM_SUS_SCALE into it) and P = self._W.
     # ------------------------------------------------------------------
     def run_wu(self, predictions: Tensor, *, alpha: float,
                n_inner: int = 1) -> Data:
-        """One outer round of the Wu-style FJ update from a SERVED vector.
+        """One outer round of Wu's FJ update from a SERVED vector.
 
-        Returns the emitted Data and leaves `state["opinion"]` at x^n_inner.
+        `alpha` is the PEER SUSCEPTIBILITY. The world must have been
+        constructed with peer_sus = 1 - alpha (stubbornness); that is
+        checked here rather than trusted, because passing alpha directly
+        into the internal coefficient silently runs the complement of the
+        intended dynamics and every downstream number would still look
+        well-formed.
+
+        Returns the emitted Data and leaves `state["opinion"]` at u^(K).
         """
         if not isinstance(n_inner, int) or n_inner < 1:
             raise ValueError(f"n_inner must be a positive int; got {n_inner!r}")
         if not (0.0 <= float(alpha) <= 1.0):
             raise ValueError(f"alpha must be in [0, 1]; got {alpha!r}")
+        want_stub = 1.0 - float(alpha)
+        stub = self._peer_sus.reshape(-1)
+        if not torch.allclose(stub, torch.full_like(stub, want_stub),
+                              atol=1e-6):
+            raise ValueError(
+                f"run_wu: peer susceptibility alpha={alpha} requires the "
+                f"world to carry stubbornness peer_sus={want_stub}, but it "
+                f"holds [{float(stub.min())}, {float(stub.max())}]. The "
+                f"internal coefficient is STUBBORNNESS, not alpha -- "
+                f"passing alpha straight in runs 1-alpha peer mixing.")
         preds = predictions.to(dtype=self._dtype).detach()
         if self._is_scalar and preds.ndim == 2 and preds.shape[-1] == 1:
             preds = preds.squeeze(-1)
@@ -255,11 +279,26 @@ class FJWorld(StatefulPopulationWorld):
             raise ValueError("predictions contain non-finite values")
 
         a = float(alpha)
-        x_zero = ((1.0 - self._platform_sus) * self._innate
+        x_init = ((1.0 - self._platform_sus) * self._innate
                   + self._platform_sus * preds)
-        x = x_zero                      # x^0_inner(t) = x^0(t), NOT the
-        for _ in range(n_inner):        # previous round's state
-            x = (1.0 - a) * x_zero + a * (self._W @ x)
+        u = x_init                      # u^(0) = x_init^(t), NOT the
+        u1 = None                       # previous round's population
+        for _ in range(n_inner):
+            u = (1.0 - a) * x_init + a * (self._W @ u)
+            if u1 is None:
+                u1 = u.clone()
+        # THE FIRST INNER ITERATE IS KEPT AS EVIDENCE.
+        # At alpha=.9 and K=100 the inner loop contracts by 0.9^100 ~ 3e-5,
+        # so u^(K) is the FJ fixed point and has FORGOTTEN where it
+        # started. Replaying the final state therefore cannot distinguish
+        # u^(0)=x_init from a stale previous-population start -- the very
+        # blocker this operator exists to fix would be unfalsifiable from
+        # the artifact. u^(1) still carries it: u^(1) is an affine
+        # function of u^(0) with coefficient alpha, so pinning u^(1) pins
+        # the initialisation exactly.
+        self.last_u1 = u1
+        self.last_x_init = x_init.clone()
+        x = u
         self._state = {"opinion": x}
         x_data = (self._features.unsqueeze(-1) if self._features.ndim == 1
                   else self._features)
@@ -268,10 +307,10 @@ class FJWorld(StatefulPopulationWorld):
 
     @staticmethod
     def alpha_to_peer_sus(alpha: float) -> float:
-        """Neighbour weight -> the anchor weight this class stores.
+        """Peer susceptibility alpha -> the STUBBORNNESS this class stores.
 
-        Named so the mapping is stated once, in the class that owns the
-        convention, instead of being re-derived wherever alpha is used.
+        Stated once, in the class that owns the convention, instead of
+        being re-derived wherever alpha is used. run_wu enforces it.
         """
         return 1.0 - float(alpha)
 

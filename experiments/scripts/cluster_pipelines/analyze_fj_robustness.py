@@ -2,8 +2,11 @@
 """HARD-GATED analyzer for the FJ robustness wave (2026-08-21). CPU only.
 
 THE QUESTION. Does the ordinary-SFT (b0) vs forward-KL-SFT (b1) result
-survive when Deffuant bounded-confidence peers are replaced by a LINEAR
-FJ operator? Six models x two arms, seed 0, one configuration.
+survive under Jiduan Wu's model (homogeneous-parameter specialization)
+in place of our Deffuant bounded-confidence peers? Six models x two
+arms, seed 0, peer susceptibility alpha=.9, K=100 inner FJ steps per
+outer round, 30 outer rounds. beta is the only population-side quantity
+that varies: .5 for the core wave, 1 for the optional boundary wave.
 
 HARD FAIL UNTIL THE GRID IS COMPLETE. Twelve trained cells and six
 frozen controls. A partial grid gets refused rather than analysed,
@@ -14,7 +17,11 @@ WHAT IS AND IS NOT CLAIMED.
   * Seed 0 only. Everything here is DESCRIPTIVE. No ordering is called
     significant, and none is assumed in advance -- the Deffuant result
     may or may not survive, and both outcomes are reportable.
-  * Round 30 is NOT an equilibrium unless convergence says so. The
+  * OUTER round 30 is NOT an equilibrium unless convergence says so.
+    The INNER loop does converge -- at alpha=.9, K=100 contracts by
+    ~0.9^100 -- but that is the FJ fixed point of one round's anchor,
+    which says nothing about whether the outer model-population loop has
+    settled. The two must not be conflated. The
     per-cell final step |x(30) - x(29)| is reported next to every late
     summary, and the header states plainly whether each cell converged.
     The model-independent control converges at round 13 under perfect
@@ -25,7 +32,7 @@ WHAT IS AND IS NOT CLAIMED.
     from round 1, so "distance to frozen" is distance to a fixed vector.
   * This is not a controlled comparison against the Deffuant wave. There
     is no natural correspondence between a bounded-confidence gate width
-    and the FJ neighbour weight alpha, so a surviving ordering is
+    and Wu's peer susceptibility alpha, so a surviving ordering is
     evidence of robustness, not of equivalence.
 
 Metrics per cell: post-FJ population mean and SD, raw and mean-centered
@@ -156,8 +163,9 @@ def analyse(roots, out_dir, frozen_dir=None):
         cell_rows.append({
             "model": m, "arm": a, "tag": tag,
             "beta": float(cfg.get("w_plat", float("nan"))),
-            "alpha": float(cfg.get("fj_alpha", float("nan"))),
-            "n_inner": int(cfg.get("fj_inner_steps", -1)),
+
+            "K_inner": int(cfg.get("fj_inner_steps", -1)),
+            "peer_alpha": float(cfg.get("fj_peer_alpha", float("nan"))),
             "fj_update_version": cfg.get("fj_update_version"),
             "rounds": int(op.shape[0]),
             "late_mean": float(late.mean()),

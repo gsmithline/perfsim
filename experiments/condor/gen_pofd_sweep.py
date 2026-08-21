@@ -3873,13 +3873,25 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 # replaced by a LINEAR FJ operator? Smallest useful appendix comparison:
 # six models x two arms, one seed, one configuration. Not a new sweep.
 #
-# THE OPERATOR (FJ_UPDATE_VERSION=wu1, opt-in; "legacy" is untouched):
-#     x^0(t)     = (1 - beta) innate + beta m(t)
-#     x^{l+1}(t) = (1 - alpha) x^0(t) + alpha P x^l(t),  x^0_inner = x^0
-# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE = .5 on MovieLens;
-# alpha = .5 is the NEIGHBOUR weight, stored as peer_sus = 1 - alpha.
-# One inner step per outer round. The human component is the raw innate
-# opinion with no carryover, i.e. stateless k = 1.
+# THE OPERATOR: Jiduan Wu's model, homogeneous-parameter specialization
+# (FJ_UPDATE_VERSION=wu1, opt-in; "legacy" is untouched):
+#     x_init^(t) = (1 - beta) x^innate + beta m_t
+#     u^(0)      = x_init^(t)
+#     u^(l+1)    = (1 - alpha) x_init^(t) + alpha P u^(l),  l = 0..K-1
+# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE; alpha = .9 is the
+# PEER SUSCEPTIBILITY and K = 100 inner steps run per outer round. The
+# human component is the raw innate opinion with no carryover: k = 1.
+#
+# THE ONLY POPULATION-SIDE QUANTITY THAT VARIES IS beta, whose
+# complement 1 - beta is the innate weight: .5 for the core wave, 1 for
+# the optional boundary wave (where the innate term drops out entirely).
+# No Deffuant memory or gate parameters enter anywhere.
+#
+# ALPHA vs THE INTERNAL COEFFICIENT. FJWorld.peer_sus is STUBBORNNESS,
+# i.e. 1 - alpha. The wave records fj_peer_alpha=.9 and passes .1 to the
+# internal field; FJWorld.run_wu refuses the pair if they disagree,
+# because passing .9 straight in would run peer susceptibility .1 -- the
+# near-opposite dynamics, with every downstream number still well-formed.
 #
 # WHY THE ARCHIVED FJ PATH COULD NOT BE USED AS-IS. Four blockers, all
 # verified in source before this wave was written:
@@ -3902,9 +3914,10 @@ FJR_SMOKE_KEY = "fj_robustness_smoke"
 FJR_FROZEN_KEY = "fj_robustness_frozen"
 FJR_BETA1_KEY = "fj_robustness_beta1"      # optional, NOT part of the core
 FJR_H100 = QMECH_H100
-FJR_BETA = 0.5
-FJR_ALPHA = 0.5
-FJR_INNER = 1
+FJR_BETA = 0.5             # core; the optional boundary wave uses 1.0
+FJR_BETA_BOUNDARY = 1.0
+FJR_ALPHA = 0.9            # PEER SUSCEPTIBILITY (internal field gets .1)
+FJR_INNER = 100            # K inner FJ steps per outer round
 FJR_ROUNDS = 30
 FJR_SMOKE_ROUNDS = 3
 FJR_ARMS = ["b0", "b1"]
@@ -4062,20 +4075,32 @@ FJR_SUB_TEMPLATE = """\
 # LINEAR FJ operator. Six models x two arms, seed 0, MovieLens Action,
 # 723 agents, replace-only data, fresh LoRA r=512 each round, 1 epoch,
 # batch 4, lr 5e-5, greedy eval-mode serving.
+# JIDUAN WU'S MODEL, homogeneous-parameter specialization.
 # FJ_UPDATE_VERSION=wu1 is the OPT-IN operator; "legacy" is the archived
 # one and is untouched, so no existing FJ artifact changes.
-#   x0 = (1-beta) innate + beta m;  x_l+1 = (1-alpha) x0 + alpha P x_l
-# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE; alpha is the
-# NEIGHBOUR weight (stored as peer_sus = 1 - alpha); x0_inner = x0, so
-# the human component is stateless (k=1) and the ONLY channel between
-# rounds is the model.
-# NO GATES. FJ platform exposure and graph mixing are unconditional, so
-# there are no _ea/_es tokens and the runner REFUSES a non-default gate
-# mode under wu1 rather than letting it sit inert in the environment.
-# ONE INNER STEP is the production setting. That is a single application
-# of (1-alpha)I + alpha P, NOT the FJ equilibrium, so a round-{rounds}
-# state must not be called one without a convergence check. The
-# model-independent CPU controls sweep n_inner to bound that choice.
+#   x_init^(t) = (1-beta) x^innate + beta m_t
+#   u^(0)      = x_init^(t)
+#   u^(l+1)    = (1-alpha) x_init^(t) + alpha P u^(l),  l = 0..K-1
+# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE and is the ONLY
+# population-side quantity that varies (.5 core, 1 boundary); its
+# complement 1-beta is the innate weight. alpha=.9 is the PEER
+# SUSCEPTIBILITY and K=100. u^(0)=x_init makes the human component
+# stateless (k=1), so the ONLY channel between rounds is the model.
+# ALPHA vs THE INTERNAL FIELD. FJWorld.peer_sus is STUBBORNNESS = 1-alpha.
+# The run records fj_peer_alpha=.9 and passes .1 internally; run_wu
+# REFUSES the pair if they disagree, because passing .9 straight in would
+# run peer susceptibility .1 -- near-opposite dynamics, with every
+# downstream number still well-formed.
+# NO GATES, NO DEFFUANT PARAMETERS. FJ platform exposure and graph mixing
+# are unconditional, so there are no _ea/_es tokens and the runner
+# REFUSES a non-default gate mode under wu1 rather than letting it sit
+# inert in the environment.
+# THE INNER LOOP CONVERGES at alpha=.9, K=100 (~0.9^100), which is Wu's
+# intent -- but that is the FJ fixed point of ONE round's anchor and says
+# nothing about the OUTER model-population loop. A round-{rounds} state
+# must not be called an equilibrium without the outer convergence check.
+# Because convergence erases the inner loop's starting point, each round
+# also saves u^(1), which is what lets the checker prove u^(0)=x_init.
 # Gate every pull with check_pofd_sanity (FJR section) and hard-fail the
 # analyzer until the whole conceptual grid is present.
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
@@ -8478,11 +8503,11 @@ def main():
     _fjr = {FJR_KEY: (fjr_rows(), 12),
             FJR_SMOKE_KEY: (fjr_smoke_rows(), 1),
             FJR_FROZEN_KEY: (fjr_frozen_rows(), 1),
-            # OPTIONAL, not part of the core wave: the same 12 trained
-            # cells at beta=1 (the consensus limit, where the innate
-            # anchor drops out of x0 entirely). Generated so it is ready,
-            # never bundled into any umbrella target.
-            FJR_BETA1_KEY: (fjr_rows(beta=1.0), 12)}
+            # OPTIONAL boundary wave, not part of the core: the same 12
+            # trained cells at beta=1, where 1-beta=0 removes the innate
+            # component from x_init entirely. Same alpha=.9 and K=100.
+            # Generated so it is ready, never bundled into any umbrella.
+            FJR_BETA1_KEY: (fjr_rows(beta=FJR_BETA_BOUNDARY), 12)}
     _all_fjr = set()
     for _key, (_rows, _n) in _fjr.items():
         assert len(_rows) == _n, (_key, len(_rows), _n)
@@ -8498,8 +8523,8 @@ def main():
                 assert _c[8] == "fj", r                 # POP_MODEL
                 assert _c[3] == "0", r                  # seed 0
                 assert _c[5] == "replace", r            # replace-only data
-                assert _c[14] == f"{FJR_ALPHA:g}", r    # alpha
-                assert _c[15] == str(FJR_INNER), r      # inner steps
+                assert _c[14] == f"{FJR_ALPHA:g}", r    # peer susceptibility
+                assert _c[15] == str(FJR_INNER), r      # K inner steps
                 assert _c[1] in ("sft", "sft_kl"), r
             # arm is read from the tag's _<arm>_beta token, NOT by
             # splitting on "_": model slugs contain underscores
@@ -8549,7 +8574,12 @@ def main():
     # arms, different beta, so the tags must differ or submitting both
     # would double-queue one set of run dirs
     assert not ({r.split(",")[0] for r in fjr_rows()}
-                & {r.split(",")[0] for r in fjr_rows(beta=1.0)})
+                & {r.split(",")[0] for r in fjr_rows(beta=FJR_BETA_BOUNDARY)})
+    # the corrected configuration must not leave any row from the earlier
+    # unsubmitted alpha=.5 / K=1 draft behind under a primary key
+    for _k in (FJR_KEY, FJR_SMOKE_KEY, FJR_BETA1_KEY):
+        for _r in files[os.path.join(HERE, f"configs_pofd_{_k}.txt")]:
+            assert "alpha0p5" not in _r and "_in1_" not in _r, (_k, _r)
 
     # ---- adapter KL / soft-decode probe (AKL) -----------------------
     # One job per key, no grid. The checks that matter here are not about

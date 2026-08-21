@@ -24,11 +24,11 @@ what any language model would say:
       H100 runs (five reused after a field-by-field provenance check) or
       from the one extraction job.
 
-WHY n_inner IS SWEPT HERE. Production runs one inner step, which applies
-(1-alpha)I + alpha P exactly once -- NOT the FJ equilibrium. Since these
-controls are model-independent and free, they sweep n_inner so the
-appendix can state how much the conclusion depends on that choice
-instead of hoping it does not.
+K=100 IS THE PRODUCTION-MATCHED WU CONFIGURATION. At alpha=.9 the inner
+loop contracts by ~0.9^K, so K=100 is effectively the FJ equilibrium of
+the anchor -- which is what Wu's model specifies. The smaller K values in
+the sweep are DIAGNOSTIC only: they show what truncating the inner loop
+would have done, and they are not the wave's configuration.
 
 Outputs (notes/pofd/fj_controls/):
   fj_controls.csv        per control, n_inner, round: mean/sd/W1
@@ -51,8 +51,13 @@ HERE = Path(os.path.dirname(os.path.abspath(__file__))
 REPO = HERE.parent.parent.parent
 OUT_DIR = REPO / "notes" / "pofd" / "fj_controls"
 BETA = 0.5
-ALPHA = 0.5
-INNER_SWEEP = (1, 2, 5, 20)
+BETA_BOUNDARY = 1.0
+ALPHA = 0.9                 # PEER SUSCEPTIBILITY (Wu); stubbornness is .1
+PRODUCTION_INNER = 100      # K, the production-matched Wu configuration
+# K=100 is the production setting; the smaller values are retained as a
+# DIAGNOSTIC only, to show how much the result depends on running the
+# inner loop to convergence rather than truncating it
+INNER_SWEEP = (1, 2, 5, 20, 100)
 ROUNDS = 30
 CONV_TOL = 1e-6
 
@@ -118,6 +123,7 @@ def analyse(out_dir, frozen_vecs=None):
         for n_inner in INNER_SWEEP:
             traj = run_control(kind, innate, W, n_inner=n_inner,
                                frozen_vec=vec)
+            is_prod = (n_inner == PRODUCTION_INNER)
             prev = None
             first_conv = -1
             for t in range(traj.shape[0]):
@@ -129,7 +135,8 @@ def analyse(out_dir, frozen_vecs=None):
                 rows.append({
                     "control": kind_full, "beta": (0.0 if kind == "no_platform"
                                                    else BETA),
-                    "alpha": ALPHA, "n_inner": n_inner, "t": t,
+                    "alpha": ALPHA, "n_inner": n_inner,
+                    "production_matched": is_prod, "t": t,
                     "mean": float(v.mean()), "sd": float(v.std(ddof=1)),
                     "w1_from_innate": w1(v, innate.numpy()),
                     "step_from_prev": step,
@@ -137,6 +144,7 @@ def analyse(out_dir, frozen_vecs=None):
                 prev = traj[t]
             conv.append({
                 "control": kind_full, "n_inner": n_inner,
+                "production_matched": is_prod,
                 "first_round_within_tol": first_conv,
                 "final_step": float((traj[-1] - traj[-2]).abs().max()),
                 "converged": bool(first_conv >= 0),
@@ -170,21 +178,29 @@ def _csv(path, rows):
 
 
 def _report(conv):
-    print(f"\n[fjctl] {'control':<22} {'n_inner':>8} {'converged':>10} "
+    print(f"\n[fjctl] {'control':<22} {'K':>5} {'prod':>5} {'converged':>10} "
           f"{'first round':>12} {'final step':>12}")
     for c in conv:
-        print(f"[fjctl] {c['control']:<22} {c['n_inner']:>8} "
+        print(f"[fjctl] {c['control']:<22} {c['n_inner']:>5} "
+              f"{'*' if c['production_matched'] else '':>5} "
               f"{str(c['converged']):>10} {c['first_round_within_tol']:>12} "
               f"{c['final_step']:>12.3e}")
-    print("\n[fjctl] a round-30 state is an EQUILIBRIUM only where "
-          "converged is True; elsewhere it is just round 30.")
+    print(f"[fjctl] * = production-matched Wu configuration "
+          f"(alpha={ALPHA}, K={PRODUCTION_INNER}); smaller K is DIAGNOSTIC "
+          f"only, not the wave's setting.")
+    print("[fjctl] converged here is the OUTER loop. The INNER loop also "
+          "converges at alpha=.9, K=100 (~0.9^100), but that is the FJ "
+          "fixed point of one round's anchor and says nothing about the "
+          "outer model-population loop.")
 
 
-def build_frozen(npz_path, out_dir, beta=BETA, alpha=ALPHA, n_inner=1):
+def build_frozen(npz_path, out_dir, beta=BETA, alpha=ALPHA,
+                 n_inner=PRODUCTION_INNER):
     """Replay each model's static zero-shot vector through ONE FJ update
     and write the frozen (lambda -> infinity) control the analyzer reads.
 
-    ONE update is the whole trajectory. With a stateless human component
+    K inner steps, ONE outer round: that is the whole trajectory. With a
+    stateless human component
     the only channel between rounds is the model, so a constant predictor
     gives a constant population from round 1 -- which is exactly why these
     controls need no GPU loop, only the static vector. The vectors come

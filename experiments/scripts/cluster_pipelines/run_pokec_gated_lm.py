@@ -717,18 +717,21 @@ def main() -> int:
     # and peer_sus taken from the dataset (MovieLens ships 1 = fully
     # anchored = NO neighbour mixing). Every archived FJ artifact replays
     # under it and it stays the default so none of them change.
-    # "wu1" is the opt-in Wu-style operator:
-    #     x^0(t)     = (1 - beta) innate + beta m(t),  beta = W_PLAT *
+    # "wu1" is the opt-in operator: Jiduan Wu's model, homogeneous-
+    # parameter specialization.
+    #     x_init^(t) = (1 - beta) innate + beta m_t,  beta = W_PLAT *
     #                  platform_sus * PLATFORM_SUS_SCALE
-    #     x^{l+1}(t) = (1 - alpha) x^0(t) + alpha P x^l(t),  x^0_inner = x^0
-    # with the SERVED vector fed straight in (one generation per round) and
-    # peer_sus constructed as 1 - alpha rather than read from the dataset.
+    #     u^(0)      = x_init^(t)
+    #     u^(l+1)    = (1 - alpha) x_init^(t) + alpha P u^(l), l = 0..K-1
+    # with the SERVED vector fed straight in (one generation per round).
+    # FJ_ALPHA is the PEER SUSCEPTIBILITY. The internal FJWorld
+    # coefficient is STUBBORNNESS, so the world is built with 1 - alpha
+    # and FJWorld.run_wu refuses the pair if they disagree.
     fj_update_version = os.environ.get("FJ_UPDATE_VERSION", "legacy")
-    fj_alpha = _env_float("FJ_ALPHA", 0.5)
-    # deliberately NOT EPOCH_SIZE: that knob means the archived FJ inner
-    # count (100) and is shared with other code paths, so reusing it would
-    # silently give this wave a 100-step inner loop
-    fj_inner_steps = _env_int("FJ_INNER_STEPS", 1)
+    fj_alpha = _env_float("FJ_ALPHA", 0.9)
+    # deliberately NOT EPOCH_SIZE: that knob is shared with other code
+    # paths, so reusing it would couple K to an unrelated setting
+    fj_inner_steps = _env_int("FJ_INNER_STEPS", 100)
     eps = _env_float("EPS", 0.3)
     eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
     # AI_GATE_MODE (2026-08-13, sft_icl_reach wave): "threshold" (default) =
@@ -1218,14 +1221,22 @@ def main() -> int:
         "w_plat": w_plat, "innate_lambda": innate_lambda,
         # --- FJ robustness wave provenance (2026-08-21) ---
         "fj_update_version": fj_update_version,
-        "fj_alpha": fj_alpha,
-        "fj_peer_sus_convention": "peer_sus = 1 - alpha (anchor weight)",
+        # PEER SUSCEPTIBILITY as reported in the paper
+        "fj_peer_alpha": fj_alpha,
+        # what the legacy internal coefficient actually holds: its
+        # complement, STUBBORNNESS. Recorded so the two can never be
+        # confused when reading an artifact back.
+        "fj_internal_anchor_coef": 1.0 - fj_alpha,
+        "fj_peer_sus_convention": ("FJWorld.peer_sus is STUBBORNNESS = "
+                                   "1 - alpha; alpha is peer susceptibility"),
         "fj_inner_steps": fj_inner_steps,
         # the human component is the raw innate opinion, with no carryover
-        # of the previous population: k = 1 in the beta_eff = 1-(1-W)k sense
+        # of the previous population: k = 1
         "fj_human_component": "stateless_innate_k1",
-        "fj_recurrence": ("x0 = (1-beta) innate + beta m; "
-                          "x_{l+1} = (1-alpha) x0 + alpha P x_l; x0_inner = x0"),
+        "fj_model": "wu_homogeneous",
+        "fj_recurrence": ("x_init = (1-beta) innate + beta m_t; u0 = x_init; "
+                          "u_{l+1} = (1-alpha) x_init + alpha P u_l, "
+                          "l = 0..K-1"),
         # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
         # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
         # used the legacy per-sweep order (peers, gated blend, anchor over all).
@@ -1664,10 +1675,12 @@ def main() -> int:
                 # and drops W_PLAT entirely, so a tag saying beta=.5 would
                 # have run at beta=1 on MovieLens (platform_sus = 1).
                 fj_beta = (w_plat * plat_sus_eff).clamp(0.0, 1.0)
-                # peer_sus is the ANCHOR weight; the neighbour weight is
-                # alpha. Built here rather than taken from the dataset:
-                # MovieLens ships peer_sus = 1, which means fully anchored
-                # and therefore no neighbour mixing whatsoever.
+                # peer_sus is STUBBORNNESS; the peer susceptibility is
+                # alpha, so the world gets 1 - alpha. Built here rather
+                # than taken from the dataset: MovieLens ships
+                # peer_sus = 1, which means fully anchored and therefore
+                # no neighbour mixing whatsoever. run_wu re-checks the
+                # complement every round.
                 fj_peer_sus = torch.full(
                     (n,), FJWorld.alpha_to_peer_sus(fj_alpha),
                     dtype=torch.float32)
@@ -1676,12 +1689,12 @@ def main() -> int:
                     platform_sus=fj_beta,
                     features=innate, profiles=setup["profiles"],
                 )
-                print(f"[run] FJ wu1: beta in "
+                print(f"[run] FJ wu1 (Wu homogeneous): beta in "
                       f"[{float(fj_beta.min()):.3f}, {float(fj_beta.max()):.3f}]"
                       f" (W_PLAT={w_plat} x platform_sus x {platform_scale}), "
-                      f"alpha={fj_alpha} (peer_sus="
-                      f"{FJWorld.alpha_to_peer_sus(fj_alpha):.3f}), "
-                      f"inner={fj_inner_steps}", flush=True)
+                      f"peer susceptibility alpha={fj_alpha} -> internal "
+                      f"stubbornness {FJWorld.alpha_to_peer_sus(fj_alpha):.3f}, "
+                      f"K={fj_inner_steps} inner steps", flush=True)
             else:
                 fj_beta = plat_sus_eff
                 fj_peer_sus = setup["peer_sus"]
@@ -1815,6 +1828,7 @@ def main() -> int:
     # the exact vectors handed to the FJ operator, so the checker can prove
     # pred_raw IS what moved the population rather than taking it on trust
     fj_served_used = []
+    fj_u1 = []          # first inner iterate per round: pins u^(0)=x_init
     ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
@@ -2337,6 +2351,9 @@ def main() -> int:
                 world.run_wu(last_preds.detach().cpu().float(),
                              alpha=fj_alpha, n_inner=fj_inner_steps)
                 fj_served_used.append(last_preds.detach().cpu().float().clone())
+                # u^(1): the only trace of the inner loop's STARTING POINT
+                # that survives K=100 contraction (see FJWorld.run_wu)
+                fj_u1.append(world.last_u1.detach().cpu().float().clone())
             else:
                 world.run(lm, n_steps=epoch_size)
             op = world.state["opinion"].float()
@@ -2759,6 +2776,7 @@ def main() -> int:
             # another.
             "fj_served_used": (torch.stack(fj_served_used)
                                if fj_served_used else torch.empty(0)),
+            "fj_u1": torch.stack(fj_u1) if fj_u1 else torch.empty(0),
             "ppl_raw": torch.stack(ppl_raw) if ppl_raw else torch.empty(0),
             "ans_raw": torch.stack(ans_raw) if ans_raw else torch.empty(0),
             "ans_idx": torch.tensor(ans_idx, dtype=torch.long),

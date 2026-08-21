@@ -6,20 +6,32 @@
 # LINEAR FJ operator. Six models x two arms, seed 0, MovieLens Action,
 # 723 agents, replace-only data, fresh LoRA r=512 each round, 1 epoch,
 # batch 4, lr 5e-5, greedy eval-mode serving.
+# JIDUAN WU'S MODEL, homogeneous-parameter specialization.
 # FJ_UPDATE_VERSION=wu1 is the OPT-IN operator; "legacy" is the archived
 # one and is untouched, so no existing FJ artifact changes.
-#   x0 = (1-beta) innate + beta m;  x_l+1 = (1-alpha) x0 + alpha P x_l
-# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE; alpha is the
-# NEIGHBOUR weight (stored as peer_sus = 1 - alpha); x0_inner = x0, so
-# the human component is stateless (k=1) and the ONLY channel between
-# rounds is the model.
-# NO GATES. FJ platform exposure and graph mixing are unconditional, so
-# there are no _ea/_es tokens and the runner REFUSES a non-default gate
-# mode under wu1 rather than letting it sit inert in the environment.
-# ONE INNER STEP is the production setting. That is a single application
-# of (1-alpha)I + alpha P, NOT the FJ equilibrium, so a round-30
-# state must not be called one without a convergence check. The
-# model-independent CPU controls sweep n_inner to bound that choice.
+#   x_init^(t) = (1-beta) x^innate + beta m_t
+#   u^(0)      = x_init^(t)
+#   u^(l+1)    = (1-alpha) x_init^(t) + alpha P u^(l),  l = 0..K-1
+# beta = W_PLAT * platform_sus * PLATFORM_SUS_SCALE and is the ONLY
+# population-side quantity that varies (.5 core, 1 boundary); its
+# complement 1-beta is the innate weight. alpha=.9 is the PEER
+# SUSCEPTIBILITY and K=100. u^(0)=x_init makes the human component
+# stateless (k=1), so the ONLY channel between rounds is the model.
+# ALPHA vs THE INTERNAL FIELD. FJWorld.peer_sus is STUBBORNNESS = 1-alpha.
+# The run records fj_peer_alpha=.9 and passes .1 internally; run_wu
+# REFUSES the pair if they disagree, because passing .9 straight in would
+# run peer susceptibility .1 -- near-opposite dynamics, with every
+# downstream number still well-formed.
+# NO GATES, NO DEFFUANT PARAMETERS. FJ platform exposure and graph mixing
+# are unconditional, so there are no _ea/_es tokens and the runner
+# REFUSES a non-default gate mode under wu1 rather than letting it sit
+# inert in the environment.
+# THE INNER LOOP CONVERGES at alpha=.9, K=100 (~0.9^100), which is Wu's
+# intent -- but that is the FJ fixed point of ONE round's anchor and says
+# nothing about the OUTER model-population loop. A round-30 state
+# must not be called an equilibrium without the outer convergence check.
+# Because convergence erases the inner loop's starting point, each round
+# also saves u^(1), which is what lets the checker prove u^(0)=x_init.
 # Gate every pull with check_pofd_sanity (FJR section) and hard-fail the
 # analyzer until the whole conceptual grid is present.
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> fj_robustness_beta1

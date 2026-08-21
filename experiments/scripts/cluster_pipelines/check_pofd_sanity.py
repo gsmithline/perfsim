@@ -436,6 +436,8 @@ SLUG_BASE = {
 FJR_H100 = "NVIDIA H100 80GB HBM3"
 FJR_ARM_SEMANTICS = {"b0": ("sft", 0.0), "b1": ("sft_kl", 1.0)}
 FJR_REPLAY_TOL = 2e-5      # float32 accumulation over 30 rounds
+# non-fatal observations the FJ section wants surfaced with the results
+_FJR_NOTES = []
 
 
 def _fjr_arm(name):
@@ -523,9 +525,53 @@ def check_fjr(name, cfg, d, op_raw, pred_raw, innate, expect_rounds=30,
                         f"differs from the vector recorded in pred_raw by up "
                         f"to {gap:.3e} -- generation happened more than once")
 
+    # -- (2) ALPHA vs THE INTERNAL COEFFICIENT.
+    # FJWorld.peer_sus is STUBBORNNESS = 1 - alpha. Passing alpha
+    # straight in would run peer susceptibility 1-alpha instead -- at
+    # alpha=.9 the near-opposite dynamics -- and every number downstream
+    # would still be finite, ordered and plausible. So the pair is
+    # checked explicitly, not inferred from the replay.
+    alpha = float(cfg.get("fj_peer_alpha", -1))
+    internal = cfg.get("fj_internal_anchor_coef")
+    if internal is None:
+        errs.append(f"FJR {name}: no fj_internal_anchor_coef recorded -- "
+                    f"cannot tell alpha from its complement")
+    elif abs(float(internal) - (1.0 - alpha)) > 1e-9:
+        errs.append(f"FJR {name}: fj_peer_alpha={alpha} but the internal "
+                    f"anchor coefficient is {internal} (expected "
+                    f"{1.0 - alpha}) -- alpha was passed without taking "
+                    f"its complement")
+    if cfg.get("fj_peer_sus_mean") is not None and alpha >= 0:
+        if abs(float(cfg["fj_peer_sus_mean"]) - (1.0 - alpha)) > 1e-6:
+            errs.append(f"FJR {name}: the world was built with stubbornness "
+                        f"{cfg['fj_peer_sus_mean']}, not {1.0 - alpha}")
+
+    # -- (7) NO DEFFUANT OR AI-GATE PARAMETER MAY INFLUENCE THE RESULT.
+    # This is Wu's model, not our bounded-confidence process. A stray
+    # gate or sweep setting must not sit in the environment claiming to
+    # apply: the runner refuses non-default gate modes under wu1, and
+    # this is the artifact-side counterpart.
+    if cfg.get("pop_model") != "fj":
+        errs.append(f"FJR {name}: pop_model={cfg.get('pop_model')!r}")
+    if cfg.get("fj_model") not in (None, "wu_homogeneous"):
+        errs.append(f"FJR {name}: fj_model={cfg.get('fj_model')!r}")
+    for key, ok in (("ai_gate_mode", ("threshold", None)),
+                    ("peer_gate_mode", ("threshold", None))):
+        if cfg.get(key) not in ok:
+            errs.append(f"FJR {name}: {key}={cfg.get(key)!r} -- FJ has no "
+                        f"gates; a non-default mode must never be accepted")
+    for key in ("canary_delta", "gamma_bias"):
+        if cfg.get(key) not in (None, 0, 0.0):
+            errs.append(f"FJR {name}: {key}={cfg.get(key)} must be 0 "
+                        f"(Deffuant-side parameter)")
+    if cfg.get("ab_sweeps") not in (None, 1):
+        errs.append(f"FJR {name}: ab_sweeps={cfg.get('ab_sweeps')} -- the "
+                    f"Deffuant sweep count must not apply here")
+    if cfg.get("pop_reset"):
+        errs.append(f"FJR {name}: pop_reset must be False")
+
     # -- REPLAY THE DECLARED RECURRENCE, ROUND BY ROUND
     beta = float(cfg.get("w_plat", -1))
-    alpha = float(cfg.get("fj_alpha", -1))
     n_inner = int(cfg.get("fj_inner_steps", -1))
     W = d.get("fj_graph")
     if W is None:
@@ -539,17 +585,59 @@ def check_fjr(name, cfg, d, op_raw, pred_raw, innate, expect_rounds=30,
                     f"fj_graph_sha256 recorded by the run")
         return errs
     plat = float(cfg.get("fj_beta_mean", beta))
+
+    # -- (5)/(6) WHAT beta MEANS, checked on the anchor itself.
+    # beta=.5 must weight innate and model equally; beta=1 must remove
+    # the innate component entirely. Read off x_init, not inferred.
+    x_init_0 = (1.0 - plat) * innate + plat * pred_raw[0]
+    if abs(plat - 0.5) < 1e-9:
+        equal_mix = 0.5 * innate + 0.5 * pred_raw[0]
+        if float((x_init_0 - equal_mix).abs().max()) > 1e-6:
+            errs.append(f"FJR {name}: beta=.5 must weight innate and model "
+                        f"equally in x_init")
+    if abs(plat - 1.0) < 1e-9:
+        if float((x_init_0 - pred_raw[0]).abs().max()) > 1e-6:
+            errs.append(f"FJR {name}: beta=1 must remove the innate "
+                        f"component -- x_init should equal m_t exactly")
+
+    # -- (1)(3)(4) THE INNER LOOP, RECONSTRUCTED IN FULL.
+    # All K updates are recomputed from x_init^(t), which is itself built
+    # from the SAVED pred_raw[t]. Three claims fall out of one replay:
+    # u^(0) is the anchor and not the preceding outer population; the
+    # recorded served vector is the one that constructed x_init; and
+    # EXACTLY K steps land on op_raw[t].
     for t in range(expect_rounds):
-        x0 = (1.0 - plat) * innate + plat * pred_raw[t]
-        x = x0.clone()
+        x_init = (1.0 - plat) * innate + plat * pred_raw[t]
+        u = x_init.clone()                     # u^(0) = x_init, always
+        u_prev_step = None
         for _ in range(n_inner):
-            x = (1.0 - alpha) * x0 + alpha * (W @ x)
-        gap = float((x - op_raw[t]).abs().max())
+            u_prev_step = u
+            u = (1.0 - alpha) * x_init + alpha * (W @ u)
+        gap = float((u - op_raw[t]).abs().max())
         if gap > FJR_REPLAY_TOL:
-            errs.append(f"FJR {name}: round {t} does not replay the declared "
-                        f"recurrence (max |dx| {gap:.3e} > {FJR_REPLAY_TOL}); "
-                        f"beta={beta} alpha={alpha} inner={n_inner}")
+            errs.append(f"FJR {name}: round {t} does not replay the "
+                        f"recurrence (max |du| {gap:.3e} > {FJR_REPLAY_TOL}); "
+                        f"beta={beta} alpha={alpha} K={n_inner}")
             break
+        # EXACTLY K, not "at least K": K-1 and K+1 must both miss, or the
+        # step count is not actually pinned by the artifact
+        if t == 0 and n_inner >= 2:
+            u_more = (1.0 - alpha) * x_init + alpha * (W @ u)
+            near_k_minus = float((u_prev_step - op_raw[t]).abs().max())
+            near_k_plus = float((u_more - op_raw[t]).abs().max())
+            # At alpha=.9, K=100 the loop has converged, so K-1 and K+1
+            # land within tolerance too and the step count is NOT
+            # observationally identifiable from the final state. That is a
+            # property of the specified configuration, not a fault, so it
+            # is recorded rather than failed: fj_inner_steps plus the
+            # config hash are what pin K, and u^(1) pins the start.
+            if near_k_minus <= FJR_REPLAY_TOL or near_k_plus <= FJR_REPLAY_TOL:
+                _FJR_NOTES.append(
+                    f"{name}: K={n_inner} at alpha={alpha} has converged "
+                    f"(K-1 off by {near_k_minus:.2e}, K+1 by "
+                    f"{near_k_plus:.2e}); the exact step count is not "
+                    f"recoverable from op_raw, and u^(1) is what pins the "
+                    f"initialisation")
 
     # -- beta is ACTUALLY applied: with beta=0 the predictions cannot move
     #    the population, so a nonzero beta must leave a visible trace
@@ -578,18 +666,52 @@ def check_fjr(name, cfg, d, op_raw, pred_raw, innate, expect_rounds=30,
     #    with alpha small can replay within tolerance, so check the
     #    stale-state alternative is DISTINGUISHABLE and rejected.
     if expect_rounds >= 2 and alpha > 0:
-        stale = op_raw[0].clone()
-        x0_1 = (1.0 - plat) * innate + plat * pred_raw[1]
+        x_init_1 = (1.0 - plat) * innate + plat * pred_raw[1]
+        stale = op_raw[0].clone()              # u^(0) = previous population
+        fresh = x_init_1.clone()               # u^(0) = x_init  (correct)
         for _ in range(n_inner):
-            stale = (1.0 - alpha) * x0_1 + alpha * (W @ stale)
-        if float((stale - op_raw[1]).abs().max()) <= FJR_REPLAY_TOL:
-            fresh = x0_1.clone()
-            for _ in range(n_inner):
-                fresh = (1.0 - alpha) * x0_1 + alpha * (W @ fresh)
-            if float((stale - fresh).abs().max()) > FJR_REPLAY_TOL:
-                errs.append(f"FJR {name}: round 1 matches a PREVIOUS-STATE "
-                            f"initialisation of the inner loop, not the "
-                            f"round's new anchor")
+            stale = (1.0 - alpha) * x_init_1 + alpha * (W @ stale)
+            fresh = (1.0 - alpha) * x_init_1 + alpha * (W @ fresh)
+        if (float((stale - fresh).abs().max()) > FJR_REPLAY_TOL
+                and float((stale - op_raw[1]).abs().max()) <= FJR_REPLAY_TOL):
+            errs.append(f"FJR {name}: round 1 matches a PREVIOUS-STATE "
+                        f"initialisation of the inner loop, not the "
+                        f"round's new anchor")
+
+    # -- (1) u^(0) = x_init, PINNED BY THE FIRST INNER ITERATE.
+    # At alpha=.9, K=100 the inner loop contracts by ~0.9^100, so u^(K)
+    # has forgotten where it started and the final-state replay above
+    # CANNOT falsify a stale-state start. u^(1) can: it is affine in
+    # u^(0) with coefficient alpha, so one comparison settles it.
+    u1 = d.get("fj_u1")
+    if u1 is None or not torch.is_tensor(u1) or u1.numel() == 0:
+        errs.append(f"FJR {name}: no fj_u1 recorded -- at K={n_inner} the "
+                    f"inner loop's initialisation is not recoverable from "
+                    f"the final state, so u^(0)=x_init is unverifiable")
+    else:
+        u1 = u1.float()
+        if u1.shape != op_raw.shape:
+            errs.append(f"FJR {name}: fj_u1 {tuple(u1.shape)} != "
+                        f"{tuple(op_raw.shape)}")
+        else:
+            bad = None
+            for t in range(expect_rounds):
+                x_init = (1.0 - plat) * innate + plat * pred_raw[t]
+                want_u1 = (1.0 - alpha) * x_init + alpha * (W @ x_init)
+                if float((u1[t] - want_u1).abs().max()) > FJR_REPLAY_TOL:
+                    bad = t
+                    break
+            if bad is not None:
+                x_init = (1.0 - plat) * innate + plat * pred_raw[bad]
+                stale_u1 = ((1.0 - alpha) * x_init
+                            + alpha * (W @ (op_raw[bad - 1] if bad
+                                            else innate)))
+                why = ("it matches a PREVIOUS-POPULATION start"
+                       if float((u1[bad] - stale_u1).abs().max())
+                       <= FJR_REPLAY_TOL else "it matches neither start")
+                errs.append(f"FJR {name}: round {bad} u^(1) is not "
+                            f"(1-alpha) x_init + alpha P x_init -- {why}, "
+                            f"so u^(0) was not the round's anchor")
 
     # -- SFT labels: round 0 trains on innate, later rounds on the
     #    preceding post-FJ population
@@ -861,8 +983,9 @@ def check_run(run_dir):
             "fj_update_version": "wu1",
             "w_plat": (float(m_beta.group(1).replace("p", "."))
                        if m_beta else 0.5),
-            "fj_alpha": (float(m_alpha.group(1).replace("p", "."))
-                         if m_alpha else 0.5),
+            "fj_peer_alpha": (float(m_alpha.group(1).replace("p", "."))
+                              if m_alpha else 0.9),
+            "fj_model": "wu_homogeneous",
             "fj_inner_steps": int(m_in.group(1)) if m_in else 1,
             "fj_human_component": "stateless_innate_k1",
             "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
