@@ -1,0 +1,82 @@
+{
+  "key": "qwen_subsample",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "counts": [
+    14,
+    36,
+    72,
+    181,
+    362
+  ],
+  "full": 723,
+  "n_agents": 723,
+  "compute_matched": {
+    "n": 72,
+    "repeat_to": 723
+  },
+  "n_rounds": 100,
+  "reused_tag": "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
+  "n_conceptual_cells": 7,
+  "n_reused": 1,
+  "n_new": 6,
+  "cells": [
+    {
+      "observed": 723,
+      "frac": 1.0,
+      "repeat_to": 0,
+      "role": "full-data reference",
+      "status": "reused",
+      "run_tag": "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
+      "run_dir": "/Users/gabesmithline/Desktop/ellis_work.nosync/perfsim/notes/pofd/cluster/pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
+      "verdict": "PASS"
+    },
+    {
+      "observed": 14,
+      "frac": 0.0194,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n14_s0_r100"
+    },
+    {
+      "observed": 36,
+      "frac": 0.0498,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n36_s0_r100"
+    },
+    {
+      "observed": 72,
+      "frac": 0.0996,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n72_s0_r100"
+    },
+    {
+      "observed": 181,
+      "frac": 0.2503,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n181_s0_r100"
+    },
+    {
+      "observed": 362,
+      "frac": 0.5007,
+      "repeat_to": 0,
+      "role": "observation arm",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n362_s0_r100"
+    },
+    {
+      "observed": 72,
+      "frac": 0.0996,
+      "repeat_to": 723,
+      "role": "compute-matched control",
+      "status": "new",
+      "new_tag": "pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_n72rep723_s0_r100"
+    }
+  ]
+}

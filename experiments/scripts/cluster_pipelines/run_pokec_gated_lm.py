@@ -649,6 +649,35 @@ def main() -> int:
     save_raw_gen = _env_int("SAVE_RAW_GEN", 0) == 1
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
+    # SFT_SAMPLE_N (2026-08-21, qwen_subsample wave): OBSERVATION-RATE
+    # subsampling. Each round the platform still SERVES all n agents; only
+    # the SFT training batch is cut to a fresh random subset of this many
+    # agents. 0/absent = off, and the whole block below is skipped, so
+    # every legacy run is byte-identical.
+    #
+    # WHY NOT THE EXISTING KNOBS. N_LABELED takes a fixed PREFIX of agents
+    # -- the same people every round, which is a different experiment
+    # (who is observed, not how many). TRAIN_CAP is applied only in the
+    # t>0 branch, so round 0 would train on the full 723 and the first
+    # adapter would not be subsampled at all.
+    #
+    # NESTING. Every round draws ONE permutation of all n agents from a
+    # dedicated stream seeded (SFT_SAMPLE_SEED + t) -- note it does NOT
+    # depend on the sample size -- and takes its prefix. So at a given
+    # round the 14-agent subset is contained in the 36-agent subset is
+    # contained in the 72, and the arms differ only in how much of the
+    # same draw they see. Seeding per round rather than advancing one
+    # long stream keeps every subset reconstructible offline from
+    # (seed, round) alone.
+    sft_sample_n = _env_int("SFT_SAMPLE_N", 0)
+    # dedicated offset, distinct from the population stream's 424243, so
+    # the sampling draw can never shadow or be shadowed by peer pairing
+    sft_sample_seed = _env_int("SFT_SAMPLE_SEED", seed + 777331)
+    # SFT_SAMPLE_REPEAT_TO (compute-matched control): tile the sampled
+    # subset up to exactly this many rows, so a small-observation arm
+    # takes the SAME number of optimizer steps as the full-data arm.
+    # Separates "saw less unique data" from "took fewer gradient steps".
+    sft_sample_repeat_to = _env_int("SFT_SAMPLE_REPEAT_TO", 0)
     platform_scale = _env_float("PLATFORM_SUS_SCALE", 1.0)
     anchor_mode = os.environ.get("ANCHOR_MODE", "fixed")
     # --- gated-population knobs ---
@@ -842,6 +871,33 @@ def main() -> int:
     if ai_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "eps_ai gate exists only in the ab population)")
+    if sft_sample_n < 0:
+        raise ValueError(f"SFT_SAMPLE_N must be >= 0; got {sft_sample_n}")
+    if sft_sample_n > 0:
+        if training_style not in ("sft", "sft_kl"):
+            raise ValueError("SFT_SAMPLE_N requires a TRAINING_STYLE that "
+                             "actually trains (sft or sft_kl); got "
+                             f"{training_style!r}")
+        # keep the sampled path unambiguous: these all rewrite the batch
+        # in ways that would make "the observed subset" mean two things
+        for _bad, _why in (
+                (sft_exclude_clamped, "SFT_EXCLUDE_CLAMPED"),
+                (replay_frac > 0, "REPLAY_FRAC>0"),
+                (pristine_frac > 0, "PRISTINE_FRAC>0"),
+                (data_regime != "replace", "DATA_REGIME!=replace"),
+                # a cap SMALLER than the pool would fight with sampling;
+                # a cap >= the pool is provably inert (subsample_train_data
+                # returns early when n <= cap, drawing nothing), and the
+                # subsample wave keeps TRAIN_CAP=723 precisely so its
+                # config surface matches the reused full-data cell
+                (0 < train_cap < n_labeled, "0 < TRAIN_CAP < N_LABELED")):
+            if _bad:
+                raise ValueError(f"SFT_SAMPLE_N is incompatible with "
+                                 f"{_why}: both rewrite the training "
+                                 f"batch, so the observed subset would "
+                                 f"be ill-defined")
+    if sft_sample_repeat_to > 0 and sft_sample_n <= 0:
+        raise ValueError("SFT_SAMPLE_REPEAT_TO requires SFT_SAMPLE_N>0")
     if peer_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("PEER_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "Deffuant confidence gate exists only in the ab "
@@ -1149,6 +1205,13 @@ def main() -> int:
             # convention): the completed included-SFT clamp waves stay
             # byte-identical
             config["sft_exclude_clamped"] = True
+    if sft_sample_n > 0:
+        # recorded ONLY when on (absent == off, the audit convention), so
+        # every pre-2026-08-21 config stays byte-identical
+        config["sft_sample_n"] = sft_sample_n
+        config["sft_sample_seed"] = sft_sample_seed
+        if sft_sample_repeat_to > 0:
+            config["sft_sample_repeat_to"] = sft_sample_repeat_to
     if save_raw_gen:
         # recorded ONLY when on (absent == off, the audit convention)
         config["save_raw_gen"] = True
@@ -1634,7 +1697,9 @@ def main() -> int:
     train_y_raw = [] # REPLAY_FRAC>0 only: the ACTUAL labels fed to the learner
                      # each deploy round ([n_labeled] float), so the batch
                      # composition is checkable end-to-end offline
-    sft_idx_raw = [] # SFT_EXCLUDE_CLAMPED=1 only: per deploy round the ORDERED
+    sft_idx_raw = []
+    sft_sample_idx_raw = []   # SFT_SAMPLE_N: ordered ids per round
+    sft_sample_y_raw = []     # ... and the labels those rows carried # SFT_EXCLUDE_CLAMPED=1 only: per deploy round the ORDERED
                      # agent ids fed to the learner (the post-exclusion batch)
     sft_y_raw = []   # SFT_EXCLUDE_CLAMPED=1 only: the matching labels, same
                      # row order -- the exclusion is checkable exactly offline
@@ -1795,6 +1860,45 @@ def main() -> int:
                     train_data["agent_idx"].detach().cpu().long().clone())
                 sft_y_raw.append(train_data["y"].squeeze(-1)
                                  .detach().cpu().float().clone())
+            if sft_sample_n > 0 and train_data is not None:
+                # OBSERVATION-RATE SUBSAMPLING (2026-08-21). Applies to
+                # EVERY round including round 0 -- that is the whole
+                # point, and the reason TRAIN_CAP could not be reused.
+                # Serving is untouched above: all n agents were and
+                # still are served this round; only what the optimizer
+                # sees is cut.
+                _g_s = torch.Generator().manual_seed(sft_sample_seed + t)
+                _perm = torch.randperm(n, generator=_g_s)
+                _want_ids = _perm[:sft_sample_n]
+                _ai_s = train_data["agent_idx"].long()
+                if int(torch.unique(_ai_s).numel()) != int(_ai_s.numel()):
+                    raise ValueError(
+                        "SFT_SAMPLE_N needs one row per agent in the "
+                        "round's batch (duplicate agent_idx found); the "
+                        "replace regime guarantees this")
+                _row_of_s = torch.full((n,), -1, dtype=torch.long)
+                _row_of_s[_ai_s] = torch.arange(_ai_s.numel())
+                _rows_s = _row_of_s[_want_ids]
+                if int((_rows_s < 0).sum()):
+                    raise ValueError(
+                        "SFT_SAMPLE_N: a sampled agent id is absent from "
+                        "this round's batch -- the subset is undefined")
+                train_data = {k: v[_rows_s] for k, v in train_data.items()}
+                if sft_sample_repeat_to > 0:
+                    # tile the ORDERED subset up to exactly repeat_to
+                    # rows. 72 -> 723 gives 10 full cycles plus the
+                    # first 3 ids once more: same row count, hence the
+                    # same optimizer-step count, as the full-data arm,
+                    # but only 72 distinct agents.
+                    _tile = (torch.arange(sft_sample_repeat_to)
+                             % sft_sample_n)
+                    train_data = {k: v[_tile]
+                                  for k, v in train_data.items()}
+                sft_sample_idx_raw.append(
+                    train_data["agent_idx"].detach().cpu().long().clone())
+                sft_sample_y_raw.append(
+                    train_data["y"].squeeze(-1).detach().cpu()
+                    .float().clone())
             loss_block = {}
             if train_data is not None:
                 # platform-seat pre-train telemetry: current adapter on the
@@ -2505,6 +2609,16 @@ def main() -> int:
             "teacher_pred": (teacher_pred if teacher_pred is not None
                              else torch.empty(0)),
         }
+    if sft_sample_n > 0:
+        # the exact ORDERED (ids, labels) the optimizer consumed each
+        # round -- the offline proof that the observed subset was what
+        # it claims, written ONLY for sampled runs
+        traj_payload["sft_sample_idx_raw"] = (
+            torch.stack(sft_sample_idx_raw) if sft_sample_idx_raw
+            else torch.empty(0))
+        traj_payload["sft_sample_y_raw"] = (
+            torch.stack(sft_sample_y_raw) if sft_sample_y_raw
+            else torch.empty(0))
     if clamp_mask is not None:
         # innate-clamp provenance: written ONLY when the clamp is on so an
         # off-mode trajectory.pt stays byte-identical to pre-clamp code

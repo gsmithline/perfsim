@@ -332,6 +332,25 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
               under threshold, accepted never exceeds the sampled pair
               slots and no all-open telemetry is present.
 
+  QSS         pofdqss_ runs (observation-rate subsampling, 2026-08-21):
+              the completed Wu-boundary b0 cell with ONE change -- only
+              SFT_SAMPLE_N of the 723 agents' labels reach the optimizer
+              each round (14/36/72/181/362 = 2/5/10/25/50%; the 100% arm
+              is the REUSED pofdqwu_ cell and must never be rerun here).
+              Serving is untouched: all 723 are served every round.
+              Verified: every round's subset REGENERATED from
+              (sft_sample_seed + round) and compared elementwise IN
+              ORDER against sft_sample_idx_raw; the ids unique within a
+              round; the recorded labels equal to the population state
+              that round actually trained on (innate at round 0,
+              op_raw[t-1] after); the subset a PREFIX of that round's
+              permutation, which is what makes the arms nested; and
+              n_train equal to the requested row count in EVERY round.
+              The compute-matched cell (_n72rep723_) additionally must
+              hold exactly SFT_SAMPLE_N distinct agents while carrying
+              the full-data row count -- same optimizer steps, less
+              unique data.
+
 Usage:
   python3 check_pofd_sanity.py <run_dir> [<run_dir> ...]
   python3 check_pofd_sanity.py runs/pokec_gated_lm/pofd_*_fresh_data
@@ -543,6 +562,10 @@ def check_run(run_dir):
     # k=1, W in {.5, 1}, BOTH gates genuinely open via MODES
     # (_eaopen_/_esopen_), 100 rounds (3 for the smoke), b0/b1, seed 0.
     is_qwu = name.startswith("pofdqwu")
+    # OBSERVATION-RATE SUBSAMPLING (2026-08-21, qwen_subsample): the
+    # completed Wu-boundary b0 cell with only the SFT batch cut to a
+    # fresh nested random subset each round. Serving is untouched.
+    is_qss = name.startswith("pofdqss")
     # _w/_l/_es tokens (pofdw*/pofdws* waves): W_PLAT, INNATE_LAMBDA and
     # EPS_SOCIAL move off their pofd defaults (1.0 / 0.0 / 0.0). Absent
     # tokens keep the original W=1 no-peer design.
@@ -571,6 +594,15 @@ def check_run(run_dir):
             "pop_model": "ab",
             "run_mode": "loop", "ab_sweeps": 1, "pop_reset": False,
             "platform_sus_scale": 1.0, "dataset": "movielens"}
+    if peer_open:
+        # an _esopen_ tag carries no numeric _es token, so the
+        # token-derived eps want above is meaningless. eps is INERT for
+        # acceptance under all_open (gp.peer_gate never reads it); each
+        # open-peer family checks its SIGN directly instead, because 0 is
+        # how the no-peer condition is spelled everywhere else. Dropping
+        # it here rather than per-family means a future open-peer wave
+        # cannot forget to.
+        want.pop("eps", None)
     if is_pfrac:
         want.update({"kl_beta": 0.0, "training_style": "sft",
                      "fresh_each_round": True})
@@ -1324,10 +1356,8 @@ def check_run(run_dir):
         # never reads it), so its exact value is not pinned -- only that
         # it is positive, because 0 is how the no-peer condition is
         # spelled everywhere else in this project. The tag carries no
-        # numeric _es token, so drop the token-derived want and check the
-        # sign directly rather than leave a self-comparison that looks
-        # like a test but always passes.
-        want.pop("eps", None)
+        # numeric _es token; the shared peer_open block above already
+        # dropped the token-derived want, so check the sign directly.
         if float(cfg.get("eps", 0.0)) <= 0:
             errs.append(f"CONFIG qwu eps={cfg.get('eps')!r} -- "
                         f"eps_social=0 is the NO-PEER condition and must "
@@ -1340,6 +1370,69 @@ def check_run(run_dir):
         if "H100" not in _gn:
             errs.append(f"CONFIG qwu ran on {_gn or 'unknown GPU'}, not "
                         f"an H100 (the wave is H100-pinned)")
+    elif is_qss:
+        # OBSERVATION-RATE SUBSAMPLING. Identical to the Wu-boundary b0
+        # cell in every respect except SFT_SAMPLE_N; the reconstruction
+        # of the sampled subsets lives in section 2s below.
+        want.update({"ml_target": "Action", "gamma_bias": 0.0,
+                     "teacher_label_delta": 0.0, "pristine_frac": 0.0,
+                     "replay_frac": 0.0, "do_sample": False,
+                     "deploy_every": 1, "n_labeled": 723,
+                     "icrh": False, "feedback_mode": "none",
+                     "train_cap": 723, "anchor_mode": "fixed",
+                     "population_update": "nested_ai_then_social_v1",
+                     "base_model": "Qwen/Qwen2.5-7B-Instruct",
+                     "training_style": "sft", "kl_beta": 0.0,
+                     "use_lora": 1, "lora_r": 512, "sft_lr": 5e-5,
+                     "sft_epochs": 1, "sft_batch_size": 4,
+                     "fresh_each_round": True, "icl_k": 0,
+                     "icl_days": 0, "innate_lambda": 1.0,
+                     "w_plat": 1.0,
+                     "ai_gate_mode": "all_open",
+                     "peer_gate_mode": "all_open"})
+        m_qss = re.match(r"^pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_"
+                         r"n(\d+)(?:rep(\d+))?_s0_r(\d+)(smoke\d*)?$",
+                         name)
+        if m_qss is None:
+            errs.append(f"CONFIG qss tag off-grid ({name!r}) -- want "
+                        f"pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_"
+                        f"n<count>[rep<rows>]_s0_r<rounds>[smoke]")
+        else:
+            _n_qss = int(m_qss.group(1))
+            _rep_qss = int(m_qss.group(2)) if m_qss.group(2) else 0
+            _smk_qss = m_qss.group(4) is not None
+            want["n_rounds"] = int(m_qss.group(3))
+            want["sft_sample_n"] = _n_qss
+            if _rep_qss:
+                want["sft_sample_repeat_to"] = _rep_qss
+            elif "sft_sample_repeat_to" in cfg:
+                errs.append(f"CONFIG qss tag carries no rep token but "
+                            f"the config sets sft_sample_repeat_to="
+                            f"{cfg.get('sft_sample_repeat_to')!r} -- the "
+                            f"tiling must be visible in the tag")
+            if not _smk_qss and want["n_rounds"] != 100:
+                errs.append(f"CONFIG qss production horizon is 100 "
+                            f"rounds, tag says {want['n_rounds']}")
+            if _n_qss <= 0 or _n_qss > 723:
+                errs.append(f"CONFIG qss sample count {_n_qss} outside "
+                            f"1..723")
+            # the 100% arm is the REUSED QWU cell and must never be
+            # queued under this family wearing a sampling config
+            if _n_qss == 723 and not _rep_qss:
+                errs.append("CONFIG qss n=723 is the FULL-DATA arm and "
+                            "is the reused pofdqwu_ cell -- it must not "
+                            "be rerun with a sampling config")
+        if float(cfg.get("eps", 0.0)) <= 0:
+            errs.append(f"CONFIG qss eps={cfg.get('eps')!r} -- "
+                        f"eps_social=0 is the NO-PEER condition and must "
+                        f"not double as an open peer channel")
+        _gn_s = ((cfg.get("hardware") or {}).get("gpu_name") or "")
+        if "H100" not in _gn_s:
+            errs.append(f"CONFIG qss ran on {_gn_s or 'unknown GPU'}, "
+                        f"not an H100 (the wave is H100-pinned)")
+        if "chat_thinking" in cfg:
+            errs.append("CONFIG chat_thinking recorded on a qwen2.5 qss "
+                        "run")
     elif is_fam:
         # FIGURE-2 FAMILY-PRIOR SCOUT: canonical Action loop at the
         # wide-open numeric gate with a live peer step. The checkpoint
@@ -3623,6 +3716,106 @@ def check_run(run_dir):
                 f"-- every frozen cell in the grid must serve the SAME "
                 f"constant vector")
 
+    # -- 2s OBSERVATION-RATE SUBSAMPLING (reconstruct every subset) ---------
+    # The claim is that each round's SFT batch was a fresh random subset
+    # of exactly the requested size, drawn from a dedicated stream, and
+    # NESTED across arms. All of that is reconstructible offline from
+    # (sft_sample_seed, round) alone, so none of it is taken on trust:
+    # the ids are regenerated here and compared elementwise, IN ORDER,
+    # and the labels are checked against the population state the round
+    # actually trained on.
+    _samp_n = int(cfg.get("sft_sample_n") or 0)
+    if _samp_n > 0:
+        _rep_to = int(cfg.get("sft_sample_repeat_to") or 0)
+        _s_seed = cfg.get("sft_sample_seed")
+        _n_ag = int(op_raw.shape[1])
+        _si = d.get("sft_sample_idx_raw")
+        _sy = d.get("sft_sample_y_raw")
+        _want_rows = _rep_to if _rep_to else _samp_n
+        if _s_seed is None:
+            errs.append("SAMPLE sft_sample_seed missing -- the subsets "
+                        "cannot be reconstructed")
+        elif _si is None or _si.numel() == 0 or _sy is None \
+                or _sy.numel() == 0:
+            errs.append("SAMPLE sft_sample_idx_raw/sft_sample_y_raw "
+                        "missing -- the observed subset is unprovable")
+        elif tuple(_si.shape) != (op_raw.shape[0], _want_rows):
+            errs.append(f"SAMPLE sft_sample_idx_raw shape "
+                        f"{tuple(_si.shape)} != "
+                        f"{(op_raw.shape[0], _want_rows)}")
+        elif tuple(_sy.shape) != tuple(_si.shape):
+            errs.append(f"SAMPLE label shape {tuple(_sy.shape)} != id "
+                        f"shape {tuple(_si.shape)}")
+        else:
+            _bad_id = _bad_uni = _bad_lab = None
+            _tile = ((torch.arange(_rep_to) % _samp_n) if _rep_to
+                     else None)
+            for _t in range(op_raw.shape[0]):
+                _g = torch.Generator().manual_seed(int(_s_seed) + _t)
+                _perm = torch.randperm(_n_ag, generator=_g)
+                _want_ids = _perm[:_samp_n]
+                # UNIQUENESS: a permutation prefix cannot repeat an agent
+                if int(torch.unique(_want_ids).numel()) != _samp_n:
+                    _bad_uni = _t
+                    break
+                _exp = _want_ids[_tile] if _rep_to else _want_ids
+                _got = _si[_t].long()
+                if not torch.equal(_got, _exp):
+                    _bad_id = (_t, int((_got != _exp).sum()))
+                    break
+                # LABELS: round 0 trains on the initial labels, later
+                # rounds on the PRECEDING population -- the same timing
+                # the loop uses. Compared on the sampled ids only.
+                _src = innate if _t == 0 else op_raw[_t - 1]
+                _exp_y = _src[_exp.long()]
+                if float((_sy[_t].float() - _exp_y).abs().max()) > ATOL:
+                    _bad_lab = (_t, float((_sy[_t].float()
+                                           - _exp_y).abs().max()))
+                    break
+            if _bad_uni is not None:
+                errs.append(f"SAMPLE round {_bad_uni}: reconstructed "
+                            f"subset repeats an agent -- a permutation "
+                            f"prefix cannot")
+            if _bad_id is not None:
+                errs.append(f"SAMPLE round {_bad_id[0]}: recorded SFT "
+                            f"ids differ from the (seed={_s_seed}, "
+                            f"round) reconstruction in {_bad_id[1]} of "
+                            f"{_want_rows} rows")
+            if _bad_lab is not None:
+                errs.append(f"SAMPLE round {_bad_lab[0]}: recorded SFT "
+                            f"labels differ from the population state "
+                            f"that round trained on (max "
+                            f"{_bad_lab[1]:.2e})")
+            # NESTING: within a round, a smaller count must be a prefix
+            # of a larger one. Verified structurally -- the draw does not
+            # read the sample size, so every arm shares one permutation.
+            for _t in (0, op_raw.shape[0] // 2, op_raw.shape[0] - 1):
+                _g = torch.Generator().manual_seed(int(_s_seed) + _t)
+                _full = torch.randperm(_n_ag, generator=_g)
+                if not torch.equal(_full[:_samp_n],
+                                   _si[_t].long()[:_samp_n]
+                                   if not _rep_to
+                                   else _full[:_samp_n]):
+                    errs.append(f"SAMPLE round {_t}: subset is not the "
+                                f"prefix of this round's permutation -- "
+                                f"arms would not be nested")
+                    break
+        # n_train must equal the requested row count in EVERY round --
+        # this is what "the arm observed N agents" means operationally
+        _bad_nt = [(r.get("round"), r.get("n_train")) for r in traj
+                   if r.get("is_deploy") and r.get("n_train") != _want_rows]
+        if _bad_nt:
+            errs.append(f"SAMPLE n_train != {_want_rows} in "
+                        f"{len(_bad_nt)} round(s), first {_bad_nt[:3]}")
+        if _rep_to:
+            # the compute-matched cell: same rows as full data, but only
+            # _samp_n DISTINCT agents
+            if _si is not None and _si.numel():
+                _u = int(torch.unique(_si[0]).numel())
+                if _u != _samp_n:
+                    errs.append(f"SAMPLE compute-matched round 0 holds "
+                                f"{_u} distinct agents (want {_samp_n})")
+
     # -- 2 NO-PEER / PEER-ALIVE ----------------------------------------------
     if is_social:
         # peer step is ON by design: require it actually fired somewhere
@@ -3890,6 +4083,13 @@ def _fresh_errs(cfg, traj, is_dpo):
             errs.append("FRESH no n_train logged (pipeline predates the n_train patch?)")
     else:
         cap = int(cfg.get("train_cap") or 0) or 723
+        # OBSERVATION-RATE SUBSAMPLING (2026-08-21): a sampled run trains
+        # on the requested subset size (or the tiled row count), not the
+        # cap. Section 2s reconstructs those rows exactly; here we only
+        # need FRESH to expect the right constant instead of 723.
+        _s_n = int(cfg.get("sft_sample_n") or 0)
+        if _s_n > 0:
+            cap = int(cfg.get("sft_sample_repeat_to") or 0) or _s_n
         wrong = [(t, n) for t, n in sizes if n != cap]
         if wrong:
             errs.append(f"FRESH n_train != {cap} at {wrong[:5]}")

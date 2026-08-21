@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Reuse audit for the OBSERVATION-RATE SUBSAMPLING wave (2026-08-21,
+qwen_subsample).
+
+The conceptual grid is six observation rates on the completed
+Wu-boundary ordinary-SFT cell:
+
+    2%    5%   10%   25%   50%   100%
+    14    36    72   181   362    723
+
+plus one compute-matched control at 10% (the same 72 agents tiled to 723
+rows, so the optimizer takes the full-data number of steps on a tenth of
+the unique data) = 7 conceptual cells.
+
+The 100% cell is NOT a new job. It IS the completed
+pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100 -- ordinary SFT, k=1, W=1,
+both gates all_open, 100 rounds, seed 0, H100 -- run with no sampling at
+all, which is exactly what "observes everyone" means. Reusing it rather
+than re-running a 723-sample cell also keeps the reference arm free of
+the new code path.
+
+So the expected split is 1 reused / 6 new. Nothing is forced: the audit
+reports whatever the archive holds and fails loudly on a mismatch.
+
+Usage:
+  python audit_qwen_subsample.py [--roots R1 R2] [--print] [--write PATH]
+"""
+import argparse
+import importlib.util
+import json
+import os
+import sys
+
+import torch
+
+HERE = (os.path.dirname(os.path.abspath(__file__))
+        if "__file__" in globals() else os.getcwd())
+REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
+_spec = importlib.util.spec_from_file_location(
+    "audit_reach", os.path.join(HERE, "audit_sft_icl_reach_reuse.py"))
+AR = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(AR)
+ABSENT = AR.ABSENT
+
+MODEL = "Qwen/Qwen2.5-7B-Instruct"
+COUNTS = [14, 36, 72, 181, 362]
+FULL = 723
+CM_N, CM_REPEAT = 72, 723
+N_ROUNDS = 100
+N_AGENTS = 723
+REUSED_TAG = "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100"
+MANIFEST_PATH = os.path.join(
+    REPO, "experiments", "condor", "manifest_qwen_subsample.json")
+
+# the full-data reference must match the Wu-boundary b0 surface EXACTLY,
+# and must carry NO sampling config -- a sampled 723 cell would be a
+# different object wearing the same meaning
+FULL_WANT = {
+    "dataset": ("movielens",), "ml_target": ("Action",),
+    "pop_model": ("ab",), "run_mode": ("loop",),
+    "population_update": ("nested_ai_then_social_v1",),
+    "base_model": (MODEL,), "seed": (0,), "n_rounds": (N_ROUNDS,),
+    "innate_lambda": (1.0,), "w_plat": (1.0,),
+    "ai_gate_mode": ("all_open",), "peer_gate_mode": ("all_open",),
+    "training_style": ("sft",), "kl_beta": (0.0,),
+    "use_lora": (True, 1), "lora_r": (512,), "sft_lr": (5e-5,),
+    "sft_epochs": (1,), "sft_batch_size": (4,),
+    "fresh_each_round": (True,), "icl_k": (0,), "icl_days": (0,),
+    "gamma_bias": (0.0,), "do_sample": (False,),
+    "data_regime": ("replace",), "n_labeled": (723,), "train_cap": (723,),
+    "pristine_frac": (0.0,), "replay_frac": (ABSENT, 0.0),
+    "sft_sample_n": (ABSENT,), "sft_sample_repeat_to": (ABSENT,),
+}
+
+
+def new_tag(count, repeat_to=0):
+    tok = f"n{count}" + (f"rep{repeat_to}" if repeat_to else "")
+    return (f"pofdqss_qwen7b_b0_eaopen_w1_l1_esopen_{tok}_s0_r{N_ROUNDS}")
+
+
+def completeness(run_dir):
+    pt = os.path.join(run_dir, "trajectory.pt")
+    if not os.path.exists(pt):
+        return False, "no trajectory.pt"
+    d = torch.load(pt, map_location="cpu", weights_only=False)
+    op = d.get("op_raw")
+    if op is None or tuple(op.shape) != (N_ROUNDS, N_AGENTS):
+        return False, (f"op_raw {None if op is None else tuple(op.shape)}"
+                       f" != {(N_ROUNDS, N_AGENTS)}")
+    if len(d.get("trajectory", [])) != N_ROUNDS:
+        return False, f"{len(d.get('trajectory', []))} rounds"
+    return True, "complete"
+
+
+def audit(roots):
+    runs = AR.scan(roots)
+    by_name = {name: root for name, root, _ in runs}
+    cells, hazards, notes = [], [], []
+
+    # ---- the reused 100% cell -----------------------------------------
+    cell = {"observed": FULL, "frac": 1.0, "repeat_to": 0,
+            "role": "full-data reference"}
+    hit = None
+    for name, root, cfg in runs:
+        if name != REUSED_TAG:
+            continue
+        fv = AR.field_verdict(cfg, FULL_WANT)
+        bad = {k: (v[0], v[1]) for k, v in fv.items() if not v[2]}
+        if bad:
+            notes.append(f"HARD FAIL: {REUSED_TAG} does not match the "
+                         f"full-data surface on {sorted(bad)}: {bad}")
+        else:
+            ok, why = completeness(os.path.join(root, name))
+            if ok:
+                hit = os.path.join(root, name)
+            else:
+                notes.append(f"HARD FAIL: {REUSED_TAG} incomplete ({why})")
+    if hit:
+        cell.update({"status": "reused", "run_tag": REUSED_TAG,
+                     "run_dir": hit, "verdict": "PASS"})
+    else:
+        cell["status"] = "missing"
+        notes.append(f"HARD FAIL: the full-data reference {REUSED_TAG} "
+                     f"was not found complete in {roots}. It is the 100% "
+                     f"arm and is NOT regenerated by this wave.")
+    cells.append(cell)
+
+    # ---- the new sampled cells ----------------------------------------
+    for count in COUNTS:
+        t = new_tag(count)
+        cells.append({"observed": count, "frac": round(count / FULL, 4),
+                      "repeat_to": 0, "role": "observation arm",
+                      "status": "new", "new_tag": t})
+        if t in by_name:
+            hazards.append(t)
+    t_cm = new_tag(CM_N, CM_REPEAT)
+    cells.append({"observed": CM_N, "frac": round(CM_N / FULL, 4),
+                  "repeat_to": CM_REPEAT, "role": "compute-matched control",
+                  "status": "new", "new_tag": t_cm})
+    if t_cm in by_name:
+        hazards.append(t_cm)
+
+    n_reused = sum(1 for c in cells if c["status"] == "reused")
+    n_new = sum(1 for c in cells if c["status"] == "new")
+    return cells, n_reused, n_new, hazards, notes
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--roots", nargs="*", default=AR.DEFAULT_ROOTS)
+    ap.add_argument("--print", dest="do_print", action="store_true")
+    ap.add_argument("--write", nargs="?", const=MANIFEST_PATH, default=None)
+    args = ap.parse_args()
+
+    cells, n_reused, n_new, hazards, notes = audit(args.roots)
+    manifest = {
+        "key": "qwen_subsample", "model": MODEL,
+        "counts": COUNTS, "full": FULL, "n_agents": N_AGENTS,
+        "compute_matched": {"n": CM_N, "repeat_to": CM_REPEAT},
+        "n_rounds": N_ROUNDS, "reused_tag": REUSED_TAG,
+        "n_conceptual_cells": len(cells),
+        "n_reused": n_reused, "n_new": n_new, "cells": cells,
+    }
+    for c in cells:
+        line = (f"[audit_qss] {c['observed']:>4} agents "
+                f"({c['frac'] * 100:>5.1f}%)"
+                + (f" x{c['repeat_to']}" if c["repeat_to"] else "        ")
+                + f"  {c['status']:<7} {c['role']}")
+        if c["status"] == "reused":
+            line += f"  ({c['run_tag']})"
+        print(line, file=sys.stderr)
+    print(f"[audit_qss] {n_reused} reused / {n_new} new of {len(cells)} "
+          f"conceptual cells", file=sys.stderr)
+    for n in notes:
+        print(f"[audit_qss] {n}", file=sys.stderr)
+    if hazards:
+        print(f"[audit_qss] HARD FAIL: new-cell tag(s) already occupied: "
+              f"{hazards}", file=sys.stderr)
+    if notes or hazards:
+        sys.exit(1)
+    if args.do_print:
+        print(json.dumps(manifest, indent=2))
+    if args.write:
+        with open(args.write, "w") as fh:
+            json.dump(manifest, fh, indent=2)
+        print(f"[audit_qss] wrote {args.write}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

@@ -3608,6 +3608,180 @@ def qwu_rows():
 # NO SMOKE: the all-open production path is already validated by the four
 # completed cells, and frozen personal-history ICL is the established d8
 # path from the bottom-20% waves. Nothing here is a new code path.
+# =========================================================================
+# OBSERVATION-RATE SUBSAMPLING (2026-08-21, qwen_subsample[_smoke]).
+# Celestine's hypothesis: ordinary SFT leans MORE on the pretrained model
+# when it observes less of the population. This tests it directly by
+# varying only how much data the optimizer sees.
+#
+# THE DESIGN. Take the completed Wu-boundary b0 cell exactly as it is --
+# Qwen2.5-7B-Instruct, ordinary SFT (lambda=0), k=1, W=1, both gates
+# genuinely all_open, fresh LoRA every round, 100 rounds, seed 0, H100,
+# greedy eval-mode serving -- and change ONE thing: the number of agents
+# whose labels enter the SFT batch each round.
+#     2%   5%   10%   25%   50%   100%
+#     14   36    72   181   362    723
+# The platform still SERVES all 723 agents every round in every arm; only
+# the training batch is cut. So the population dynamics see the same
+# closed loop and the arms differ purely in observation.
+#
+# THE 100% ARM IS NOT RERUN. It IS the completed
+# pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100 -- same config, no
+# sampling -- so five observation arms queue, not six.
+#
+# WHY A NEW KNOB. N_LABELED takes a fixed PREFIX of agents: the same
+# people every round, which asks "who is observed", not "how many".
+# TRAIN_CAP is applied only in the t>0 branch, so round 0 would train on
+# all 723 and the first adapter would not be subsampled at all. Hence
+# SFT_SAMPLE_N, opt-in and absent-by-default so every archived run is
+# byte-identical.
+#
+# NESTED SUBSETS. Each round draws ONE permutation of all 723 agents from
+# a dedicated stream seeded (SFT_SAMPLE_SEED + round) -- independent of
+# the sample size -- and takes its prefix. So within a round the 14 are
+# inside the 36 are inside the 72, and the arms are strictly nested
+# rather than independent draws. That removes "different people" as an
+# explanation for any difference between arms.
+#
+# THE COMPUTE-MATCHED CELL. A small arm also takes fewer optimizer steps
+# (14 rows at batch 4 is 4 steps; 723 rows is 181), so a raw comparison
+# confounds "saw less unique data" with "trained less". The 10% arm is
+# therefore ALSO run with SFT_SAMPLE_REPEAT_TO=723: the same 72 sampled
+# agents, tiled to exactly 723 rows, giving 181 steps -- identical
+# compute to the full-data arm, on 72 distinct agents.
+# =========================================================================
+QSS_KEY = "qwen_subsample"
+QSS_SMOKE_KEY = "qwen_subsample_smoke"
+QSS_MODEL = "qwen7b"
+QSS_ARM = "b0"                 # ordinary SFT, lambda = 0
+QSS_W = 1.0
+QSS_K = 1.0
+QSS_ROUNDS = 100
+QSS_SMOKE_ROUNDS = 3
+QSS_N_AGENTS = 723
+# exact counts, given rather than derived: round(.02*723)=14 etc, but the
+# grid is the spec's, not a rounding rule
+QSS_COUNTS = [14, 36, 72, 181, 362]        # 723 = the reused QWU cell
+QSS_FULL = 723
+QSS_CM_N = 72                              # compute-matched arm
+QSS_CM_REPEAT = 723
+QSS_H100 = QWU_H100
+# the completed full-data cell this wave hangs off
+QSS_REUSED_TAG = "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100"
+
+ROW_QSS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+           "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {samplen}, "
+           "{repeatto}, {iclk}, {snap}, {uselora}, {fresh}, {ansk}, "
+           "{gg}, {nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, "
+           "{pplbatch}")
+
+
+def qss_tag(count, repeat_to=0, rounds=QSS_ROUNDS, smoke=False):
+    """The observation count rides an _n token. The compute-matched cell
+    spells its tiling explicitly (_n72rep723_) so it can never be
+    mistaken for the plain 72-agent arm."""
+    tok = f"n{count}" + (f"rep{repeat_to}" if repeat_to else "")
+    sm = "smoke" if smoke else ""
+    return (f"pofdqss_{QSS_MODEL}_{QSS_ARM}_eaopen_w{_num(QSS_W)}"
+            f"_l{_num(QSS_K)}_esopen_{tok}_s0_r{rounds}{sm}")
+
+
+def qss_row(count, repeat_to=0, rounds=QSS_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS[QSS_ARM]
+    m = FAM_MODELS[QSS_MODEL]
+    return ROW_QSS.format(
+        tag=qss_tag(count, repeat_to, rounds, smoke), style=a["style"],
+        beta=a["beta"], seed=0, es=f"{QWU_EPS_SOCIAL:g}",
+        wplat=f"{QSS_W:g}", lam=f"{QSS_K:g}", samplen=count,
+        repeatto=repeat_to, iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=rounds, basemodel=m["base_model"],
+        chatthink=m["chatthink"], mem=m["mem"], disk=m["disk"],
+        pplbatch=m["pplbatch"])
+
+
+def qss_rows():
+    """Five observation arms + one compute-matched control = 6 jobs.
+    The 100% arm is the REUSED QWU cell and is deliberately absent."""
+    return ([qss_row(c) for c in QSS_COUNTS]
+            + [qss_row(QSS_CM_N, QSS_CM_REPEAT)])
+
+
+def qss_smoke_rows():
+    """ONE 3-round cell exercising the new sampling path end to end."""
+    return [qss_row(QSS_CM_N, rounds=QSS_SMOKE_ROUNDS, smoke=True)]
+
+
+def qss_sub(smoke=False):
+    key = QSS_SMOKE_KEY if smoke else QSS_KEY
+    rows = qss_smoke_rows() if smoke else qss_rows()
+    return QSS_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=QSS_H100, bad=BAD_NODE_REQ,
+        rounds=QSS_SMOKE_ROUNDS if smoke else QSS_ROUNDS,
+        kind=("SMOKE (3 rounds, NOT production)" if smoke
+              else "PRODUCTION (100 rounds)"))
+
+
+QSS_SUB_TEMPLATE = """\
+# HTCondor: QWEN2.5 OBSERVATION-RATE SUBSAMPLING -- {kind}, {n_jobs}
+# jobs. GENERATED by gen_pofd_sweep.py from the QSS block. Never edit by
+# hand: rerun the script.
+# Tests whether ordinary SFT leans MORE on the pretrained model when it
+# observes less of the population. The completed Wu-boundary b0 cell,
+# unchanged in every respect -- Qwen2.5-7B-Instruct, ordinary SFT
+# (lambda=0), k=1, W=1, BOTH gates genuinely all_open, fresh LoRA r512
+# every round, {rounds} rounds, seed 0, movielens Action 723 agents,
+# matched twin, greedy eval-mode serving -- except how many agents'
+# labels reach the optimizer: 14 / 36 / 72 / 181 / 362 (2/5/10/25/50%).
+# The 100% arm is NOT rerun: it IS the completed
+# pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100.
+# SERVING IS UNTOUCHED: all 723 agents are served every round in every
+# arm. Only the SFT batch is cut, so the loop the population experiences
+# is the same and the arms differ purely in observation.
+# NEW KNOB, opt-in. N_LABELED takes a fixed PREFIX (same people every
+# round -- a different question), and TRAIN_CAP is applied only for t>0,
+# so round 0 would be unsubsampled. SFT_SAMPLE_N is absent by default,
+# leaving every archived run byte-identical.
+# NESTED: one permutation of all 723 per round from a dedicated stream
+# seeded (SFT_SAMPLE_SEED + round), independent of sample size, prefix
+# taken -- so the 14 sit inside the 36 sit inside the 72. "Different
+# people" cannot explain a difference between arms.
+# COMPUTE-MATCHED CONTROL: the 10% arm also runs with
+# SFT_SAMPLE_REPEAT_TO=723 -- the same 72 agents tiled to exactly 723
+# rows, hence 181 optimizer steps, identical compute to the full-data
+# arm on 72 distinct agents. That separates limited unique data from
+# merely taking fewer gradient steps.
+# Gate every pull with check_pofd_sanity (QSS section: every subset and
+# label reconstructed exactly from (seed, round), uniqueness, nesting,
+# and n_train equal to the requested count in ALL rounds).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) SFT_SAMPLE_N=$(samplen) SFT_SAMPLE_REPEAT_TO=$(repeatto) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, samplen, repeatto, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 QWU_ICL_KEY = "qwen_wu_limit_icl"
 QWU_ICL_ARM = "d8"
 QWU_ICL_DAYS = 8
@@ -7472,6 +7646,71 @@ def main():
     files[p] = rows_qwui
     expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{QWU_ICL_KEY}.sub")] = _qwui_sub
+    # ---- observation-rate subsampling (QSS) ---------------------------
+    rows_qss = qss_rows()
+    assert len(rows_qss) == len(QSS_COUNTS) + 1 == 6, len(rows_qss)
+    _qss_tags = [r.split(",")[0] for r in rows_qss]
+    assert len(set(_qss_tags)) == 6
+    # the 100% arm is the REUSED QWU cell and must NOT be queued
+    assert QSS_FULL not in QSS_COUNTS
+    assert not any(f"_n{QSS_FULL}_" in t for t in _qss_tags), _qss_tags
+    assert QSS_REUSED_TAG not in _qss_tags
+    for _c in QSS_COUNTS:
+        assert sum(1 for t in _qss_tags if f"_n{_c}_" in t) == 1, _c
+    # the compute-matched cell spells its tiling so it can never be
+    # confused with the plain 72-agent arm
+    _cm = qss_tag(QSS_CM_N, QSS_CM_REPEAT)
+    assert _cm in _qss_tags and f"_n{QSS_CM_N}rep{QSS_CM_REPEAT}_" in _cm
+    assert _cm != qss_tag(QSS_CM_N)
+    # queue surface: ordinary SFT, k=1, W=1, both gates open via the sub
+    for r in rows_qss:
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[1] == "sft" and _c[2] == "0", r        # lambda = 0
+        assert _c[3] == "0", r                            # seed 0
+        assert _c[11] == "1", r                           # W = 1
+        assert _c[14] == "1", r                           # k = 1
+        assert int(_c[15]) in QSS_COUNTS + [QSS_CM_N], r  # SFT_SAMPLE_N
+        assert int(_c[16]) in (0, QSS_CM_REPEAT), r       # REPEAT_TO
+        assert _c[19] == "1" and _c[20] == "1", r         # LoRA, fresh
+        assert _c[23] == str(QSS_ROUNDS), r
+        assert _c[24] == "Qwen/Qwen2.5-7B-Instruct", r
+    # exactly ONE row carries the tiling
+    assert sum(1 for r in rows_qss
+               if int(r.split(",")[16]) > 0) == 1
+    _qss_sub = qss_sub()
+    _qss_env = next(ln for ln in _qss_sub.splitlines()
+                    if ln.startswith("environment"))
+    assert "SFT_SAMPLE_N=$(samplen)" in _qss_env
+    assert "SFT_SAMPLE_REPEAT_TO=$(repeatto)" in _qss_env
+    assert "AI_GATE_MODE=all_open" in _qss_env
+    assert "PEER_GATE_MODE=all_open" in _qss_env
+    assert "INNATE_LAMBDA=$(lam)" in _qss_env
+    assert "WITH_TWIN=1" in _qss_env
+    assert "POP_RESET" not in _qss_env
+    assert f'CUDADeviceName == "{QSS_H100}"' in _qss_sub
+    _prior_qss = {r.split(",")[0]
+                  for rows in files.values() for r in rows}
+    assert not (set(_qss_tags) & _prior_qss), \
+        f"qss collision: {set(_qss_tags) & _prior_qss}"
+    p = os.path.join(HERE, f"configs_pofd_{QSS_KEY}.txt")
+    files[p] = rows_qss
+    expected[p] = 6
+    cube_subs[os.path.join(HERE, f"at_pofd_{QSS_KEY}.sub")] = _qss_sub
+    # 3-round smoke for the NEW sampling path
+    rows_qsss = qss_smoke_rows()
+    assert len(rows_qsss) == 1
+    _qsss_tags = {r.split(",")[0] for r in rows_qsss}
+    assert all(t.endswith(f"_s0_r{QSS_SMOKE_ROUNDS}smoke")
+               for t in _qsss_tags), _qsss_tags
+    assert not (_qsss_tags & set(_qss_tags))
+    _prior_qsss = {r.split(",")[0]
+                   for rows in files.values() for r in rows}
+    assert not (_qsss_tags & _prior_qsss)
+    p = os.path.join(HERE, f"configs_pofd_{QSS_SMOKE_KEY}.txt")
+    files[p] = rows_qsss
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{QSS_SMOKE_KEY}.sub")] = \
+        qss_sub(smoke=True)
     # Figure-2 family-prior scout (see the FAM block): the 48-cell
     # 6-checkpoint grid minus whatever the field-level audit reused.
     # Counts come from the manifest and are asserted for CONSISTENCY
