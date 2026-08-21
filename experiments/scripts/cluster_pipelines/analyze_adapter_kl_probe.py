@@ -137,6 +137,9 @@ def analyse(probe_dir, out_dir):
             "kl_fwd_tstar": float(np.mean(r["kl_fwd_tstar"])),
             "kl_rev_tstar": float(np.mean(r["kl_rev_tstar"])),
             "flip_rate": float(np.mean(r["flip_tstar"])),
+            "flip_rate_vs_generated": float(np.mean(
+                r["flip_vs_generated"])) if "flip_vs_generated" in r
+            else float("nan"),
             "early_div_frac": float(np.mean(
                 (np.asarray(r["first_div"]) >= 0)
                 & (np.asarray(r["first_div"])
@@ -192,9 +195,22 @@ def _fam_series(rows, fam):
 def report(rows, mf):
     print(f"\n[akl] base model at the decision position: mean top-1 "
           f"{mf['base_top1_mean']:.3f}, mean top1-top2 margin "
-          f"{mf['base_margin_mean']:.3f}")
+          f"{mf['base_margin_mean']:.3f}"
+          + (f", median {mf['base_margin_median']:.3f}"
+             if "base_margin_median" in mf else ""))
     print("[akl]   a SMALL margin is what makes the argmax-amplification "
-          "reading available at all\n")
+          "reading available at all")
+    tm = mf.get("tf_mismatch")
+    if tm:
+        # the frozen base disagreeing with ITSELF across two numerically
+        # equivalent decoding paths is a direct, model-only measurement of
+        # how knife-edge the served map is -- no adapter involved
+        print(f"[akl] the FROZEN base flips its own argmax for "
+              f"{tm['n']} agent-positions ({100 * tm['frac_of_agents']:.1f}%"
+              f" of agents) between cached generation and a full forward, "
+              f"at positions {tm['positions']}, all within margin "
+              f"{tm['max_margin']:.2e}")
+    print()
     print(f"[akl] {'family':>8} {'dial':>7} {'greedy->base':>13} "
           f"{'soft->base':>11} {'KL@t*':>8} {'KLfrac':>7} {'flip%':>7} "
           f"{'softcorr':>9}")
