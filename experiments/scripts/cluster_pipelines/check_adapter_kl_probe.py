@@ -75,7 +75,14 @@ _spec.loader.exec_module(AKL)
 TAIL_MAX = 0.02          # mass allowed outside the numeric support
 BASE_DEV_MAX = 1e-6      # base soft value must be reproduced exactly
 TSTAR_SHARE_MIN = 0.5    # t* must carry at least this share of leverage
-GREEDY_AGREE_MIN = 0.5   # loose floor; the real number is REPORTED
+# The fixed-tail value map substitutes at t* and keeps the BASE's
+# remaining tokens, so it reproduces the LEADING decimal of the adapter's
+# answer, not its second digit -- the adapter emits its own tail. Exact
+# equality is therefore the wrong test (it scores 1-3%); agreement is
+# checked at the resolution the frame actually has, and the residual is
+# reported so the analysis can state its own precision.
+VALUE_TOL = 0.06         # one leading-decimal step, minus rounding
+GREEDY_AGREE_MIN = 0.90  # at VALUE_TOL, not at exact equality
 
 
 def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
@@ -225,6 +232,7 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
                         f"was probably never applied")
 
     # -- 6 greedy cross-check against the dose runs -----------------------
+    frame_mae = []
     for tag, r in per_tag.items():
         traj = Path(runs_root) / tag / "trajectory.pt"
         if not traj.exists():
@@ -243,15 +251,26 @@ def check(dirpath, runs_root, expect_agents=AKL.N_AGENTS):
                         f"teacher-forced frame does not describe this "
                         f"adapter at all")
             continue
-        agree = float(np.mean(np.abs(gtf[ok] - served[ok]) < 1e-9))
-        notes.append(f"{tag}: greedy cross-check {100 * agree:.1f}% on "
-                     f"{int(ok.sum())}/{len(ok)} comparable agents "
-                     f"(early divergence {100 * (1 - ok.mean()):.1f}%)")
+        dv = np.abs(gtf[ok] - served[ok])
+        agree = float(np.mean(dv <= VALUE_TOL))
+        notes.append(f"{tag}: greedy cross-check {100 * agree:.1f}% within "
+                     f"{VALUE_TOL} on {int(ok.sum())}/{len(ok)} agents "
+                     f"(MAE {dv.mean():.4f}, P95 {np.percentile(dv, 95):.3f}, "
+                     f"max {dv.max():.2f}; exact {100 * np.mean(dv < 1e-9):.1f}%)")
+        frame_mae.append(float(dv.mean()))
         if agree < GREEDY_AGREE_MIN:
-            errs.append(f"{tag}: teacher-forced greedy value matches the "
-                        f"served value for only {100 * agree:.1f}% of "
-                        f"comparable agents -- the probe's reference frame "
-                        f"does not reproduce the dose run's serving")
+            errs.append(f"{tag}: teacher-forced greedy value is within "
+                        f"{VALUE_TOL} of the served value for only "
+                        f"{100 * agree:.1f}% of agents (MAE {dv.mean():.4f}) "
+                        f"-- the probe's frame does not reproduce the dose "
+                        f"run's leading decimal")
+    if frame_mae:
+        # the analysis must not read a trend smaller than its own frame
+        # error, so state that error once, plainly, at the end
+        notes.append(f"FRAME RESOLUTION: mean |teacher-forced - served| = "
+                     f"{np.mean(frame_mae):.4f} across adapters. Differences "
+                     f"between cells smaller than this are NOT resolvable "
+                     f"by the fixed-tail soft value.")
     return errs, notes
 
 
