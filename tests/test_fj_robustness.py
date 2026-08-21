@@ -732,3 +732,21 @@ def test_beta1_key_is_the_boundary_wave_at_wus_alpha_and_k():
     for r in rows:
         t = r.split(",")[0]
         assert "beta1_alpha0p9_in100_k1_s0_r30" in t, t
+
+
+def test_fj_runs_skip_the_deffuant_exact_copy_replay():
+    """The first corrected smoke failed on it: EXACT-COPY is the Deffuant
+    operator (gated accept/reject against a blended anchor) and rejects
+    every FJ round by construction, because FJ has no gate and mixes
+    unconditionally. check_fjr is what replays the FJ recurrence."""
+    import ast
+    src = (PIPE / "check_pofd_sanity.py").read_text()
+    tree = ast.parse(src)
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "check_run")
+    body = ast.unparse(fn)
+    # there are two `if is_fjr:` blocks -- the want-overrides and this
+    # guard -- so match the guard by its BODY, not by the condition
+    guard = body.index("if is_fjr:\n        return errs + _fresh_errs")
+    copy_loop = body.index("EXACT-COPY round {t}: non-finite predictions")
+    assert guard < copy_loop, "the FJ guard must precede the EXACT-COPY loop"

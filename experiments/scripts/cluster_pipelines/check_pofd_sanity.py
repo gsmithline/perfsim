@@ -4493,6 +4493,14 @@ def check_run(run_dir):
             # the fam scout's k0 arm; sft arms fall through to FRESH
             return errs
         return errs + _fresh_errs(cfg, traj, is_dpo)
+    if is_fjr:
+        # The EXACT-COPY replay below is the DEFFUANT operator: a gated
+        # per-agent accept/reject against a blended anchor. FJ has no
+        # gate and every agent mixes with its neighbours unconditionally,
+        # so that replay rejects every FJ round by construction -- as it
+        # did on the first smoke. The FJ recurrence is replayed in full,
+        # round by round and inner step by inner step, in check_fjr.
+        return errs + _fresh_errs(cfg, traj, is_dpo)
     for t in range(op_raw.shape[0]):
         served = pred_raw[t].clamp(0.0, 1.0)
         if not torch.isfinite(served).all():
