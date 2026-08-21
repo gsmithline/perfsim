@@ -871,33 +871,6 @@ def main() -> int:
     if ai_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "eps_ai gate exists only in the ab population)")
-    if sft_sample_n < 0:
-        raise ValueError(f"SFT_SAMPLE_N must be >= 0; got {sft_sample_n}")
-    if sft_sample_n > 0:
-        if training_style not in ("sft", "sft_kl"):
-            raise ValueError("SFT_SAMPLE_N requires a TRAINING_STYLE that "
-                             "actually trains (sft or sft_kl); got "
-                             f"{training_style!r}")
-        # keep the sampled path unambiguous: these all rewrite the batch
-        # in ways that would make "the observed subset" mean two things
-        for _bad, _why in (
-                (sft_exclude_clamped, "SFT_EXCLUDE_CLAMPED"),
-                (replay_frac > 0, "REPLAY_FRAC>0"),
-                (pristine_frac > 0, "PRISTINE_FRAC>0"),
-                (data_regime != "replace", "DATA_REGIME!=replace"),
-                # a cap SMALLER than the pool would fight with sampling;
-                # a cap >= the pool is provably inert (subsample_train_data
-                # returns early when n <= cap, drawing nothing), and the
-                # subsample wave keeps TRAIN_CAP=723 precisely so its
-                # config surface matches the reused full-data cell
-                (0 < train_cap < n_labeled, "0 < TRAIN_CAP < N_LABELED")):
-            if _bad:
-                raise ValueError(f"SFT_SAMPLE_N is incompatible with "
-                                 f"{_why}: both rewrite the training "
-                                 f"batch, so the observed subset would "
-                                 f"be ill-defined")
-    if sft_sample_repeat_to > 0 and sft_sample_n <= 0:
-        raise ValueError("SFT_SAMPLE_REPEAT_TO requires SFT_SAMPLE_N>0")
     if peer_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("PEER_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "Deffuant confidence gate exists only in the ab "
@@ -1094,6 +1067,38 @@ def main() -> int:
             raise ValueError("SFT_EXCLUDE_CLAMPED requires the innate "
                              "clamp (INNATE_CLAMP_MODE != 'off') -- "
                              "there is no fixed cohort to exclude")
+
+    # SFT_SAMPLE_N validation lives HERE rather than beside its env read:
+    # it inspects sft_exclude_clamped, which is only bound just above.
+    # Placing it earlier raised UnboundLocalError at startup -- caught by
+    # the smoke on 2026-08-21, which is exactly what the smoke was for.
+    if sft_sample_n < 0:
+        raise ValueError(f"SFT_SAMPLE_N must be >= 0; got {sft_sample_n}")
+    if sft_sample_n > 0:
+        if training_style not in ("sft", "sft_kl"):
+            raise ValueError("SFT_SAMPLE_N requires a TRAINING_STYLE that "
+                             "actually trains (sft or sft_kl); got "
+                             f"{training_style!r}")
+        # keep the sampled path unambiguous: these all rewrite the batch
+        # in ways that would make "the observed subset" mean two things
+        for _bad, _why in (
+                (sft_exclude_clamped, "SFT_EXCLUDE_CLAMPED"),
+                (replay_frac > 0, "REPLAY_FRAC>0"),
+                (pristine_frac > 0, "PRISTINE_FRAC>0"),
+                (data_regime != "replace", "DATA_REGIME!=replace"),
+                # a cap SMALLER than the pool would fight with sampling;
+                # a cap >= the pool is provably inert (subsample_train_data
+                # returns early when n <= cap, drawing nothing), and the
+                # subsample wave keeps TRAIN_CAP=723 precisely so its
+                # config surface matches the reused full-data cell
+                (0 < train_cap < n_labeled, "0 < TRAIN_CAP < N_LABELED")):
+            if _bad:
+                raise ValueError(f"SFT_SAMPLE_N is incompatible with "
+                                 f"{_why}: both rewrite the training "
+                                 f"batch, so the observed subset would "
+                                 f"be ill-defined")
+    if sft_sample_repeat_to > 0 and sft_sample_n <= 0:
+        raise ValueError("SFT_SAMPLE_REPEAT_TO requires SFT_SAMPLE_N>0")
         if training_style == "frozen":
             raise ValueError("SFT_EXCLUDE_CLAMPED is meaningless with "
                              "frozen weights (nothing ever trains)")

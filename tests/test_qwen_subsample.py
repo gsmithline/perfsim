@@ -432,3 +432,74 @@ def test_sabotage_tiling_hidden_from_the_tag(setup_pp, tmp_path):
     errs = CHK.check_run(d2)
     assert any("must be visible in the tag" in e
                or "sft_sample_idx_raw shape" in e for e in errs), errs
+
+
+# =================================================== startup-order safety
+def _main_fn():
+    """main()'s AST from the runner, parsed without importing it (the
+    runner's top-level transformers import hangs on some machines)."""
+    import ast
+    src = open(os.path.join(
+        REPO, "experiments/scripts/cluster_pipelines/"
+              "run_pokec_gated_lm.py")).read()
+    tree = ast.parse(src)
+    return next(nd for nd in tree.body
+                if isinstance(nd, ast.FunctionDef) and nd.name == "main")
+
+
+def test_sampling_guard_reads_no_name_before_it_is_bound():
+    """REGRESSION (2026-08-21). The SFT_SAMPLE_N validation block was
+    placed next to its env read, but it inspects sft_exclude_clamped,
+    which is bound several hundred lines later -- so every sampled run
+    died at startup with UnboundLocalError. The smoke caught it; nothing
+    in the unit tests did, because they build fixtures directly and never
+    execute main().
+
+    This walks main()'s AST and asserts that every local the guard reads
+    is assigned STRICTLY EARLIER in the function. It is deliberately
+    about the guard's dependencies rather than the whole function, so it
+    stays cheap and does not fire on unrelated forward references."""
+    import ast
+    fn = _main_fn()
+    # first assignment line for every local name in main()
+    first_assign = {}
+    for nd in ast.walk(fn):
+        if isinstance(nd, ast.Assign):
+            for tgt in nd.targets:
+                for sub in ast.walk(tgt):
+                    if isinstance(sub, ast.Name):
+                        first_assign.setdefault(sub.id, nd.lineno)
+        elif isinstance(nd, (ast.For, ast.comprehension)):
+            pass
+    # locate the guard: the raise carrying its message
+    guard_line = None
+    for nd in ast.walk(fn):
+        if isinstance(nd, ast.Raise):
+            txt = ast.dump(nd)
+            if "SFT_SAMPLE_N is incompatible with" in txt:
+                guard_line = nd.lineno
+    assert guard_line is not None, "guard not found -- did it move?"
+    DEPS = ["sft_exclude_clamped", "replay_frac", "pristine_frac",
+            "data_regime", "train_cap", "n_labeled", "sft_sample_n",
+            "training_style"]
+    late = [(dep, first_assign.get(dep)) for dep in DEPS
+            if first_assign.get(dep) is None
+            or first_assign[dep] >= guard_line]
+    assert not late, (
+        f"the SFT_SAMPLE_N guard at line {guard_line} reads name(s) bound "
+        f"at or after it: {late} -- this is the UnboundLocalError the "
+        f"smoke hit on 2026-08-21")
+
+
+def test_sampling_block_runs_for_every_round_not_just_after_zero():
+    """The second half of the same lesson: the guard must not be the only
+    thing that moved. The sampling BLOCK itself has to stay outside the
+    t>0 branch, or round 0 is unsubsampled again."""
+    src = open(os.path.join(
+        REPO, "experiments/scripts/cluster_pipelines/"
+              "run_pokec_gated_lm.py")).read()
+    blk = src.index("if sft_sample_n > 0 and train_data is not None:")
+    # it sits after the whole if/elif/else that selects train_data, so it
+    # applies to the t==0 branch too
+    assert src.index("train_data = initial_data") < blk
+    assert src.index("train_data = select_train_data(") < blk
