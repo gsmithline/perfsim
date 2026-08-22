@@ -1448,11 +1448,19 @@ def main() -> int:
         # --- FJ robustness wave provenance (2026-08-21) ---
         "fj_update_version": fj_update_version,
         # PEER SUSCEPTIBILITY as reported in the paper
-        "fj_peer_alpha": fj_alpha,
+        # The SCALAR peer susceptibility, and ONLY when a scalar is what
+        # ran. Under FJ_PEER_SOURCE=dataset alpha is a per-agent vector
+        # and this field would report the unused FJ_ALPHA default -- an
+        # artifact claiming alpha=0.9 while the operator ran a vector of
+        # mean 0.8909. Two sources for one parameter, and a reader cannot
+        # tell which. The realized vector is carried by
+        # fj_alpha_realized_sha256 / _mean instead.
+        "fj_peer_alpha": (fj_alpha if fj_peer_source != "dataset" else None),
         # what the legacy internal coefficient actually holds: its
         # complement, STUBBORNNESS. Recorded so the two can never be
         # confused when reading an artifact back.
-        "fj_internal_anchor_coef": 1.0 - fj_alpha,
+        "fj_internal_anchor_coef": (1.0 - fj_alpha
+                                    if fj_peer_source != "dataset" else None),
         "fj_peer_sus_convention": ("FJWorld.peer_sus is STUBBORNNESS = "
                                    "1 - alpha; alpha is peer susceptibility"),
         "fj_inner_steps": fj_inner_steps,

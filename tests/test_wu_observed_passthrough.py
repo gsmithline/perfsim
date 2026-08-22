@@ -671,3 +671,22 @@ def test_subsample_is_a_noop_at_or_above_the_pool_size():
         out = R.subsample_train_data(pool, cap, g)
         assert out["x"].shape[0] == 20, cap
     assert R.subsample_train_data(pool, 5, g)["x"].shape[0] == 5
+
+
+def test_scalar_alpha_is_not_recorded_when_a_vector_ran():
+    """Two sources for one parameter is a provenance defect, not a
+    convenience.
+
+    Under FJ_PEER_SOURCE=dataset the operator uses a per-agent vector
+    (Pokec: mean .8909). Writing the unused FJ_ALPHA default alongside it
+    produces an artifact that says alpha=0.9 while the run used a vector
+    of a different mean, and a reader cannot tell which is authoritative.
+    The realized vector is carried by fj_alpha_realized_sha256/_mean.
+    The scalar stays under `homogeneous`, where it IS what ran.
+    """
+    src = (PIPE / "run_pokec_gated_lm.py").read_text()
+    assert '"fj_peer_alpha": (fj_alpha if fj_peer_source != "dataset" else None)' in src
+    assert 'fj_alpha_realized_mean' in src
+    # the homogeneous path must still record it -- the MovieLens wu1
+    # waves rely on that field and their checker reads it
+    assert '"fj_peer_alpha"' in src
