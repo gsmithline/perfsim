@@ -1,0 +1,4 @@
+pofdrr_qwen7b_q0p1_ss0_eaopen_w1_l1_esopen_s0_r100, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0.1, 0, -1, 1, 1, 16, 0, 100, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdrr_qwen7b_q0p2_ss0_eaopen_w1_l1_esopen_s0_r100, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0.2, 0, -1, 1, 1, 16, 0, 100, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdrr_qwen7b_q0p5_ss0_eaopen_w1_l1_esopen_s0_r100, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0.5, 0, -1, 1, 1, 16, 0, 100, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdrr_qwen7b_q0p75_ss0_eaopen_w1_l1_esopen_s0_r100, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0.75, 0, -1, 1, 1, 16, 0, 100, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

@@ -26,23 +26,44 @@ Per run dir (needs trajectory.pt written by run_pokec_gated_lm.py), checks:
                buffer labels carry. The replayed update depends on the run's
                config population_update marker:
 
-               "nested_ai_then_social_v1" (runs from 2026-07-27):
+               "nested_ai_then_social_v1" (runs from 2026-07-27) -- the
+               ARCHIVED gate reference:
                  h = k innate + (1-k) x(t)
                  z = (1-W) h + W m   if |m - x(t)| < eps_AI   else h
                  x(t+1) = D_eps_social(z)
                  -- gate on the START-OF-ROUND opinion, mixture once per round,
                  peer sweeps last. W=1 returns z = m for every k.
 
+               "nested_ai_anchored_then_social_v2" (2026-08-22) -- the
+               CORRECTED gate reference. Same operator, same order, same
+               blend; the gate is measured against the anchored human
+               component x'(t) = h(t) instead of x(t):
+                 h = k innate + (1-k) x(t)
+                 z = (1-W) h + W m   if |m - h(t)| < eps_AI   else h
+               v1 gated on x(t) by typo. The archive was produced under
+               that typo, so it is NOT rewritten: each run is replayed
+               under the semantics its own marker declares, and an
+               UNKNOWN marker is a hard failure rather than a silent
+               fallback. The two coincide exactly at k=0 (h == x0) and
+               under an all_open gate (the reference is unused), so runs
+               in those regimes verify identically under either -- which
+               also means the dispatch cannot be tested on them alone.
+               config ai_gate_reference ("x0"/"anchor"), when recorded,
+               must agree with the marker.
+
                marker ABSENT (archived runs): the superseded order, gated blend
                first and the innate re-anchor over everyone after it,
                  accepted: op = (1-lam)[(1-W) x(t) + W served] + lam innate
                  rejected: op = (1-lam) x(t) + lam innate
-               kept so the archive stays auditable. At W=1, lam=0, eps_social=0
-               the two are identical, so those runs pass under either.
+               kept so the archive stays auditable, and gating on x(t)
+               because that is what those runs did. At W=1, lam=0,
+               eps_social=0 all versions are identical, so those runs pass
+               under any of them.
 
                W/lam come from the _w/_l dirname tokens (checked against the
                config); no tokens -> W=1, lam=0. Also cross-checks
-               row['contact'] == the gate fraction computed on x(t).
+               row['contact'] == the gate fraction computed on the run's own
+               reference vector.
                pofdws* (_es token, eps_social>0): peer moves are RNG-pairwise
                and cannot be replayed offline -- these runs get peer-alive,
                finite in-range opinions, twin telemetry every round and
@@ -408,6 +429,89 @@ def _bit_eq(a, b):
 
 ATOL = 2e-6   # float32 blend arithmetic; W=1 makes the copy exact but the
               # stored tensors round-trip through cpu float32
+
+# -- AI-GATE REFERENCE: DUAL SEMANTICS (2026-08-22) ------------------------
+# The intended AI gate is |m_i - x'_i| < eps_AI with x' = the ANCHORED
+# human component x'_i = gamma*innate_i + (1-gamma)*x_i, and in this
+# codebase gamma IS k (config innate_lambda), so x' is exactly the vector
+# already computed as h = k*innate + (1-k)*x0. The archived runs gate on
+# x0 instead -- a real typo, but one the whole archive was produced under.
+# Rather than rewrite history, the two operators are given DISTINCT
+# markers and the checker replays each run under ITS OWN semantics:
+#
+#   population_update = "nested_ai_then_social_v1"           -> gate on x0
+#   population_update = "nested_ai_anchored_then_social_v2"  -> gate on h
+#   marker ABSENT (pre-2026-07-27 artifacts)                 -> gate on x0
+#
+# The absent case is x0 because that is what those runs actually did; the
+# legacy operator in section 3 gates on x0 too. An UNKNOWN marker is a
+# hard failure -- silently falling back to x0 is how a corrected run
+# would get verified against the wrong reference and pass.
+#
+# NOTE the choice is INERT wherever k == 0 (h == x0 identically) and
+# wherever the gate mode is all_open (the gate ignores its reference), so
+# those runs verify identically under either semantics. That is a fact
+# about the arithmetic, not a licence to skip the dispatch.
+POP_UPDATE_V1 = "nested_ai_then_social_v1"
+POP_UPDATE_V2 = "nested_ai_anchored_then_social_v2"
+# marker -> the vector |m - .| is measured against
+GATE_REF_BY_MARKER = {
+    None: "x0",
+    POP_UPDATE_V1: "x0",
+    POP_UPDATE_V2: "anchor",
+}
+NESTED_MARKERS = (POP_UPDATE_V1, POP_UPDATE_V2)
+
+
+def gate_ref_kind(cfg):
+    """("x0" | "anchor", errs) for this run's population_update marker.
+
+    Also cross-checks the run's own recorded ai_gate_reference field when
+    present: the marker and the recorded reference are two independent
+    statements about the same operator and must agree, or one of them is
+    lying about what ran.
+    """
+    errs = []
+    marker = cfg.get("population_update")
+    if marker not in GATE_REF_BY_MARKER:
+        errs.append(
+            f"AI-GATE-REF unknown population_update {marker!r} -- the AI "
+            f"gate reference is undefined for this marker (want one of "
+            f"{sorted(k for k in GATE_REF_BY_MARKER if k)} or absent). "
+            f"Refusing to guess: replaying a corrected run against the "
+            f"archived reference would pass silently.")
+        return "x0", errs
+    kind = GATE_REF_BY_MARKER[marker]
+    recorded = cfg.get("ai_gate_reference")
+    if recorded is not None:
+        if recorded not in ("x0", "anchor"):
+            errs.append(f"AI-GATE-REF ai_gate_reference={recorded!r} "
+                        f"(want 'x0' or 'anchor')")
+        elif recorded != kind:
+            errs.append(
+                f"AI-GATE-REF config records ai_gate_reference="
+                f"{recorded!r} but population_update={marker!r} implies "
+                f"{kind!r} -- the marker and the recorded reference "
+                f"disagree about which operator ran")
+    return kind, errs
+
+
+def gate_ref_vec(kind, cfg, innate, x0, h=None):
+    """The vector the AI gate is evaluated against.
+
+      "x0"      the START-OF-ROUND opinion  (archived v1 / marker absent)
+      "anchor"  x' = k innate + (1-k) x0    (corrected v2)
+
+    h may be passed in when the caller already computed the anchored
+    human component, so the replay uses the SAME float32 expression the
+    update itself used rather than a second, separately-rounded one.
+    """
+    if kind != "anchor":
+        return x0
+    if h is not None:
+        return h
+    k = float(cfg.get("innate_lambda", 0.0))
+    return k * innate + (1.0 - k) * x0
 
 # The ONE canonical frozen Qwen2.5 K=D=0 prediction vector on H100-80GB
 # (mechanism diagnostic, 2026-08-20). sha256 over the float32 bytes.
@@ -2464,6 +2568,14 @@ def check_run(run_dir):
     # byte-for-byte. Same shared-definition discipline as the AI gate
     # (gp.peer_gate).
     peer_mode = cfg.get("peer_gate_mode") or "threshold"
+    # AI gate REFERENCE (2026-08-22): which vector |m - .| is measured
+    # against -- x0 for the archived v1 operator and for marker-absent
+    # artifacts, the anchored h = k innate + (1-k) x0 for the corrected
+    # v2 operator. Resolved ONCE here and threaded through every gate
+    # replay below (sections 1b, 1j, 3) so a run can never be replayed
+    # against a reference it did not use. See GATE_REF_BY_MARKER.
+    gate_ref, _gr_errs = gate_ref_kind(cfg)
+    errs += _gr_errs
 
     # -- 1a2 PEER-GATE MODE (universal) --------------------------------------
     # Two things can go wrong and both must be caught for EVERY family:
@@ -2607,11 +2719,14 @@ def check_run(run_dir):
 
     # -- 1b GATE-MASK (gate_raw, runner 2026-08-05) --------------------------
     # When present, the saved per-agent AI gate/contact mask must be exactly
-    # the gate on the start-of-round opinion: shape == op_raw, per-round mean
-    # == row['contact'], and bit-equal to |served - x(t)| < eps_ai (canary is
-    # config-gated to 0 in every family here; ab_retain serves the retained
-    # winner instead, so it is exempt from the replay). Absent / empty ->
-    # older run, skipped -- the mask reconstructs offline the same way.
+    # the gate on this run's OWN reference vector: shape == op_raw, per-round
+    # mean == row['contact'], and bit-equal to |served - ref(t)| < eps_ai,
+    # where ref is x(t) under the archived v1 marker (and marker-absent
+    # artifacts) and the anchored h(t) under the corrected v2 marker (canary
+    # is config-gated to 0 in every family here; ab_retain serves the
+    # retained winner instead, so it is exempt from the replay). Absent /
+    # empty -> older run, skipped -- the mask reconstructs offline the same
+    # way.
     gr = d.get("gate_raw")
     if gr is not None and gr.numel() > 0 and not cfg.get("ab_retain"):
         if tuple(gr.shape) != tuple(op_raw.shape):
@@ -2619,13 +2734,17 @@ def check_run(run_dir):
                         f"op_raw {tuple(op_raw.shape)}")
         else:
             gr = gr.bool()
+            _lam_g = float(cfg.get("innate_lambda", 0.0))
             for t in range(op_raw.shape[0]):
                 x0 = innate if t == 0 else op_raw[t - 1]
                 served = pred_raw[t].clamp(0.0, 1.0)
-                expect_g = gp.ai_gate(served, x0, eps_ai, gate_mode)
+                ref_g = gate_ref_vec(gate_ref, cfg, innate, x0,
+                                     h=(_lam_g * innate
+                                        + (1.0 - _lam_g) * x0))
+                expect_g = gp.ai_gate(served, ref_g, eps_ai, gate_mode)
                 if not torch.equal(gr[t], expect_g):
                     errs.append(f"GATE round {t}: gate_raw != gate on the "
-                                f"start-of-round opinion "
+                                f"{gate_ref} reference "
                                 f"({int((gr[t] ^ expect_g).sum())} agents off)")
                 logged = traj[t].get("contact")
                 if logged is not None and \
@@ -3948,7 +4067,12 @@ def check_run(run_dir):
                     served_t = pred_raw[tt].clamp(0.0, 1.0)
                     x0_t = innate if tt == 0 else op_raw[tt - 1]
                     h_t = lam_cl * innate + (1.0 - lam_cl) * x0_t
-                    g_t = gp.ai_gate(served_t, x0_t, eps_ai, gate_mode)
+                    # gate reference dispatches on the run's marker
+                    # (x0 under v1/absent, the anchored h under v2)
+                    g_t = gp.ai_gate(served_t,
+                                     gate_ref_vec(gate_ref, cfg, innate,
+                                                  x0_t, h=h_t),
+                                     eps_ai, gate_mode)
                     z_t = torch.where(g_t, (1.0 - w_cl) * h_t
                                       + w_cl * served_t, h_t)
                     dm = abs(float(op_raw[tt][~cl_mask].mean())
@@ -4398,7 +4522,10 @@ def check_run(run_dir):
     # replayed offline -- swap the exact-update check for the weaker gate:
     # finite in-range opinions/predictions, the SIMULATED twin present
     # (twin telemetry every round + twin_raw matching op_raw in shape).
-    nested = cfg.get("population_update") == "nested_ai_then_social_v1"
+    # BOTH nested markers select the nested operator (AI mixture first,
+    # peers last). They differ ONLY in the gate's reference vector, which
+    # is carried by gate_ref -- see GATE_REF_BY_MARKER.
+    nested = cfg.get("population_update") in NESTED_MARKERS
     w = float(cfg.get("w_plat", 1.0))
     lam = float(cfg.get("innate_lambda", 0.0))
     if is_social:
@@ -4421,7 +4548,10 @@ def check_run(run_dir):
                     continue
                 x0 = innate if t == 0 else op_raw[t - 1]
                 h = lam * innate + (1.0 - lam) * x0
-                gate = gp.ai_gate(served, x0, eps_ai, gate_mode)
+                gate = gp.ai_gate(served,
+                                  gate_ref_vec(gate_ref, cfg, innate, x0,
+                                               h=h),
+                                  eps_ai, gate_mode)
                 z = torch.where(gate, (1.0 - w) * h + w * served, h)
                 dmean = abs(float(op_raw[t].mean()) - float(z.mean()))
                 # clamp-peer runs break TOTAL-mean conservation by design
@@ -4432,15 +4562,19 @@ def check_run(run_dir):
                     errs.append(f"SOCIAL round {t}: mean(op_raw) differs from "
                                 f"mean(z) by {dmean:.2e} -- peer sweep is "
                                 f"mean-conserving, so the nested update did NOT "
-                                f"run before the peer step (gate on x0, "
+                                f"run before the peer step (gate on {gate_ref}, "
                                 f"W={w:g} lam={lam:g})")
                 logged = traj[t].get("contact")
                 if logged is not None and \
                         abs(logged - float(gate.float().mean())) > 1e-6:
                     errs.append(f"SOCIAL round {t}: contact {logged:.6f} != "
-                                f"gate-on-x0 frac "
+                                f"gate-on-{gate_ref} frac "
                                 f"{float(gate.float().mean()):.6f} -- the AI "
-                                f"gate must use the start-of-round opinion")
+                                f"gate must use "
+                                + ("the start-of-round opinion"
+                                   if gate_ref == "x0" else
+                                   "the anchored human component "
+                                   "h = k innate + (1-k) x(t)"))
         no_twin = [r["round"] for r in traj if "twin_mean" not in r]
         if no_twin:
             errs.append(f"SOCIAL twin telemetry missing in rounds {no_twin[:5]}")
@@ -4518,15 +4652,23 @@ def check_run(run_dir):
         # x_before is the START-OF-ROUND opinion x(t): with eps_social=0 the
         # peer step is inert, so the saved op_raw[t-1] (post-social) IS the
         # state the next round starts from and the state the buffer labels
-        # carry. Both versions gate on it.
+        # carry. h is the anchored human component built from it. WHICH of
+        # the two the gate is measured against is the run's own marker's
+        # business (gate_ref), never this checker's default.
         x_before = innate if t == 0 else op_raw[t - 1]
-        gate = gp.ai_gate(served, x_before, eps_ai, gate_mode)
+        h = lam * innate + (1.0 - lam) * x_before
+        gate = gp.ai_gate(served,
+                          gate_ref_vec(gate_ref, cfg, innate, x_before, h=h),
+                          eps_ai, gate_mode)
         if nested:
-            # population_update="nested_ai_then_social_v1":
+            # population_update="nested_ai_then_social_v1" (gate on x0) or
+            # "nested_ai_anchored_then_social_v2" (gate on h):
             #   h = lam innate + (1-lam) x(t)
-            #   z = (1-W) h + W m  if |m - x(t)| < eps_AI  else h
+            #   z = (1-W) h + W m  if |m - ref(t)| < eps_AI  else h
             #   x(t+1) = D_eps_social(z) = z here (eps_social == 0)
-            h = lam * innate + (1.0 - lam) * x_before
+            # The BLEND is identical either way -- only the acceptance set
+            # moves -- which is why the two versions are indistinguishable
+            # at lam=0 and under an all_open gate.
             expect = torch.where(gate, (1.0 - w) * h + w * served, h)
         else:
             # LEGACY (marker absent): gated_blend on x_before, then the innate
@@ -4552,8 +4694,12 @@ def check_run(run_dir):
         logged = traj[t].get("contact")
         if logged is not None and abs(logged - float(gate.float().mean())) > 1e-6:
             errs.append(f"EXACT-COPY round {t}: contact {logged:.6f} != "
-                        f"gate-on-x0 frac {float(gate.float().mean()):.6f} "
-                        f"(the AI gate must use the start-of-round opinion)")
+                        f"gate-on-{gate_ref} frac "
+                        f"{float(gate.float().mean()):.6f} "
+                        + ("(the AI gate must use the start-of-round "
+                           "opinion)" if gate_ref == "x0" else
+                           "(the AI gate must use the anchored human "
+                           "component h = k innate + (1-k) x(t))"))
 
     # -- 4 FRESH -------------------------------------------------------------
     # icl (frozen): nothing trains, no n_train ever -- skip. Reach frozen

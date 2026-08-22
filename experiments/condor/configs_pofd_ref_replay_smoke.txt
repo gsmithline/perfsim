@@ -1,0 +1,1 @@
+pofdrrsmk_qwen7b_q0p1_ss0_eaopen_w1_l1_esopen_s0_r3, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, 0.1, 0, -1, 1, 1, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

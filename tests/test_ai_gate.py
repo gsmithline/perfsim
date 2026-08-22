@@ -89,8 +89,12 @@ def test_nested_update_threshold_is_bitwise_legacy():
         gate_l = (served - x0).abs() < eps
         eff_w = torch.where(gate_l, w_agent, torch.zeros_like(w_agent))
         z_l = (1.0 - eff_w) * h + eff_w * served
+        # gate_on="x0" is the ARCHIVED reference: this test exists to pin
+        # byte-for-byte legacy behaviour, so it must keep asking for it.
+        # The corrected default gates on the anchor (see
+        # test_ai_gate_anchor.py).
         z, gate = gp.nested_presocial_update(x0, served, innate, k,
-                                             w_agent, eps)
+                                             w_agent, eps, gate_on="x0")
         assert torch.equal(gate, gate_l)
         assert torch.equal(z, z_l)
 

@@ -78,7 +78,8 @@ def test_gate_is_strict_less_than():
     innate = torch.tensor([0.60, 0.60])
     w, k = torch.full((2,), 1.0), 0.2
     assert float((served[0] - x0[0]).abs()) == eps, "boundary case must be exact"
-    z, gate = gp.nested_presocial_update(x0, served, innate, k, w, eps)
+    z, gate = gp.nested_presocial_update(x0, served, innate, k, w, eps,
+                                         gate_on="x0")
     assert not bool(gate[0]), "|m - x| == eps_AI must be REJECTED (strict <)"
     assert bool(gate[1])
     assert torch.allclose(z[0], _human(innate, x0, k)[0], atol=0)
@@ -141,3 +142,26 @@ def test_nested_fixed_point():
         x, gate = gp.nested_presocial_update(x, m, x_in, k, w, 10.0)  # gate always open
         assert bool(gate.all())
     assert x.item() == pytest.approx(0.3133, abs=5e-4)
+
+
+def test_gate_is_strict_less_than_under_the_anchor_reference():
+    """The strict-< property must hold in the CORRECTED frame too.
+
+    The legacy fixture's boundary is exact against x0, not against the
+    anchor, so it cannot test this: with k=0.2, innate=0.6, x0=0.5 the
+    anchor is 0.52 and |0.75-0.52| = 0.23 < 0.25 opens the gate. Here
+    every quantity is a binary fraction chosen so the boundary is EXACT
+    against the anchor: k=0.5, innate=0.75, x0=0.25 -> anchor = 0.5.
+    """
+    eps = 0.25
+    x0 = torch.tensor([0.25, 0.25])
+    innate = torch.tensor([0.75, 0.75])
+    served = torch.tensor([0.75, 0.625])      # |m - anchor| = 0.25 (==eps), 0.125
+    w, k = torch.full((2,), 1.0), 0.5
+    anchor = gp.gate_reference(x0, innate, k, "anchor")
+    assert float(anchor[0]) == 0.5, "fixture must make the anchor exact"
+    assert float((served[0] - anchor[0]).abs()) == eps, "boundary must be exact"
+    z, gate = gp.nested_presocial_update(x0, served, innate, k, w, eps,
+                                         gate_on="anchor")
+    assert not bool(gate[0]), "|m - x'| == eps_AI must be REJECTED (strict <)"
+    assert bool(gate[1])

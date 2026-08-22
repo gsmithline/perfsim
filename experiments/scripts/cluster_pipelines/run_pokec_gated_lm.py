@@ -35,10 +35,17 @@ appended one JSON line per round to telemetry.json (crash-safe):
               round-0 archive batch}; round-0 adapter + batch kept on disk
               (round0_adapter/, round0_batch.pt)
   gate_raw    trajectory.pt, [rounds, n] bool: the per-agent AI gate/contact
-              mask (|m_i - x_i(t)| < eps_AI on the start-of-round opinion) --
-              direct platform contact per agent per round, so direct-contact
-              vs peer-transmitted effects separate offline. Empty tensor in
-              runs written before 2026-08-05.
+              mask -- direct platform contact per agent per round, so
+              direct-contact vs peer-transmitted effects separate offline.
+              WHICH distance was tested is given by config ai_gate_reference
+              (and equivalently by the population_update marker):
+                anchor / nested_ai_anchored_then_social_v2 (default from
+                  2026-08-22)  |m_i - x'_i(t)| < eps_AI,
+                  x'_i = k innate_i + (1-k) x_i(t)
+                x0 / nested_ai_then_social_v1 (archived)
+                  |m_i - x_i(t)| < eps_AI
+              Identical whenever INNATE_LAMBDA=0 or AI_GATE_MODE=all_open.
+              Empty tensor in runs written before 2026-08-05.
   icl_days_log.json.gz   ICL_DAYS>0 runs (2026-08-17): per round the FULL
               context_block string each agent's prompt carried (gzip JSONL,
               one line per round). For a days-only run (ICL_K=0) this is the
@@ -71,6 +78,26 @@ appended one JSON line per round to telemetry.json (crash-safe):
               round 0 all True) and the ACTUAL labels fed to the learner, so
               batch composition is verifiable end-to-end offline. Empty
               tensors everywhere else.
+  ref_replay_live_idx / ref_replay_labels / ref_replay_ref_vec
+              trajectory.pt, REF_REPLAY_Q>0 runs only (2026-08-22).
+              UNRELATED to replay_raw above: that one replays the round-0
+              DATA, this one substitutes a frozen model's PREDICTIONS for
+              the population's live opinions on the non-sampled rows.
+                y_i^(t) = x_i(t)  if i in S_t  else  b_i
+              with |S_t| = round(q n) fixed, refreshed EVERY round
+              (round 0 included) from a stateless permutation of
+              (REF_REPLAY_SEED, round) -- so the live sets are nested in q
+              and shared across arms at the same round -- and b pinned to
+              REF_REPLAY_REF_RUN's pred_raw[0] (config carries
+              ref_replay_ref_sha256).
+                ref_replay_live_idx  [T, n_live] S_t, in permutation order
+                                     (a smaller q is a literal PREFIX)
+                ref_replay_labels    [T, n] the EXACT labels handed to the
+                                     learner, canonical agent order 0..n-1
+                ref_replay_ref_vec   [n] b itself
+              Every arm holds all n rows, so the optimizer-step count is
+              matched across q; q=1 is exactly ordinary SFT. Absent
+              entirely off this path.
   model_pred_raw / served_raw / fj_x_init_raw / fj_u1_raw /
   train_idx_raw / observed_mask   trajectory.pt, FJ_UPDATE_VERSION=wu1
               runs (2026-08-22, Wu replication). Present on every wu1
@@ -181,6 +208,22 @@ _WC_PATH = Path(__file__).resolve().parent / "wu_context.py"
 _spec_wc = importlib.util.spec_from_file_location("wu_context", _WC_PATH)
 wuc = importlib.util.module_from_spec(_spec_wc)
 _spec_wc.loader.exec_module(wuc)
+
+
+# THE population_update MARKER, keyed by AI_GATE_REFERENCE (2026-08-22).
+# Spelled out as two literal entries rather than a conditional expression:
+# each semantics owns its own config fragment, so both exact strings are
+# greppable in the source and a reader can see which one each path writes.
+# Agent-facing CONTRACT -- offline checkers dispatch their round-operator
+# replay on these strings.
+_POP_UPDATE_MARKER = {
+    # gate on the raw start-of-round opinion: every run archived before
+    # 2026-08-22, reproducible bit-for-bit via AI_GATE_REFERENCE=x0
+    "x0": {"population_update": "nested_ai_then_social_v1"},
+    # gate on the ANCHORED opinion x' = k innate + (1-k) x -- the corrected
+    # rule, and the default from 2026-08-22
+    "anchor": {"population_update": "nested_ai_anchored_then_social_v2"},
+}
 
 
 def _chat_template_kwargs():
@@ -869,7 +912,9 @@ def main() -> int:
     eps = _env_float("EPS", 0.3)
     eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
     # AI_GATE_MODE (2026-08-13, sft_icl_reach wave): "threshold" (default) =
-    # the strict |m - x0| < eps_ai gate, byte-identical to every earlier run;
+    # the strict |m - r| < eps_ai gate (r = the gate reference chosen by
+    # AI_GATE_REFERENCE below), byte-identical to every earlier run at
+    # AI_GATE_REFERENCE=x0;
     # "all_open" = every agent contacted every round. The explicit mode exists
     # because the threshold gate is a strict inequality -- eps_ai=1 would NOT
     # open the gate for an agent at distance exactly 1 -- so an all-open
@@ -880,6 +925,28 @@ def main() -> int:
     if ai_gate_mode not in ("threshold", "all_open"):
         raise ValueError(f"AI_GATE_MODE must be 'threshold' or 'all_open'; "
                          f"got {ai_gate_mode!r}")
+    # AI_GATE_REFERENCE (2026-08-22): WHICH vector the AI gate measures the
+    # served value against. The intended model is
+    #     |m_i(t) - x'_i(t)| < eps_AI,  x'_i = k innate_i + (1-k) x_i(t)
+    # i.e. the ANCHORED opinion the agent actually holds -- the same human
+    # component the mixture then blends into. The code gated on the raw
+    # start-of-round x_i(t) instead, and the docstring justified it, so this
+    # is a SEMANTIC CORRECTION with both semantics kept reachable and named:
+    #   anchor (DEFAULT)  gate on x' -- the corrected rule; config records
+    #                     population_update="nested_ai_anchored_then_social_v2"
+    #   x0                gate on x(t) -- reproduces every archived run
+    #                     bit-for-bit; keeps population_update=
+    #                     "nested_ai_then_social_v1"
+    # The marker, not the env var, is what lets an offline checker replay the
+    # right operator, so the two strings are a CONTRACT. One shared definition
+    # (gp.gate_reference) feeds the deployed update, the dry/counterfactual
+    # gate calculations, and any replay. INERT unless INNATE_LAMBDA > 0 AND
+    # AI_GATE_MODE=threshold (k=0 makes x' == x0; all_open never reads the
+    # distance).
+    ai_gate_reference = os.environ.get("AI_GATE_REFERENCE", "anchor")
+    if ai_gate_reference not in ("anchor", "x0"):
+        raise ValueError(f"AI_GATE_REFERENCE must be 'anchor' or 'x0'; "
+                         f"got {ai_gate_reference!r}")
     # PEER_GATE_MODE (2026-08-20, qwen_wu_limit wave): the same opt-in for
     # the PEER (Deffuant) side. "threshold" (default/absent) = the strict
     # |x_i - x_j| < eps confidence gate, byte-identical to every earlier
@@ -1007,6 +1074,31 @@ def main() -> int:
     # behavior is untouched. 0 = off (byte-identical to pre-replay runs: the
     # whole path, including its dedicated RNG, is guarded by frac > 0).
     replay_frac = _env_float("REPLAY_FRAC", 0.0)
+    # REFERENCE REPLAY (REF_REPLAY_*, 2026-08-22). Opt-in, off at 0.
+    # Every deploy round rebuilds the FULL n-row training set
+    #     y_i^(t) = x_i(t)   if i in S_t   (live)
+    #               b_i      otherwise      (frozen reference)
+    # where b is a PINNED frozen-model prediction vector taken from another
+    # run and S_t is a fresh round(q n)-agent sample drawn EVERY round,
+    # round 0 included. Every arm therefore trains on exactly n rows, so the
+    # optimizer-step count and the compute are matched across q and only the
+    # LABEL SOURCE varies -- q is a dose of live population feedback, not a
+    # dose of data.
+    #   REF_REPLAY_Q        live fraction in (0, 1]; 1.0 == ordinary SFT
+    #                       (labels == x(t) for every agent), so the q=1
+    #                       trajectory is the existing full-feedback arm
+    #   REF_REPLAY_SEED     selection seed; the round's permutation is a
+    #                       STATELESS function of (seed, round) alone, which
+    #                       is what makes the live sets nested in q and
+    #                       shared across arms at the same round
+    #   REF_REPLAY_REF_RUN  the reference run's directory; b = its
+    #                       trajectory.pt pred_raw[0], hashed into config
+    # Distinct namespace from the unrelated REPLAY_FRAC / replay_raw (exact
+    # initial-DATA replay), with which it is mutually exclusive.
+    ref_replay_q = _env_float("REF_REPLAY_Q", 0.0)
+    ref_replay_seed = _env_int("REF_REPLAY_SEED", 0)
+    ref_replay_ref_run = os.environ.get("REF_REPLAY_REF_RUN", "")
+    ref_replay_on = ref_replay_q > 0
     # FEEDBACK_MODE (in-context reward-hacking probe, Pan et al. 2402.06627;
     # frozen + ab only). Each round's prompt carries a GLOBAL feedback block
     # summarizing the PREVIOUS round so the model can refine its output in-context:
@@ -1408,6 +1500,46 @@ def main() -> int:
             raise ValueError("SFT_EXCLUDE_CLAMPED is meaningless with "
                              "frozen weights (nothing ever trains)")
 
+    # REF_REPLAY validation. Placed with the other batch-rewriting guards
+    # (and after n_labeled / data_regime / train_cap are bound) because the
+    # whole design rests on the round's batch being the untouched
+    # one-row-per-agent replace batch in canonical order: anything else
+    # rewriting it makes "the live set" mean two different things at once.
+    if ref_replay_q < 0:
+        raise ValueError(f"REF_REPLAY_Q must be >= 0 (0 = off); got "
+                         f"{ref_replay_q}")
+    if ref_replay_on:
+        if not (0.0 < ref_replay_q <= 1.0):
+            raise ValueError(f"REF_REPLAY_Q must be in (0, 1]; got "
+                             f"{ref_replay_q}")
+        if not ref_replay_ref_run:
+            raise ValueError("REF_REPLAY_Q>0 requires REF_REPLAY_REF_RUN "
+                             "(the run supplying the frozen reference "
+                             "vector b = its pred_raw[0])")
+        for _bad, _why in (
+                (replay_frac > 0, "REPLAY_FRAC>0"),
+                (pristine_frac > 0, "PRISTINE_FRAC>0"),
+                (sft_sample_n > 0, "SFT_SAMPLE_N>0"),
+                (0 < train_cap < n_labeled, "0 < TRAIN_CAP < N_LABELED"),
+                (sft_exclude_clamped, "SFT_EXCLUDE_CLAMPED"),
+                (data_regime != "replace", "DATA_REGIME!=replace")):
+            if _bad:
+                raise ValueError(
+                    f"REF_REPLAY_Q is incompatible with {_why}: both "
+                    f"rewrite the training batch, so the reference-replay "
+                    f"label set would be ill-defined")
+        if training_style == "dpo":
+            raise ValueError("REF_REPLAY_Q is incompatible with "
+                             "TRAINING_STYLE=dpo: the labels there become "
+                             "the preference judge x_judge, not SFT "
+                             "targets, so substituting a frozen prediction "
+                             "would silently change what is being judged")
+    elif ref_replay_ref_run or os.environ.get("REF_REPLAY_SEED"):
+        # a set-but-inert knob is the worst outcome: the tag would claim a
+        # design the run never had
+        raise ValueError("REF_REPLAY_REF_RUN / REF_REPLAY_SEED without "
+                         "REF_REPLAY_Q>0 would be a silent no-op")
+
     out_dir.mkdir(parents=True, exist_ok=True)
     # donor context load (ICL_CTX_SOURCE=donor): the exact opinion vector the
     # exemplar lines will display, hashed for provenance. Loaded BEFORE the
@@ -1432,6 +1564,41 @@ def main() -> int:
         print(f"[run] ICL donor context: {icl_donor_tag!r} round "
               f"{icl_ctx_donor_round} (n={icl_donor_vec.shape[0]}, "
               f"sha256={icl_donor_hash[:12]}...)", flush=True)
+    # REFERENCE VECTOR b (REF_REPLAY_REF_RUN). Loaded and VALIDATED before
+    # the config write so the hash lands in config.json and so a malformed
+    # b fails at startup rather than after becoming a training label on
+    # (1-q)n rows for a hundred rounds. pred_raw[0] is the reference run's
+    # round-0 deployment -- the frozen model's own predictions, before any
+    # feedback -- which is exactly the "what the model would have said
+    # anyway" label the design substitutes for a live opinion.
+    ref_replay_ref_vec = None
+    ref_replay_ref_sha256 = None
+    ref_replay_n_live = None
+    if ref_replay_on:
+        _rr_traj = Path(ref_replay_ref_run) / "trajectory.pt"
+        if not _rr_traj.exists():
+            raise ValueError(f"REF_REPLAY_REF_RUN has no trajectory.pt: "
+                             f"{_rr_traj}")
+        _rd = torch.load(_rr_traj, map_location="cpu", weights_only=False)
+        _pr = _rd.get("pred_raw")
+        if _pr is None or _pr.numel() == 0 or _pr.shape[0] < 1:
+            raise ValueError(f"REF_REPLAY_REF_RUN {ref_replay_ref_run!r} has "
+                             f"no pred_raw[0] to take the reference from")
+        ref_replay_ref_vec = _pr[0].detach().float().cpu().contiguous().clone()
+        del _rd, _pr
+        # 723 finite values in [0, 1] -- checked here, and re-checked
+        # against the realized population size once the dataset is loaded
+        gp.validate_ref_replay_vec(ref_replay_ref_vec)
+        ref_replay_ref_sha256 = gp.ref_replay_hash(ref_replay_ref_vec)
+        # |S_t| comes from b's own length, which is the only population size
+        # known before the dataset loads; the length is then hard-checked
+        # against n below, so the two can never disagree in a run that survives
+        ref_replay_n_live = gp.ref_replay_n_live(
+            int(ref_replay_ref_vec.shape[0]), ref_replay_q)
+        print(f"[run] REF_REPLAY q={ref_replay_q} seed={ref_replay_seed}: "
+              f"{ref_replay_n_live} live of {int(ref_replay_ref_vec.shape[0])} "
+              f"rows/round, b from {ref_replay_ref_run!r} pred_raw[0] "
+              f"(sha256={ref_replay_ref_sha256[:12]}...)", flush=True)
     config = {
         "run_tag": run_tag, "kl_beta": kl_beta, "kl_direction": kl_direction,
         "kl_ref_adapter": kl_ref_adapter,
@@ -1449,6 +1616,14 @@ def main() -> int:
         # it); the mode field, not the number, defines the gate. Absent in
         # configs written before 2026-08-13 -> "threshold".
         "ai_gate_mode": ai_gate_mode,
+        # WHICH vector the gate measured against (2026-08-22). Recorded on
+        # EVERY run, not only when non-default: "which reference did this
+        # run gate on" has to be answerable from the artifact, and a field
+        # that appears only when it is non-default cannot answer it
+        # (absent would mean both "old code" and "the default"). Absent in
+        # configs written before 2026-08-22 -> "x0", the only semantics
+        # that existed then.
+        "ai_gate_reference": ai_gate_reference,
         # the PEER-side twin of ai_gate_mode (2026-08-20). Under all_open
         # the recorded eps is inert for ACCEPTANCE (the gate never reads
         # it) though it still marks the run as social; the mode field, not
@@ -1482,10 +1657,17 @@ def main() -> int:
         "fj_recurrence": ("x_init = (1-beta) innate + beta m_t; u0 = x_init; "
                           "u_{l+1} = (1-alpha) x_init + alpha P u_l, "
                           "l = 0..K-1"),
-        # h = k innate + (1-k) x; z = (1-W)h + W m if |m-x| < eps_AI else h;
-        # x' = D_eps_social(z). Absent in runs written before 2026-07-27, which
-        # used the legacy per-sweep order (peers, gated blend, anchor over all).
-        "population_update": "nested_ai_then_social_v1",
+        # THE ROUND-OPERATOR MARKER, and a CONTRACT: an offline checker
+        # dispatches its replay on this string, so the two spellings must
+        # never be merged, abbreviated or reordered.
+        #   h = k innate + (1-k) x; z = (1-W)h + W m if GATED else h;
+        #   x' = D_eps_social(z)
+        # differing only in what GATED measures against --
+        #   nested_ai_then_social_v1           |m - x|  < eps_AI  (archived)
+        #   nested_ai_anchored_then_social_v2  |m - h|  < eps_AI  (corrected)
+        # Absent in runs written before 2026-07-27, which used the legacy
+        # per-sweep order (peers, gated blend, anchor over all).
+        **_POP_UPDATE_MARKER[ai_gate_reference],
         "run_mode": run_mode, "canary_delta": canary_delta,
         "grad_decomp": grad_decomp,
         "save_adapter_rounds": sorted(save_adapter_rounds),
@@ -1601,6 +1783,17 @@ def main() -> int:
     if save_raw_gen:
         # recorded ONLY when on (absent == off, the audit convention)
         config["save_raw_gen"] = True
+    if ref_replay_on:
+        # recorded ONLY when on (absent == off, the audit convention), so
+        # every pre-2026-08-22 config stays byte-identical. CONTRACT field
+        # names -- the checker and the wave generator both key on them.
+        config.update({
+            "ref_replay_q": ref_replay_q,
+            "ref_replay_seed": ref_replay_seed,
+            "ref_replay_n_live": ref_replay_n_live,
+            "ref_replay_ref_run": ref_replay_ref_run,
+            "ref_replay_ref_sha256": ref_replay_ref_sha256,
+        })
     _ct_kwargs = _chat_template_kwargs()
     if _ct_kwargs:
         # recorded ONLY when CHAT_THINKING carries a directive
@@ -2162,6 +2355,17 @@ def main() -> int:
     if icl_donor_vec is not None and icl_donor_vec.shape[0] != n:
         raise ValueError(f"ICL donor vector has {icl_donor_vec.shape[0]} "
                          f"agents, recipient population has {n}")
+    if ref_replay_on:
+        # b's length is now checkable against the REALIZED population, which
+        # also pins ref_replay_n_live (computed from b's length above) to the
+        # right n. Every arm must hold ALL n rows for the compute match, so a
+        # partially-labeled population has no reference-replay semantics.
+        gp.validate_ref_replay_vec(ref_replay_ref_vec, n=n)
+        if n_labeled != n:
+            raise ValueError(
+                f"REF_REPLAY needs every agent labeled (N_LABELED={n_labeled} "
+                f"of n={n}): the design hands the learner ALL n rows every "
+                f"round so the optimizer-step count is matched across q")
     mask = torch.zeros(n, dtype=torch.bool)
     mask[:n_labeled] = True
     idx_all = torch.arange(n)
@@ -2274,6 +2478,14 @@ def main() -> int:
     train_y_raw = [] # REPLAY_FRAC>0 only: the ACTUAL labels fed to the learner
                      # each deploy round ([n_labeled] float), so the batch
                      # composition is checkable end-to-end offline
+    # REF_REPLAY_Q>0 only (2026-08-22). CONTRACT names; empty tensors
+    # elsewhere, so a non-ref-replay trajectory.pt is untouched.
+    ref_replay_live_rows = []   # -> ref_replay_live_idx [T, n_live]: the live
+                                # set S_t, in the round permutation's own
+                                # order so a smaller q is a literal PREFIX
+    ref_replay_label_rows = []  # -> ref_replay_labels [T, n]: the EXACT
+                                # labels handed to the learner, canonical
+                                # agent order 0..n-1
     sft_idx_raw = []
     sft_dose_rows = []        # per-round optimizer-step provenance
     sft_order_idx_raw = []    # SAVE_SFT_ORDER: dataset row order
@@ -2411,6 +2623,46 @@ def main() -> int:
                     replay_raw.append(rep_mask)
                     train_y_raw.append(
                         train_data["y"].squeeze(-1).detach().cpu().clone())
+            if ref_replay_on:
+                # ===== REFERENCE REPLAY (2026-08-22) =====================
+                # Rebuild the round's labels FROM SCRATCH:
+                #     y = b everywhere, then y[S_t] <- x(t)[S_t]
+                # Nothing is edited in place and nothing is carried over, so
+                # a non-live row's label is the ORIGINAL b every round by
+                # CONSTRUCTION -- there is no code path along which a
+                # previous round's substituted label could survive. Rows keep
+                # canonical agent order 0..n-1 (row i is agent i in every
+                # round and every arm), and all n of them are present, so the
+                # optimizer-step count is identical at every q.
+                #
+                # x(t) is whatever the ordinary pipeline just built above --
+                # innate at t=0, the preceding population afterwards -- which
+                # is why q=1 is EXACTLY ordinary SFT rather than an
+                # approximation of it.
+                if train_data is None:
+                    raise RuntimeError(
+                        f"round {t}: REF_REPLAY has no batch to relabel")
+                _ai_rr = train_data["agent_idx"].detach().cpu().long()
+                if not torch.equal(_ai_rr, idx_all):
+                    raise RuntimeError(
+                        f"round {t}: REF_REPLAY expects the untouched "
+                        f"one-row-per-agent batch in canonical order "
+                        f"0..{n - 1}; got {_ai_rr.numel()} rows that differ "
+                        f"-- relabeling by position would silently assign "
+                        f"agent i's label to somebody else")
+                _y_rr = train_data["y"]
+                _y_rr = (_y_rr.squeeze(-1) if _y_rr.ndim > 1
+                         else _y_rr).detach().cpu().float()
+                _live_rr = gp.ref_replay_live(n, ref_replay_q,
+                                              ref_replay_seed, t)
+                _lab_rr = gp.ref_replay_labels(_y_rr, ref_replay_ref_vec,
+                                               _live_rr)
+                # NEW dict: initial_data (which IS train_data at t=0) must
+                # not be mutated -- it is the round-0 archive batch and the
+                # REPLAY_FRAC anchor
+                train_data = {**train_data, "y": _lab_rr.unsqueeze(-1)}
+                ref_replay_live_rows.append(_live_rr.cpu().long().clone())
+                ref_replay_label_rows.append(_lab_rr.cpu().float().clone())
             if sft_exclude_clamped and train_data is not None:
                 # causal source exclusion, VOLUME-MATCHED: drop the
                 # fixed cohort's rows from THIS round's batch (round 0
@@ -2924,19 +3176,38 @@ def main() -> int:
                 # mean|blended - x| = mean(eff_w * |s - x|). Equals plat_disps when
                 # k == 0 (then h == x0); with k > 0 the logged displacement is
                 # measured from h, so the two differ by the anchor's own move.
-                gate = gp.ai_gate(s, x, eps_ai, ai_gate_mode)
+                # THE GATE HERE IS THE DEPLOYED GATE. This dry calculation picks
+                # the served vector the A/B retain arm then actually deploys, so
+                # a gate reference that differed from gp.nested_presocial_update's
+                # would choose the round's winner under one rule and apply
+                # another -- the one failure mode worse than either rule alone.
+                gate = gp.ai_gate(s, gp.gate_reference(x, ab_innate,
+                                                       innate_lambda,
+                                                       ai_gate_reference),
+                                  eps_ai, ai_gate_mode)
                 eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
                 return float((eff_w * (s - x).abs()).mean())
-            # POPULATION_UPDATE = "nested_ai_then_social_v1". One round is
+            # THE ROUND OPERATOR. One round is
             #   h(t) = k innate + (1-k) x(t)                     human component
-            #   z(t) = (1-W) h(t) + W m(t)  if |m(t) - x(t)| < eps_AI else h(t)
+            #   z(t) = (1-W) h(t) + W m(t)  if GATED else h(t)
             #   x(t+1) = D_eps_social(z(t))                      peer sweeps last
-            # The gate is evaluated on the START-OF-ROUND opinion x(t) (the
-            # platform serves before the population moves), and the innate pull
-            # dilutes only the human share, so a gated W=1 agent lands exactly
-            # on m(t) for every k. The platform/innate mixture happens ONCE per
-            # round; the sweep loop below carries social dynamics only, and
-            # peers may move an agent after it adopts the served value.
+            # The innate pull dilutes only the human share, so a gated W=1
+            # agent lands exactly on m(t) for every k. The platform/innate
+            # mixture happens ONCE per round; the sweep loop below carries
+            # social dynamics only, and peers may move an agent after it
+            # adopts the served value.
+            #
+            # GATED depends on AI_GATE_REFERENCE, and the config marker says
+            # which one ran:
+            #   anchor -> |m(t) - h(t)| < eps_AI   (default from 2026-08-22;
+            #             population_update="nested_ai_anchored_then_social_v2")
+            #             the agent judges the served value against the opinion
+            #             it actually holds, which is the ANCHORED one -- the
+            #             same vector the mixture blends into
+            #   x0     -> |m(t) - x(t)| < eps_AI   (archived semantics;
+            #             population_update="nested_ai_then_social_v1")
+            # k=0 makes the two identical (h == x(t)), and all_open reads no
+            # distance at all, so only k>0 + threshold runs differ.
             # Runs written before 2026-07-27 carry no population_update marker
             # and used the legacy order (peer sweep, gated blend, then an
             # innate re-anchor over everyone, per sweep).
@@ -2955,7 +3226,7 @@ def main() -> int:
                     served_now = served
                 ab_x, gate_open = gp.nested_presocial_update(
                     x0, served_now, ab_innate, innate_lambda, w_agent, eps_ai,
-                    gate_mode=ai_gate_mode)
+                    gate_mode=ai_gate_mode, gate_on=ai_gate_reference)
                 eff_w = torch.where(gate_open, w_agent, torch.zeros_like(w_agent))
                 # provenance: the innate share carries tag 0, the platform
                 # injects tag 1 on gated agents -- same nesting as the opinions
@@ -2967,8 +3238,15 @@ def main() -> int:
                                         .abs().mean()))
             else:
                 # no_feedback: human component only, no AI mixture; the saved
-                # mask is the counterfactual gate the contact scalar reports
-                gate_nf = gp.ai_gate(served, x0, eps_ai, ai_gate_mode)
+                # mask is the counterfactual gate the contact scalar reports.
+                # It must be the gate the LOOP arm would have applied -- a
+                # counterfactual measured under a different rule than the
+                # deployed one compares two things at once.
+                gate_nf = gp.ai_gate(served,
+                                     gp.gate_reference(x0, ab_innate,
+                                                       innate_lambda,
+                                                       ai_gate_reference),
+                                     eps_ai, ai_gate_mode)
                 ab_x = innate_lambda * ab_innate + (1.0 - innate_lambda) * x0
                 ab_f = (1.0 - innate_lambda) * ab_f
                 contacts.append(float(gate_nf.float().mean()))
@@ -3409,6 +3687,23 @@ def main() -> int:
     if save_sft_order and sft_order_idx_raw:
         traj_payload["sft_order_idx_raw"] = torch.stack(sft_order_idx_raw)
         traj_payload["sft_order_y_raw"] = torch.stack(sft_order_y_raw)
+    if ref_replay_on:
+        # THE LABELS, ON RECORD. Written ONLY for ref-replay runs (absent ==
+        # off, the audit convention). ref_replay_labels is the EXACT vector
+        # the learner was handed, not a reconstruction, so "did the frozen
+        # reference leak onto a live agent" and "did a substitution
+        # accumulate across rounds" are both answerable from the artifact
+        # alone -- with ref_replay_ref_vec carrying b itself, so no checker
+        # needs the reference run on disk to do it.
+        traj_payload.update({
+            "ref_replay_live_idx": (torch.stack(ref_replay_live_rows)
+                                    if ref_replay_live_rows
+                                    else torch.empty(0)),
+            "ref_replay_labels": (torch.stack(ref_replay_label_rows)
+                                  if ref_replay_label_rows
+                                  else torch.empty(0)),
+            "ref_replay_ref_vec": ref_replay_ref_vec.cpu().clone(),
+        })
     if sft_sample_n > 0:
         # the exact ORDERED (ids, labels) the optimizer consumed each
         # round -- the offline proof that the observed subset was what

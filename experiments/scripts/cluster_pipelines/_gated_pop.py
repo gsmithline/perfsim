@@ -191,12 +191,16 @@ def ai_gate(served, x0, eps_ai, mode="threshold"):
     checker both call this so the deployed update, the dry/counterfactual gate
     calculations, and the offline replay can never diverge.
 
-      threshold  g_i = 1{|m_i - x0_i| < eps_ai}   (strict <, gate on the
-                 START-OF-ROUND opinion; byte-identical to the pre-2026-08-13
-                 inline expression, and RNG-free either way)
+      threshold  g_i = 1{|m_i - x0_i| < eps_ai}   (strict <, RNG-free)
       all_open   g_i = 1 for every agent. NOT encoded as eps_ai=1: the
                  threshold gate is a strict inequality, so |m - x| = 1 (an
                  agent at 0 served 1) would be REJECTED under eps_ai=1.
+
+    NOTE the second argument is the gate REFERENCE, not necessarily the
+    start-of-round opinion. Which vector that is comes from
+    gate_reference() below (AI_GATE_REFERENCE); this function only
+    measures the distance it is handed, so both semantics share one
+    strict-inequality definition.
     """
     if mode == "all_open":
         return torch.ones_like(served, dtype=torch.bool)
@@ -205,29 +209,189 @@ def ai_gate(served, x0, eps_ai, mode="threshold"):
     return (served - x0).abs() < eps_ai
 
 
+def gate_reference(x0, innate, k, gate_on="anchor"):
+    """The ONE definition of the vector the AI gate measures distance FROM
+    (AI_GATE_REFERENCE, 2026-08-22 semantic correction).
+
+      "anchor"  x'_i = k innate_i + (1-k) x0_i -- the ANCHORED opinion the
+                agent actually holds when the served value is judged. This
+                is the intended model: the gate is
+                    |m_i(t) - x'_i(t)| < eps_AI
+                with x' the same human component the mixture blends into,
+                so the acceptance test and the state it updates are the
+                same vector. DEFAULT since 2026-08-22.
+      "x0"      the raw start-of-round opinion. Reproduces every archived
+                run bit-for-bit; kept reachable (and named) so an offline
+                replay of a pre-correction trajectory is exact rather than
+                approximate.
+
+    k IS gamma in the write-up's x'_i = gamma x_innate + (1-gamma) x_i, and
+    is INNATE_LAMBDA in the runner. Note k = 0 makes the two references
+    IDENTICAL (x' == x0), which is why the whole k=0 archive is unaffected
+    by the correction.
+    """
+    if gate_on == "x0":
+        return x0
+    if gate_on != "anchor":
+        raise ValueError(f"unknown AI_GATE_REFERENCE: {gate_on!r} "
+                         f"(want 'anchor' or 'x0')")
+    return k * innate + (1.0 - k) * x0
+
+
 def nested_presocial_update(x0, served, innate, k, w_agent, eps_ai,
-                            gate_mode="threshold"):
-    """Pre-social round operator (population_update="nested_ai_then_social_v1").
+                            gate_mode="threshold", gate_on="anchor"):
+    """Pre-social round operator.
 
         h_i = k innate_i + (1-k) x0_i                      (human component)
-        g_i = ai_gate(m, x0, eps_ai, gate_mode)             (gate on x0)
+        r_i = gate_reference(x0, innate, k, gate_on)        (gate reference)
+        g_i = ai_gate(m, r, eps_ai, gate_mode)
         z_i = (1-w_i) h_i + w_i m_i  if g_i else h_i        (platform mixture)
 
-    The gate is evaluated against the START-OF-ROUND opinion x0 -- not against
-    h and not against any peer-updated state -- because the platform serves
-    before the population moves. The innate pull therefore dilutes only the
-    human share: w_i = 1 on a gated agent gives z_i = m_i for every k.
+    gate_on="anchor" (the DEFAULT since 2026-08-22, config marker
+    population_update="nested_ai_anchored_then_social_v2") evaluates the
+    gate against r == h: the agent judges the served value against the
+    opinion it is actually holding, which is the anchored one. gate_on="x0"
+    evaluates it against the raw start-of-round opinion and reproduces every
+    archived run (population_update="nested_ai_then_social_v1") bit-for-bit.
 
-    gate_mode="threshold" (the default) reproduces the pre-2026-08-13 behavior
-    byte-for-byte; "all_open" opens the gate for every agent (see ai_gate).
+    The correction is INERT wherever the distance is not read:
+      * k == 0        -> h == x0, so the two references are the same vector;
+      * all_open      -> ai_gate ignores the distance entirely.
+    Only k > 0 together with gate_mode="threshold" can change anything.
+
+    The innate pull dilutes only the human share either way: w_i = 1 on a
+    gated agent gives z_i = m_i for every k.
+
+    gate_mode="threshold" (the default) is the strict |m - r| < eps_ai test;
+    "all_open" opens the gate for every agent (see ai_gate).
 
     Pure and side-effect free; peer (Deffuant) dynamics run AFTER this on z.
     Returns (z, gate) with gate the boolean acceptance mask.
     """
     h = k * innate + (1.0 - k) * x0
-    gate = ai_gate(served, x0, eps_ai, gate_mode)
+    gate = ai_gate(served, gate_reference(x0, innate, k, gate_on),
+                   eps_ai, gate_mode)
     eff_w = torch.where(gate, w_agent, torch.zeros_like(w_agent))
     return (1.0 - eff_w) * h + eff_w * served, gate
+
+
+# ---------------------------------------------------------------------------
+# REFERENCE REPLAY (REF_REPLAY_*, 2026-08-22).
+#
+# Each round the learner is handed a FULL n-row training set
+#
+#     y_i^(t) = x_i(t)   if i in S_t   (live: this round's real label)
+#               b_i      otherwise      (frozen reference prediction)
+#
+# with b a PINNED vector from another run. Every helper below is pure and
+# STATELESS -- the round's live set is a function of (seed, round) alone,
+# never of a generator that the loop advances -- so the runner, the tests
+# and any offline checker reconstruct the identical sets and labels.
+
+def ref_replay_n_live(n, q):
+    """|S_t| = round(q n), the live-row count at fraction q.
+
+    Depends on (n, q) only -- NOT on the round -- so the sample size is
+    constant across the run and comparable across arms. q = 1 gives
+    exactly n (ordinary SFT); a q so small it would empty the live set is
+    an error, not a silent all-reference run."""
+    q = float(q)
+    if not (0.0 < q <= 1.0):
+        raise ValueError(f"REF_REPLAY_Q must be in (0, 1]; got {q!r}")
+    n = int(n)
+    k = int(round(q * n))
+    if not 0 < k <= n:
+        raise ValueError(f"REF_REPLAY_Q={q!r} on n={n} gives a degenerate "
+                         f"live set ({k} rows)")
+    return k
+
+
+def ref_replay_perm(n, seed, round_t):
+    """The ONE permutation of 0..n-1 for (seed, round).
+
+        torch.Generator().manual_seed(seed + t) -> randperm(n)
+
+    the PROJECT'S STANDARD per-round selection stream, identical to the
+    one SFT_SAMPLE_N uses and that check_pofd_sanity already replays, so
+    a checker reconstructs the live set with the same one-liner rather
+    than a bespoke hash. (It aliases (seed, t) with (seed+1, t-1); that
+    is harmless here because a wave shares ONE REF_REPLAY_SEED across
+    arms and what the design needs is only that consecutive rounds
+    differ and that the draw is reconstructible.)
+
+    STATELESS by construction: a dedicated generator seeded from
+    (seed, round) only. Nothing about q enters, which is exactly what
+    makes the live sets NESTED -- S_t(q=.10) is the first 72 entries of
+    the same permutation whose first 145 entries are S_t(q=.20) -- and
+    makes that nesting hold ACROSS ARMS at the same round, not just
+    within one run. It also draws from no stream the loop shares, so a
+    ref-replay run consumes the same RNG as its q=1 twin."""
+    g = torch.Generator()
+    g.manual_seed(int(seed) + int(round_t))
+    return torch.randperm(int(n), generator=g)
+
+
+def ref_replay_live(n, q, seed, round_t):
+    """S_t: the first round(q n) entries of the round's permutation, kept
+    IN PERMUTATION ORDER so a smaller q is a literal PREFIX of a larger
+    one (subset either way; the prefix is the stronger, checkable form).
+
+    Refreshed every round INCLUDING round 0 -- round 0 is a draw like any
+    other, not the full-data round it is under REPLAY_FRAC."""
+    return ref_replay_perm(n, seed, round_t)[:ref_replay_n_live(n, q)]
+
+
+def ref_replay_labels(x_live, ref_vec, live_idx):
+    """The exact n-row label vector handed to the learner:
+
+        y = b everywhere, then y[S_t] <- x(t)[S_t]
+
+    Rebuilt FROM b every call. There is no path by which a previous
+    round's substituted label can survive into this one -- accumulation
+    is impossible by construction, not by discipline -- and rows stay in
+    CANONICAL agent order 0..n-1, so row i is always agent i."""
+    x_live = x_live.detach().float()
+    ref_vec = ref_vec.detach().float()
+    if x_live.shape != ref_vec.shape or x_live.ndim != 1:
+        raise ValueError(f"ref replay: live labels {tuple(x_live.shape)} and "
+                         f"reference vector {tuple(ref_vec.shape)} must be the "
+                         f"same 1-D [n] shape")
+    live_idx = live_idx.long()
+    y = ref_vec.clone()
+    y[live_idx] = x_live[live_idx]
+    return y
+
+
+def ref_replay_hash(vec):
+    """sha256 over b's raw float32 bytes -- the config carries it so a
+    swapped or truncated reference vector is detectable without holding
+    the donor run."""
+    import hashlib
+    return hashlib.sha256(
+        vec.detach().cpu().float().contiguous().numpy().tobytes()).hexdigest()
+
+
+def validate_ref_replay_vec(vec, n=None, where="REF_REPLAY_REF_RUN"):
+    """Hard-fail unless b is n finite opinions in [0, 1].
+
+    A nan or an out-of-range entry in b would become a training label on
+    (1-q) n rows every round and be indistinguishable from a real one in
+    the artifact, so it is rejected at load time rather than trained on."""
+    if vec.ndim != 1:
+        raise ValueError(f"{where}: reference vector must be 1-D [n]; got "
+                         f"{tuple(vec.shape)}")
+    if n is not None and int(vec.shape[0]) != int(n):
+        raise ValueError(f"{where}: reference vector has {int(vec.shape[0])} "
+                         f"agents, population has {int(n)}")
+    if not bool(torch.isfinite(vec).all()):
+        raise ValueError(f"{where}: reference vector has "
+                         f"{int((~torch.isfinite(vec)).sum())} non-finite "
+                         f"entries")
+    lo, hi = float(vec.min()), float(vec.max())
+    if lo < 0.0 or hi > 1.0:
+        raise ValueError(f"{where}: reference vector out of [0, 1] "
+                         f"(min {lo:.6g}, max {hi:.6g})")
+    return vec
 
 
 def make_canary(n, delta, seed):
