@@ -5016,6 +5016,199 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# qwen_kl_direction[_smoke] (2026-08-22). FORWARD vs REVERSE KL on the
+# QWU surface, 10 rounds. The question is whether raising lambda moves
+# the population toward frozen Qwen while PRESERVING heterogeneity, and
+# whether reverse KL shows that more clearly without collapsing the
+# served map. A mean shift alone does not answer it, so the analyzer
+# reports SD, distinct served values and largest-mode share beside the
+# mean, and the figure carries mean and SD as separate rows.
+#
+# THESE ARE NOT EQUILIBRIA. Ten rounds on this surface is a short
+# transient -- the QWU cells were still moving at round 10 of 100. Every
+# artifact, axis label and table caption says "10-round post-peer
+# dynamics". Only cells that look informative earn 30-50 rounds and
+# replication seeds, as a later decision.
+#
+# NAMING, because two different quantities are called beta and gamma in
+# this project and mixing them up has already cost one wave:
+#   Celestine's beta  = platform susceptibility = W_PLAT = KD_WS
+#   Celestine's gamma = the innate anchor coefficient k = INNATE_LAMBDA
+#                       = KD_K = 1  (NOT the homophily gamma, which is
+#                       the positional column and stays 0 as always)
+#   lambda            = the KL weight = kl_beta = the {beta} ROW column
+# The tag spells the KL weight as _lam<x>_ and never as _b<x>_, so it
+# cannot be read as the w_plat token.
+#
+# DIRECTION IS A QUEUE COLUMN, NOT A PINNED ENV VALUE. Every other wave
+# hard-codes KL_DIRECTION in the sub env; this one compares the two, so
+# it rides the queue as $(kldir) and the tag records it. The checker
+# rejects any run whose recorded kl_direction disagrees with its tag.
+# Convention, verified against perfsim/learners/lm/kl_sft.py:
+#   forward = KL(pi_ref || pi_theta)   mass-covering
+#   reverse = KL(pi_theta || pi_ref)   mode-seeking, the RLHF penalty
+# In _anchor_divergence_per_token, logp is the POLICY and logq the
+# frozen reference, so "forward" computes sum q (log q - log p) --
+# KL(ref || policy) -- which is the mapping above.
+#
+# WHAT IS QUEUED AND WHAT IS REUSED. Ten GPU jobs, exactly:
+#   forward lambda in {.1, 10} x W in {.5, 1}   4
+#   reverse lambda in {.1, 1, 10} x W in {.5, 1} 6
+# Four more conceptual arms are NOT queued because they already exist
+# or need no GPU:
+#   ordinary SFT lambda=0   pofdqwu_qwen7b_b0_* first 10 rounds
+#   forward lambda=1        pofdqwu_qwen7b_b1_* first 10 rounds
+#   perfect prediction      sim_perfect_predictor.py, CPU
+#   frozen Qwen             replay_frozen_offline.py, CPU, from the
+#                           canonical H100 vector
+# The two reused GPU cells were audited field-by-field against this
+# block (audit_kl_direction_reuse.py): same checkpoint, seed, dataset,
+# 723 agents, k, both gate MODES, eps, one peer sweep, fresh LoRA r512,
+# lr, epochs, epoch size, max_steps, train cap, icl_k/days, H100 SKU,
+# and kl_direction=forward with an EMPTY kl_ref_adapter (the reference
+# is the raw base model, which is what the new cells anchor to as well).
+# Their population_update marker reads the v1 string, which is INERT
+# here: both gates are all_open and gp.ai_gate returns before it ever
+# consults the anchor, so v1 and v2 are the same operator on this
+# surface. Their serve_eval_mode field is absent because that field
+# postdates them by a day -- but the smoke2 TAG was created by the same
+# commit as the eval-mode fix (9ee5136, 2026-08-20 16:31) and its run
+# directory exists from 16:36, so the cluster tree was already post-fix
+# when these four launched at 17:07. They decoded with dropout off.
+KD_KEY = "qwen_kl_direction"
+KD_SMOKE_KEY = "qwen_kl_direction_smoke"
+KD_MODEL = "qwen7b"
+KD_WS = [0.5, 1.0]              # Celestine's beta = W_PLAT
+KD_K = 1.0                      # Celestine's gamma = INNATE_LAMBDA
+KD_EPS_SOCIAL = QWU_EPS_SOCIAL  # 0.2, inert under all_open, set anyway
+KD_ROUNDS = 10
+KD_SMOKE_ROUNDS = 3
+KD_SEED = 0
+KD_H100 = QWU_H100
+# (direction token, KL weight lambda). forward lambda=1 is REUSED from
+# the QWU b1 cells and is deliberately absent here.
+KD_CELLS = [("fwd", 0.1), ("fwd", 10.0),
+            ("rev", 0.1), ("rev", 1.0), ("rev", 10.0)]
+KD_DIR_ENV = {"fwd": "forward", "rev": "reverse"}
+# arm label -> the archived run whose first KD_ROUNDS rounds stand in
+KD_REUSED = {
+    ("sft0", 0.5): "pofdqwu_qwen7b_b0_eaopen_w0p5_l1_esopen_s0_r100",
+    ("sft0", 1.0): "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
+    ("fwdlam1", 0.5): "pofdqwu_qwen7b_b1_eaopen_w0p5_l1_esopen_s0_r100",
+    ("fwdlam1", 1.0): "pofdqwu_qwen7b_b1_eaopen_w1_l1_esopen_s0_r100",
+}
+# the frozen vector b for the lambda -> infinity endpoint (CPU replay).
+# Spelled literally rather than aliased to RR_REF_RUN: that constant is
+# defined ~1800 lines BELOW this block, and the ref_replay wave is free
+# to repoint it without silently repointing this one.
+KD_FROZEN_REF_RUN = "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p05_s0"
+KD_FROZEN_REF_SHA = QMECH_CANONICAL_PRED_SHA
+
+# kldir rides the queue right after lam; everything else copies ROW_QWU
+ROW_KD = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+          "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {kldir}, {iclk}, "
+          "{snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}, "
+          "{basemodel}, {chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def kd_lam_tok(lam):
+    """.1 -> 'lam0p1', 1 -> 'lam1', 10 -> 'lam10'. Spelled lam<x>, never
+    b<x>: b<x> is this project's forward-KL ARM token and would collide
+    with the w_plat reading of the tag."""
+    return f"lam{_num(lam)}"
+
+
+def kd_tag(direction, lam, w, seed=KD_SEED, rounds=KD_ROUNDS, smoke=False):
+    """pofdkd_qwen7b_revlam0p1_eaopen_w0p5_l1_esopen_s0_r10.
+
+    The direction token is REQUIRED and adjacent to the weight, so no
+    tag can be read without committing to a direction. The smoke wears
+    its own PREFIX (pofdkdsmk_) so check_kl_direction can enforce the
+    10-round horizon on production without a truncated run sneaking
+    through under a trailing token."""
+    if direction not in KD_DIR_ENV:
+        raise ValueError(f"direction must be fwd/rev; got {direction!r}")
+    pre = "pofdkdsmk" if smoke else "pofdkd"
+    return (f"{pre}_{KD_MODEL}_{direction}{kd_lam_tok(lam)}"
+            f"_eaopen_w{_num(w)}_l{_num(KD_K)}_esopen_s{seed}_r{rounds}")
+
+
+def kd_row(direction, lam, w, seed=KD_SEED, rounds=KD_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS["b1"]        # the sft_kl envelope; beta overridden
+    m = FAM_MODELS[KD_MODEL]
+    return ROW_KD.format(
+        tag=kd_tag(direction, lam, w, seed, rounds, smoke),
+        style="sft_kl", beta=f"{lam:g}", seed=seed,
+        es=f"{KD_EPS_SOCIAL:g}", wplat=f"{w:g}", lam=f"{KD_K:g}",
+        kldir=KD_DIR_ENV[direction], iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=rounds, basemodel=m["base_model"],
+        chatthink=m["chatthink"], mem=m["mem"], disk=m["disk"],
+        pplbatch=m["pplbatch"])
+
+
+def kd_rows():
+    return [kd_row(d, lam, w) for w in KD_WS for d, lam in KD_CELLS]
+
+
+def kd_smoke_rows():
+    """One 3-round reverse lambda=1, W=1 cell. Reverse is the NEW path in
+    this wave and W=1 is the boundary, so this is its hardest corner."""
+    return [kd_row("rev", 1.0, 1.0, rounds=KD_SMOKE_ROUNDS, smoke=True)]
+
+
+def kd_sub(smoke=False):
+    rows = kd_smoke_rows() if smoke else kd_rows()
+    key = KD_SMOKE_KEY if smoke else KD_KEY
+    return KD_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=KD_H100, bad=BAD_NODE_REQ,
+        rounds=(KD_SMOKE_ROUNDS if smoke else KD_ROUNDS),
+        kind=("3-ROUND REVERSE-KL SMOKE" if smoke
+              else "FORWARD vs REVERSE KL, 10-ROUND POST-PEER DYNAMICS"))
+
+
+KD_SUB_TEMPLATE = """\
+# HTCondor: QWEN2.5 FORWARD vs REVERSE KL -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the KD block. Never edit by hand:
+# rerun the script.
+# The QWU surface exactly: k = 1, W rides the queue, BOTH gates
+# GENUINELY OPEN, {rounds} rounds, seed 0, movielens Action 723 agents,
+# Qwen/Qwen2.5-7B-Instruct, fresh LoRA r512 every round, one peer sweep,
+# homophily gamma = 0, greedy serving in eval mode, SAVE_RAW_GEN=1.
+# KL_DIRECTION RIDES THE QUEUE. Every other wave pins it in this env;
+# this one is the comparison, so it is $(kldir) and the tag carries it.
+#   forward = KL(pi_ref || pi_theta)    reverse = KL(pi_theta || pi_ref)
+# check_kl_direction rejects any run whose recorded direction disagrees
+# with its tag, and refuses a wave that is missing either direction.
+# THESE ARE 10-ROUND POST-PEER DYNAMICS, NOT EQUILIBRIA.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 # fig2_family_prior_scout[_smoke] (2026-08-17): the FIGURE-2 FAMILY-
 # PRIOR SCOUT -- six checkpoints (Qwen2.5-7B-Instruct, Qwen3-8B
 # thinking OFF, OLMo-2-1124-7B-Instruct, Olmo-3-7B-Instruct,
@@ -9029,6 +9222,83 @@ def main():
     files[p] = rows_qwui
     expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{QWU_ICL_KEY}.sub")] = _qwui_sub
+    # ---- forward vs reverse KL (KD) -----------------------------------
+    rows_kd = kd_rows()
+    assert len(rows_kd) == 10, len(rows_kd)
+    _kd_tags = [r.split(",")[0] for r in rows_kd]
+    assert len(set(_kd_tags)) == 10, _kd_tags
+    # both directions present, in the counts the design calls for
+    assert sum("_fwd" in t for t in _kd_tags) == 4, _kd_tags
+    assert sum("_rev" in t for t in _kd_tags) == 6, _kd_tags
+    # forward lambda=1 is REUSED from QWU b1 and must never be queued
+    assert not any("_fwdlam1_" in t for t in _kd_tags), _kd_tags
+    for r in rows_kd:
+        _c = [c.strip() for c in r.split(",")]
+        assert _c[1] == "sft_kl", r              # every cell trains with KL
+        assert float(_c[2]) in (0.1, 1.0, 10.0), r   # lambda
+        assert _c[3] == str(KD_SEED), r
+        assert _c[10] == "0.0", r                # homophily gamma stays 0
+        assert float(_c[11]) in (0.5, 1.0), r    # W = Celestine's beta
+        assert _c[14] == "1", r                  # k = Celestine's gamma
+        assert _c[15] in ("forward", "reverse"), r   # kldir column
+        # the recorded direction must agree with the tag token
+        assert (("_fwd" in _c[0]) == (_c[15] == "forward")), r
+        assert _c[16] == "0" and _c[17] == "-1", r   # no ICL
+        assert _c[18] == "1" and _c[19] == "1", r    # LoRA, fresh each round
+        assert _c[22] == str(KD_ROUNDS), r
+    _kd_sub = kd_sub()
+    _kd_env = next(ln for ln in _kd_sub.splitlines()
+                   if ln.startswith("environment"))
+    assert "KL_DIRECTION=$(kldir)" in _kd_env, _kd_env
+    assert "KL_DIRECTION=forward" not in _kd_env, _kd_env
+    assert "AI_GATE_MODE=all_open" in _kd_env
+    assert "PEER_GATE_MODE=all_open" in _kd_env
+    assert "INNATE_LAMBDA=$(lam)" in _kd_env
+    assert "WITH_TWIN=1" in _kd_env and "SAVE_RAW_GEN=1" in _kd_env
+    assert "TRAIN_CAP=723" in _kd_env and "LORA_R=512" in _kd_env
+    # the queue line must actually declare the new column, in the right
+    # slot -- a sub whose env reads $(kldir) but never queues it would
+    # silently expand to the empty string and the runner would fall back
+    # to its "reverse" default on EVERY cell, forward ones included
+    _kd_q = next(ln for ln in _kd_sub.splitlines() if ln.startswith("queue "))
+    assert ", lam, kldir, iclk," in _kd_q, _kd_q
+    assert f'CUDADeviceName == "{KD_H100}"' in _kd_sub
+    _prior_kd = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_kd_tags) & _prior_kd), \
+        f"kd collision: {set(_kd_tags) & _prior_kd}"
+    # the four REUSED tags must already exist as generated rows -- if a
+    # rename ever orphans one, this fails here rather than in the
+    # analyzer months later
+    for _arm, _tag in KD_REUSED.items():
+        assert _tag in _prior_kd, f"KD_REUSED {_arm} -> {_tag} is not generated"
+    p = os.path.join(HERE, f"configs_pofd_{KD_KEY}.txt")
+    files[p] = rows_kd
+    expected[p] = 10
+    cube_subs[os.path.join(HERE, f"at_pofd_{KD_KEY}.sub")] = _kd_sub
+    # the 3-round reverse smoke: a SEPARATE key, not part of the ten
+    rows_kds = kd_smoke_rows()
+    assert len(rows_kds) == 1, len(rows_kds)
+    _kds_tags = {r.split(",")[0] for r in rows_kds}
+    assert all(t.startswith("pofdkdsmk_") for t in _kds_tags), _kds_tags
+    assert all("_revlam1_" in t and "_w1_" in t and "_l1_" in t
+               and t.endswith(f"_s0_r{KD_SMOKE_ROUNDS}")
+               for t in _kds_tags), _kds_tags
+    # a smoke must never be able to satisfy a production tag
+    assert not (_kds_tags & set(_kd_tags)), _kds_tags
+    assert not any(t.startswith("pofdkd_") for t in _kds_tags), _kds_tags
+    _kds_sub = kd_sub(smoke=True)
+    _kds_env = next(ln for ln in _kds_sub.splitlines()
+                    if ln.startswith("environment"))
+    assert "KL_DIRECTION=$(kldir)" in _kds_env, _kds_env
+    for r in rows_kds:
+        _c = [c.strip() for c in r.split(",")]
+        assert _c[1] == "sft_kl" and _c[2] == "1", r
+        assert _c[15] == "reverse", r
+        assert _c[22] == str(KD_SMOKE_ROUNDS), r
+    p = os.path.join(HERE, f"configs_pofd_{KD_SMOKE_KEY}.txt")
+    files[p] = rows_kds
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{KD_SMOKE_KEY}.sub")] = _kds_sub
     # ---- observation-rate subsampling (QSS) ---------------------------
     rows_qss = qss_rows()
     assert len(rows_qss) == len(QSS_COUNTS) + 1 == 7, len(rows_qss)

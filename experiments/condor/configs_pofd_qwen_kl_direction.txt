@@ -1,0 +1,10 @@
+pofdkd_qwen7b_fwdlam0p1_eaopen_w0p5_l1_esopen_s0_r10, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_fwdlam10_eaopen_w0p5_l1_esopen_s0_r10, sft_kl, 10, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam0p1_eaopen_w0p5_l1_esopen_s0_r10, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam1_eaopen_w0p5_l1_esopen_s0_r10, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam10_eaopen_w0p5_l1_esopen_s0_r10, sft_kl, 10, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_fwdlam0p1_eaopen_w1_l1_esopen_s0_r10, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_fwdlam10_eaopen_w1_l1_esopen_s0_r10, sft_kl, 10, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam0p1_eaopen_w1_l1_esopen_s0_r10, sft_kl, 0.1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam1_eaopen_w1_l1_esopen_s0_r10, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
+pofdkd_qwen7b_revlam10_eaopen_w1_l1_esopen_s0_r10, sft_kl, 10, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, reverse, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64
