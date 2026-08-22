@@ -4168,6 +4168,536 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# =========================================================================
+# JIDUAN WU / POKEC REPLICATION (WU, 2026-08-22)
+#
+# THE QUESTION. Wu's opinion-dynamics setup on its OWN dataset, with its
+# OWN heterogeneous parameters, and a language model in the platform
+# slot. Pokec LCC: N = 2163 agents, the FIRST 1730 rows are the OBSERVED
+# set O (y_label2163.pk) and the LAST 433 are the HELD-OUT set U
+# (y_unlabel_label2163.pk). The platform observes O and predicts U; the
+# held-out truth exists only so the analysis can score the prediction and
+# must never enter a prompt, a training batch or a served value.
+#
+# THE OPERATOR (FJ_UPDATE_VERSION=wu1, the opt-in operator; "legacy" is
+# untouched), now with PER-AGENT parameters instead of the homogeneous
+# specialization the MovieLens FJR wave used:
+#     served^(t)   = m_t on U, and x^(t) on O          (passthrough)
+#     x_init^(t)_i = (1 - beta_i) x^innate_i + beta_i served^(t)_i
+#     u^(0)        = x_init^(t)
+#     u^(l+1)_i    = (1 - alpha_i) x_init^(t)_i
+#                    + alpha_i (P u^(l))_i,   l = 0 .. K-1
+# alpha_i is PEER SUSCEPTIBILITY, shipped by the dataset in
+# hetero_peer_sus2163.pkl (mean .8909); beta_i is PLATFORM
+# SUSCEPTIBILITY, hetero_platform_sus2163.pkl (mean .8890). K = 100 inner
+# steps, T = 50 outer rounds, seed 0 primary. The human component is the
+# raw innate opinion with no carryover (k = 1), so the ONLY channel
+# between outer rounds is the platform.
+#
+# THE ALPHA TRAP, WHICH THIS DATASET WALKS STRAIGHT INTO.
+# FJWorld.peer_sus is STUBBORNNESS = 1 - alpha, but the file is NAMED
+# peer_sus and holds alpha (mean .8909). Passing it through unchanged
+# runs peer susceptibility .1091 -- the near-opposite dynamics -- and
+# every downstream number stays finite, ordered and plausible. The
+# checker (check_jiduan_pokec.py) REPLAYS all K inner steps with the
+# per-agent complement and refuses a run whose trajectory matches the
+# inverted convention.
+#
+# WHY THE SCALES EXIST. FJ_ALPHA_SCALE (c_alpha) and FJ_BETA_SCALE
+# (c_beta) multiply the DATASET vectors; c = 1 is the exact
+# heterogeneous dataset, c = 0 switches that channel off. W_PLAT stays
+# 1.0 in every row of this family so beta is never scaled twice -- the
+# dose lives in exactly one place, and the checker recomputes
+# beta_realized = c_beta * beta_raw from the repo dataset.
+# NO SCALAR FJ_ALPHA / FJ_BETA IS EMITTED ANYWHERE IN THIS FAMILY: a
+# scalar sitting next to a dataset source is precisely the ambiguity the
+# wave exists to avoid, so the sub carries neither and the checker
+# hard-fails a run that records one as operative.
+#
+# NO GATE TOKENS IN THE TAG. FJ has no confidence gates -- platform
+# exposure and graph mixing are unconditional -- so _ea / _es would name
+# something the operator never applies.
+#
+# TAG GRAMMAR (one home, read by the checker and the analyzer; never
+# re-derived elsewhere):
+#   pofdwu_<model>_<arm>_pa<src><c_alpha>_pb<src><c_beta>_in<K>
+#          [_rt<T|C>]_s<seed>_r<T>[smoke]
+# src is "d" for the dataset vectors and "h" for a homogeneous scalar
+# (reserved for the CPU controls; no GPU key uses it). The ARM token
+# carries the whole platform channel -- KL dose for the trained arms,
+# ICL mode and depth for the frozen ones -- so the ICL mode is named in
+# the tag exactly once, by WU_ARM_COLS below.
+# =========================================================================
+WU_SMOKE_KEY = "jiduan_pokec_smoke"
+WU_CONTROLS_KEY = "jiduan_pokec_controls"      # CPU ONLY -- zero Condor jobs
+WU_PRIOR_KEY = "jiduan_pokec_prior"
+WU_PRIOR_SEEDS_KEY = "jiduan_pokec_prior_seeds"
+WU_LADDER_KEY = "jiduan_pokec_lambda_ladder"
+WU_ICL_KEY = "jiduan_pokec_icl"
+WU_ENV_KEY = "jiduan_pokec_environment"
+WU_ROUTE_SMOKE_KEY = "jiduan_pokec_routing_smoke"
+WU_ROUTE_SEEDS_KEY = "jiduan_pokec_routing_seeds"
+WU_FROZEN_KEY = "jiduan_pokec_frozen"
+WU_H100 = QMECH_H100
+WU_ROUNDS = 50             # T, outer rounds
+WU_SMOKE_ROUNDS = 3
+WU_INNER = 100             # K_FJ, inner FJ steps per outer round
+WU_N = 2163                # Pokec LCC
+WU_N_OBSERVED = 1730       # O = the first 1730 rows (y_label2163.pk)
+WU_N_HELDOUT = 433         # U = the last 433 rows (y_unlabel_label2163.pk)
+WU_MODELS = ["qwen7b", "qwen3_8b", "olmo7b", "olmo3_7b",
+             "mistral7b", "ministral8b"]
+WU_PRIOR_ARMS = ["b0", "b1"]
+# Qwen2.5 is the project's reference checkpoint; OLMo-2 is the second
+# provider family. Two models x two arms x two seeds is the smallest set
+# that can say whether a b0-vs-b1 gap clears TRAINING noise -- the FJ
+# operator is deterministic, so a seed moves the learner and nothing else.
+WU_SEEDS = [42, 43]
+WU_SEED_MODELS = ["qwen7b", "olmo7b"]
+WU_LADDER_MODEL = "qwen7b"
+# lambda -> arm token. 0 and 1 ARE the prior wave's b0/b1 cells; they are
+# reused byte-for-byte and never re-queued. The FROZEN model is a
+# SEPARATE endpoint of this family, not the lambda -> infinity end of
+# this ladder: a frozen run never trains, so it is not "SFT at an
+# infinite KL weight", and pretending otherwise would put a
+# different-code-path point on a dose axis.
+WU_LADDER = [(0.0, "b0"), (0.1, "b0p1"), (0.5, "b0p5"),
+             (1.0, "b1"), (10.0, "b10")]
+WU_ICL_MODELS = ["qwen7b", "mistral7b"]
+WU_ICL_ARMS = ["b0", "b1", "phist8", "octx8", "frz"]
+WU_ENV_MODEL = "qwen7b"
+WU_ENV_ARMS = ["b0", "b1", "phist8"]
+WU_ENV_SCALES = [0.0, 0.5, 1.0]
+WU_ROUTE_MODEL = "qwen7b"
+WU_ROUTE_ARMS = ["b0", "phist8", "frz"]
+WU_ROUTE_CAS = [0.0, 1.0]
+# 10% of the OBSERVED pool -> 173 agents, matching Wu's modified-label
+# construction. NOT 25%: a larger cohort is a coarser instrument, and the
+# point of this stage is a localized source perturbation.
+WU_ROUTE_FRAC = 0.10
+WU_ROUTE_SEED = 7          # cohort RNG, run-seed-independent by design
+# The injected innate value is 1.0, again matching Wu. This is NOT a free
+# choice. Observed innate runs [0.040, 0.917] with mean .5273, so:
+#   * 1.0 sits OUTSIDE the entire observed range -- a clean, unambiguous
+#     injection, and ZERO cohort agents are already at it, so every
+#     treated agent actually moves.
+#   * 0.5 would sit essentially AT the observed mean (.5273), making the
+#     "treatment" a near-null perturbation, and 96 observed agents are
+#     already at exactly 0.5 -- ~30 of a 432-cohort would not move at
+#     all, silently diluting the effect the stage exists to measure.
+WU_ROUTE_VALUE = 1.0
+# WHERE THE INTERVENTION LANDS. The runner draws the cohort from the
+# OBSERVED pool and rewrites those agents' INNATE opinion before anything
+# reads it -- so the treatment reaches x(0), the FJ anchor, the round-0
+# SFT labels and (through the passthrough) the served vector, all
+# consistently. It is a SOURCE injection at agents the platform can see,
+# and the question is whether it reaches the held-out set.
+# THE CONTROL TWIN IS frac = 0. The cohort is a deterministic function of
+# (ROUTING_TREAT_SEED, frac, |O|) and of nothing else -- not of the run
+# seed -- so the checker recomputes it from the treatment's parameters
+# and proves the two runs differ on EXACTLY that set and nowhere else.
+# That is a stronger statement than comparing two stored masks, and it
+# needs no out-of-range sentinel: the runner requires the injected value
+# to lie in [0, 1], so there is no "route but change nothing" value.
+WU_ROUTE_CONTROL_FRAC = 0.0
+
+
+def _wu_src_tok(src, scale):
+    """d = the dataset vector, h = a homogeneous scalar. The scale rides
+    the same token so a tag can never name a source without its dose."""
+    if src not in ("dataset", "homogeneous"):
+        raise ValueError(f"bad source {src!r}")
+    return f"{'d' if src == 'dataset' else 'h'}{_num(scale)}"
+
+
+def wu_tag(model, arm, *, ca=1.0, cb=1.0, peer_src="dataset",
+           plat_src="dataset", seed=0, rounds=WU_ROUNDS, inner=WU_INNER,
+           route=None, smoke=False):
+    """model, arm (= KL dose or ICL channel), alpha source+scale, beta
+    source+scale, K, routing side, seed, horizon. No gate tokens."""
+    rt = "" if route is None else f"_rt{route}"
+    return (f"pofdwu_{model}_{arm}_pa{_wu_src_tok(peer_src, ca)}"
+            f"_pb{_wu_src_tok(plat_src, cb)}_in{inner}{rt}"
+            f"_s{seed}_r{rounds}{'smoke' if smoke else ''}")
+
+
+def wu_frozen_tag(model, seed=0):
+    """A zero-shot EXTRACTION, not a Wu run: one round, frozen weights, no
+    context, so model_pred_raw[0] IS the frozen prediction map that every
+    'distance to the frozen model' in the analysis is measured against.
+    It carries no alpha/beta/K tokens because it applies none of them."""
+    return f"pofdwuzs_{model}_s{seed}_r1"
+
+
+def _wu_sft_arm(dose_arm, kl):
+    """A trained arm, taking its ENVELOPE from REACH_ARM_COLS so this wave
+    cannot drift from the rest of the project on LoRA/fresh/telemetry.
+    dose_arm names the reach entry whose KL weight is already `kl`."""
+    a = REACH_ARM_COLS[dose_arm]
+    assert float(a["beta"]) == kl, (dose_arm, a["beta"], kl)
+    return dict(style=a["style"], beta=a["beta"], uselora=a["uselora"],
+                fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"],
+                iclmode="none", iclk=0, icld=0)
+
+
+def _wu_new_dose(kl):
+    """A KL dose the reach table does not carry (lambda .1 and 10). Copies
+    the b1 envelope exactly; only the coefficient differs."""
+    a = REACH_ARM_COLS["b1"]
+    return dict(style=a["style"], beta=f"{kl:g}", uselora=a["uselora"],
+                fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"],
+                iclmode="none", iclk=0, icld=0)
+
+
+def _wu_frozen_arm(mode, k, d):
+    """A frozen platform channel: no LoRA, no SFT, no adapter. Envelope
+    from REACH_ARM_COLS["k0"] (the established frozen no-context arm);
+    only the Wu context knobs differ."""
+    a = REACH_ARM_COLS["k0"]
+    assert a["style"] == "frozen" and a["uselora"] == 0 and a["fresh"] == 0
+    return dict(style=a["style"], beta=a["beta"], uselora=a["uselora"],
+                fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"],
+                iclmode=mode, iclk=k, icld=d)
+
+
+# THE ARM TABLE IS THE ONE HOME FOR WHAT AN ARM TOKEN MEANS. The tag
+# carries the token, this table carries the semantics, and
+# check_jiduan_pokec.py reads the token back and gates the config
+# against these exact values -- so a tag can never name a channel the
+# run did not use.
+#   b0/b0p1/b0p5/b1/b10  ordinary SFT (lambda 0) and forward-KL SFT at
+#                        lambda .1/.5/1/10; fresh LoRA every round
+#   frz                  frozen weights, NO context (K = D = 0)
+#   octx8                frozen, OBSERVED-CONTEXT K=8 -- eight exemplars
+#                        drawn from O, showing x_j(t)
+#   phist8               frozen, PREDICTION-HISTORY D=8 -- the agent's own
+#                        last eight SERVED values
+#   ehist8               frozen, EXPRESSED-HISTORY D=8 -- the agent's own
+#                        last eight POST-FJ opinions. Defined here so the
+#                        vocabulary is complete; NO key queues it.
+#
+# STRICT vs EXTENSION IS wu_context.is_extension()'s CALL, NOT THIS
+# FILE'S. The classification has exactly one home
+# (experiments/scripts/cluster_pipelines/wu_context.py) and the mirror
+# below is asserted against it by tests/test_jiduan_pokec_infra.py.
+# Its rule: a mechanism is an EXTENSION when it shows the model something
+# Wu's platform cannot observe. The platform obviously has its own past
+# OUTPUTS, so prediction_history is strict; it does NOT observe held-out
+# agents' realised opinions, so expressed_history is the extension.
+WU_ARM_COLS = {
+    "b0": _wu_sft_arm("b0", 0.0),
+    "b0p1": _wu_new_dose(0.1),
+    "b0p5": _wu_sft_arm("b0p5", 0.5),
+    "b1": _wu_sft_arm("b1", 1.0),
+    "b10": _wu_new_dose(10.0),
+    "frz": _wu_frozen_arm("none", 0, 0),
+    "octx8": _wu_frozen_arm("observed_context", 8, 0),
+    "phist8": _wu_frozen_arm("prediction_history", 0, 8),
+    "ehist8": _wu_frozen_arm("expressed_history", 0, 8),
+}
+WU_EXTENSION_ARMS = ("ehist8",)
+WU_STRICT_ARMS = tuple(a for a in WU_ARM_COLS if a not in WU_EXTENSION_ARMS)
+WU_TRAINED_ARMS = ("b0", "b0p1", "b0p5", "b1", "b10")
+
+ROW_WU = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+          "fj, 0.0, 0.0, 1.0, loop, 0.0, {peersrc}, {platsrc}, {ascale}, "
+          "{bscale}, {inner}, {iclmode}, {iclk}, {icld}, {rtfrac}, "
+          "{rtseed}, {rtval}, {uselora}, {fresh}, {ansk}, {gg}, "
+          "{nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, "
+          "{pplbatch}")
+
+
+def wu_row(model, arm, *, ca=1.0, cb=1.0, peer_src="dataset",
+           plat_src="dataset", seed=0, rounds=WU_ROUNDS, inner=WU_INNER,
+           route=None, smoke=False):
+    a = WU_ARM_COLS[arm]
+    m = FAM_MODELS[model]
+    if route is None:
+        frac, rseed, val = 0.0, 0, 0.0
+    else:
+        # the twins differ in ONE column: the treated run injects, the
+        # control does not. Seed and value ride both rows identically so
+        # the pair is legible as a pair and the cohort is recomputable
+        # from either side.
+        frac = WU_ROUTE_FRAC if route == "T" else WU_ROUTE_CONTROL_FRAC
+        rseed, val = WU_ROUTE_SEED, WU_ROUTE_VALUE
+    return ROW_WU.format(
+        tag=wu_tag(model, arm, ca=ca, cb=cb, peer_src=peer_src,
+                   plat_src=plat_src, seed=seed, rounds=rounds,
+                   inner=inner, route=route, smoke=smoke),
+        style=a["style"], beta=a["beta"], seed=seed,
+        peersrc=peer_src, platsrc=plat_src, ascale=f"{ca:g}",
+        bscale=f"{cb:g}", inner=inner, iclmode=a["iclmode"],
+        iclk=a["iclk"], icld=a["icld"], rtfrac=f"{frac:g}", rtseed=rseed,
+        rtval=f"{val:g}", uselora=a["uselora"], fresh=a["fresh"],
+        ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+# ---- the conceptual grids, and the arithmetic that turns them into jobs
+
+def wu_smoke_rows():
+    """One 3-round Qwen2.5 forward-KL cell at the exact heterogeneous
+    dataset parameters: exercises the whole wu1-on-Pokec path (per-agent
+    alpha complement, per-agent beta, observed passthrough, u^(1) save,
+    train-on-O-only) before any 50-round job runs."""
+    return [wu_row("qwen7b", "b1", rounds=WU_SMOKE_ROUNDS, smoke=True)]
+
+
+def wu_prior_rows():
+    """6 models x 2 arms, seed 0, EXACT heterogeneous dataset parameters
+    (c_alpha = c_beta = 1), T = 50. 12 jobs."""
+    return [wu_row(mo, ar) for mo in WU_MODELS for ar in WU_PRIOR_ARMS]
+
+
+def wu_prior_seed_rows():
+    """Seeds 42/43 x {Qwen2.5, OLMo-2} x {b0, b1}. 8 jobs."""
+    return [wu_row(mo, ar, seed=sd)
+            for sd in WU_SEEDS for mo in WU_SEED_MODELS
+            for ar in WU_PRIOR_ARMS]
+
+
+def wu_ladder_reused():
+    """The ladder cells that ALREADY EXIST as prior-wave rows: lambda 0
+    (b0) and lambda 1 (b1) for Qwen2.5 at seed 0. Returned as tags so the
+    caller can assert they are byte-identical to the prior key's."""
+    return [wu_tag(WU_LADDER_MODEL, ar) for lam, ar in WU_LADDER
+            if ar in WU_PRIOR_ARMS]
+
+
+def wu_ladder_rows():
+    """Qwen2.5 only, lambda in {0, .1, .5, 1, 10} = 5 conceptual cells.
+    lambda 0 and 1 are the prior wave's b0/b1 cells and are REUSED, so
+    only 3 queue: 5 - 2 = 3."""
+    return [wu_row(WU_LADDER_MODEL, ar) for lam, ar in WU_LADDER
+            if ar not in WU_PRIOR_ARMS]
+
+
+def wu_icl_reused():
+    """{Qwen2.5, Mistral} x {b0, b1} = 4 prior-wave cells."""
+    return [wu_tag(mo, ar) for mo in WU_ICL_MODELS for ar in WU_PRIOR_ARMS]
+
+
+def wu_icl_rows():
+    """{Qwen2.5, Mistral} x {b0, b1, phist8, octx8, frz} = 10 conceptual
+    cells; the 4 b0/b1 cells are the prior wave's, so 10 - 4 = 6 queue."""
+    return [wu_row(mo, ar) for mo in WU_ICL_MODELS for ar in WU_ICL_ARMS
+            if ar not in WU_PRIOR_ARMS]
+
+
+def wu_env_pairs():
+    """The dose grid: (c_alpha in {0,.5,1} with c_beta=1) UNION
+    (c_beta in {0,.5,1} with c_alpha=1). The centre (1,1) belongs to both
+    axes and is ONE cell, not two."""
+    pairs = [(ca, 1.0) for ca in WU_ENV_SCALES]
+    for cb in WU_ENV_SCALES:
+        if (1.0, cb) not in pairs:
+            pairs.append((1.0, cb))
+    return pairs
+
+
+def wu_env_cells():
+    """(arm, ca, cb) for the environment grid, with the two collapses
+    applied:
+
+    * THE CENTRE IS SHARED. (1,1) is the exact heterogeneous
+      configuration, i.e. the prior wave's cell for b0/b1 and the ICL
+      wave's cell for phist8. Counted once, queued never.
+    * c_beta = 0 MAKES THE MODEL IRRELEVANT. beta_i = 0 for everyone, so
+      x_init = x^innate for every round and the population trajectory is
+      the same object whatever the platform serves. Queued ONCE under the
+      canonical b0 arm rather than three times. The SERVED side still
+      differs by arm -- that is why the analyzer reports nothing
+      arm-specific from this cell beyond b0's own serving.
+    """
+    cells = []
+    for ca, cb in wu_env_pairs():
+        if cb == 0.0:
+            cells.append(("b0", ca, cb))
+        else:
+            cells += [(ar, ca, cb) for ar in WU_ENV_ARMS]
+    return cells
+
+
+def wu_env_reused():
+    """The centre column: Qwen2.5 x {b0, b1} from the prior key and
+    Qwen2.5 x phist8 from the ICL key. 3 tags."""
+    return [wu_tag(WU_ENV_MODEL, ar) for ar in WU_ENV_ARMS]
+
+
+def wu_env_rows():
+    """13 conceptual cells (see wu_env_cells), 3 reused at the centre,
+    so 13 - 3 = 10 queue."""
+    reused = set(wu_env_reused())
+    rows = [wu_row(WU_ENV_MODEL, ar, ca=ca, cb=cb)
+            for ar, ca, cb in wu_env_cells()]
+    return [r for r in rows if r.split(",")[0] not in reused]
+
+
+def wu_route_rows(seeds=(0,)):
+    """PAIRED treatment/control twins: {b0, phist8, frz} x
+    {c_alpha 0, c_alpha 1} x {treat, control} = 12 per seed.
+
+    NOTHING IS REUSED HERE. A control twin is not the same run as a
+    prior cell: it carries the routing cohort (same frac, same cohort
+    seed) so the pair's masks can be compared, and a prior cell carries
+    no mask at all. Reusing one would leave the comparison with nothing
+    to check."""
+    return [wu_row(WU_ROUTE_MODEL, ar, ca=ca, seed=sd, route=side)
+            for sd in seeds for ar in WU_ROUTE_ARMS
+            for ca in WU_ROUTE_CAS for side in ("T", "C")]
+
+
+# FROZEN EXTRACTION -- NO REUSE WAS FOUND, SO EVERY MODEL EXTRACTS.
+# The analyzer's primary held-out estimand is distance to the FROZEN
+# model's prediction map on U, so one static vector per model is
+# required before any cell can be scored. A scan of runs/pokec_gated_lm
+# (1180 dirs, 2026-08-22) found 847 movielens runs, 311 pre-DATASET-field
+# runs and ZERO frozen Pokec runs: the 162 Pokec-shaped dirs are all
+# Qwen2.5 sft / sft_kl. Nothing qualifies, so nothing is reused -- an
+# unverified reuse here would silently score five of six models against
+# a vector from a different dataset or a different SKU.
+WU_FROZEN_MODELS = list(WU_MODELS)
+ROW_WU_FROZEN = ("{tag}, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, "
+                 "0.0, 0.5, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 0, "
+                 "1, {basemodel}, {chatthink}")
+
+
+def wu_frozen_rows():
+    """One 1-round zero-shot extraction per model. EPS_AI=0 under the
+    strict-< gate means no agent is ever contacted and no opinion moves,
+    so pred_raw[0] IS the frozen prediction map on all 2163 agents --
+    including the 433 held-out ones the analysis needs. It is an
+    EXTRACTION, not a Wu run: no FJ parameter is applied, and the
+    frozen population replay is model-independent and runs on CPU."""
+    return [ROW_WU_FROZEN.format(tag=wu_frozen_tag(mo),
+                                 basemodel=FAM_MODELS[mo]["base_model"],
+                                 chatthink=FAM_MODELS[mo]["chatthink"])
+            for mo in WU_FROZEN_MODELS]
+
+
+def wu_sub(key, rows, rounds=WU_ROUNDS):
+    return WU_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=WU_H100, bad=BAD_NODE_REQ,
+        rounds=rounds, n=WU_N, nobs=WU_N_OBSERVED, nheld=WU_N_HELDOUT,
+        inner=WU_INNER)
+
+
+def wu_frozen_sub(key, rows):
+    return WU_FROZEN_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=WU_H100, bad=BAD_NODE_REQ,
+        n=WU_N, nobs=WU_N_OBSERVED, nheld=WU_N_HELDOUT)
+
+
+WU_SUB_TEMPLATE = """\
+# HTCondor: JIDUAN WU / POKEC REPLICATION -- {n_jobs} jobs, {rounds}
+# outer rounds each. GENERATED by gen_pofd_sweep.py from the WU block.
+# Never edit by hand: rerun the script.
+# Pokec LCC, N={n}: the FIRST {nobs} rows are the OBSERVED set O and the
+# LAST {nheld} are the HELD-OUT set U. N_LABELED=TRAIN_CAP={nobs}, so the
+# SFT batch is drawn from O alone and a held-out opinion can never reach
+# the optimizer. FJ_OBSERVED_PASSTHROUGH=1 serves O its own current
+# opinion instead of a model prediction; the model's job is U.
+# THE OPERATOR: FJ_UPDATE_VERSION=wu1, PER-AGENT parameters.
+#   served^(t)   = m_t on U, x^(t) on O
+#   x_init^(t)_i = (1-beta_i) innate_i + beta_i served^(t)_i
+#   u^(0)        = x_init^(t)
+#   u^(l+1)_i    = (1-alpha_i) x_init_i + alpha_i (P u^(l))_i, l=0..K-1
+# alpha_i = FJ_ALPHA_SCALE * hetero_peer_sus2163 (dataset mean .8909);
+# beta_i  = FJ_BETA_SCALE  * hetero_platform_sus2163 (mean .8890);
+# K = {inner}. W_PLAT is pinned to 1.0 so beta is never scaled twice, and
+# NO scalar FJ_ALPHA / FJ_BETA is emitted: a scalar next to a dataset
+# source is exactly the ambiguity this wave exists to remove.
+# ALPHA IS SUSCEPTIBILITY, NOT STUBBORNNESS. The dataset file is named
+# peer_sus but holds alpha; FJWorld.peer_sus is 1-alpha. Feeding it
+# through unchanged would run susceptibility .109 -- near-opposite
+# dynamics with every downstream number still well-formed. The checker
+# replays all K inner steps per round with the per-agent complement.
+# NO GATES, NO DEFFUANT PARAMETERS: FJ platform exposure and graph mixing
+# are unconditional, so there are no _ea/_es tokens and no gate mode.
+# THE INNER LOOP CONVERGES at alpha ~ .89, K={inner}. That is the FJ
+# fixed point of ONE round's anchor and says NOTHING about the outer
+# model-population loop; because convergence erases the inner loop's
+# starting point, each round also saves u^(1), which is the only thing
+# that can still prove u^(0) = x_init.
+# Gate every pull with check_jiduan_pokec.py and hard-fail the analyzer
+# until the whole conceptual grid is present.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=pokec POKEC_DIR=examples/pokec HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 POP_MODEL=fj FJ_UPDATE_VERSION=wu1 FJ_PEER_SOURCE=$(peersrc) FJ_PLATFORM_SOURCE=$(platsrc) FJ_ALPHA_SCALE=$(ascale) FJ_BETA_SCALE=$(bscale) FJ_INNER_STEPS=$(inner) FJ_OBSERVED_PASSTHROUGH=1 WU_ICL_MODE=$(iclmode) WU_ICL_K=$(iclk) WU_ICL_D=$(icld) ROUTING_TREAT_FRAC=$(rtfrac) ROUTING_TREAT_SEED=$(rtseed) ROUTING_TREAT_VALUE=$(rtval) PLATFORM_SUS_SCALE=1.0 KL_DIRECTION=forward SFT_EPOCHS=1 SFT_LR=5e-5 LORA_R=512 USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) SAVE_RAW_GEN=1 SAVE_WU_CTX_LOG=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP={nobs} N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 N_LABELED={nobs} HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, peersrc, platsrc, ascale, bscale, inner, iclmode, iclk, icld, rtfrac, rtseed, rtval, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+WU_FROZEN_SUB_TEMPLATE = """\
+# HTCondor: JIDUAN WU / POKEC -- FROZEN PREDICTION-MAP EXTRACTION,
+# {n_jobs} job(s). GENERATED by gen_pofd_sweep.py from the WU block.
+# Never edit by hand.
+# Produces the frozen (untrained, no-context) prediction map on all {n}
+# Pokec agents -- including the {nheld} HELD-OUT ones, which is the
+# reference every primary held-out estimand is measured against.
+# NO REUSE IS CLAIMED. A scan of runs/pokec_gated_lm on 2026-08-22 found
+# no frozen Pokec run for ANY of the six checkpoints, so all six extract
+# here rather than borrowing a vector whose dataset, node order or GPU
+# SKU could not be verified.
+# ONE ROUND, EPS_AI=0 under the strict-< gate: no agent is ever
+# contacted, no opinion moves, and pred_raw[0] is therefore the frozen
+# map itself. It is an EXTRACTION, not a Wu run -- no FJ parameter is
+# applied here and the frozen population replay is model-independent and
+# runs locally on CPU.
+# The EXACT H100 SKU is pinned: greedy decoding is only bit-reproducible
+# within one GPU architecture, and this vector is a constant that every
+# other cell is compared against.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 160G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=pokec POKEC_DIR=examples/pokec HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.0 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP={nobs} N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED={nobs} HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 AKL_KEY = "qwen_adapter_kl_probe"
 AKL_SMOKE_KEY = "qwen_adapter_kl_probe_smoke"
 AKL_H100 = QMECH_H100
@@ -8632,6 +9162,228 @@ def main():
                FJR_SEED_KEY, FJR_BETA1_SEED_KEY):
         for _r in files[os.path.join(HERE, f"configs_pofd_{_k}.txt")]:
             assert "alpha0p5" not in _r and "_in1_" not in _r, (_k, _r)
+
+    # ---- Jiduan Wu / Pokec replication (WU) -------------------------
+    # EVERY count below is the reuse arithmetic made explicit, and every
+    # one is asserted rather than described:
+    #   smoke            1   Qwen2.5 b1, 3 rounds
+    #   controls         0   CPU ONLY -- no Condor job, no config, no sub
+    #   prior           12   6 models x {b0,b1}, seed 0, exact hetero
+    #   prior_seeds      8   seeds {42,43} x {qwen7b,olmo7b} x {b0,b1}
+    #   lambda_ladder    3   5 conceptual - 2 reused (lambda 0 and 1 ARE
+    #                        the prior wave's b0/b1 Qwen2.5 cells)
+    #   icl              6   10 conceptual - 4 reused (2 models x b0/b1)
+    #   environment     10   13 conceptual - 3 reused; 13 rather than 15
+    #                        because c_beta=0 collapses 3 arms into 1 cell
+    #   routing_smoke   12   3 arms x 2 c_alpha x 2 sides, seed 0
+    #   routing_seeds   24   the same 12 at seeds 42 and 43
+    #   frozen           6   one extraction per model; NOTHING reused
+    _wu = {WU_SMOKE_KEY: (wu_smoke_rows(), 1, WU_SMOKE_ROUNDS),
+           WU_PRIOR_KEY: (wu_prior_rows(), 12, WU_ROUNDS),
+           WU_PRIOR_SEEDS_KEY: (wu_prior_seed_rows(), 8, WU_ROUNDS),
+           WU_LADDER_KEY: (wu_ladder_rows(), 3, WU_ROUNDS),
+           WU_ICL_KEY: (wu_icl_rows(), 6, WU_ROUNDS),
+           WU_ENV_KEY: (wu_env_rows(), 10, WU_ROUNDS),
+           WU_ROUTE_SMOKE_KEY: (wu_route_rows(), 12, WU_ROUNDS),
+           WU_ROUTE_SEEDS_KEY: (wu_route_rows(WU_SEEDS), 24, WU_ROUNDS)}
+    # THE CONTROLS KEY QUEUES NOTHING. Perfect prediction, no-platform
+    # (c_beta=0) and the frozen replay are LINEAR maps of vectors that
+    # already exist -- they depend on no language model, so a GPU job
+    # would only re-derive arithmetic. It is kept as a NAMED key because
+    # it is part of the conceptual design and someone will type it: the
+    # submit script routes it to an explicit refusal that points at the
+    # CPU path, which is strictly better than a missing-file error.
+    assert WU_CONTROLS_KEY not in _wu
+    for _suffix in ("configs_pofd_", "at_pofd_"):
+        assert not os.path.exists(
+            os.path.join(HERE, f"{_suffix}{WU_CONTROLS_KEY}"
+                               f"{'.txt' if 'configs' in _suffix else '.sub'}")), \
+            f"{WU_CONTROLS_KEY} must have NO generated file: it queues 0 jobs"
+    _all_wu = set()
+    for _key, (_rows, _n, _rounds) in _wu.items():
+        assert len(_rows) == _n, (_key, len(_rows), _n)
+        _tags = {r.split(",")[0] for r in _rows}
+        assert len(_tags) == _n, f"duplicate tags in {_key}"
+        for _t in _tags:
+            # FJ has neither an AI gate nor a bounded-confidence gate, so
+            # a tag carrying _ea/_es would name something that never ran
+            assert "_ea" not in _t and "_es" not in _t, _t
+            assert _t.startswith("pofdwu_"), _t
+            assert f"_in{WU_INNER}_" in _t, _t
+            assert _t.endswith(f"_r{_rounds}"
+                               + ("smoke" if _key == WU_SMOKE_KEY else "")), _t
+        for r in _rows:
+            _c = [x.strip() for x in r.split(",")]
+            assert _c[8] == "fj", r                    # POP_MODEL
+            assert _c[5] == "replace", r               # replace-only data
+            # W_PLAT is pinned: the platform dose lives in FJ_BETA_SCALE
+            # alone, so it can never be applied twice
+            assert _c[11] == "1.0", r
+            assert _c[14] == "dataset" and _c[15] == "dataset", r
+            assert _c[18] == str(WU_INNER), r          # K_FJ
+            assert int(_c[29]) == _rounds, r           # outer horizon
+            assert _c[1] in ("sft", "sft_kl", "frozen"), r
+            # the arm token and the queue payload must agree, or a tag
+            # would name a channel the run did not use
+            _hits = [a for a in WU_ARM_COLS if f"_{a}_pa" in _c[0]]
+            assert len(_hits) == 1, (_c[0], _hits)
+            _a = WU_ARM_COLS[_hits[0]]
+            assert (_c[1], _c[2], _c[19], _c[20], _c[21]) == (
+                _a["style"], _a["beta"], _a["iclmode"], str(_a["iclk"]),
+                str(_a["icld"])), r
+            assert (int(_c[25]), int(_c[26])) == (_a["uselora"],
+                                                  _a["fresh"]), r
+            # the scale in the tag must be the scale on the queue
+            assert f"_pad{_num(float(_c[16]))}_" in _c[0], r
+            assert f"_pbd{_num(float(_c[17]))}_" in _c[0], r
+            # the seed rides BOTH the tag and the queue column; the tag's
+            # last two tokens are always s<seed> and r<rounds>, so this
+            # needs no regex and no positional model split
+            _stok = _c[0].split("_")[-2]
+            assert _stok[0] == "s" and int(_c[3]) == int(_stok[1:]), r
+            _is_route = "_rtT_" in _c[0] or "_rtC_" in _c[0]
+            if _is_route:
+                assert float(_c[22]) == (WU_ROUTE_FRAC if "_rtT_" in _c[0]
+                                         else WU_ROUTE_CONTROL_FRAC), r
+                assert int(_c[23]) == WU_ROUTE_SEED, r
+                # the runner REFUSES an injected value outside [0, 1], so
+                # there is no out-of-range "no-op" sentinel to reach for
+                assert 0.0 <= float(_c[24]) <= 1.0, r
+                assert float(_c[24]) == WU_ROUTE_VALUE, r
+            else:
+                assert (float(_c[22]), int(_c[23]), float(_c[24])) == \
+                    (0.0, 0, 0.0), r
+        _sub = wu_sub(_key, _rows, rounds=_rounds)
+        _env = next(ln for ln in _sub.splitlines()
+                    if ln.startswith("environment"))
+        assert "DATASET=pokec" in _env and "ML_TARGET" not in _env
+        assert "POP_MODEL=fj" in _env and "FJ_UPDATE_VERSION=wu1" in _env
+        assert "FJ_PEER_SOURCE=$(peersrc)" in _env
+        assert "FJ_PLATFORM_SOURCE=$(platsrc)" in _env
+        assert "FJ_ALPHA_SCALE=$(ascale)" in _env
+        assert "FJ_BETA_SCALE=$(bscale)" in _env
+        assert "FJ_INNER_STEPS=$(inner)" in _env
+        assert "FJ_OBSERVED_PASSTHROUGH=1" in _env
+        assert "WU_ICL_MODE=$(iclmode)" in _env
+        assert "ROUTING_TREAT_FRAC=$(rtfrac)" in _env
+        assert "KL_DIRECTION=forward" in _env
+        # NO SCALAR alpha/beta anywhere: a scalar next to a dataset
+        # source is the ambiguity this family exists to remove
+        assert "FJ_ALPHA=" not in _env and "FJ_BETA=" not in _env
+        assert "FJ_PEER_ALPHA" not in _env
+        # train on the OBSERVED set only -- a held-out opinion can never
+        # reach the optimizer if the batch is drawn from a 1730 prefix
+        assert f"N_LABELED={WU_N_OBSERVED}" in _env
+        assert f"TRAIN_CAP={WU_N_OBSERVED}" in _env
+        assert "AI_GATE_MODE" not in _env and "PEER_GATE_MODE" not in _env
+        assert "KL_REF_ADAPTER" not in _env
+        assert f'CUDADeviceName == "{WU_H100}"' in _sub
+        _prior_tags = {r.split(",")[0] for rows in files.values() for r in rows}
+        assert not (_tags & _prior_tags), f"wu collision {_key}"
+        assert not (_tags & _all_wu), f"wu internal collision {_key}"
+        _all_wu |= _tags
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = _n
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    # frozen extraction: its own row schema and sub, no FJ parameters
+    _wuzs = wu_frozen_rows()
+    assert len(_wuzs) == 6 and len(WU_FROZEN_MODELS) == len(WU_MODELS)
+    _wuzs_tags = {r.split(",")[0] for r in _wuzs}
+    assert len(_wuzs_tags) == 6
+    for _t in _wuzs_tags:
+        # an extraction applies no FJ parameter, so it must name none
+        for _tok in ("_pa", "_pb", "_in", "_rt"):
+            assert _tok not in _t, (_tok, _t)
+    _wuzs_sub = wu_frozen_sub(WU_FROZEN_KEY, _wuzs)
+    _wuzs_env = next(ln for ln in _wuzs_sub.splitlines()
+                     if ln.startswith("environment"))
+    assert "FJ_" not in _wuzs_env and "POP_MODEL" not in _wuzs_env
+    assert "DATASET=pokec" in _wuzs_env
+    assert "EPS_AI=$(eps_ai)" in _wuzs_env      # 0 under the strict gate
+    assert f'CUDADeviceName == "{WU_H100}"' in _wuzs_sub
+    assert not (_wuzs_tags & {r.split(",")[0]
+                              for rows in files.values() for r in rows})
+    files[os.path.join(HERE, f"configs_pofd_{WU_FROZEN_KEY}.txt")] = _wuzs
+    expected[os.path.join(HERE, f"configs_pofd_{WU_FROZEN_KEY}.txt")] = 6
+    cube_subs[os.path.join(HERE, f"at_pofd_{WU_FROZEN_KEY}.sub")] = _wuzs_sub
+
+    # ---- the reuse arithmetic, asserted rather than described --------
+    _wu_prior_tags = {r.split(",")[0] for r in wu_prior_rows()}
+    # LADDER: 5 conceptual, 2 reused, 3 queued. The reused tags must be
+    # BYTE-IDENTICAL to the prior key's rows -- if they were merely
+    # similar, the ladder would be missing its two anchors and nobody
+    # would notice until the analyzer scored a 3-point ladder.
+    _lad_reuse = set(wu_ladder_reused())
+    assert len(_lad_reuse) == 2, _lad_reuse
+    assert _lad_reuse <= _wu_prior_tags, _lad_reuse - _wu_prior_tags
+    assert not (_lad_reuse & {r.split(",")[0] for r in wu_ladder_rows()})
+    assert len(WU_LADDER) == len(_lad_reuse) + len(wu_ladder_rows()) == 5
+    # ICL: 10 conceptual, 4 reused, 6 queued.
+    _icl_reuse = set(wu_icl_reused())
+    assert len(_icl_reuse) == 4, _icl_reuse
+    assert _icl_reuse <= _wu_prior_tags, _icl_reuse - _wu_prior_tags
+    assert not (_icl_reuse & {r.split(",")[0] for r in wu_icl_rows()})
+    assert (len(WU_ICL_MODELS) * len(WU_ICL_ARMS)
+            == len(_icl_reuse) + len(wu_icl_rows()) == 10)
+    # ENVIRONMENT: the two collapses, each asserted on the cell list
+    # itself rather than on a count someone wrote down.
+    _pairs = wu_env_pairs()
+    assert len(_pairs) == 5, _pairs                    # centre shared once
+    assert _pairs.count((1.0, 1.0)) == 1
+    _cells = wu_env_cells()
+    assert len(_cells) == 13, len(_cells)              # 15 - 2 (c_beta=0)
+    assert sum(1 for a, ca, cb in _cells if cb == 0.0) == 1
+    assert [a for a, ca, cb in _cells if cb == 0.0] == ["b0"]
+    _env_reuse = set(wu_env_reused())
+    assert len(_env_reuse) == 3, _env_reuse
+    # two of the three centre cells come from the prior key, the third
+    # (phist8) from the ICL key -- named, not assumed
+    assert len(_env_reuse & _wu_prior_tags) == 2
+    assert len(_env_reuse & {r.split(",")[0] for r in wu_icl_rows()}) == 1
+    assert len(_cells) - len(_env_reuse) == len(wu_env_rows()) == 10
+    # ROUTING: paired twins, nothing reused, and the pair differs ONLY in
+    # the routed value and the side token.
+    for _seeds, _n in (((0,), 12), (tuple(WU_SEEDS), 24)):
+        _rr = wu_route_rows(_seeds)
+        assert len(_rr) == _n and len({r.split(",")[0] for r in _rr}) == _n
+        _byside = {}
+        for r in _rr:
+            _c = [x.strip() for x in r.split(",")]
+            _byside.setdefault(_c[0].replace("_rtT_", "_rt_")
+                                    .replace("_rtC_", "_rt_"), []).append(_c)
+        assert len(_byside) == _n // 2
+        for _k2, _pair in _byside.items():
+            assert len(_pair) == 2, _k2
+            _t, _cn = sorted(_pair, key=lambda c: float(c[22]))[::-1]
+            # the tags differ ONLY in the side token, and every queue
+            # column except the routed FRACTION is identical -- that is
+            # what makes the two runs a twin pair rather than two runs.
+            # Same cohort seed and same injected value on both sides, so
+            # the cohort is recomputable from either row.
+            assert _t[0].replace("_rtT_", "") == _cn[0].replace("_rtC_", "")
+            assert _t[1:22] == _cn[1:22], _k2     # everything up to rtfrac
+            assert _t[23:] == _cn[23:], _k2       # ... and everything after
+            assert float(_t[22]) == WU_ROUTE_FRAC
+            assert float(_cn[22]) == WU_ROUTE_CONTROL_FRAC
+    assert not ({r.split(",")[0] for r in wu_route_rows()} & _wu_prior_tags)
+    # the seeded routing key is disjoint from the seed-0 one
+    assert not ({r.split(",")[0] for r in wu_route_rows(WU_SEEDS)}
+                & {r.split(",")[0] for r in wu_route_rows()})
+    # the seed replicates change NOTHING but the seed
+    def _wu_stem(tag):
+        """everything before the trailing _s<seed>_r<rounds> pair"""
+        return "_".join(tag.split("_")[:-2])
+    _s0 = {}
+    for r in wu_prior_rows():
+        _c = [x.strip() for x in r.split(",")]
+        _s0[_wu_stem(_c[0])] = _c[1:3] + _c[14:29]
+    for r in wu_prior_seed_rows():
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[1:3] + _c[14:29] == _s0[_wu_stem(_c[0])], r
+    # every WU key's job count, printed with the arithmetic so the report
+    # and the files cannot disagree
+    assert sum(_n for _, _n, _ in _wu.values()) + len(_wuzs) == 82
 
     # ---- adapter KL / soft-decode probe (AKL) -----------------------
     # One job per key, no grid. The checks that matter here are not about

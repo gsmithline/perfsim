@@ -1,0 +1,1 @@
+pofdwu_qwen7b_b1_pad1_pbd1_in100_s0_r3smoke, sft_kl, 1, 0, 1, replace, 1.0, fixed, fj, 0.0, 0.0, 1.0, loop, 0.0, dataset, dataset, 1, 1, 100, none, 0, 0, 0, 0, 0, 1, 1, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

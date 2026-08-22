@@ -71,6 +71,51 @@ appended one JSON line per round to telemetry.json (crash-safe):
               round 0 all True) and the ACTUAL labels fed to the learner, so
               batch composition is verifiable end-to-end offline. Empty
               tensors everywhere else.
+  model_pred_raw / served_raw / fj_x_init_raw / fj_u1_raw /
+  train_idx_raw / observed_mask   trajectory.pt, FJ_UPDATE_VERSION=wu1
+              runs (2026-08-22, Wu replication). Present on every wu1
+              run, EMPTY where the path did not run, absent on legacy/ab
+              runs -- so "no passthrough" and "written before the
+              feature existed" are distinguishable.
+                model_pred_raw  [T,n] the RAW model output, BEFORE the
+                                observed passthrough. nan on every
+                                OBSERVED agent, because under
+                                FJ_OBSERVED_PASSTHROUGH=1 the model was
+                                never ASKED there -- a 0.0 or a copy of
+                                x would be indistinguishable from a real
+                                answer when this array is read back.
+                served_raw      [T,n] the exact full platform vector
+                                s(t) handed to run_wu: x_O(t) on the
+                                observed set, model output on held-out.
+                                Bit-identical to pred_raw by
+                                construction (config records the alias
+                                pred_raw_alias="served_raw"); saved
+                                separately so the identity is a checked
+                                fact, not a documented intention.
+                fj_x_init_raw   [T,n] x_init^(t) = (1-beta) innate +
+                                beta s(t) -- pins (beta, s(t)).
+                fj_u1_raw       [T,n] u^(1); contract-named twin of the
+                                existing fj_u1, which is unchanged.
+                train_idx_raw   [T,|O|] the ORDERED observed ids the
+                                round trained/prompted on (passthrough
+                                runs only); train_y_raw carries their
+                                labels, which must equal x_O(t).
+                observed_mask   [n] bool, the observed set O itself, so
+                                the split is never re-derived from
+                                N_LABELED by a reader guessing a
+                                different convention.
+  wu_ctx_log.json.gz   WU_ICL_MODE != none runs (2026-08-22): per round
+              one JSON line carrying, PER AGENT, the exact ids used, the
+              exact values rendered, the exact rendered text, and
+              history_source in {platform_prediction, post_fj_opinion,
+              observed_peer}. wu_context.audit_entry re-derives the
+              strict guarantee from those fields alone -- ids inside O,
+              values == x_O[ids], text numbers == logged values -- so a
+              held-out label in a strict run is detectable offline.
+              Rows and config both carry wu_icl_extension, True ONLY for
+              expressed_history, which shows the model a held-out
+              agent's own opinion and is therefore NOT Wu's observation
+              model.
   sft_idx_raw / sft_y_raw / sft_dup_idx   trajectory.pt,
               SFT_EXCLUDE_CLAMPED=1 runs only (2026-08-18,
               mistral_clamp_exclude_a wave): per deploy round the ORDERED
@@ -128,6 +173,14 @@ _GP_PATH = Path(__file__).resolve().parent / "_gated_pop.py"
 _spec_gp = importlib.util.spec_from_file_location("_gated_pop", _GP_PATH)
 gp = importlib.util.module_from_spec(_spec_gp)
 _spec_gp.loader.exec_module(gp)
+
+# Wu-replication context construction (2026-08-22). Also transformers-free,
+# for the same reason: the three ICL mechanisms and the observed-passthrough
+# served vector must be testable on a laptop without a model.
+_WC_PATH = Path(__file__).resolve().parent / "wu_context.py"
+_spec_wc = importlib.util.spec_from_file_location("wu_context", _WC_PATH)
+wuc = importlib.util.module_from_spec(_spec_wc)
+_spec_wc.loader.exec_module(wuc)
 
 
 def _chat_template_kwargs():
@@ -270,7 +323,22 @@ def load_pokec_setup(pokec_dir: Path):
     }
 
 
-def pokec_build_prompt(profile, tokenizer):
+def pokec_build_prompt(profile, tokenizer, context_block=None):
+    """Pokec zero-shot prompt, with an OPTIONAL context slot.
+
+    BYTE-IDENTICAL WHEN context_block IS None OR EMPTY. The slot is
+    spelled exactly as load_movielens_setup's builder spells it --
+    ctx = f"\\n{context_block}\\n" if context_block else "", interpolated
+    as f"{profile_str}\\n{ctx}\\n" -- so with no context the string
+    collapses back to the original f"{profile_str}\\n\\n". Every archived
+    Pokec run's prompts therefore reproduce to the byte, which
+    tests/test_wu_icl.py pins against a frozen copy of the pre-2026-08-22
+    implementation rather than taking on trust.
+
+    "" and None behave identically on purpose: a K=0 / D=0 baseline
+    renders the empty string, and it must not be a different prompt from
+    a plain zero-shot run or the no-memory baseline would be confounded.
+    """
     profile_lines = []
     for col in PROMPT_COLS:
         val = profile.get(col, "")
@@ -286,10 +354,11 @@ def pokec_build_prompt(profile, tokenizer):
             val = translate_alcohol(val)
         profile_lines.append(f"- {col}: {val}")
     profile_str = "\n".join(profile_lines) if profile_lines else "- (no profile info)"
+    ctx = f"\n{context_block}\n" if context_block else ""
     user_msg = (
         "Estimate this user's attitude toward smoking based on their profile.\n"
         "Profile:\n"
-        f"{profile_str}\n\n"
+        f"{profile_str}\n{ctx}\n"
         "Output a single number in [0, 1] (1 = very positive, 0 = very negative). "
         "Respond with only the number, e.g. 0.42."
     )
@@ -732,6 +801,60 @@ def main() -> int:
     # deliberately NOT EPOCH_SIZE: that knob is shared with other code
     # paths, so reusing it would couple K to an unrelated setting
     fj_inner_steps = _env_int("FJ_INNER_STEPS", 100)
+    # --- WU PARAMETER SOURCES (2026-08-22, Wu replication) -------------
+    # Wu's population is HETEROGENEOUS: Pokec ships a per-agent peer
+    # susceptibility alpha_i (hetero_peer_sus2163.pkl, mean .8909) and a
+    # per-agent platform trust beta_i (hetero_platform_sus2163.pkl, mean
+    # .8890). The wu1 operator as first written used the dataset beta but
+    # a HOMOGENEOUS alpha (the FJ_ALPHA scalar), so these two knobs name
+    # the source explicitly instead of leaving it implicit in the code:
+    #   FJ_PEER_SOURCE      homogeneous (default) -> alpha_i = FJ_ALPHA
+    #                       dataset               -> alpha_i = setup["peer_sus"]
+    #   FJ_PLATFORM_SOURCE  dataset (default)     -> beta_i from platform_sus
+    #                       homogeneous           -> beta_i = 1 before scaling,
+    #                                                i.e. beta = W_PLAT * scale
+    # The DEFAULTS reproduce the existing wu1 path bit-for-bit; that is
+    # why they are asymmetric (homogeneous alpha, dataset beta) rather
+    # than tidy. FJ_ALPHA_SCALE / FJ_BETA_SCALE are dose dials c_alpha,
+    # c_beta in [0,1] applied to whichever source was chosen; at the
+    # default 1.0 the multiply is SKIPPED entirely, not multiplied by
+    # one, so no float32 rounding can differ from the archived path.
+    fj_peer_source = os.environ.get("FJ_PEER_SOURCE", "homogeneous")
+    fj_platform_source = os.environ.get("FJ_PLATFORM_SOURCE", "dataset")
+    fj_alpha_scale = _env_float("FJ_ALPHA_SCALE", 1.0)
+    fj_beta_scale = _env_float("FJ_BETA_SCALE", 1.0)
+    # FJ_OBSERVED_PASSTHROUGH=1 (Wu's platform information model): the
+    # platform only ever serves a MODEL prediction to the agents it does
+    # NOT observe. Observed agents are handed their own current opinion
+    # x_i(t) straight through -- the platform has no reason to guess a
+    # label it already holds, and generating one wastes the entire
+    # observed budget on rows the loop discards. Off by default; the
+    # whole path is guarded so every archived run is byte-identical.
+    fj_observed_passthrough = _env_int("FJ_OBSERVED_PASSTHROUGH", 0) == 1
+    # WU_ICL_MODE: which of the THREE distinct in-context mechanisms runs.
+    # They are kept apart in code, config and logs -- see wu_context.py --
+    # because two are inside Wu's observation model and one is not:
+    #   none               frozen, no memory (the required baseline)
+    #   observed_context   K demos drawn ONLY from the observed set O,
+    #                      each = profile -> that agent's CURRENT opinion
+    #   prediction_history the agent's OWN past PLATFORM PREDICTIONS,
+    #                      depth D (what the platform previously served)
+    #   expressed_history  EXTENSION, NOT Wu: the agent's OWN past
+    #                      POST-FJ opinions, depth D. Reveals held-out
+    #                      opinion, which Wu's platform never observes,
+    #                      so every log line and config row it produces
+    #                      carries wu_icl_extension = True.
+    wu_icl_mode = wuc.validate_mode(os.environ.get("WU_ICL_MODE", "none"))
+    wu_icl_k = _env_int("WU_ICL_K", 0)
+    wu_icl_d = _env_int("WU_ICL_D", 0)
+    # ROUTING TREATMENT (stage-4 twin): set a seeded fraction of the
+    # OBSERVED agents' INNATE opinions to ROUTING_TREAT_VALUE before
+    # anything runs. Under passthrough those agents are served their own
+    # (treated) opinion, so this is an intervention on what the platform
+    # routes, not on what the model says. 0 = off, no RNG drawn.
+    routing_treat_frac = _env_float("ROUTING_TREAT_FRAC", 0.0)
+    routing_treat_seed = _env_int("ROUTING_TREAT_SEED", 0)
+    routing_treat_value = _env_float("ROUTING_TREAT_VALUE", 1.0)
     eps = _env_float("EPS", 0.3)
     eps_ai = _env_float("EPS_AI", eps)   # AI gate width; defaults to eps (coupled) for back-compat
     # AI_GATE_MODE (2026-08-13, sft_icl_reach wave): "threshold" (default) =
@@ -936,6 +1059,95 @@ def main() -> int:
                              "AI_GATE_MODE/PEER_GATE_MODE at threshold")
         if canary_delta != 0.0:
             raise ValueError("FJ_UPDATE_VERSION=wu1 does not apply CANARY_DELTA")
+    # ---- Wu parameter sources / passthrough / ICL validation ----------
+    # Every check below is LOUD. Each of these knobs changes what the
+    # experiment IS -- who the platform observes, whose numbers the
+    # prompt shows -- so a silently-ignored setting would produce a
+    # perfectly well-formed artifact answering a different question.
+    for _nm, _v in (("FJ_PEER_SOURCE", fj_peer_source),
+                    ("FJ_PLATFORM_SOURCE", fj_platform_source)):
+        if _v not in ("dataset", "homogeneous"):
+            raise ValueError(f"{_nm} must be 'dataset' or 'homogeneous'; "
+                             f"got {_v!r}")
+    for _nm, _v in (("FJ_ALPHA_SCALE", fj_alpha_scale),
+                    ("FJ_BETA_SCALE", fj_beta_scale)):
+        if not (0.0 <= _v <= 1.0):
+            raise ValueError(f"{_nm} must be in [0, 1]; got {_v}")
+    _wu_knobs_on = (fj_peer_source != "homogeneous"
+                    or fj_platform_source != "dataset"
+                    or fj_alpha_scale != 1.0 or fj_beta_scale != 1.0
+                    or fj_observed_passthrough
+                    or wu_icl_mode != "none" or routing_treat_frac > 0)
+    if _wu_knobs_on and fj_update_version != "wu1":
+        raise ValueError(
+            "FJ_PEER_SOURCE / FJ_PLATFORM_SOURCE / FJ_ALPHA_SCALE / "
+            "FJ_BETA_SCALE / FJ_OBSERVED_PASSTHROUGH / WU_ICL_MODE / "
+            "ROUTING_TREAT_FRAC are Wu-replication knobs and require "
+            "FJ_UPDATE_VERSION=wu1 -- the legacy FJ operator would "
+            "silently ignore them")
+    if fj_observed_passthrough:
+        # the passthrough is DEFINED by the labeled/unlabeled split that
+        # ships with Pokec (1730 observed + 433 held out). On any other
+        # dataset "observed" would just mean "the first N_LABELED rows",
+        # which is a prefix, not an observation model.
+        if os.environ.get("DATASET", "pokec") != "pokec":
+            raise ValueError("FJ_OBSERVED_PASSTHROUGH requires DATASET=pokec "
+                             "(the observed/held-out split is the dataset's)")
+        if n_labeled <= 0:
+            raise ValueError("FJ_OBSERVED_PASSTHROUGH needs N_LABELED > 0 "
+                             "(N_LABELED IS the observed set O)")
+        if data_regime != "replace":
+            raise ValueError(
+                "FJ_OBSERVED_PASSTHROUGH requires DATA_REGIME=replace: the "
+                "served value on O is x_O(t), the CURRENT population "
+                "opinion, and only the replace regime guarantees the "
+                "round's labels are that round's opinions")
+        if replay_frac > 0 or pristine_frac > 0:
+            raise ValueError("FJ_OBSERVED_PASSTHROUGH is exclusive with "
+                             "REPLAY_FRAC / PRISTINE_FRAC (they rewrite the "
+                             "labels, so x_O(t) would stop being x_O(t))")
+        if train_cap > 0 or sft_sample_n > 0:
+            raise ValueError("FJ_OBSERVED_PASSTHROUGH is exclusive with "
+                             "TRAIN_CAP / SFT_SAMPLE_N: the served vector on "
+                             "O must cover EVERY observed agent")
+    if wu_icl_mode != "none":
+        if os.environ.get("DATASET", "pokec") != "pokec":
+            raise ValueError("WU_ICL_MODE currently requires DATASET=pokec")
+        if training_style != "frozen":
+            raise ValueError(
+                "WU_ICL_MODE requires TRAINING_STYLE=frozen: all three "
+                "mechanisms are in-context adaptation of a FROZEN "
+                "predictor. With gradients on, an ICL dose and a training "
+                "dose would be confounded.")
+        if wuc.mode_needs_k(wu_icl_mode) and wu_icl_k < 0:
+            raise ValueError(f"WU_ICL_K must be >= 0; got {wu_icl_k}")
+        if wuc.mode_needs_d(wu_icl_mode) and wu_icl_d < 0:
+            raise ValueError(f"WU_ICL_D must be >= 0; got {wu_icl_d}")
+        if wuc.mode_needs_k(wu_icl_mode) and wu_icl_d != 0:
+            raise ValueError(f"WU_ICL_MODE={wu_icl_mode} is the "
+                             f"demonstration mechanism (K); leave WU_ICL_D=0")
+        if wuc.mode_needs_d(wu_icl_mode) and wu_icl_k != 0:
+            raise ValueError(f"WU_ICL_MODE={wu_icl_mode} is a personal-memory "
+                             f"mechanism (D); leave WU_ICL_K=0")
+        if wu_icl_mode == "observed_context" and not fj_observed_passthrough:
+            raise ValueError(
+                "WU_ICL_MODE=observed_context requires "
+                "FJ_OBSERVED_PASSTHROUGH=1: the demonstrations show the "
+                "CURRENT opinions of the observed set, which only exists "
+                "as a live quantity under the passthrough design")
+    if wu_icl_mode != "none" and (icl_k > 0 or icl_days > 0):
+        raise ValueError("WU_ICL_MODE is exclusive with the legacy "
+                         "ICL_K / ICL_DAYS knobs (two context builders "
+                         "would both write the prompt's context slot)")
+    if routing_treat_frac != 0.0:
+        if not 0.0 < routing_treat_frac <= 1.0:
+            raise ValueError(f"ROUTING_TREAT_FRAC must be in (0, 1]; got "
+                             f"{routing_treat_frac}")
+        if not 0.0 <= routing_treat_value <= 1.0:
+            raise ValueError(f"ROUTING_TREAT_VALUE must be in [0, 1]; got "
+                             f"{routing_treat_value}")
+        if os.environ.get("DATASET", "pokec") != "pokec":
+            raise ValueError("ROUTING_TREAT_FRAC requires DATASET=pokec")
     if ai_gate_mode != "threshold" and pop_model != "ab":
         raise ValueError("AI_GATE_MODE=all_open requires POP_MODEL=ab (the "
                          "eps_ai gate exists only in the ab population)")
@@ -1289,6 +1501,43 @@ def main() -> int:
         # simulation path reads it. check_dpo_pair treats it like host.
         "hardware": _hardware_meta(),
     }
+    if fj_update_version == "wu1":
+        # WU-REPLICATION SURFACE (2026-08-22). Written for every wu1 run,
+        # including the ones that leave every knob at its default: the
+        # whole point of naming the parameter SOURCE is that "which alpha
+        # did this run use" must be answerable from the artifact, and a
+        # field that appears only when it is non-default cannot answer it
+        # (absent would mean both "old code" and "the default"). wu1 is
+        # itself opt-in and new, so no archived wave is touched.
+        config.update({
+            "fj_peer_source": fj_peer_source,
+            "fj_platform_source": fj_platform_source,
+            "fj_alpha_scale": fj_alpha_scale,
+            "fj_beta_scale": fj_beta_scale,
+            "fj_observed_passthrough": fj_observed_passthrough,
+            "wu_icl_mode": wu_icl_mode,
+            "wu_icl_k": wu_icl_k,
+            "wu_icl_d": wu_icl_d,
+            # the observation-semantic flag, at CONFIG level as well as on
+            # every log row: expressed_history shows the model a held-out
+            # agent's own opinion, which Wu's platform never observes
+            "wu_icl_extension": wuc.is_extension(wu_icl_mode),
+            "wu_icl_history_source": wuc.HISTORY_SOURCE[wu_icl_mode],
+            "routing_treat_frac": routing_treat_frac,
+            "routing_treat_seed": routing_treat_seed,
+            "routing_treat_value": routing_treat_value,
+        })
+        if fj_observed_passthrough:
+            # THE ALIAS, RECORDED EXPLICITLY. pred_raw keeps its existing
+            # meaning -- "the vector the platform served" -- which under
+            # passthrough IS served_raw, so the two are bit-identical and
+            # check_pofd_sanity's pred_raw == fj_served_used assertion
+            # still holds. The model's own outputs, which are NOT what
+            # was served on O, live in the NEW model_pred_raw field.
+            config["pred_raw_alias"] = "served_raw"
+            config["model_pred_raw_semantics"] = (
+                "raw model output BEFORE passthrough; nan on observed "
+                "agents, who were never prompted")
     if innate_clamp_mode != "off":
         # recorded ONLY when the clamp is on -- an off-mode run's
         # config.json stays byte-identical to pre-clamp code (absent ==
@@ -1466,6 +1715,42 @@ def main() -> int:
         raise ValueError(f"TEACHER_LABEL_DELTA: column {gcol!r} not in profiles")
     n = setup["n"]
     innate = setup["innate"]
+    # ROUTING TREATMENT (stage-4 twin, 2026-08-22). Applied HERE, before
+    # anything reads innate: x(0) = innate, the world clones innate as its
+    # FJ anchor, initial_data's round-0 labels are innate, and under
+    # passthrough the observed agents are served their own current
+    # opinion. Treating innate is therefore the single edit that makes
+    # the treated cohort's value propagate through every one of those
+    # channels consistently; patching any later copy would leave the
+    # others disagreeing. frac=0 draws no RNG and clones nothing, so an
+    # untreated run is byte-identical.
+    routing_treat_idx = None
+    routing_treat_hash = None
+    if routing_treat_frac > 0:
+        _obs_pool = torch.arange(min(n_labeled, n))
+        _k_tr = int(round(routing_treat_frac * _obs_pool.numel()))
+        if _k_tr < 1:
+            raise ValueError(f"ROUTING_TREAT_FRAC={routing_treat_frac} "
+                             f"selects 0 of {_obs_pool.numel()} observed "
+                             f"agents")
+        # dedicated generator, seeded by ROUTING_TREAT_SEED ONLY: the twin
+        # must be able to reuse the same cohort across run seeds
+        _tr_gen = torch.Generator().manual_seed(routing_treat_seed + 611_000)
+        routing_treat_idx = _obs_pool[
+            torch.randperm(_obs_pool.numel(), generator=_tr_gen)[:_k_tr]
+        ].sort().values.long()
+        innate = innate.clone()
+        innate[routing_treat_idx] = float(routing_treat_value)
+        setup["innate"] = innate
+        routing_treat_hash = wuc.idx_sha256(routing_treat_idx.numpy())
+        config["routing_treat_idx_sha256"] = routing_treat_hash
+        config["routing_treat_n"] = int(_k_tr)
+        (out_dir / "config.json").write_text(json.dumps(config, indent=2,
+                                                        default=str))
+        print(f"[run] ROUTING TREATMENT: {_k_tr}/{_obs_pool.numel()} "
+              f"OBSERVED agents' innate set to {routing_treat_value:g} "
+              f"(seed {routing_treat_seed}, sha256="
+              f"{routing_treat_hash[:12]}...)", flush=True)
     innate_mean = float(innate.mean())
     build_prompt = setup["build_prompt"]
     print(f"[run] {dataset} ready: N={n}  innate mean={innate_mean:.4f} "
@@ -1667,33 +1952,101 @@ def main() -> int:
     ab_x_cf = None
     ab_adj = None
     w_agent = None
+    # the peer susceptibility ACTUALLY handed to run_wu each round. A
+    # python float when the population is homogeneous, an (N,) tensor
+    # when it is not -- the float branch is kept because
+    # float(torch.full((n,), 0.9)[0]) is 0.8999999761581421, NOT 0.9, and
+    # feeding that back would change (1 - alpha) in float32 and break
+    # bit-identity with every archived wu1 run.
+    fj_alpha_arg = fj_alpha
+    fj_alpha_realized = None
     if run_mode != "direct":
         if pop_model == "fj":
             if fj_update_version == "wu1":
-                # beta_i = W_PLAT * platform_sus_i * PLATFORM_SUS_SCALE.
-                # The archived FJ path passes plat_sus_eff straight through
-                # and drops W_PLAT entirely, so a tag saying beta=.5 would
-                # have run at beta=1 on MovieLens (platform_sus = 1).
-                fj_beta = (w_plat * plat_sus_eff).clamp(0.0, 1.0)
+                # ---- beta_i (platform trust) --------------------------
+                # dataset  -> Wu's per-agent beta_i from the pickle
+                # homogeneous -> beta_i = 1 before scaling, i.e. every
+                #                agent trusts the platform equally and
+                #                beta collapses to W_PLAT x scale (which
+                #                is what MovieLens already is: it ships
+                #                platform_sus = 1 for everyone)
+                # The dataset branch reuses plat_sus_eff UNCHANGED so the
+                # default expression is the archived one, character for
+                # character.
+                if fj_platform_source == "dataset":
+                    fj_beta = (w_plat * plat_sus_eff).clamp(0.0, 1.0)
+                else:
+                    _hom_plat = (torch.ones(n, dtype=torch.float32)
+                                 * platform_scale).clamp(0.0, 1.0)
+                    if not feedback_on:
+                        _hom_plat = _hom_plat * 0.0
+                    fj_beta = (w_plat * _hom_plat).clamp(0.0, 1.0)
+                if fj_beta_scale != 1.0:
+                    # SKIPPED at the default: multiplying by 1.0 is a
+                    # float32 no-op in exact arithmetic but the guard
+                    # makes that a fact about the code, not a claim
+                    fj_beta = (fj_beta * fj_beta_scale).clamp(0.0, 1.0)
+                # ---- alpha_i (peer susceptibility) --------------------
                 # peer_sus is STUBBORNNESS; the peer susceptibility is
-                # alpha, so the world gets 1 - alpha. Built here rather
-                # than taken from the dataset: MovieLens ships
-                # peer_sus = 1, which means fully anchored and therefore
-                # no neighbour mixing whatsoever. run_wu re-checks the
-                # complement every round.
-                fj_peer_sus = torch.full(
-                    (n,), FJWorld.alpha_to_peer_sus(fj_alpha),
-                    dtype=torch.float32)
+                # alpha, so the world gets 1 - alpha ELEMENTWISE.
+                # homogeneous -> the FJ_ALPHA scalar (the archived wu1
+                #                behaviour, and the reason the default is
+                #                homogeneous rather than dataset).
+                # dataset     -> Wu's per-agent alpha_i. NOT taken from
+                #                the dataset by default because MovieLens
+                #                ships peer_sus = 1, which under this
+                #                class means fully ANCHORED, i.e. no
+                #                neighbour mixing at all.
+                # run_wu re-checks the complement every round, per agent.
+                if fj_peer_source == "homogeneous":
+                    _alpha_s = (fj_alpha if fj_alpha_scale == 1.0
+                                else min(max(fj_alpha * fj_alpha_scale,
+                                             0.0), 1.0))
+                    fj_alpha_arg = _alpha_s
+                    fj_alpha_realized = torch.full(
+                        (n,), float(_alpha_s), dtype=torch.float32)
+                    fj_peer_sus = torch.full(
+                        (n,), FJWorld.alpha_to_peer_sus(_alpha_s),
+                        dtype=torch.float32)
+                else:
+                    _alpha_v = setup["peer_sus"].float().clamp(0.0, 1.0)
+                    if fj_alpha_scale != 1.0:
+                        _alpha_v = (_alpha_v * fj_alpha_scale).clamp(0.0, 1.0)
+                    fj_alpha_arg = _alpha_v
+                    fj_alpha_realized = _alpha_v
+                    fj_peer_sus = (1.0 - _alpha_v)
                 world = FJWorld(
                     innate=innate, graph=setup["W"], peer_sus=fj_peer_sus,
                     platform_sus=fj_beta,
                     features=innate, profiles=setup["profiles"],
                 )
-                print(f"[run] FJ wu1 (Wu homogeneous): beta in "
-                      f"[{float(fj_beta.min()):.3f}, {float(fj_beta.max()):.3f}]"
-                      f" (W_PLAT={w_plat} x platform_sus x {platform_scale}), "
-                      f"peer susceptibility alpha={fj_alpha} -> internal "
-                      f"stubbornness {FJWorld.alpha_to_peer_sus(fj_alpha):.3f}, "
+                # RAW vs REALIZED, both hashed. The raw hashes pin which
+                # dataset vectors this run was built from; the realized
+                # hashes pin what the operator was actually handed after
+                # source selection and scaling. A tag can claim either;
+                # only the pair distinguishes "dataset alpha at c=0.5"
+                # from "homogeneous alpha that happens to average the
+                # same".
+                config["fj_alpha_raw_sha256"] = _sha_tensor(setup["peer_sus"])
+                config["fj_beta_raw_sha256"] = _sha_tensor(
+                    setup["platform_sus"])
+                config["fj_alpha_realized_sha256"] = _sha_tensor(
+                    fj_alpha_realized)
+                config["fj_beta_realized_sha256"] = _sha_tensor(fj_beta)
+                config["fj_alpha_realized_mean"] = float(
+                    fj_alpha_realized.mean())
+                config["fj_beta_realized_mean"] = float(
+                    torch.as_tensor(fj_beta).float().mean())
+                print(f"[run] FJ wu1 (Wu): beta source={fj_platform_source} "
+                      f"x c_beta={fj_beta_scale:g} -> "
+                      f"[{float(fj_beta.min()):.3f}, "
+                      f"{float(fj_beta.max()):.3f}] mean "
+                      f"{float(fj_beta.mean()):.4f}; alpha "
+                      f"source={fj_peer_source} x c_alpha="
+                      f"{fj_alpha_scale:g} -> "
+                      f"[{float(fj_alpha_realized.min()):.3f}, "
+                      f"{float(fj_alpha_realized.max()):.3f}] mean "
+                      f"{float(fj_alpha_realized.mean()):.4f}; "
                       f"K={fj_inner_steps} inner steps", flush=True)
             else:
                 fj_beta = plat_sus_eff
@@ -1779,6 +2132,27 @@ def main() -> int:
     mask = torch.zeros(n, dtype=torch.bool)
     mask[:n_labeled] = True
     idx_all = torch.arange(n)
+    # THE OBSERVED SET, NAMED. `mask` has always been "the agents whose
+    # labels reach the learner"; under Wu's information model that IS the
+    # observed set O, and its complement U is the held-out set the
+    # platform must actually predict. Pokec ships the split (1730 + 433);
+    # these are aliases, not a second definition, so O can never drift
+    # from the training mask.
+    observed_mask = mask
+    observed_ids_np = idx_all[observed_mask].numpy().astype(np.int64)
+    heldout_ids = idx_all[~observed_mask]
+    heldout_ids_np = heldout_ids.numpy().astype(np.int64)
+    if fj_observed_passthrough:
+        if heldout_ids.numel() == 0:
+            raise ValueError(
+                f"FJ_OBSERVED_PASSTHROUGH with N_LABELED={n_labeled} on "
+                f"N={n} leaves NO held-out agents -- the platform would "
+                f"serve nothing but passthrough and the model would never "
+                f"be asked a question")
+        print(f"[run] observed passthrough ON: |O|={int(observed_mask.sum())} "
+              f"served their own x_O(t), |U|={heldout_ids.numel()} predicted "
+              f"by the model (mode={wu_icl_mode} K={wu_icl_k} D={wu_icl_d})",
+              flush=True)
     initial_data = {
         "x": innate[mask].unsqueeze(-1),
         "y": innate[mask].unsqueeze(-1),
@@ -1814,6 +2188,7 @@ def main() -> int:
     pred_block = {}
     loss_block = {}
     last_preds = None
+    last_model_pred = None   # Wu serving path: raw model output, nan on O
     op_round0 = None
     prev_op = None
     fb_prev = None                   # ICRH: previous round's rendered feedback block
@@ -1829,6 +2204,26 @@ def main() -> int:
     # pred_raw IS what moved the population rather than taking it on trust
     fj_served_used = []
     fj_u1 = []          # first inner iterate per round: pins u^(0)=x_init
+    # --- Wu replication artifact channels (2026-08-22) ----------------
+    # All EMPTY unless the corresponding path runs, so an ordinary
+    # trajectory.pt keeps exactly the keys it has always had, holding
+    # torch.empty(0) for these.
+    model_pred_raw = []  # [T, n] the RAW model output, BEFORE passthrough.
+                         # nan on every observed agent, because under
+                         # passthrough the model was never ASKED there --
+                         # not because the answer was discarded. A zero or
+                         # a copy of x would both read as "the model said
+                         # this", so the absence has to be representable.
+    served_raw = []      # [T, n] the exact full platform vector s(t)
+                         # handed to run_wu. Identical to pred_raw by
+                         # construction (pred_raw has always meant "what
+                         # was served"); saved separately so the identity
+                         # is CHECKED rather than assumed.
+    fj_x_init_raw = []   # [T, n] x_init^(t) = (1-beta) innate + beta s(t)
+    fj_u1_raw = []       # [T, n] u^(1), the contract-named twin of fj_u1
+    train_idx_raw = []   # [T, |O|] the ordered observed ids the round
+                         # trained/prompted on
+    wu_ctx_rows = []     # one round_log_line per round -> wu_ctx_log.json.gz
     ppl_raw = []     # per-round per-agent answer perplexity (empirical distribution)
     ans_raw = []     # per-round [K, N_sub] sampled answer redraws (ANS_SAMPLE_K>0)
     ans_idx = list(range(0, n, max(1, n // max(1, ans_sample_n))))[:ans_sample_n]
@@ -2051,6 +2446,30 @@ def main() -> int:
                 sft_sample_y_raw.append(
                     train_data["y"].squeeze(-1).detach().cpu()
                     .float().clone())
+            if fj_observed_passthrough:
+                # THE BATCH, ON RECORD. Recorded HERE, after every batch
+                # rewrite above has run and before the learner touches it,
+                # so what lands in the artifact is exactly what was
+                # trained/prompted on -- not what the env vars imply it
+                # should have been. The passthrough contract is that these
+                # ids are exactly O and these labels are exactly x_O(t),
+                # and both halves are checkable offline against
+                # observed_mask and op_raw[t-1].
+                if train_data is None:
+                    raise RuntimeError(
+                        f"round {t}: observed passthrough has no batch -- "
+                        f"the observed labels x_O(t) are what gets served "
+                        f"on O, so there is nothing to serve")
+                _ti = train_data["agent_idx"].detach().cpu().long().clone()
+                _ty = train_data["y"]
+                _ty = (_ty.squeeze(-1) if _ty.ndim > 1 else _ty)
+                train_idx_raw.append(_ti)
+                train_y_raw.append(_ty.detach().cpu().float().clone())
+                if not torch.equal(_ti, idx_all[observed_mask]):
+                    raise RuntimeError(
+                        f"round {t}: observed passthrough expects the batch "
+                        f"to be exactly the observed set O in order; got "
+                        f"{_ti.numel()} ids that differ from O")
             loss_block = {}
             if train_data is not None:
                 # platform-seat pre-train telemetry: current adapter on the
@@ -2166,7 +2585,95 @@ def main() -> int:
                     loss_block["l_00"] = gp.sft_batch_loss(lm, round0_batch, format_number,
                                                            tel_eval_cap)
             # model-side distribution (predictions for all agents) + health
-            if icl_days > 0 or icl_k > 0 or icrh_on:
+            if fj_observed_passthrough or wu_icl_mode != "none":
+                # ============ WU SERVING PATH (2026-08-22) =============
+                # Two things happen here and only here:
+                #
+                #  1. WHO GETS ASKED. Under passthrough the model is
+                #     prompted for the HELD-OUT agents only. Not asked and
+                #     then overwritten -- ASKED ONLY THERE. On Pokec that
+                #     is 433 generations instead of 2163, and, more
+                #     importantly, an observed agent's served value cannot
+                #     accidentally come from the model, because no model
+                #     output for that agent exists to leak.
+                #
+                #  2. WHAT THE PROMPT CARRIES. One of the three context
+                #     mechanisms, or none. wu_context.py owns the
+                #     construction and the safety guard; the runner just
+                #     supplies the round's live quantities.
+                prof_lookup = setup["profiles"]
+                # x(t): the CURRENT population opinion. At t=0 that is
+                # innate by definition (the world starts there), and from
+                # then on it is the previous round's post-FJ state -- the
+                # same vector the round's labels came from.
+                x_cur = (innate.detach().cpu().float().clone() if t == 0
+                         else prev_op.detach().cpu().float().clone())
+                if fj_observed_passthrough:
+                    # x_O(t) must EQUAL the labels this round was built
+                    # on, or "served their own current opinion" is not
+                    # what happened. Checked, not asserted in a comment.
+                    _lbl = train_y_raw[-1]
+                    _gap = float((x_cur[observed_mask] - _lbl).abs().max())
+                    if _gap > 1e-5:
+                        raise RuntimeError(
+                            f"round {t}: the batch labels differ from "
+                            f"x_O(t) by {_gap:.3e} -- the passthrough would "
+                            f"be serving a stale opinion")
+                    targets = heldout_ids.tolist()
+                else:
+                    targets = list(range(n))
+                _ctx_entries = []
+                prompts = []
+                for i in targets:
+                    ctx_i, _entry = wuc.build_context(
+                        wu_icl_mode, i,
+                        observed_ids=observed_ids_np,
+                        opinion=x_cur,
+                        k=wu_icl_k, d=wu_icl_d,
+                        # prediction_history = what the PLATFORM SERVED to
+                        # this agent before (served_raw); expressed_history
+                        # = the agent's own POST-FJ opinions (op_raw).
+                        # Two different lists, deliberately never merged.
+                        pred_history=served_raw,
+                        expr_history=op_raw,
+                        profile_fn=lambda a: wuc.pokec_profile_bits(
+                            prof_lookup.iloc[int(a)],
+                            alcohol_translator=translate_alcohol),
+                        seed=seed, round_t=t)
+                    _ctx_entries.append(_entry)
+                    # "" and None render the same prompt bytes, so the
+                    # K=0 / D=0 / none baseline IS the zero-shot prompt
+                    prompts.append(build_prompt(prof_lookup.iloc[i],
+                                                lm.tokenizer,
+                                                context_block=ctx_i or None))
+                if wu_icl_mode != "none":
+                    wu_ctx_rows.append(wuc.round_log_line(
+                        t, wu_icl_mode, _ctx_entries,
+                        k=wu_icl_k, d=wu_icl_d))
+                if debug_gen and t <= 1:
+                    print(f"[round {t}] DEBUG_GEN wu prompt sample "
+                          f"(agent {targets[0]}):\n{prompts[0]}", flush=True)
+                vals = gp.probe_predictions(lm, prompts)
+                # nan on O: the model was never asked there. A 0.0 or a
+                # copy of x_O would both be indistinguishable from a real
+                # model answer when this array is read back.
+                mp = torch.full((n,), float("nan"), dtype=torch.float32)
+                for _j, _i in enumerate(targets):
+                    _v = vals[_j]
+                    mp[_i] = (float(_v) if _v is not None and np.isfinite(_v)
+                              else float("nan"))
+                # kept in a variable, appended in the per-round tail with
+                # op_raw / pred_raw, so every [T, n] channel has one row
+                # per ROUND even when DEPLOY_EVERY > 1 (a non-deploy round
+                # re-serves the standing vector, exactly as pred_raw does)
+                last_model_pred = mp.clone()
+                if fj_observed_passthrough:
+                    # s(t) = x_O(t) on O, model on U. One definition,
+                    # shared with the tests and any offline checker.
+                    preds = wuc.served_vector(x_cur, mp, observed_mask)
+                else:
+                    preds = mp.clone()
+            elif icl_days > 0 or icl_k > 0 or icrh_on:
                 prof_lookup = setup["profiles"]
                 # personal memory: each agent's own opinion sequence so far
                 # (day 0 = innate, then one value per completed round)
@@ -2348,12 +2855,25 @@ def main() -> int:
                 # population was not guaranteed to be the vector on record.
                 if last_preds is None:
                     raise RuntimeError("FJ wu1: no served vector this round")
+                # fj_alpha_arg is the REALIZED peer susceptibility: the
+                # FJ_ALPHA float when the population is homogeneous (which
+                # keeps every archived wu1 run bit-identical), an (N,)
+                # tensor of Wu's alpha_i when FJ_PEER_SOURCE=dataset.
                 world.run_wu(last_preds.detach().cpu().float(),
-                             alpha=fj_alpha, n_inner=fj_inner_steps)
+                             alpha=fj_alpha_arg, n_inner=fj_inner_steps)
                 fj_served_used.append(last_preds.detach().cpu().float().clone())
                 # u^(1): the only trace of the inner loop's STARTING POINT
                 # that survives K=100 contraction (see FJWorld.run_wu)
                 fj_u1.append(world.last_u1.detach().cpu().float().clone())
+                # contract-named twins of the same two tensors, plus
+                # x_init^(t) -- with x_init on record the whole round is
+                # reconstructible offline: x_init pins (beta, s(t)), u^(1)
+                # pins that the inner loop started AT x_init, and u^(K) is
+                # op_raw. fj_u1 is kept as well so nothing that reads it
+                # today has to change.
+                fj_x_init_raw.append(
+                    world.last_x_init.detach().cpu().float().clone())
+                fj_u1_raw.append(world.last_u1.detach().cpu().float().clone())
             else:
                 world.run(lm, n_steps=epoch_size)
             op = world.state["opinion"].float()
@@ -2730,6 +3250,19 @@ def main() -> int:
             last_preds.detach().cpu().clone() if last_preds is not None
             else torch.full_like(op.cpu(), float("nan"))
         )
+        if fj_observed_passthrough or wu_icl_mode != "none":
+            # one row per ROUND, like pred_raw, so [T, n] means the same
+            # T everywhere. served_raw duplicates pred_raw by construction
+            # (config records the alias); saved anyway so the identity is
+            # a checkable fact rather than a documented intention.
+            served_raw.append(
+                last_preds.detach().cpu().float().clone()
+                if last_preds is not None
+                else torch.full((n,), float("nan"), dtype=torch.float32))
+            model_pred_raw.append(
+                last_model_pred.detach().cpu().float().clone()
+                if last_model_pred is not None
+                else torch.full((n,), float("nan"), dtype=torch.float32))
         # next round's training pool: population opinions in loop/no_feedback,
         # the model's own served predictions in direct (the Shumailov corner)
         y_next = op if run_mode != "direct" else last_preds
@@ -2756,6 +3289,18 @@ def main() -> int:
         with gzip.open(out_dir / "icl_days_log.json.gz", "wt") as fh:
             for t_ctx, ctxs in icl_days_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
+    if wu_ctx_rows:
+        # THE CONTEXT, VERBATIM. One JSON line per round carrying, per
+        # agent, the exact ids used, the exact values rendered, the exact
+        # rendered text, and the history_source that says WHAT those
+        # numbers are. wu_context.audit_entry re-derives the strict
+        # guarantee from these three fields alone -- ids subset of O,
+        # values == x_O[ids], text numbers == logged values -- so a
+        # held-out label in a strict run is detectable from the artifact
+        # without rerunning anything.
+        with gzip.open(out_dir / "wu_ctx_log.json.gz", "wt") as fh:
+            for r in wu_ctx_rows:
+                fh.write(json.dumps(r) + "\n")
     if raw_gen_rows:
         # every round's raw generations + parsed served values, one JSON
         # line per round (SAVE_RAW_GEN=1 runs only)
@@ -2800,6 +3345,32 @@ def main() -> int:
             "teacher_pred": (teacher_pred if teacher_pred is not None
                              else torch.empty(0)),
         }
+    # --- Wu replication channels (2026-08-22) -------------------------
+    # Written for EVERY wu1 run, empty where the path did not run: an
+    # analyst must be able to tell "this run had no passthrough" from
+    # "this key predates the feature", and an always-present empty tensor
+    # says the first while a missing key says neither. Scoped to wu1
+    # (itself opt-in and new) so no legacy trajectory surface changes at
+    # all -- a legacy/ab run's keys are exactly the ones it had before.
+    if fj_update_version == "wu1":
+        traj_payload.update({
+            "model_pred_raw": (torch.stack(model_pred_raw)
+                               if model_pred_raw else torch.empty(0)),
+            "served_raw": (torch.stack(served_raw)
+                           if served_raw else torch.empty(0)),
+            "fj_x_init_raw": (torch.stack(fj_x_init_raw)
+                              if fj_x_init_raw else torch.empty(0)),
+            "fj_u1_raw": (torch.stack(fj_u1_raw)
+                          if fj_u1_raw else torch.empty(0)),
+            "train_idx_raw": (torch.stack(train_idx_raw)
+                              if train_idx_raw else torch.empty(0)),
+            # O itself, so the split never has to be re-derived from
+            # N_LABELED by a reader who might guess a different convention
+            "observed_mask": observed_mask.detach().cpu().bool().clone(),
+        })
+    if routing_treat_idx is not None:
+        traj_payload["routing_treat_idx"] = routing_treat_idx.cpu().clone()
+        traj_payload["routing_treat_idx_sha256"] = routing_treat_hash
     if sft_dose_rows:
         traj_payload["sft_dose"] = sft_dose_rows
     if save_sft_order and sft_order_idx_raw:

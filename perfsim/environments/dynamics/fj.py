@@ -36,8 +36,10 @@ class FJWorld(StatefulPopulationWorld):
     Args:
         innate:       (N,) or (N, D) per-agent innate opinion.
         graph:        (N, N) normalized influence matrix (see normalize_adjacency).
-        peer_sus:     (N,) peer susceptibility in [0, 1]. 1 = stubborn at x_zero,
-                      0 = pure neighbor average.
+        peer_sus:     (N,) ANCHOR weight (stubbornness) in [0, 1]. 1 = stubborn
+                      at x_zero, 0 = pure neighbor average. Despite the name it
+                      is NOT Wu's peer susceptibility alpha; alpha = 1 - peer_sus.
+                      The convention is stated once, in `alpha_to_peer_sus`.
         platform_sus: per-agent platform trust (paper's beta_i), (N,) tensor or
                       scalar broadcast. 0 = platform-free FJ.
         features:     optional (N, F) features for the predictor; defaults to innate.
@@ -233,41 +235,90 @@ class FJWorld(StatefulPopulationWorld):
     #      REFUSES that: the caller passes the peer susceptibility, and
     #      run_wu checks the world was constructed with its complement.
     #
-    # Jiduan Wu's model, homogeneous-parameter specialization:
-    #     x_init^(t)  = (1 - beta) x^innate + beta m_t
-    #     u^(0)       = x_init^(t)
-    #     u^(l+1)     = (1 - alpha) x_init^(t) + alpha P u^(l),
-    #                   l = 0 .. K-1
+    # Jiduan Wu's model, per-agent parameters (the homogeneous case is the
+    # special case where every entry of alpha / beta is the same number):
+    #     x_init_i^(t)  = (1 - beta_i) x^innate_i + beta_i m_i(t)
+    #     u_i^(0)       = x_init_i^(t)
+    #     u_i^(l+1)     = (1 - alpha_i) x_init_i^(t) + alpha_i (P u^(l))_i,
+    #                     l = 0 .. K-1
     # with beta carried per agent in platform_sus (the runner folds
     # W_PLAT and PLATFORM_SUS_SCALE into it) and P = self._W.
+    #
+    # HETEROGENEOUS alpha (2026-08-22). `alpha` may be a float (every
+    # agent shares one peer susceptibility -- the archived behaviour,
+    # bit-identical) or an (N,) tensor of per-agent peer susceptibilities,
+    # as Pokec actually ships. The complement guard is elementwise in the
+    # vector case: a per-agent alpha makes the alpha/stubbornness swap
+    # HARDER to see, not easier, because a mean over the wrong vector
+    # still lands in [0, 1] and every downstream number stays well-formed.
     # ------------------------------------------------------------------
-    def run_wu(self, predictions: Tensor, *, alpha: float,
+    def run_wu(self, predictions: Tensor, *, alpha: float | Tensor,
                n_inner: int = 1) -> Data:
         """One outer round of Wu's FJ update from a SERVED vector.
 
-        `alpha` is the PEER SUSCEPTIBILITY. The world must have been
-        constructed with peer_sus = 1 - alpha (stubbornness); that is
-        checked here rather than trusted, because passing alpha directly
-        into the internal coefficient silently runs the complement of the
-        intended dynamics and every downstream number would still look
-        well-formed.
+        `alpha` is the PEER SUSCEPTIBILITY, either a scalar (shared by
+        every agent) or an (N,) tensor of per-agent values. The world must
+        have been constructed with peer_sus = 1 - alpha (stubbornness),
+        elementwise; that is checked here rather than trusted, because
+        passing alpha directly into the internal coefficient silently runs
+        the complement of the intended dynamics and every downstream
+        number would still look well-formed.
 
         Returns the emitted Data and leaves `state["opinion"]` at u^(K).
         """
         if not isinstance(n_inner, int) or n_inner < 1:
             raise ValueError(f"n_inner must be a positive int; got {n_inner!r}")
-        if not (0.0 <= float(alpha) <= 1.0):
-            raise ValueError(f"alpha must be in [0, 1]; got {alpha!r}")
-        want_stub = 1.0 - float(alpha)
-        stub = self._peer_sus.reshape(-1)
-        if not torch.allclose(stub, torch.full_like(stub, want_stub),
-                              atol=1e-6):
-            raise ValueError(
-                f"run_wu: peer susceptibility alpha={alpha} requires the "
-                f"world to carry stubbornness peer_sus={want_stub}, but it "
-                f"holds [{float(stub.min())}, {float(stub.max())}]. The "
-                f"internal coefficient is STUBBORNNESS, not alpha -- "
-                f"passing alpha straight in runs 1-alpha peer mixing.")
+        # ---- alpha: scalar or per-agent, and the complement guard -----
+        # The scalar branch is left EXACTLY as it was (python-float
+        # complement, scalar-broadcast multiply) so archived runs replay
+        # bit-for-bit; the vector branch is the additive path.
+        if isinstance(alpha, Tensor):
+            if alpha.ndim != 1 or alpha.shape[0] != self._n:
+                raise ValueError(
+                    f"run_wu: alpha tensor must have shape ({self._n},), one "
+                    f"peer susceptibility per agent; got "
+                    f"{tuple(alpha.shape)}. Pass a python float for the "
+                    f"homogeneous case.")
+            if not torch.isfinite(alpha).all():
+                raise ValueError("run_wu: alpha contains non-finite values")
+            a_vec = alpha.to(dtype=self._dtype).detach().clone()
+            if not torch.all((a_vec >= 0.0) & (a_vec <= 1.0)):
+                raise ValueError(
+                    f"run_wu: alpha must be in [0, 1] per agent; got range "
+                    f"[{float(a_vec.min())}, {float(a_vec.max())}]")
+            want_stub = 1.0 - a_vec
+            stub = self._peer_sus.reshape(-1)
+            gap = (stub - want_stub).abs()
+            if not bool(torch.all(gap <= 1e-6)):
+                i = int(torch.argmax(gap))
+                bad = int((gap > 1e-6).sum())
+                raise ValueError(
+                    f"run_wu: per-agent peer susceptibility alpha requires "
+                    f"the world to carry stubbornness peer_sus = 1 - alpha, "
+                    f"but they disagree on {bad}/{self._n} agents (worst "
+                    f"agent {i}: alpha={float(a_vec[i])}, required "
+                    f"peer_sus={float(want_stub[i])}, world holds "
+                    f"peer_sus={float(stub[i])}). The internal coefficient "
+                    f"is STUBBORNNESS, not alpha -- passing alpha straight "
+                    f"in runs 1-alpha peer mixing.")
+            # broadcast across the feature dimension for 2-D innate
+            a_coef = a_vec if self._is_scalar else a_vec.unsqueeze(-1)
+            anchor_coef = 1.0 - a_coef
+        else:
+            if not (0.0 <= float(alpha) <= 1.0):
+                raise ValueError(f"alpha must be in [0, 1]; got {alpha!r}")
+            want_stub = 1.0 - float(alpha)
+            stub = self._peer_sus.reshape(-1)
+            if not torch.allclose(stub, torch.full_like(stub, want_stub),
+                                  atol=1e-6):
+                raise ValueError(
+                    f"run_wu: peer susceptibility alpha={alpha} requires the "
+                    f"world to carry stubbornness peer_sus={want_stub}, but it "
+                    f"holds [{float(stub.min())}, {float(stub.max())}]. The "
+                    f"internal coefficient is STUBBORNNESS, not alpha -- "
+                    f"passing alpha straight in runs 1-alpha peer mixing.")
+            a_coef = float(alpha)
+            anchor_coef = 1.0 - a_coef
         preds = predictions.to(dtype=self._dtype).detach()
         if self._is_scalar and preds.ndim == 2 and preds.shape[-1] == 1:
             preds = preds.squeeze(-1)
@@ -278,13 +329,14 @@ class FJWorld(StatefulPopulationWorld):
         if not torch.isfinite(preds).all():
             raise ValueError("predictions contain non-finite values")
 
-        a = float(alpha)
         x_init = ((1.0 - self._platform_sus) * self._innate
                   + self._platform_sus * preds)
         u = x_init                      # u^(0) = x_init^(t), NOT the
         u1 = None                       # previous round's population
         for _ in range(n_inner):
-            u = (1.0 - a) * x_init + a * (self._W @ u)
+            # elementwise in the vector case, scalar-broadcast in the
+            # float case -- the same expression either way
+            u = anchor_coef * x_init + a_coef * (self._W @ u)
             if u1 is None:
                 u1 = u.clone()
         # THE FIRST INNER ITERATE IS KEPT AS EVIDENCE.
@@ -306,12 +358,24 @@ class FJWorld(StatefulPopulationWorld):
         return {"x": x_data, "y": y, "agent_idx": self._agent_idx.clone()}
 
     @staticmethod
-    def alpha_to_peer_sus(alpha: float) -> float:
+    def alpha_to_peer_sus(alpha: float | Tensor) -> float | Tensor:
         """Peer susceptibility alpha -> the STUBBORNNESS this class stores.
 
-        Stated once, in the class that owns the convention, instead of
-        being re-derived wherever alpha is used. run_wu enforces it.
+        THE CONVENTION, STATED ONCE. `peer_sus` on this class is the
+        ANCHOR weight (stubbornness), not the peer susceptibility: the
+        update is
+            u <- peer_sus * x_init + (1 - peer_sus) * P u
+                = (1 - alpha) * x_init + alpha * P u,
+        so alpha = 1 - peer_sus. Stated here, in the class that owns the
+        convention, instead of being re-derived wherever alpha is used;
+        run_wu enforces it (elementwise for per-agent alpha).
+
+        Accepts a float (returns a float) or a tensor (returns a tensor of
+        the same shape and dtype), so a per-agent alpha vector can be
+        turned into the world's peer_sus vector by the same call.
         """
+        if isinstance(alpha, Tensor):
+            return 1.0 - alpha
         return 1.0 - float(alpha)
 
     def fj_equilibrium(self, x_zero: Tensor | None = None) -> Tensor:
