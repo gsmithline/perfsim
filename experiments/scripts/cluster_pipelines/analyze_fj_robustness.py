@@ -50,6 +50,7 @@ import argparse
 import csv
 import importlib.util
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -65,7 +66,15 @@ REPO = HERE.parent.parent.parent
 OUT_DIR = REPO / "notes" / "pofd" / "fj_robustness"
 CONDOR = REPO / "experiments" / "condor"
 LATE = (26, 30)          # inclusive, 1-indexed rounds
-CONV_TOL = 1e-6
+# EQUILIBRIUM IS STATIONARITY, NOT A VANISHING STEP. A fresh LoRA is
+# trained every round, so there is an irreducible per-round noise floor
+# and |x(t)-x(t-1)| never goes to zero -- late-window steps here sit flat
+# at 1e-3..7e-2 with a 21-25 vs 26-30 ratio of 0.85-1.13, i.e. plateaued
+# rather than still decaying. Demanding a tiny step therefore mislabels a
+# settled system as unconverged. What actually distinguishes settled from
+# still-moving is whether the population MEAN is drifting.
+CONV_TOL = 1e-6          # retained only for the controls, which are noiseless
+EQ_DRIFT = 0.005         # late-window mean drift, on the [0,1] opinion scale
 COLLAPSE_SD = 0.02       # below this the population is a point, not a spread
 # theta is a ratio; when lambda=0 and lambda->infinity land in nearly the
 # same place there is no baseline to interpolate along and the ratio
@@ -106,6 +115,13 @@ def arm_of(tag):
     if len(hits) != 1:
         raise SystemExit(f"[fjr] cannot read arm from {tag!r}")
     return hits[0]
+
+
+def seed_of(tag):
+    m = re.search(r"_s(\d+)_", tag)
+    if not m:
+        raise SystemExit(f"[fjr] cannot read seed from {tag!r}")
+    return int(m.group(1))
 
 
 def model_of(tag):
@@ -191,8 +207,19 @@ def analyse(roots, out_dir, frozen_dir=None, key="fj_robustness"):
         lo, hi = LATE
         late = op[lo - 1:hi]
         final_step = float(np.abs(op[-1] - op[-2]).max())
+        # the noise floor this cell actually sits at, and whether the mean
+        # is still moving through it
+        late_steps = [float(np.abs(op[t] - op[t - 1]).max())
+                      for t in range(max(lo - 1, 1), hi)]
+        prev_steps = [float(np.abs(op[t] - op[t - 1]).max())
+                      for t in range(max(lo - 6, 1), max(lo - 1, 2))]
+        noise_floor = float(np.mean(late_steps)) if late_steps else float("nan")
+        step_ratio = (noise_floor / float(np.mean(prev_steps))
+                      if prev_steps and np.mean(prev_steps) > 0
+                      else float("nan"))
+        mean_drift = float(op[hi - 1].mean() - op[lo - 1].mean())
         cell_rows.append({
-            "model": m, "arm": a, "tag": tag,
+            "model": m, "arm": a, "tag": tag, "seed": seed_of(tag),
             "beta": float(cfg.get("w_plat", float("nan"))),
 
             "K_inner": int(cfg.get("fj_inner_steps", -1)),
@@ -208,12 +235,31 @@ def analyse(roots, out_dir, frozen_dir=None, key="fj_robustness"):
             "late_rmse_to_frozen": float(np.mean(
                 [np.sqrt(np.mean((x - fz) ** 2)) for x in late])),
             "final_step": final_step,
-            # round 30 is round 30 unless this says otherwise
-            "converged": bool(final_step <= CONV_TOL),
+            "noise_floor": noise_floor,
+            "step_ratio": step_ratio,
+            "late_mean_drift": mean_drift,
+            # stationary MEAN through the noise floor, not a vanishing step
+            "converged": bool(abs(mean_drift) <= EQ_DRIFT),
         })
 
     add_theta(cell_rows, frozen)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if len({r["seed"] for r in cell_rows}) > 1:
+        agg = across_seeds(cell_rows)
+        _csv(out_dir / "fj_robustness_by_seed.csv", agg)
+        verdict = seed_verdict(agg)
+        _csv(out_dir / "fj_robustness_seed_verdict.csv", verdict)
+        print(f"\n[fjr] SEED REPLICATES: "
+              f"{sorted({r['seed'] for r in cell_rows})}")
+        print(f"[fjr] {'model':<14} {'SD gap (b1-b0)':>15} "
+              f"{'pooled seed sd':>15} {'separated?':>11}")
+        for v in verdict:
+            sep = ("yes" if v["separated"] else
+                   ("no" if v["separated"] is False else "n/a"))
+            print(f"[fjr] {v['model']:<14} {v['sd_gap_b1_minus_b0']:>+15.5f} "
+                  f"{v['pooled_seed_sd']:>15.5f} {sep:>11}")
+        print("[fjr] a gap inside the pooled seed sd is TRAINING NOISE, "
+              "not an arm effect -- which a single-seed count cannot say.")
     _csv(out_dir / "fj_robustness_rounds.csv", rounds_rows)
     _csv(out_dir / "fj_robustness_cells.csv", cell_rows)
     report(cell_rows)
@@ -297,6 +343,66 @@ def add_theta(rows, frozen):
     return rows
 
 
+def across_seeds(rows):
+    """Collapse seed replicates to one row per (model, arm), carrying the
+    spread so a count is never reported as if it had no error bar.
+
+    WHY THIS EXISTS. The seed-0 wave reported orderings as counts across
+    models -- 6/6, 5/6 -- and a count from one seed cannot say whether
+    the gap exceeds training noise. The FJ operator is deterministic, so
+    the ONLY thing a seed moves is the learner; the seed spread reported
+    here IS the training-noise scale against which those gaps have to be
+    read.
+    """
+    out = {}
+    for r in rows:
+        out.setdefault((r["model"], r["arm"]), []).append(r)
+    agg = []
+    for (m, a), rs in sorted(out.items()):
+        row = {"model": m, "arm": a, "n_seeds": len(rs),
+               "seeds": ",".join(str(x["seed"]) for x in sorted(
+                   rs, key=lambda z: z["seed"]))}
+        for f in ("late_mean", "late_sd", "late_w1_from_innate",
+                  "late_w1_from_innate_centered", "late_w1_to_frozen",
+                  "theta", "late_mean_drift"):
+            v = np.array([x.get(f, float("nan")) for x in rs], dtype=float)
+            row[f] = float(np.nanmean(v))
+            # sample sd across seeds; nan at n=1 rather than a fake 0
+            row[f + "_seed_sd"] = (float(np.nanstd(v, ddof=1))
+                                   if len(rs) > 1 else float("nan"))
+        row["all_converged"] = all(bool(x["converged"]) for x in rs)
+        agg.append(row)
+    return agg
+
+
+def seed_verdict(agg):
+    """Per model, does the b0-vs-b1 gap clear the seed noise?
+
+    A gap is called SEPARATED only when it exceeds the pooled seed sd of
+    the two arms. Anything smaller is reported as within noise -- which
+    is the whole point of running replicates, and the thing a 6/6 count
+    could not tell you.
+    """
+    lines = []
+    for m in sorted({r["model"] for r in agg}):
+        b0 = next((r for r in agg if r["model"] == m and r["arm"] == "b0"), None)
+        b1 = next((r for r in agg if r["model"] == m and r["arm"] == "b1"), None)
+        if not (b0 and b1):
+            continue
+        gap = b1["late_sd"] - b0["late_sd"]
+        pooled = np.sqrt(np.nansum([b0["late_sd_seed_sd"] ** 2,
+                                    b1["late_sd_seed_sd"] ** 2]))
+        # plain bool, not np.bool_: it lands in a CSV and gets compared
+        # with `is True` by callers
+        sep = (bool(abs(gap) > pooled)
+               if np.isfinite(pooled) and pooled > 0 else None)
+        lines.append({"model": m, "sd_gap_b1_minus_b0": gap,
+                      "pooled_seed_sd": float(pooled),
+                      "separated": sep,
+                      "n_seeds": min(b0["n_seeds"], b1["n_seeds"])})
+    return lines
+
+
 def _csv(path, rows):
     keys, seen = [], set()
     for r in rows:
@@ -316,8 +422,10 @@ def report(rows):
     lo, hi = LATE
     nconv = sum(1 for r in rows if r["converged"])
     print(f"\n[fjr] seed 0, DESCRIPTIVE. Late window = rounds {lo}-{hi}.")
-    print(f"[fjr] converged (final step <= {CONV_TOL}): {nconv}/{len(rows)} "
-          f"cells. Where False, round 30 is round 30, not an equilibrium.")
+    print(f"[fjr] at equilibrium (late-window mean drift <= {EQ_DRIFT}): "
+          f"{nconv}/{len(rows)} cells. The per-round step does NOT vanish "
+          f"here -- a fresh LoRA trains every round, so there is a noise "
+          f"floor -- so stationarity of the MEAN is the test, not step size.")
     ncol = sum(1 for r in rows if r["late_sd"] < COLLAPSE_SD)
     if ncol:
         print(f"[fjr] {ncol}/{len(rows)} cells have late SD < {COLLAPSE_SD}: "
@@ -326,7 +434,7 @@ def report(rows):
               f"1 = no training) is the live quantity.")
     print(f"\n[fjr] {'model':<14} {'arm':>4} {'late mean':>10} {'late SD':>9} "
           f"{'W1 innate':>10} {'W1 cent':>9} {'W1 frozen':>10} "
-          f"{'theta':>7} {'final step':>11} {'conv':>5}")
+          f"{'theta':>7} {'drift':>9} {'floor':>9} {'eq':>5}")
     for m in sorted({r["model"] for r in rows}):
         for a in ARMS:
             sel = [r for r in rows if r["model"] == m and r["arm"] == a]
@@ -338,7 +446,8 @@ def report(rows):
                   f"{r['late_w1_from_innate_centered']:>9.4f} "
                   f"{r['late_w1_to_frozen']:>10.4f} "
                   f"{r.get('theta', float('nan')):>7.3f} "
-                  f"{r['final_step']:>11.2e} {str(r['converged']):>5}")
+                  f"{r['late_mean_drift']:>+9.5f} "
+                  f"{r['noise_floor']:>9.2e} {str(r['converged']):>5}")
             if r.get("theta_status") not in (None, "ok"):
                 print(f"[fjr] {'':<14} {'':>4} theta {r['theta_status']}")
         b0 = [r for r in rows if r["model"] == m and r["arm"] == "b0"]

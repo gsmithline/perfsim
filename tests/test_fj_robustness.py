@@ -881,3 +881,69 @@ def test_theta_can_exceed_one_when_an_arm_overshoots():
     must be visible, not folded back into [0,1]."""
     r = {x["arm"]: x for x in _theta_rows({"b0": 0.60, "b1": 0.30}, 0.40)}
     assert r["b1"]["theta"] == pytest.approx(1.5)
+
+
+# ------------------------------------------------------ seed replicates
+
+def test_seed_keys_are_three_seeds_times_the_twelve_cells():
+    for beta, n in ((GEN.FJR_BETA, 36), (GEN.FJR_BETA_BOUNDARY, 36)):
+        rows = GEN.fjr_seed_rows(beta=beta)
+        assert len(rows) == n
+        tags = [r.split(",")[0] for r in rows]
+        assert len(set(tags)) == n
+        assert {ANA.seed_of(t) for t in tags} == set(GEN.FJR_SEEDS)
+        assert len({ANA.model_of(t) for t in tags}) == 6
+        # the seed must ride BOTH the tag and the queue column
+        for r in rows:
+            c = [x.strip() for x in r.split(",")]
+            assert int(c[3]) == ANA.seed_of(c[0]), r
+
+
+def test_seed_replicates_are_disjoint_from_the_seed0_waves():
+    for beta in (GEN.FJR_BETA, GEN.FJR_BETA_BOUNDARY):
+        assert not ({r.split(",")[0] for r in GEN.fjr_seed_rows(beta=beta)}
+                    & {r.split(",")[0] for r in GEN.fjr_rows(beta=beta)})
+
+
+def test_seed_replicates_change_nothing_but_the_seed():
+    """A replicate that also moved alpha, K or beta would not be a
+    replicate."""
+    s0 = {ANA.model_of(r.split(",")[0]) + ANA.arm_of(r.split(",")[0]):
+          r.split(",")[11:16] for r in GEN.fjr_rows()}
+    for r in GEN.fjr_seed_rows():
+        k = ANA.model_of(r.split(",")[0]) + ANA.arm_of(r.split(",")[0])
+        assert r.split(",")[11:16] == s0[k], r
+
+
+def test_across_seeds_reports_spread_not_just_a_mean():
+    rows = [{"model": "m", "arm": "b0", "seed": s, "late_sd": v,
+             "late_mean": 0.6, "late_w1_from_innate": 0.1,
+             "late_w1_from_innate_centered": 0.1, "late_w1_to_frozen": 0.1,
+             "theta": 0.0, "late_mean_drift": 0.0, "converged": True}
+            for s, v in ((42, 0.060), (43, 0.070), (44, 0.080))]
+    agg = ANA.across_seeds(rows)
+    assert len(agg) == 1
+    assert agg[0]["n_seeds"] == 3 and agg[0]["seeds"] == "42,43,44"
+    assert agg[0]["late_sd"] == pytest.approx(0.070)
+    assert agg[0]["late_sd_seed_sd"] == pytest.approx(0.01)
+
+
+def test_single_seed_gets_nan_spread_not_a_fake_zero():
+    rows = [{"model": "m", "arm": "b0", "seed": 0, "late_sd": 0.06,
+             "late_mean": 0.6, "late_w1_from_innate": 0.1,
+             "late_w1_from_innate_centered": 0.1, "late_w1_to_frozen": 0.1,
+             "theta": 0.0, "late_mean_drift": 0.0, "converged": True}]
+    agg = ANA.across_seeds(rows)
+    assert math.isnan(agg[0]["late_sd_seed_sd"])
+
+
+def test_seed_verdict_calls_a_small_gap_training_noise():
+    """The point of the replicates: a b0-vs-b1 gap inside the pooled seed
+    sd is training noise, and a single-seed count cannot say so."""
+    def mk(arm, sd, seed_sd):
+        return {"model": "m", "arm": arm, "late_sd": sd,
+                "late_sd_seed_sd": seed_sd, "n_seeds": 3}
+    wide = ANA.seed_verdict([mk("b0", 0.070, 0.002), mk("b1", 0.050, 0.002)])
+    assert wide[0]["separated"] is True
+    tight = ANA.seed_verdict([mk("b0", 0.070, 0.020), mk("b1", 0.068, 0.020)])
+    assert tight[0]["separated"] is False

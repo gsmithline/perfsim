@@ -982,6 +982,11 @@ def check_run(run_dir):
                         f"_beta/_alpha/_in token")
         want.pop("eps", None)
         want.pop("innate_lambda", None)
+        # the seed rides the tag; pin it so a replicate cannot silently
+        # carry another seed's run
+        m_seed = re.search(r"_s(\d+)_", name)
+        if m_seed:
+            want["seed"] = int(m_seed.group(1))
         want.update({
             "pop_model": "fj",
             "fj_update_version": "wu1",

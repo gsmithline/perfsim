@@ -3977,21 +3977,42 @@ ROW_FJR = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
            "{chatthink}, {mem}, {disk}, {pplbatch}")
 
 
-def fjr_row(model, arm, rounds=FJR_ROUNDS, beta=FJR_BETA, smoke=False):
+def fjr_row(model, arm, rounds=FJR_ROUNDS, beta=FJR_BETA, smoke=False,
+            seed=0):
     a = REACH_ARM_COLS[arm]
     m = FAM_MODELS[model]
     return ROW_FJR.format(
-        tag=fjr_tag(model, arm, rounds, beta=beta, smoke=smoke),
-        style=a["style"], beta=a["beta"], seed=0, wplat=f"{beta:g}",
+        tag=fjr_tag(model, arm, rounds, beta=beta, smoke=smoke, seed=seed),
+        style=a["style"], beta=a["beta"], seed=seed, wplat=f"{beta:g}",
         alpha=f"{FJR_ALPHA:g}", inner=FJR_INNER, uselora=a["uselora"],
         fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
         basemodel=m["base_model"], chatthink=m["chatthink"], mem=m["mem"],
         disk=m["disk"], pplbatch=m["pplbatch"])
 
 
-def fjr_rows(beta=FJR_BETA, arms=None):
-    return [fjr_row(mo, ar, beta=beta)
+def fjr_rows(beta=FJR_BETA, arms=None, seed=0):
+    return [fjr_row(mo, ar, beta=beta, seed=seed)
             for mo in FJR_MODELS for ar in (arms or FJR_ARMS)]
+
+
+# SEED REPLICATES (2026-08-22). The seed-0 wave produced counts across
+# models -- b0 retains more spread than b1 in 6/6 at beta=.5, b1 is
+# closer to the frozen model in 5/6 at beta=1 -- and a count has no error
+# bar. These add seeds 42/43/44.
+#
+# WHAT A SEED PERTURBS HERE. The FJ operator is DETERMINISTIC: no peer
+# RNG, unlike the Deffuant process. So the seed moves only the learner
+# (data order, sampler, LoRA init), and these replicates measure exactly
+# one thing -- whether the b0 vs b1 gap is larger than training noise.
+# That is the right test for a 6/6 count and the wrong one for a claim
+# about population stochasticity, which this wave does not make.
+FJR_SEEDS = [42, 43, 44]
+FJR_SEED_KEY = "fj_robustness_seeds"
+FJR_BETA1_SEED_KEY = "fj_robustness_beta1_seeds"
+
+
+def fjr_seed_rows(beta=FJR_BETA):
+    return [r for sd in FJR_SEEDS for r in fjr_rows(beta=beta, seed=sd)]
 
 
 def fjr_kl_rows():
@@ -8524,7 +8545,9 @@ def main():
             # component from x_init entirely. Same alpha=.9 and K=100.
             # Generated so it is ready, never bundled into any umbrella.
             FJR_BETA1_KEY: (fjr_rows(beta=FJR_BETA_BOUNDARY), 12),
-            FJR_KL_KEY: (fjr_kl_rows(), 12)}
+            FJR_KL_KEY: (fjr_kl_rows(), 12),
+            FJR_SEED_KEY: (fjr_seed_rows(), 36),
+            FJR_BETA1_SEED_KEY: (fjr_seed_rows(beta=FJR_BETA_BOUNDARY), 36)}
     _all_fjr = set()
     for _key, (_rows, _n) in _fjr.items():
         assert len(_rows) == _n, (_key, len(_rows), _n)
@@ -8538,7 +8561,9 @@ def main():
             for r in _rows:
                 _c = [x.strip() for x in r.split(",")]
                 assert _c[8] == "fj", r                 # POP_MODEL
-                assert _c[3] == "0", r                  # seed 0
+                assert _c[3] in (["0"] if _key not in
+                                 (FJR_SEED_KEY, FJR_BETA1_SEED_KEY)
+                                 else [str(x) for x in FJR_SEEDS]), r
                 assert _c[5] == "replace", r            # replace-only data
                 assert _c[14] == f"{FJR_ALPHA:g}", r    # peer susceptibility
                 assert _c[15] == str(FJR_INNER), r      # K inner steps
@@ -8551,7 +8576,8 @@ def main():
                 hits = [a for a in _all_arms if f"_{a}_beta" in tag]
                 assert len(hits) == 1, (tag, hits)
                 return hits[0]
-            if _key in (FJR_KEY, FJR_BETA1_KEY, FJR_KL_KEY):
+            if _key in (FJR_KEY, FJR_BETA1_KEY, FJR_KL_KEY,
+                        FJR_SEED_KEY, FJR_BETA1_SEED_KEY):
                 _models = {t.split("_")[1] + ("_" + t.split("_")[2]
                                               if t.split("_")[2] not in _all_arms
                                               else "")
@@ -8597,7 +8623,13 @@ def main():
                 & {r.split(",")[0] for r in fjr_rows(beta=FJR_BETA_BOUNDARY)})
     # the corrected configuration must not leave any row from the earlier
     # unsubmitted alpha=.5 / K=1 draft behind under a primary key
-    for _k in (FJR_KEY, FJR_SMOKE_KEY, FJR_BETA1_KEY, FJR_KL_KEY):
+    # seed replicates must be disjoint from the seed-0 waves
+    assert not ({r.split(",")[0] for r in fjr_seed_rows()}
+                & {r.split(",")[0] for r in fjr_rows()})
+    assert not ({r.split(",")[0] for r in fjr_seed_rows(beta=FJR_BETA_BOUNDARY)}
+                & {r.split(",")[0] for r in fjr_rows(beta=FJR_BETA_BOUNDARY)})
+    for _k in (FJR_KEY, FJR_SMOKE_KEY, FJR_BETA1_KEY, FJR_KL_KEY,
+               FJR_SEED_KEY, FJR_BETA1_SEED_KEY):
         for _r in files[os.path.join(HERE, f"configs_pofd_{_k}.txt")]:
             assert "alpha0p5" not in _r and "_in1_" not in _r, (_k, _r)
 
