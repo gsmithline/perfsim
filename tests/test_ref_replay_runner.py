@@ -829,3 +829,30 @@ def test_sabotage_a_swapped_reference_vector(q10):
     bad["ref_replay_ref_vec"] = torch.full((N,), 0.5)
     viol = verify_ref_replay(bad, cfg)
     assert any("recorded sha256" in v for v in viol), viol
+
+
+def test_ref_run_resolves_as_a_path_or_a_bare_tag(tmp_path):
+    """The generator names runs by TAG everywhere; ICL_CTX_DONOR takes a
+    PATH. Requiring one convention silently is a trap -- it held the
+    first ref-replay smoke on the cluster. Both must resolve, to the
+    same reference vector."""
+    _, _, _, donor = run_pipeline(RUN_TAG="ref_donor_dual", N_ROUNDS=1)
+    root, tag = Path(donor).parent, Path(donor).name
+
+    _, cfg_path, _, _ = run_pipeline(
+        RUN_TAG="pofdrr_dual_path", N_ROUNDS=2, REF_REPLAY_Q=0.5,
+        REF_REPLAY_SEED=0, REF_REPLAY_REF_RUN=str(donor))
+    _, cfg_tag, _, _ = run_pipeline(
+        RUN_TAG="pofdrr_dual_tag", N_ROUNDS=2,
+        OUT_DIR=str(root / "pofdrr_dual_tag"), REF_REPLAY_Q=0.5,
+        REF_REPLAY_SEED=0, REF_REPLAY_REF_RUN=tag)
+
+    assert (cfg_path["ref_replay_ref_sha256"]
+            == cfg_tag["ref_replay_ref_sha256"])
+
+
+def test_unresolvable_ref_run_names_both_attempts():
+    """The error must say what it tried, not just that it failed."""
+    with pytest.raises(ValueError, match="tried"):
+        run_pipeline(RUN_TAG="pofdrr_missing", N_ROUNDS=1, REF_REPLAY_Q=0.5,
+                     REF_REPLAY_SEED=0, REF_REPLAY_REF_RUN="no_such_run_xyz")

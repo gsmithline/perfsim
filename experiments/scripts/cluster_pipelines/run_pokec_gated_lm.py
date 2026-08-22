@@ -1575,9 +1575,18 @@ def main() -> int:
     ref_replay_ref_sha256 = None
     ref_replay_n_live = None
     if ref_replay_on:
-        _rr_traj = Path(ref_replay_ref_run) / "trajectory.pt"
+        # Accept EITHER a path (the ICL_CTX_DONOR convention) or a bare
+        # run TAG resolved against this wave's runs root. The generator
+        # names runs by tag everywhere else, so requiring a path here is
+        # a trap -- it cost the first ref-replay smoke a held job. Try
+        # both and say which paths were tried if neither exists.
+        _rr_cands = [Path(ref_replay_ref_run) / "trajectory.pt",
+                     out_dir.parent / ref_replay_ref_run / "trajectory.pt"]
+        _rr_traj = next((c for c in _rr_cands if c.exists()), _rr_cands[0])
         if not _rr_traj.exists():
-            raise ValueError(f"REF_REPLAY_REF_RUN has no trajectory.pt: "
+            raise ValueError(f"REF_REPLAY_REF_RUN resolved to no "
+                             f"trajectory.pt; tried "
+                             f"{[str(c) for c in _rr_cands]!r}. Original: "
                              f"{_rr_traj}")
         _rd = torch.load(_rr_traj, map_location="cpu", weights_only=False)
         _pr = _rd.get("pred_raw")
