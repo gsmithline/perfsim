@@ -637,3 +637,37 @@ def test_routing_cohort_depends_only_on_its_own_seed():
         "the treated cohort must not depend on the run seed -- the twin "
         "compares the SAME people across seeds")
     assert not torch.equal(a["routing_treat_idx"], c["routing_treat_idx"])
+
+
+def test_train_cap_guard_rejects_only_a_cap_that_would_cut(monkeypatch):
+    """The property is that training covers EVERY observed agent, and a
+    cap only threatens it when it would actually cut.
+
+    subsample_train_data returns the pool unchanged when n <= cap, so
+    TRAIN_CAP == |O| is a provable no-op. A blanket rejection is a false
+    positive -- and it deadlocked the first Wu smoke, because the
+    generated sub sets TRAIN_CAP=|O| to document intent. The codebase
+    already uses this exact predicate for SFT_SAMPLE_N, with the same
+    reasoning.
+    """
+    import experiments.scripts.cluster_pipelines.run_pokec_gated_lm as R
+    src = Path(R.__file__).read_text() if hasattr(R, "__file__") else ""
+    assert "0 < train_cap < n_labeled" in src
+    # and the no-op value must NOT appear in a blanket rejection
+    assert "if train_cap > 0 or sft_sample_n > 0:" not in src
+
+
+def test_subsample_is_a_noop_at_or_above_the_pool_size():
+    """The fact the guard relies on, pinned directly."""
+    import torch as _t
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_r", PIPE / "run_pokec_gated_lm.py")
+    R = importlib.util.module_from_spec(spec); spec.loader.exec_module(R)
+    pool = {"x": _t.arange(20).reshape(20, 1).float(),
+            "y": _t.arange(20).reshape(20, 1).float()}
+    g = _t.Generator().manual_seed(0)
+    for cap in (0, 20, 50):
+        out = R.subsample_train_data(pool, cap, g)
+        assert out["x"].shape[0] == 20, cap
+    assert R.subsample_train_data(pool, 5, g)["x"].shape[0] == 5

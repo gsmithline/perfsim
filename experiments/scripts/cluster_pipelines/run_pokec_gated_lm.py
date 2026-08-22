@@ -1106,10 +1106,24 @@ def main() -> int:
             raise ValueError("FJ_OBSERVED_PASSTHROUGH is exclusive with "
                              "REPLAY_FRAC / PRISTINE_FRAC (they rewrite the "
                              "labels, so x_O(t) would stop being x_O(t))")
-        if train_cap > 0 or sft_sample_n > 0:
+        # The property that must hold is that training covers EVERY
+        # observed agent. A cap only threatens that when it would
+        # actually cut: subsample_train_data returns the pool unchanged
+        # when n <= cap, so TRAIN_CAP == |O| is a provable no-op and
+        # rejecting it is a false positive. SFT_SAMPLE_N has no such
+        # safe value -- it means "draw a subset" by construction.
+        if 0 < train_cap < n_labeled:
+            raise ValueError(
+                f"FJ_OBSERVED_PASSTHROUGH with TRAIN_CAP={train_cap} < "
+                f"|O|={n_labeled} would train on a SUBSET of the observed "
+                f"agents, but the served vector on O must cover every one "
+                f"of them. Use TRAIN_CAP=0 (uncapped) or TRAIN_CAP="
+                f"{n_labeled} (a no-op that documents the intent).")
+        if sft_sample_n > 0:
             raise ValueError("FJ_OBSERVED_PASSTHROUGH is exclusive with "
-                             "TRAIN_CAP / SFT_SAMPLE_N: the served vector on "
-                             "O must cover EVERY observed agent")
+                             "SFT_SAMPLE_N: it draws a SUBSET of the "
+                             "observed agents by construction, so the "
+                             "served vector on O could not cover them all")
     if wu_icl_mode != "none":
         if os.environ.get("DATASET", "pokec") != "pokec":
             raise ValueError("WU_ICL_MODE currently requires DATASET=pokec")
