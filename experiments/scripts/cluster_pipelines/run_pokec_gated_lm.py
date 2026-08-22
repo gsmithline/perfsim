@@ -363,7 +363,18 @@ def pokec_build_prompt(profile, tokenizer, context_block=None):
         "Respond with only the number, e.g. 0.42."
     )
     messages = [{"role": "user", "content": user_msg}]
-    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    # CHAT_THINKING must reach the template here exactly as it does in the
+    # movielens builder. Without it a hybrid-reasoning model opens its own
+    # <think> block and spends the whole MAX_NEW_TOKENS budget on preamble:
+    # Qwen3-8B emitted "<think>\nOkay, let's" for all 2163 Pokec agents and
+    # the parser fell back to its 0.5 default, so a 100% parse failure was
+    # recorded as a confident constant prediction. With enable_thinking=False
+    # the template pre-fills a CLOSED think block and generation starts on
+    # the answer. Returns {} unless CHAT_THINKING carries a directive, so
+    # every default-template model keeps byte-identical prompts.
+    return tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True,
+        **_chat_template_kwargs())
 
 
 def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):

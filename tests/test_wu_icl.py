@@ -684,3 +684,47 @@ def test_legacy_icl_knobs_are_exclusive_with_the_wu_modes():
         with pytest.raises(ValueError) as e:
             RUN.main()
     assert "ICL_K" in str(e.value) or "movielens" in str(e.value)
+
+
+def test_pokec_prompt_honours_chat_thinking(monkeypatch):
+    """A hybrid-reasoning model must be able to have thinking disabled on
+    Pokec, exactly as on movielens.
+
+    Qwen3-8B emitted "<think>\\nOkay, let's" for all 2163 agents because
+    this builder dropped _chat_template_kwargs(); the parser fell back to
+    its 0.5 default, so a 100% parse failure was recorded as a confident
+    constant prediction and became a frozen REFERENCE vector.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_r_ct", PIPE / "run_pokec_gated_lm.py")
+    R = importlib.util.module_from_spec(spec); spec.loader.exec_module(R)
+
+    seen = {}
+
+    class Tok:
+        chat_template = "x"
+        def apply_chat_template(self, messages, **kw):
+            seen.update(kw)
+            return "RENDERED"
+
+    prof = {"age": 30, "gender": 1.0, "relation_to_alcohol": "abstinent"}
+    monkeypatch.setenv("CHAT_THINKING", "0")
+    R.pokec_build_prompt(prof, Tok())
+    assert seen.get("enable_thinking") is False, seen
+
+    seen.clear()
+    monkeypatch.setenv("CHAT_THINKING", "default")
+    R.pokec_build_prompt(prof, Tok())
+    assert "enable_thinking" not in seen, seen
+
+
+def test_pokec_prompt_bytes_unchanged_for_default_models():
+    """The fix must be a no-op for every model that does not set
+    CHAT_THINKING -- _chat_template_kwargs() returns {} there."""
+    import importlib.util, os
+    spec = importlib.util.spec_from_file_location(
+        "_r_ct2", PIPE / "run_pokec_gated_lm.py")
+    R = importlib.util.module_from_spec(spec); spec.loader.exec_module(R)
+    os.environ.pop("CHAT_THINKING", None)
+    assert R._chat_template_kwargs() == {}
