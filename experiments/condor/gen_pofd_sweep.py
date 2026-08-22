@@ -4264,12 +4264,28 @@ WU_LADDER_MODEL = "qwen7b"
 WU_LADDER = [(0.0, "b0"), (0.1, "b0p1"), (0.5, "b0p5"),
              (1.0, "b1"), (10.0, "b10")]
 WU_ICL_MODELS = ["qwen7b", "mistral7b"]
-WU_ICL_ARMS = ["b0", "b1", "phist8", "octx8", "frz"]
+# phist8 and ehist8 are BOTH here on purpose and must not be conflated.
+# phist8 (strict Wu) replays the platform's own past PREDICTIONS -- the
+# platform legitimately has those. ehist8 shows the agent its own past
+# POST-FJ opinions, which Wu's platform never observes, and is the
+# personal-history mechanism our Section 4 studies. Keeping both is what
+# makes the strict-vs-extension contrast measurable rather than asserted.
+WU_ICL_ARMS = ["b0", "b1", "phist8", "ehist8", "octx8", "frz"]
 WU_ENV_MODEL = "qwen7b"
 WU_ENV_ARMS = ["b0", "b1", "phist8"]
 WU_ENV_SCALES = [0.0, 0.5, 1.0]
 WU_ROUTE_MODEL = "qwen7b"
-WU_ROUTE_ARMS = ["b0", "phist8", "frz"]
+# ROUTING CARRIES BOTH HISTORY MECHANISMS, NEVER POOLED.
+# ehist8 is the Section 4 mechanism (realized post-peer opinions), so it
+# is the arm that tests whether shared SFT weights open a cross-agent
+# route that agent-local history removes. phist8 is the strict
+# Wu-compatible comparison: the platform recalling only what it served.
+# The contrast is itself informative -- WITH peers, ehist8 can absorb
+# peer-induced change into later prompts and phist8 cannot; WITHOUT
+# peers, neither agent-local channel should open a cross-agent route.
+# Reporting them separately is the point; averaging them would destroy
+# exactly the distinction the stage exists to draw.
+WU_ROUTE_ARMS = ["b0", "phist8", "ehist8", "frz"]
 WU_ROUTE_CAS = [0.0, 1.0]
 # 10% of the OBSERVED pool -> 173 agents, matching Wu's modified-label
 # construction. NOT 25%: a larger cohort is a coarser instrument, and the
@@ -9182,10 +9198,10 @@ def main():
            WU_PRIOR_KEY: (wu_prior_rows(), 12, WU_ROUNDS),
            WU_PRIOR_SEEDS_KEY: (wu_prior_seed_rows(), 8, WU_ROUNDS),
            WU_LADDER_KEY: (wu_ladder_rows(), 3, WU_ROUNDS),
-           WU_ICL_KEY: (wu_icl_rows(), 6, WU_ROUNDS),
+           WU_ICL_KEY: (wu_icl_rows(), 8, WU_ROUNDS),
            WU_ENV_KEY: (wu_env_rows(), 10, WU_ROUNDS),
-           WU_ROUTE_SMOKE_KEY: (wu_route_rows(), 12, WU_ROUNDS),
-           WU_ROUTE_SEEDS_KEY: (wu_route_rows(WU_SEEDS), 24, WU_ROUNDS)}
+           WU_ROUTE_SMOKE_KEY: (wu_route_rows(), 16, WU_ROUNDS),
+           WU_ROUTE_SEEDS_KEY: (wu_route_rows(WU_SEEDS), 32, WU_ROUNDS)}
     # THE CONTROLS KEY QUEUES NOTHING. Perfect prediction, no-platform
     # (c_beta=0) and the frozen replay are LINEAR maps of vectors that
     # already exist -- they depend on no language model, so a GPU job
@@ -9319,13 +9335,21 @@ def main():
     assert _lad_reuse <= _wu_prior_tags, _lad_reuse - _wu_prior_tags
     assert not (_lad_reuse & {r.split(",")[0] for r in wu_ladder_rows()})
     assert len(WU_LADDER) == len(_lad_reuse) + len(wu_ladder_rows()) == 5
-    # ICL: 10 conceptual, 4 reused, 6 queued.
+    # ICL: 12 conceptual (2 models x 6 arms), 4 reused (both models'
+    # b0/b1 from the prior key), 8 queued. Six arms because BOTH history
+    # mechanisms are carried: phist8 (strict Wu, the platform's own past
+    # predictions) and ehist8 (the Section 4 personal-history extension,
+    # realized post-peer opinions). They are never pooled.
     _icl_reuse = set(wu_icl_reused())
     assert len(_icl_reuse) == 4, _icl_reuse
     assert _icl_reuse <= _wu_prior_tags, _icl_reuse - _wu_prior_tags
     assert not (_icl_reuse & {r.split(",")[0] for r in wu_icl_rows()})
     assert (len(WU_ICL_MODELS) * len(WU_ICL_ARMS)
-            == len(_icl_reuse) + len(wu_icl_rows()) == 10)
+            == len(_icl_reuse) + len(wu_icl_rows()) == 12)
+    # both mechanisms are present and distinguishable in the queued set
+    _icl_tags = {r.split(",")[0] for r in wu_icl_rows()}
+    assert sum(1 for t in _icl_tags if "_phist8_" in t) == 2, _icl_tags
+    assert sum(1 for t in _icl_tags if "_ehist8_" in t) == 2, _icl_tags
     # ENVIRONMENT: the two collapses, each asserted on the cell list
     # itself rather than on a count someone wrote down.
     _pairs = wu_env_pairs()
@@ -9344,7 +9368,7 @@ def main():
     assert len(_cells) - len(_env_reuse) == len(wu_env_rows()) == 10
     # ROUTING: paired twins, nothing reused, and the pair differs ONLY in
     # the routed value and the side token.
-    for _seeds, _n in (((0,), 12), (tuple(WU_SEEDS), 24)):
+    for _seeds, _n in (((0,), 16), (tuple(WU_SEEDS), 32)):
         _rr = wu_route_rows(_seeds)
         assert len(_rr) == _n and len({r.split(",")[0] for r in _rr}) == _n
         _byside = {}
@@ -9383,7 +9407,10 @@ def main():
         assert _c[1:3] + _c[14:29] == _s0[_wu_stem(_c[0])], r
     # every WU key's job count, printed with the arithmetic so the report
     # and the files cannot disagree
-    assert sum(_n for _, _n, _ in _wu.values()) + len(_wuzs) == 82
+    # 96 = 1 smoke + 12 prior + 8 prior_seeds + 3 lambda + 8 icl
+    #      + 10 environment + 16 routing_smoke + 32 routing_seeds
+    #      + 6 frozen extractions
+    assert sum(_n for _, _n, _ in _wu.values()) + len(_wuzs) == 96
 
     # ---- adapter KL / soft-decode probe (AKL) -----------------------
     # One job per key, no grid. The checks that matter here are not about

@@ -1066,10 +1066,10 @@ WU_KEY_JOBS = {
     "jiduan_pokec_prior": 12,
     "jiduan_pokec_prior_seeds": 8,
     "jiduan_pokec_lambda_ladder": 3,
-    "jiduan_pokec_icl": 6,
+    "jiduan_pokec_icl": 8,
     "jiduan_pokec_environment": 10,
-    "jiduan_pokec_routing_smoke": 12,
-    "jiduan_pokec_routing_seeds": 24,
+    "jiduan_pokec_routing_smoke": 16,
+    "jiduan_pokec_routing_seeds": 32,
     "jiduan_pokec_frozen": 6,
 }
 
@@ -1130,8 +1130,13 @@ def test_icl_key_reuses_the_prior_b0_and_b1_cells():
     reused = set(GEN.wu_icl_reused())
     queued = set(_cfg_tags("jiduan_pokec_icl"))
     assert len(reused) == 4 and reused <= prior
-    assert len(queued) == 6 and reused & queued == set()
-    assert len(reused | queued) == 10 == len(GEN.WU_ICL_MODELS) * len(GEN.WU_ICL_ARMS)
+    assert len(queued) == 8 and reused & queued == set()
+    assert len(reused | queued) == 12 == len(GEN.WU_ICL_MODELS) * len(GEN.WU_ICL_ARMS)
+    # BOTH history mechanisms are queued and must stay distinguishable:
+    # phist8 = the platform's own past predictions (strict Wu);
+    # ehist8 = realized post-peer opinions (the Section 4 extension).
+    assert sum(1 for t in queued if "_phist8_" in t) == 2
+    assert sum(1 for t in queued if "_ehist8_" in t) == 2
 
 
 def test_environment_grid_shares_the_centre_and_collapses_c_beta_zero():
@@ -1154,8 +1159,8 @@ def test_environment_grid_shares_the_centre_and_collapses_c_beta_zero():
 
 def test_routing_keys_are_paired_twins_and_reuse_nothing():
     prior = set(_cfg_tags("jiduan_pokec_prior"))
-    for key, n, seeds in (("jiduan_pokec_routing_smoke", 12, {0}),
-                          ("jiduan_pokec_routing_seeds", 24, {42, 43})):
+    for key, n, seeds in (("jiduan_pokec_routing_smoke", 16, {0}),
+                          ("jiduan_pokec_routing_seeds", 32, {42, 43})):
         tags = _cfg_tags(key)
         assert len(tags) == n
         assert set(tags) & prior == set()
@@ -1673,3 +1678,22 @@ def test_rounds_and_agents_are_never_treated_as_replicates():
     for bad in ("sem(", "stats.ttest", "scipy.stats", "p_value", "pvalue"):
         assert bad not in src, bad
     assert "ACROSS SEEDS" in src
+
+
+def test_routing_carries_both_history_mechanisms_unpooled():
+    """The Section 4 claim needs ehist8 (realized post-peer opinions);
+    phist8 is the strict Wu comparison. Both must be present, and a
+    reader must be able to tell them apart from the tag alone -- pooling
+    them would destroy the contrast the stage exists to draw."""
+    for key in ("jiduan_pokec_routing_smoke", "jiduan_pokec_routing_seeds"):
+        tags = _cfg_tags(key)
+        n_p = sum(1 for t in tags if "_phist8_" in t)
+        n_e = sum(1 for t in tags if "_ehist8_" in t)
+        assert n_p == n_e == len(tags) // 4, (key, n_p, n_e, len(tags))
+        assert not any("_phist8_" in t and "_ehist8_" in t for t in tags)
+
+
+def test_only_expressed_history_is_flagged_an_extension():
+    assert "ehist8" in GEN.WU_EXTENSION_ARMS
+    assert "phist8" not in GEN.WU_EXTENSION_ARMS
+    assert "octx8" not in GEN.WU_EXTENSION_ARMS
