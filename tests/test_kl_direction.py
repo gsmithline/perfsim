@@ -158,9 +158,25 @@ def _mk_run(tmp, tag, *, kl_direction, rounds=10, n=723, lam=1.0,
     torch.save({
         "pred_raw": pr, "op_raw": torch.rand(rounds, n, generator=g),
         "innate": torch.rand(n, generator=g),
-        "trajectory": [{"parse_fail_frac": parse_fail, "l_init": 1.0}
-                       for _ in range(rounds)],
+        "trajectory": [{"round": i} for i in range(rounds)],
     }, os.path.join(d, "trajectory.pt"))
+    # telemetry.json is JSONL: l_init and the anchor-gradient norm live
+    # here, not in trajectory.pt. grad_kl_norm0 is ~0 at round 0 by
+    # construction (a fresh LoRA IS the reference) and nonzero after.
+    with open(os.path.join(d, "telemetry.json"), "w") as fh:
+        for i in range(rounds):
+            fh.write(json.dumps({
+                "round": i, "l_init": 2.0 / (i + 1), "grad_norm0": 3.0,
+                "grad_kl_norm0": (0.02 if i == 0 else 1.5),
+            }) + "\n")
+    # parse_fail_frac lives in the gzipped raw-generation log
+    import gzip
+    with gzip.open(os.path.join(d, "raw_gen_log.json.gz"), "wt") as fh:
+        for i in range(rounds):
+            fh.write(json.dumps({
+                "round": i, "parse_fail_frac": parse_fail,
+                "raw": ["0.25"] * n, "parsed": [0.25] * n,
+            }) + "\n")
     return d
 
 
@@ -218,6 +234,32 @@ def test_checker_rejects_a_trained_arm_that_never_moved(tmp_path):
     r = _run_check([d])
     assert r.returncode == 1
     assert "bit-identical in EVERY round" in r.stdout
+
+
+def test_checker_rejects_an_arm_whose_anchor_never_contributed(tmp_path):
+    """A run can be tagged reverse, record kl_direction=reverse, and still
+    have contributed no anchor gradient -- that arm is ordinary SFT
+    wearing a lambda, and its "closeness to frozen" would be read as
+    retention. Round 0 is exempt: a fresh LoRA IS the reference there."""
+    d = _mk_run(str(tmp_path),
+                "pofdkd_qwen7b_revlam1_eaopen_w1_l1_esopen_s0_r10",
+                kl_direction="reverse")
+    with open(os.path.join(d, "telemetry.json"), "w") as fh:
+        for i in range(10):
+            fh.write(json.dumps({"round": i, "l_init": 1.0,
+                                 "grad_norm0": 3.0,
+                                 "grad_kl_norm0": 0.0}) + "\n")
+    r = _run_check([d])
+    assert r.returncode == 1
+    assert "contributed no gradient" in r.stdout
+
+
+def test_checker_accepts_zero_kl_gradient_at_round_zero_only(tmp_path):
+    d = _mk_run(str(tmp_path),
+                "pofdkdsmk_qwen7b_revlam1_eaopen_w1_l1_esopen_s0_r3",
+                kl_direction="reverse", rounds=3)
+    r = _run_check([d], smoke=True)
+    assert r.returncode == 0, r.stdout
 
 
 def test_checker_rejects_smoke_tag_as_production(tmp_path):

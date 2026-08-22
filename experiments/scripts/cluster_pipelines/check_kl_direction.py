@@ -231,18 +231,34 @@ def check_one(d, smoke, out):
         ok = False
 
     # ---- PARSE failures: exactly zero --------------------------------
-    traj = d_.get("trajectory") or []
-    pf = [r.get("parse_fail_frac") for r in traj
-          if isinstance(r, dict) and "parse_fail_frac" in r]
-    if not pf:
-        fail(tag, "no parse_fail_frac recorded in any round", out)
+    # parse_fail_frac lives in raw_gen_log.json.gz (SAVE_RAW_GEN=1), NOT
+    # in the trajectory rows -- the trajectory carries only distribution
+    # summaries of the already-parsed vector, which is exactly the place
+    # a 100%-failure round would look clean.
+    gz = os.path.join(d, "raw_gen_log.json.gz")
+    if not os.path.exists(gz):
+        fail(tag, "no raw_gen_log.json.gz -- SAVE_RAW_GEN was off, so the "
+                  "parse-failure rate cannot be established", out)
         ok = False
     else:
-        bad = [(i, v) for i, v in enumerate(pf)
-               if v is None or not (float(v) == 0.0)]
+        import gzip
+        rows = [json.loads(l) for l in gzip.open(gz, "rt")]
+        if len(rows) != want_rounds:
+            fail(tag, f"raw_gen_log has {len(rows)} round(s), expected "
+                      f"{want_rounds}", out)
+            ok = False
+        bad = [(r.get("round"), r.get("parse_fail_frac")) for r in rows
+               if r.get("parse_fail_frac") is None
+               or float(r["parse_fail_frac"]) != 0.0]
         if bad:
-            fail(tag, f"parse failures in {len(bad)} round(s), e.g. "
-                      f"round {bad[0][0]} frac={bad[0][1]}", out)
+            fail(tag, f"parse failures in {len(bad)} round(s), e.g. round "
+                      f"{bad[0][0]} frac={bad[0][1]}", out)
+            ok = False
+        short = [(r.get("round"), len(r.get("parsed") or []))
+                 for r in rows if len(r.get("parsed") or []) != N_AGENTS]
+        if short:
+            fail(tag, f"round {short[0][0]} parsed {short[0][1]} of "
+                      f"{N_AGENTS} agents -- incomplete serving", out)
             ok = False
 
     # ---- NONCONSTANT across agents -----------------------------------
@@ -260,17 +276,48 @@ def check_one(d, smoke, out):
                       "trained arm that never moved (frozen signature)", out)
             ok = False
 
-    # ---- losses finite and not degenerate ----------------------------
-    li = [r.get("l_init") for r in traj if isinstance(r, dict)]
-    li = [float(v) for v in li if v is not None]
-    if not li:
-        fail(tag, "no l_init recorded -- cannot confirm training ran", out)
+    # ---- training really ran, and the KL term really contributed -----
+    # Both live in telemetry.json, which is JSONL (one object per round),
+    # not in trajectory.pt.
+    tel_p = os.path.join(d, "telemetry.json")
+    if not os.path.exists(tel_p):
+        fail(tag, "no telemetry.json -- cannot confirm training ran", out)
+        return False, tag_dir, lam, w
+    import math
+    tel = [json.loads(l) for l in open(tel_p).read().splitlines() if l.strip()]
+    li = [float(r["l_init"]) for r in tel if r.get("l_init") is not None]
+    if len(li) != want_rounds:
+        fail(tag, f"l_init present for {len(li)} of {want_rounds} rounds", out)
         ok = False
-    else:
-        import math
-        if not all(math.isfinite(v) for v in li):
-            fail(tag, "non-finite training loss", out)
-            ok = False
+    if not all(math.isfinite(v) for v in li):
+        fail(tag, "non-finite training loss", out)
+        ok = False
+    gn = [float(r["grad_norm0"]) for r in tel if r.get("grad_norm0") is not None]
+    if gn and max(gn) == 0.0:
+        fail(tag, "grad_norm0 is 0 in every round -- the optimizer never "
+                  "moved, so this arm did not train", out)
+        ok = False
+    # THE KL TERM ITSELF. grad_kl_norm0 is the anchor gradient's norm. A
+    # run can be tagged with a direction, record it in config, and still
+    # have contributed no anchor gradient at all -- that arm would be
+    # ordinary SFT wearing a lambda. Round 0 is EXEMPT and must be: a
+    # fresh LoRA at round 0 IS the reference, so the divergence and its
+    # gradient are legitimately ~0 there. Later rounds must show a
+    # nonzero anchor gradient.
+    kl_g = [float(r["grad_kl_norm0"]) for r in tel
+            if r.get("grad_kl_norm0") is not None]
+    if not kl_g:
+        fail(tag, "no grad_kl_norm0 recorded -- cannot confirm the KL term "
+                  "was applied", out)
+        ok = False
+    elif len(kl_g) > 1 and max(kl_g[1:]) <= 0.0:
+        fail(tag, "grad_kl_norm0 is 0 in every round after round 0 -- the "
+                  "anchor contributed no gradient, so this arm is ordinary "
+                  "SFT wearing a lambda", out)
+        ok = False
+    elif not all(math.isfinite(v) for v in kl_g):
+        fail(tag, "non-finite KL gradient norm", out)
+        ok = False
 
     return ok, tag_dir, lam, w
 
