@@ -636,17 +636,26 @@ def check_ref_replay(run_dir, n_agents=N_AGENTS, opt_steps=OPT_STEPS,
 
     # ---- 10 SURFACE ------------------------------------------------------
     if require_surface:
-        if float(cfg.get("kl_beta", -1)) != 1.0:
+        # BETA IS OVERLOADED IN THIS PROJECT AND THAT MATTERS HERE.
+        # The pilot surface's "beta = gamma = 1" means the PLATFORM
+        # weight W_PLAT and the innate anchor INNATE_LAMBDA -- NOT the KL
+        # weight, which the config also calls kl_beta and the tag calls
+        # b<n>. These arms are ORDINARY SFT (kl_beta = 0, style "sft"),
+        # which is what makes the completed QWU b0 cell a legitimate q=1
+        # reuse. Requiring sft_kl here rejected the first smoke.
+        if float(cfg.get("kl_beta", -1)) != 0.0:
             errs.append(f"SURFACE kl_beta={cfg.get('kl_beta')!r} -- the "
-                        f"pilot surface is beta=1")
-        if cfg.get("training_style") != "sft_kl":
+                        f"reference-replay arms are ORDINARY SFT (KL "
+                        f"weight 0); the surface's beta=1 is W_PLAT, not "
+                        f"the KL weight")
+        if cfg.get("training_style") != "sft":
             errs.append(f"SURFACE training_style="
-                        f"{cfg.get('training_style')!r} -- want 'sft_kl' "
-                        f"at beta=1")
-        if cfg.get("kl_direction") != "forward":
-            errs.append(f"SURFACE kl_direction="
-                        f"{cfg.get('kl_direction')!r} -- forward KL is "
-                        f"the canonical direction for new waves")
+                        f"{cfg.get('training_style')!r} -- want 'sft': "
+                        f"the q=1 arm is the reused ordinary-SFT cell, so "
+                        f"every rung must be the same learner")
+        if float(cfg.get("w_plat", -1)) != 1.0:
+            errs.append(f"SURFACE w_plat={cfg.get('w_plat')!r} -- the "
+                        f"pilot surface is platform beta = 1")
         if float(cfg.get("innate_lambda", -1)) != 1.0:
             errs.append(f"SURFACE innate_lambda="
                         f"{cfg.get('innate_lambda')!r} -- the pilot "

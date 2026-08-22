@@ -300,8 +300,12 @@ def _build(tmp_path, q=Q, n=N, rounds=ROUNDS, steps=STEPS, seed=SEED,
         "ref_replay_ref_run": "pofdqmech_qwen7b_k0_ea1_w0p5_l1_es0p05_s0",
         "ref_replay_ref_sha256": rr.sha_vec(b),
         "n_rounds": n_rounds_cfg if n_rounds_cfg is not None else rounds,
-        "kl_beta": 1.0, "training_style": "sft_kl",
-        "kl_direction": "forward", "innate_lambda": 1.0,
+        # ORDINARY SFT. The surface's "beta = gamma = 1" is W_PLAT and
+        # INNATE_LAMBDA, not the KL weight -- and the reused q=1 arm is
+        # the completed QWU b0 (ordinary-SFT) cell, so every rung must
+        # be the same learner.
+        "kl_beta": 0.0, "training_style": "sft",
+        "w_plat": 1.0, "innate_lambda": 1.0,
         "ai_gate_mode": "all_open", "peer_gate_mode": "all_open",
         "eps": 0.05, "base_model": "Qwen/Qwen2.5-7B-Instruct",
         "fresh_each_round": True, "use_lora": 1, "seed": 0,
@@ -691,9 +695,9 @@ def test_q1_with_a_short_live_set_fails(tmp_path):
 # -- SURFACE ---------------------------------------------------------------
 
 @pytest.mark.parametrize("key,value", [
-    ("kl_beta", 0.0),
-    ("training_style", "sft"),
-    ("kl_direction", "reverse"),
+    ("kl_beta", 1.0),            # a KL arm is NOT this surface
+    ("training_style", "sft_kl"),
+    ("w_plat", 0.5),             # platform beta must be 1
     ("innate_lambda", 0.2),
     ("ai_gate_mode", "threshold"),
     ("peer_gate_mode", "threshold"),
@@ -961,3 +965,19 @@ def test_no_step_provenance_and_no_config_is_still_a_hard_failure(tmp_path):
     errs, _ = rr.check_ref_replay(
         d, n_agents=N, opt_steps=STEPS, expect_rounds=ROUNDS, canon_sha=sha)
     assert any("cannot be assumed" in e for e in errs), errs
+
+
+def test_the_two_betas_are_not_confused(tmp_path):
+    """beta is overloaded: W_PLAT (platform) and kl_beta (KL weight).
+    The pilot surface is platform beta=1 with KL weight 0. Reading the
+    surface's 'beta=1' as the KL weight rejected the first smoke, so
+    both are pinned explicitly and in opposite directions."""
+    d, sha = _build(tmp_path / "betas", q=0.5)
+    assert _check(d, sha) == []
+    _mutate(d, lambda b: b["config"].update({"kl_beta": 1.0,
+                                             "training_style": "sft_kl"}))
+    errs = _check(d, sha)
+    assert any("ORDINARY SFT" in e for e in errs), errs
+    d2, sha2 = _build(tmp_path / "betas2", q=0.5)
+    _mutate(d2, lambda b: b["config"].update({"w_plat": 0.5}))
+    assert any("platform beta = 1" in e for e in _check(d2, sha2))
