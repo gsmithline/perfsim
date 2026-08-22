@@ -210,9 +210,19 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
         # anything
         served = served_fn(x_pp, t).to(dtype)
         served_raw.append(served.clone())
+        # gate_on is passed EXPLICITLY (2026-08-22). It used to be omitted,
+        # which meant this oracle silently inherited gp's default -- and
+        # that default flipped from "x0" to "anchor" when the AI-gate
+        # anchor fix landed, so the artifact went on recording the v1
+        # marker while executing the v2 operator. Numerically inert on
+        # this surface (both gates all_open => ai_gate returns an
+        # all-ones mask at _gated_pop.py:205-206 before the reference is
+        # ever read at :209), but the provenance was wrong, and an oracle
+        # that misreports which operator it ran is worse than useless.
+        # Named here so a future default change cannot move it again.
         x_pp, gate = gp.nested_presocial_update(
             x_pp, served, innate, innate_k, w_agent, eps_ai,
-            gate_mode=ai_gate_mode)
+            gate_mode=ai_gate_mode, gate_on="anchor")
         if require_open_gate and not bool(gate.all()):
             raise AssertionError(
                 "perfect prediction must open every AI gate (|m - x| = 0); "
@@ -239,7 +249,15 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
 def build_config(args, setup):
     return {
         "platform": "perfect_prediction",
-        "population_update": "nested_ai_then_social_v1",
+        # Matches what simulate() now EXECUTES (gate_on="anchor", passed
+        # explicitly above), not what this oracle used to claim. Artifacts
+        # written before 2026-08-22 carry the v1 string and were produced
+        # by the same operator on this surface -- both gates all_open makes
+        # v1 and v2 numerically identical -- so old artifacts stay valid
+        # and are NOT rewritten. A consumer that needs to tell them apart
+        # should validate the expected marker PER SOURCE rather than treat
+        # the two strings as freely interchangeable.
+        "population_update": "nested_ai_anchored_then_social_v2",
         "innate_k": float(args.innate_k),
         "w_plat": float(args.w_plat),
         "beta_eff": beta_eff(float(args.innate_k), float(args.w_plat)),

@@ -5209,6 +5209,342 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# --- Section 3: the RETENTION table (S3) -----------------------------------
+# section3_retention[_smoke] (2026-08-22). The Section-3 headline object:
+# how much of the PRETRAINED PRIOR survives 100 rounds of closed-loop
+# retraining, as a joint function of
+#   (a) the KL anchor DOSE      lambda in {0, .1, .5, 1, 2, 4, 8}
+#   (b) the KL DIRECTION        forward (canonical) vs reverse (RLHF)
+#   (c) the ENVIRONMENT         (W_PLAT, k) -- three of them, below
+# on TWO checkpoints (Qwen2.5-7B-Instruct and Qwen3-8B, thinking OFF).
+#
+# NAMING, because three different quantities in this project are called
+# beta and two are called gamma, and mixing them up has cost a wave:
+#   Celestine's beta = platform susceptibility = W_PLAT   = the {wplat}
+#                      queue column (0.5 or 1)
+#   Celestine's gamma = the innate anchor coefficient k
+#                      = INNATE_LAMBDA = the {lam} queue column (1 or .2)
+#                      -- NOT the homophily gamma, which is the
+#                      positional column and stays 0.0 as always
+#   lambda            = the KL weight = kl_beta = the {beta} ROW column
+# The tag spells the KL weight only inside the ARM token (_fwdlam2_,
+# _revlam8_) and never as a bare _b<x>_, so it cannot be read as W_PLAT.
+#
+# THE THREE ENVIRONMENTS (exactly three, never four):
+#   env1 "main"  W = 0.5, k = 1     the canonical Section-3 surface
+#   env2 "wu"    W = 1,   k = 1     the exact Wu-style limiting boundary
+#   env3 "mem"   W = 0.5, k = 0.2   weak innate anchor -- the "memory"
+#                                   environment
+# (W = 1, k = 0.2) IS DELIBERATELY ABSENT. At beta = W_PLAT = 1 the
+# post-AI opinion is the served value outright and the innate term drops
+# out of the update algebraically, so a k = 0.2 cell there is the SAME
+# operator as the k = 1 cell -- it would be a duplicate run wearing a
+# different tag. s3_cells() cannot emit it (S3_ENVS has three entries)
+# and the registration asserts no row carries w=1 with k=0.2.
+#
+# REVERSE KL LIVES ONLY IN env1 AND env2. Reverse is the comparison arm,
+# not a dose ladder: two points ({1, 8}) on the two k = 1 environments.
+# The weak-anchor environment gets the forward ladder only.
+#
+# DIRECTION IS A QUEUE COLUMN, NOT A PINNED ENV VALUE -- and THIS is the
+# bit that bit an earlier wave. This key MIXES forward and reverse rows,
+# so KL_DIRECTION cannot be hard-coded in the sub environment the way
+# every single-direction wave does it. It rides the queue as $(kldir),
+# exactly as the qwen_kl_direction (KD) block does, which means BOTH of
+# these must be true at once:
+#   1. the environment string contains  KL_DIRECTION=$(kldir)
+#   2. the queue line DECLARES a kldir column, in the slot the row
+#      schema puts it in (right after lam)
+# If (1) holds and (2) does not, Condor expands $(kldir) to the EMPTY
+# STRING, the runner's _env_or("KL_DIRECTION", "reverse") never sees it
+# and silently falls back to REVERSE -- on the forward cells too, which
+# would look like a perfectly clean wave and quietly answer the wrong
+# question. Both are asserted in the registration block below.
+# Convention, verified against perfsim/learners/lm/kl_sft.py:
+#   forward = KL(pi_ref || pi_theta)   mass-covering (canonical here)
+#   reverse = KL(pi_theta || pi_ref)   mode-seeking, the RLHF penalty
+#
+# THE DIRECTION-NEUTRAL sft ARM, and what goes in its kldir column.
+# lambda = 0 is ordinary SFT: TRAINING_STYLE=sft, KL_BETA=0, and the
+# runner never constructs a divergence term at all, so kl_direction is
+# INERT for it. But the column is not optional -- every row of a key
+# must have the same arity, and an empty field would re-open exactly the
+# empty-string failure above. So the sft rows carry the literal
+# "forward" as an INERT PLACEHOLDER (S3_SFT_KLDIR), chosen because it is
+# this project's canonical direction and therefore the least surprising
+# value to find in an archived config.json for a run that used neither.
+# The TAG, by contrast, carries NO direction token whatsoever: the arm
+# token is the bare "sft", so nothing downstream can read a scientific
+# direction claim off a cell that has none. The registration asserts
+# both halves: sft rows are style "sft" with kl_beta "0", and their tags
+# contain neither "fwd" nor "rev".
+#
+# TAG GRAMMAR
+#   pofds3_{model}_{arm}_eaopen_w{W}_k{k}_esopen_anch2_s0_r100
+#   arm in {sft, fwdlam0p1, fwdlam0p5, fwdlam1, fwdlam2, fwdlam4,
+#           fwdlam8, revlam1, revlam8}
+# Two grammar notes:
+#  * _eaopen_/_esopen_ spell the GENUINELY open gates (AI_GATE_MODE and
+#    PEER_GATE_MODE = all_open), never _ea1_/_es1_: both gates are
+#    strict inequalities, so the numeric value 1 rejects a distance-1
+#    pair and would silently drop the extreme pairs this table is about.
+#  * the anchor k rides a _k{k}_ token here, whereas QWU/KD/QMECH spell
+#    it _l{k}_ and reserve _k<n>_ for ICL depth. That is the pinned
+#    Section-3 grammar and it is unambiguous WITHIN this family because
+#    every pofds3_ row has ICL_K = 0 (no in-context arm exists here at
+#    all), but it is a deliberate departure from the older families and
+#    any cross-family tag parser must key off the pofds3_ prefix first.
+#
+# THE "anch2" OPERATOR-PROVENANCE TOKEN (user decision, 2026-08-22).
+# The {optok} slot carries the fixed token "anch2", and it is TRUE BY
+# CONSTRUCTION: it names exactly the round operator these runs record.
+#   tag token  anch2
+#   config     population_update == "nested_ai_anchored_then_social_v2"
+# That marker comes from _POP_UPDATE_MARKER in run_pokec_gated_lm.py,
+# keyed on AI_GATE_REFERENCE, whose default has been "anchor" since
+# 2026-08-22. This block deliberately does NOT set AI_GATE_REFERENCE:
+# the default already produces the v2 marker, so pinning it in the sub
+# env would change the environment string for no behavioural gain.
+# An earlier draft of this wave used "hg2", short for a
+# "nested_ai_then_social_hgate_v2" operator. THAT STRING EXISTS NOWHERE
+# IN THIS REPO -- the runner can emit only "nested_ai_then_social_v1"
+# (AI_GATE_REFERENCE=x0, every run archived before 2026-08-22) or
+# "nested_ai_anchored_then_social_v2" (anchor). "anch2" is therefore the
+# only token that can be checked against a config.json, which is the
+# whole point of putting it in the tag.
+# WHAT THE TOKEN DOES AND DOES NOT MEAN. It records PROVENANCE, not a
+# behavioural difference on this surface: with AI_GATE_MODE=all_open the
+# v1 and v2 operators are NUMERICALLY IDENTICAL. gp.ai_gate returns an
+# all-ones mask at _gated_pop.py:205-206 and never reaches line 209,
+# where the gate reference (x0 vs the anchored x') is the only thing
+# that differs between the two semantics. So no pofds3_ result depends
+# on which marker it carries -- but every pofds3_ result can be SHOWN to
+# carry the v2 one, and archived runs cannot be mistaken for these
+# cells: none of them carry an operator token in the tag at all.
+#
+# WHAT IS QUEUED AND WHAT IS REUSED. 50 conceptual cells:
+#   2 models x 3 envs x 7 arms (sft + 6 forward)          = 42
+#   2 models x 2 envs (k=1) x 2 reverse arms              =  8
+# Four of the 50 are ALREADY ON DISK as archived Qwen2.5 QWU cells --
+# the same 100-round, seed-0, both-gates-open, r512-fresh-LoRA,
+# 723-agent movielens Action surface at k = 1 -- so they are declared in
+# S3_REUSED and NEVER queued:
+#   qwen7b sft      W=0.5  ->  pofdqwu_qwen7b_b0_eaopen_w0p5_l1_...
+#   qwen7b sft      W=1    ->  pofdqwu_qwen7b_b0_eaopen_w1_l1_...
+#   qwen7b fwdlam1  W=0.5  ->  pofdqwu_qwen7b_b1_eaopen_w0p5_l1_...
+#   qwen7b fwdlam1  W=1    ->  pofdqwu_qwen7b_b1_eaopen_w1_l1_...
+# => 50 - 4 = 46 NEW GPU production jobs, asserted explicitly below.
+# The registration also asserts that each declared reuse tag is a tag
+# some OTHER generated key actually produces, so a rename in the QWU
+# block can never orphan a Section-3 cell silently.
+# NOTE: field-level reuse eligibility (the audit that these four really
+# are the same experiment) is Agent A's manifest, not this generator's
+# claim. What this file guarantees is only: the tags exist, and they are
+# never double-queued.
+S3_KEY = "section3_retention"
+S3_SMOKE_KEY = "section3_retention_smoke"
+S3_MODELS = ["qwen7b", "qwen3_8b"]      # keys into FAM_MODELS
+# (W_PLAT = Celestine's beta, INNATE_LAMBDA = k = Celestine's gamma)
+S3_ENV_MAIN = (0.5, 1.0)
+S3_ENV_WU = (1.0, 1.0)
+S3_ENV_MEM = (0.5, 0.2)
+S3_ENVS = [S3_ENV_MAIN, S3_ENV_WU, S3_ENV_MEM]
+S3_ENV_NAMES = {S3_ENV_MAIN: "main", S3_ENV_WU: "wu", S3_ENV_MEM: "mem"}
+S3_FWD_LAMS = [0.1, 0.5, 1.0, 2.0, 4.0, 8.0]
+S3_REV_LAMS = [1.0, 8.0]
+S3_REV_ENVS = [S3_ENV_MAIN, S3_ENV_WU]  # reverse never runs in env3
+S3_EPS_SOCIAL = 0.2       # inert under all_open; the runner refuses 0
+S3_ROUNDS = 100
+S3_SMOKE_ROUNDS = 3
+S3_SEED = 0
+S3_H100 = QMECH_H100
+# the operator-provenance token: "anch2" <-> config population_update
+# "nested_ai_anchored_then_social_v2". See the provenance note above.
+S3_OP_TOKEN = "anch2"
+S3_DIR_ENV = {"fwd": "forward", "rev": "reverse"}
+# the inert placeholder the direction-NEUTRAL sft arm puts in its kldir
+# column (its tag carries no direction token; see the note above)
+S3_SFT_KLDIR = "forward"
+S3_N_CONCEPTUAL = 50      # 2 x 3 x 7 + 2 x 2 x 2
+S3_N_NEW = 46             # ... minus the 4 archived QWU cells
+# per-row queue payload, PINNED here rather than borrowed from
+# REACH_ARM_COLS so a later edit to that shared registry cannot move the
+# Section-3 surface out from under an in-flight wave. The values are the
+# b0/b1 envelope, which is what the four reused QWU cells ran with:
+S3_ICL_K = 0              # no in-context arm anywhere in this wave
+S3_ICL_SNAP = -1
+S3_USE_LORA = 1
+S3_FRESH = 1              # fresh LoRA every round
+S3_ANS_K = 16
+S3_GG = 0                 # gender-gap telemetry off, as in QWU/KD
+# (model, arm, W_PLAT, k) -> the archived run that already IS this cell.
+# Declared, asserted-to-exist, and never queued.
+S3_REUSED = {
+    ("qwen7b", "sft", 0.5, 1.0):
+        "pofdqwu_qwen7b_b0_eaopen_w0p5_l1_esopen_s0_r100",
+    ("qwen7b", "sft", 1.0, 1.0):
+        "pofdqwu_qwen7b_b0_eaopen_w1_l1_esopen_s0_r100",
+    ("qwen7b", "fwdlam1", 0.5, 1.0):
+        "pofdqwu_qwen7b_b1_eaopen_w0p5_l1_esopen_s0_r100",
+    ("qwen7b", "fwdlam1", 1.0, 1.0):
+        "pofdqwu_qwen7b_b1_eaopen_w1_l1_esopen_s0_r100",
+}
+
+# kldir rides the queue right after lam -- the same 28-column schema the
+# KD block uses. Columns 0-13 are the executable's POSITIONAL arguments
+# and are untouched by the extra column; everything from lam onward
+# reaches the runner through the sub's environment string.
+ROW_S3 = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+          "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {kldir}, {iclk}, "
+          "{snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}, "
+          "{basemodel}, {chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def s3_arm_token(direction, lam):
+    """('fwd', 0.1) -> 'fwdlam0p1'; ('rev', 8) -> 'revlam8'.
+
+    The direction is FUSED to the weight in a single token so no trained
+    arm can be named without committing to a direction. The
+    direction-neutral lambda = 0 arm is spelled "sft" and never passes
+    through here."""
+    if direction not in S3_DIR_ENV:
+        raise ValueError(f"direction must be fwd/rev; got {direction!r}")
+    return f"{direction}lam{_num(lam)}"
+
+
+def s3_arms(w, k):
+    """The arms of one environment, as (arm_token, style, kl_beta, kldir).
+
+    Ordinary SFT first, then the forward dose ladder, then -- only in the
+    two k = 1 environments -- the two reverse comparison points."""
+    out = [("sft", "sft", "0", S3_SFT_KLDIR)]
+    out += [(s3_arm_token("fwd", lam), "sft_kl", f"{lam:g}", "forward")
+            for lam in S3_FWD_LAMS]
+    if (w, k) in S3_REV_ENVS:
+        out += [(s3_arm_token("rev", lam), "sft_kl", f"{lam:g}", "reverse")
+                for lam in S3_REV_LAMS]
+    return out
+
+
+def s3_tag(model, arm, w, k, seed=S3_SEED, rounds=S3_ROUNDS, smoke=False):
+    """pofds3_qwen7b_fwdlam2_eaopen_w0p5_k1_esopen_anch2_s0_r100.
+
+    The horizon is in the tag because a 100-round and a 3-round cell of
+    the same condition are different objects, and the smoke wears its own
+    PREFIX (pofds3smk_) rather than a trailing token so a truncated run
+    can never be mistaken for -- or satisfy -- a production cell."""
+    pre = "pofds3smk" if smoke else "pofds3"
+    return (f"{pre}_{model}_{arm}_eaopen_w{_num(w)}_k{_num(k)}"
+            f"_esopen_{S3_OP_TOKEN}_s{seed}_r{rounds}")
+
+
+def s3_row(model, arm, style, kl_beta, kldir, w, k,
+           seed=S3_SEED, rounds=S3_ROUNDS, smoke=False):
+    m = FAM_MODELS[model]       # base_model / chatthink / mem / disk / ppl
+    return ROW_S3.format(
+        tag=s3_tag(model, arm, w, k, seed, rounds, smoke),
+        style=style, beta=kl_beta, seed=seed, es=f"{S3_EPS_SOCIAL:g}",
+        wplat=f"{w:g}", lam=f"{k:g}", kldir=kldir,
+        iclk=S3_ICL_K, snap=S3_ICL_SNAP, uselora=S3_USE_LORA,
+        fresh=S3_FRESH, ansk=S3_ANS_K, gg=S3_GG, nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def s3_cells():
+    """All 50 CONCEPTUAL cells, reuse included, in a stable order.
+
+    Returned as (model, arm, style, kl_beta, kldir, w, k) so the
+    registration can do its arithmetic on the DESIGN rather than on the
+    queued subset."""
+    return [(model, arm, style, kl_beta, kldir, w, k)
+            for model in S3_MODELS
+            for (w, k) in S3_ENVS
+            for arm, style, kl_beta, kldir in s3_arms(w, k)]
+
+
+def s3_rows():
+    """The NEW GPU jobs: the 50 conceptual cells minus the 4 declared
+    archived reuses = 46."""
+    return [s3_row(model, arm, style, kl_beta, kldir, w, k)
+            for model, arm, style, kl_beta, kldir, w, k in s3_cells()
+            if (model, arm, w, k) not in S3_REUSED]
+
+
+def s3_smoke_rows():
+    """Exactly ONE 3-round cell: Qwen3-8B, REVERSE KL, lambda = 1, the
+    Wu-boundary environment (W = 1, k = 1), both gates open.
+
+    That is this wave's hardest new corner in one job -- the NEW
+    checkpoint (thinking template off), the NEW direction on this key,
+    and the boundary environment -- so if $(kldir) ever failed to reach
+    the runner, or the Qwen3 chat template broke completion-only SFT
+    masking, this is the cell that shows it in three rounds."""
+    return [s3_row("qwen3_8b", "revlam1", "sft_kl", "1", "reverse",
+                   *S3_ENV_WU, rounds=S3_SMOKE_ROUNDS, smoke=True)]
+
+
+def s3_sub(smoke=False):
+    rows = s3_smoke_rows() if smoke else s3_rows()
+    key = S3_SMOKE_KEY if smoke else S3_KEY
+    return S3_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=S3_H100, bad=BAD_NODE_REQ,
+        rounds=(S3_SMOKE_ROUNDS if smoke else S3_ROUNDS),
+        kind=("3-ROUND QWEN3 REVERSE-KL SMOKE" if smoke
+              else "SECTION-3 RETENTION TABLE, 100 ROUNDS"))
+
+
+S3_SUB_TEMPLATE = """\
+# HTCondor: SECTION-3 RETENTION -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the S3 block. Never edit by hand:
+# rerun the script.
+# Surface: movielens Action, 723 agents, seed 0, {rounds} rounds, BOTH
+# GATES GENUINELY OPEN (all_open, not the numeric threshold 1), homophily
+# gamma = 0, fresh LoRA r512 every round, one peer sweep, matched twin,
+# greedy serving in eval mode, SAVE_RAW_GEN=1.
+# W_PLAT (Celestine's beta) and INNATE_LAMBDA (k, Celestine's gamma) BOTH
+# ride the queue rather than being pinned here, so the wave's three
+# environments share this one sub template --
+#   (W=0.5, k=1) main   (W=1, k=1) wu   (W=0.5, k=0.2) mem
+# (W=1, k=0.2) is not generated: k drops out algebraically at W=1.
+# (The smoke key renders the same template over its single row.)
+# BASE_MODEL / CHAT_THINKING / memory / disk / PPL_BATCH ride the queue
+# too, so Qwen2.5-7B-Instruct and Qwen3-8B (CHAT_THINKING=0, hybrid
+# reasoning explicitly OFF) share this sub.
+# KL_DIRECTION RIDES THE QUEUE. This key mixes forward and reverse rows,
+# so direction is $(kldir) and the tag's arm token records it.
+#   forward = KL(pi_ref || pi_theta)    reverse = KL(pi_theta || pi_ref)
+# The lambda = 0 "sft" arm is direction-NEUTRAL: TRAINING_STYLE=sft with
+# KL_BETA=0 builds no divergence term, so its kldir field is an inert
+# placeholder and its tag carries no direction token.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 # fig2_family_prior_scout[_smoke] (2026-08-17): the FIGURE-2 FAMILY-
 # PRIOR SCOUT -- six checkpoints (Qwen2.5-7B-Instruct, Qwen3-8B
 # thinking OFF, OLMo-2-1124-7B-Instruct, Olmo-3-7B-Instruct,
@@ -10097,6 +10433,232 @@ def main():
     files[p] = rows_rrs
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{RR_SMOKE_KEY}.sub")] = _rrs_sub
+
+    # ---- Section-3 retention table (S3) ------------------------------
+    # Registered LAST on purpose: the reuse assertion below requires that
+    # every key that could supply an archived tag (QWU in particular) is
+    # already in `files`.
+    _s3_cells = s3_cells()
+    rows_s3 = s3_rows()
+    # THE ARITHMETIC, recomputed rather than trusted.
+    #   50 conceptual = 2 models x 3 envs x 7 (sft + 6 forward)   [42]
+    #                 + 2 models x 2 k=1 envs x 2 reverse          [8]
+    #   46 new        = 50 - the 4 archived Qwen2.5 QWU cells
+    assert len(_s3_cells) == S3_N_CONCEPTUAL == 50, len(_s3_cells)
+    assert (len(S3_MODELS) * len(S3_ENVS) * (1 + len(S3_FWD_LAMS))
+            + len(S3_MODELS) * len(S3_REV_ENVS) * len(S3_REV_LAMS)
+            == S3_N_CONCEPTUAL), "the design arithmetic changed"
+    assert len(S3_REUSED) == 4, S3_REUSED
+    assert len(rows_s3) == S3_N_NEW == 46 == \
+        len(_s3_cells) - len(S3_REUSED), len(rows_s3)
+    _s3_tags = [r.split(",")[0] for r in rows_s3]
+    assert len(set(_s3_tags)) == S3_N_NEW, "duplicate S3 tag"
+    # every declared reuse must name a cell the DESIGN actually contains,
+    # or the "50 - 4" would be subtracting something that was never there
+    _s3_cell_keys = {(_m, _a, _w, _k)
+                     for _m, _a, _st, _b, _d, _w, _k in _s3_cells}
+    assert len(_s3_cell_keys) == S3_N_CONCEPTUAL
+    for _rk in S3_REUSED:
+        assert _rk in _s3_cell_keys, \
+            f"S3_REUSED names a cell the design does not contain: {_rk}"
+    # ... and no reused cell may ever be queued
+    for _rk in S3_REUSED:
+        assert s3_tag(_rk[0], _rk[1], _rk[2], _rk[3]) not in _s3_tags, _rk
+    # BOTH models present, in the counts the reuse split implies
+    # (qwen7b 25 - 4 = 21 new; qwen3_8b 25, nothing reused for it)
+    assert len(S3_MODELS) == 2 and set(S3_MODELS) == {"qwen7b", "qwen3_8b"}
+    for _m, _n in (("qwen7b", 21), ("qwen3_8b", 25)):
+        assert sum(1 for t in _s3_tags if f"_{_m}_" in t) == _n, (_m, _n)
+    # EXACTLY THREE ENVIRONMENTS, and (W=1, k=0.2) is not one of them
+    assert len(S3_ENVS) == 3 and len(set(S3_ENVS)) == 3, S3_ENVS
+    assert set(S3_ENVS) == {(0.5, 1.0), (1.0, 1.0), (0.5, 0.2)}, S3_ENVS
+    assert (1.0, 0.2) not in S3_ENVS, "k drops out at W=1: no such cell"
+    assert {(_w, _k) for _m, _a, _st, _b, _d, _w, _k in _s3_cells} \
+        == set(S3_ENVS)
+    assert {(c.split(",")[11].strip(), c.split(",")[14].strip())
+            for c in rows_s3} == {("0.5", "1"), ("1", "1"), ("0.5", "0.2")}
+    # REVERSE: 8 rows, only in the two k=1 environments, never in env3
+    _s3_rev = [r for r in rows_s3 if "_revlam" in r.split(",")[0]]
+    assert len(_s3_rev) == 8 == \
+        len(S3_MODELS) * len(S3_REV_ENVS) * len(S3_REV_LAMS), len(_s3_rev)
+    assert S3_ENV_MEM not in S3_REV_ENVS
+    for r in _s3_rev:
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[15] == "reverse", r
+        assert _c[14] == "1", r                    # k = 1 only
+        assert (float(_c[11]), float(_c[14])) in S3_REV_ENVS, r
+    for _lam in S3_REV_LAMS:
+        assert sum(1 for t in _s3_tags
+                   if f"_revlam{_num(_lam)}_" in t) == 4, _lam
+    # SFT: direction-NEUTRAL. style "sft", kl_beta 0, no direction token
+    # in the tag, and an inert placeholder in the kldir column.
+    _s3_sft = [r for r in rows_s3 if "_sft_" in r.split(",")[0]]
+    assert len(_s3_sft) == 4, len(_s3_sft)     # 2 models x 3 envs - 2 reused
+    for r in _s3_sft:
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[1] == "sft" and _c[2] == "0", r
+        assert "fwd" not in _c[0] and "rev" not in _c[0], \
+            f"the sft arm must carry NO direction token: {r}"
+        assert _c[15] == S3_SFT_KLDIR == "forward", r
+    # FORWARD ladder: 6 doses x 2 models x 3 envs, minus the 2 reused
+    # qwen7b lambda=1 cells
+    for _lam in S3_FWD_LAMS:
+        _n_exp = len(S3_MODELS) * len(S3_ENVS) - (2 if _lam == 1.0 else 0)
+        assert sum(1 for t in _s3_tags
+                   if f"_fwdlam{_num(_lam)}_" in t) == _n_exp, _lam
+    assert (len(_s3_sft) + sum(1 for t in _s3_tags if "_fwdlam" in t)
+            + len(_s3_rev) == S3_N_NEW)
+    # the per-row surface, and the tag <-> queue agreement that the
+    # empty-$(kldir) failure mode would break
+    for r in rows_s3:
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[3] == str(S3_SEED) == "0", r
+        assert _c[5] == "replace", r                  # replace-only data
+        assert _c[8] == "ab", r
+        assert _c[9] == f"{S3_EPS_SOCIAL:g}" == "0.2", r  # inert, never 0
+        assert _c[10] == "0.0", r                     # homophily gamma = 0
+        assert _c[11] in ("0.5", "1"), r              # W = Celestine beta
+        assert _c[14] in ("1", "0.2"), r              # k = Celestine gamma
+        assert not (_c[11] == "1" and _c[14] == "0.2"), \
+            f"(W=1, k=0.2) must never be generated: {r}"
+        assert _c[15] in ("forward", "reverse"), r    # kldir column
+        # every NON-sft row's tag direction token agrees with its kldir
+        if "_sft_" not in _c[0]:
+            assert _c[1] == "sft_kl", r
+            assert ("_fwdlam" in _c[0]) == (_c[15] == "forward"), r
+            assert ("_revlam" in _c[0]) == (_c[15] == "reverse"), r
+            # ... and the lambda in the tag is the lambda on the queue
+            assert f"lam{_num(float(_c[2]))}_" in _c[0], r
+        assert _c[16] == "0" and _c[17] == "-1", r    # no ICL anywhere
+        assert _c[18] == "1" and _c[19] == "1", r     # LoRA, fresh/round
+        assert _c[22] == str(S3_ROUNDS) == "100", r
+        assert _c[23] in ("Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen3-8B"), r
+        # Qwen3 rides hybrid reasoning explicitly OFF; Qwen2.5 the
+        # family default (byte-identical template call to every archive)
+        assert _c[24] == ("0" if "_qwen3_8b_" in _c[0] else "default"), r
+    # tag grammar
+    for t in _s3_tags:
+        assert t.startswith("pofds3_"), t
+        assert "_eaopen_" in t and "_esopen_" in t, t
+        assert "_ea1_" not in t and "_es1_" not in t, t
+        # the operator token, spelled BOTH through the constant and as a
+        # literal: the literal is the half that catches a silent rename
+        assert f"_{S3_OP_TOKEN}_" in t and "_anch2_" in t, t
+        assert "_hg2_" not in t, t      # the retired draft token
+        assert t.endswith(f"_s{S3_SEED}_r{S3_ROUNDS}"), t
+        assert "smoke" not in t and "smk" not in t, t
+    _s3_sub = s3_sub()
+    _s3_env = next(ln for ln in _s3_sub.splitlines()
+                   if ln.startswith("environment"))
+    # THE FAILURE MODE THIS WAVE MUST NOT REPEAT: an env that reads
+    # $(kldir) while the queue line never declares the column expands to
+    # the EMPTY STRING, and the runner's _env_or("KL_DIRECTION",
+    # "reverse") silently makes every cell reverse -- forward ones too.
+    # Both halves are checked, and the column's SLOT is pinned.
+    assert "KL_DIRECTION=$(kldir)" in _s3_env, _s3_env
+    assert "KL_DIRECTION=forward" not in _s3_env, _s3_env
+    assert "KL_DIRECTION=reverse" not in _s3_env, _s3_env
+    _s3_q = next(ln for ln in _s3_sub.splitlines()
+                 if ln.startswith("queue "))
+    assert ", lam, kldir, iclk," in _s3_q, _s3_q
+    assert f"configs_pofd_{S3_KEY}.txt" in _s3_q, _s3_q
+    # the pinned environment of every trained cell
+    assert "DATASET=movielens" in _s3_env and "ML_TARGET=Action" in _s3_env
+    assert "AI_GATE_MODE=all_open" in _s3_env
+    assert "PEER_GATE_MODE=all_open" in _s3_env
+    assert "EPS_AI=1 " in _s3_env
+    assert "INNATE_LAMBDA=$(lam)" in _s3_env       # k rides the queue
+    assert "ICL_K=$(iclk)" in _s3_env and "ICL_DAYS=0 " in _s3_env
+    assert "USE_LORA=$(uselora)" in _s3_env
+    assert "FRESH_EACH_ROUND=$(fresh)" in _s3_env
+    assert "LORA_R=512" in _s3_env and "SFT_LR=5e-5" in _s3_env
+    assert "SFT_EPOCHS=1" in _s3_env and "SFT_BATCH_SIZE=4" in _s3_env
+    assert "EPOCH_SIZE=100" in _s3_env
+    assert "N_LABELED=723" in _s3_env and "TRAIN_CAP=723" in _s3_env
+    assert "WITH_TWIN=1" in _s3_env and "SAVE_RAW_GEN=1" in _s3_env
+    assert "SEED_BASE_DATA=1" in _s3_env
+    assert "N_ROUNDS=$(nrounds)" in _s3_env
+    assert "BASE_MODEL=$(basemodel)" in _s3_env
+    assert "CHAT_THINKING=$(chatthink)" in _s3_env
+    # knobs that belong to OTHER waves and must not leak in here
+    assert "POP_RESET" not in _s3_env
+    assert "KL_REF_ADAPTER" not in _s3_env         # the raw base is the ref
+    assert "SFT_SAMPLE_N" not in _s3_env and "SFT_MAX_STEPS" not in _s3_env
+    assert "REF_REPLAY" not in _s3_env
+    assert "POP_MODEL=fj" not in _s3_env
+    # H100 80GB only
+    assert f'CUDADeviceName == "{S3_H100}"' in _s3_sub
+    assert "CUDAGlobalMemoryMb >= 80000" in _s3_sub
+    # no collision with ANY previously generated key ...
+    _prior_s3 = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_s3_tags) & _prior_s3), \
+        f"s3 collision: {set(_s3_tags) & _prior_s3}"
+    # ... and every DECLARED reuse tag must be a tag some OTHER key
+    # actually generates, so a rename can never orphan one silently
+    for _rk, _rt in S3_REUSED.items():
+        assert _rt in _prior_s3, \
+            f"S3_REUSED {_rk} -> {_rt} is generated by no key"
+        assert _rt not in _s3_tags, f"{_rt} is reused, it must not queue"
+    # the two sft reuses ARE the QWU b0 cells and the two fwdlam1 reuses
+    # ARE the QWU b1 cells -- named through the generator's own tag
+    # builder rather than by string similarity
+    for (_m, _a, _w, _k), _rt in S3_REUSED.items():
+        assert _rt == qwu_tag("b0" if _a == "sft" else "b1", _w), (_rt, _a)
+        assert _k == QWU_K == 1.0, (_rt, _k)
+        # the reuses are ARCHIVED QWU tags and must stay byte-identical:
+        # no operator token, ever. Adding one would rename a directory
+        # that already exists on the cluster and orphan the reuse.
+        assert _rt.startswith("pofdqwu_"), _rt
+        assert S3_OP_TOKEN not in _rt and "anch2" not in _rt, _rt
+        assert "hg2" not in _rt, _rt
+    p = os.path.join(HERE, f"configs_pofd_{S3_KEY}.txt")
+    files[p] = rows_s3
+    expected[p] = S3_N_NEW
+    cube_subs[os.path.join(HERE, f"at_pofd_{S3_KEY}.sub")] = _s3_sub
+    # the 3-round Qwen3 reverse smoke: a SEPARATE key, deliberately
+    # outside the 46-job production count
+    rows_s3s = s3_smoke_rows()
+    assert len(rows_s3s) == 1, len(rows_s3s)
+    _s3s_tags = {r.split(",")[0] for r in rows_s3s}
+    assert _s3s_tags == \
+        {"pofds3smk_qwen3_8b_revlam1_eaopen_w1_k1_esopen_anch2_s0_r3"}, \
+        _s3s_tags
+    # A SMOKE MUST BE IMPOSSIBLE TO CONFUSE WITH -- OR TO SATISFY -- A
+    # PRODUCTION CELL. Different prefix (pofds3smk_ never starts with
+    # pofds3_), and neither tag may be a prefix of the other in either
+    # direction, so no prefix-matching consumer can pair them up.
+    assert not (_s3s_tags & set(_s3_tags)), _s3s_tags
+    for _st in _s3s_tags:
+        assert _st.startswith("pofds3smk_"), _st
+        assert not _st.startswith("pofds3_"), _st
+        for t in _s3_tags:
+            assert not _st.startswith(t) and not t.startswith(_st), (_st, t)
+    for r in rows_s3s:
+        _c = [x.strip() for x in r.split(",")]
+        assert _c[1] == "sft_kl" and _c[2] == "1", r      # reverse lambda 1
+        assert _c[3] == "0", r                             # seed 0
+        assert _c[11] == "1" and _c[14] == "1", r          # W = 1, k = 1
+        assert _c[15] == "reverse", r
+        assert _c[22] == str(S3_SMOKE_ROUNDS) == "3", r
+        assert _c[23] == "Qwen/Qwen3-8B" and _c[24] == "0", r
+    _s3s_sub = s3_sub(smoke=True)
+    _s3s_env = next(ln for ln in _s3s_sub.splitlines()
+                    if ln.startswith("environment"))
+    assert "KL_DIRECTION=$(kldir)" in _s3s_env, _s3s_env
+    _s3s_q = next(ln for ln in _s3s_sub.splitlines()
+                  if ln.startswith("queue "))
+    assert ", lam, kldir, iclk," in _s3s_q, _s3s_q
+    assert f"configs_pofd_{S3_SMOKE_KEY}.txt" in _s3s_q, _s3s_q
+    assert f'CUDADeviceName == "{S3_H100}"' in _s3s_sub
+    assert "AI_GATE_MODE=all_open" in _s3s_env
+    assert "PEER_GATE_MODE=all_open" in _s3s_env
+    _prior_s3s = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (_s3s_tags & _prior_s3s), \
+        f"s3 smoke collision: {_s3s_tags & _prior_s3s}"
+    p = os.path.join(HERE, f"configs_pofd_{S3_SMOKE_KEY}.txt")
+    files[p] = rows_s3s
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{S3_SMOKE_KEY}.sub")] = _s3s_sub
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
