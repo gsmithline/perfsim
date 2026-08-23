@@ -18,10 +18,10 @@ import argparse, os, sys
 import numpy as np, torch
 torch.set_num_threads(1)
 
-N, ROUNDS = 723, 5
-QS = [0.1, 0.2, 0.5, 0.75, 1.0]
+N, ROUNDS = 723, 10
+QS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 1.0]
 SFT_TAG = "pofdps_qwen3_8b_sft_sw100_eaopen_w1_k1_esopen_anch2_s0_r60"
-FRZ = "notes/pofd/frozen_replay/frz_k1_w1_eaopen_esopen_sw100_s0_r5.pt"
+FRZ = "notes/pofd/frozen_replay/frz_k1_w1_eaopen_esopen_sw100_s0_r10.pt"
 
 
 def _num(v):
@@ -30,7 +30,7 @@ def _num(v):
 
 def load(root, q):
     tag = SFT_TAG if q == 1.0 else \
-        f"pofdmix_qwen3_8b_q{_num(q)}_sw100_eaopen_w1_k1_esopen_anch2_s0_r5"
+        f"pofdmix_qwen3_8b_q{_num(q)}_sw100_eaopen_w1_k1_esopen_anch2_s0_r{ROUNDS}"
     p = os.path.join(root, tag, "trajectory.pt")
     if not os.path.exists(p):
         return None, tag
@@ -107,7 +107,26 @@ def main():
         open(os.path.join(a.out, "label_mix_round5.csv"), "w").write(
             "\n".join(s2) + "\n")
         print("\nposition: 0 = on plain SFT, 1 = on frozen Qwen.")
-    print(f"\n[mix] {ROUNDS} rounds is a DIRECTIONAL test, NOT an equilibrium.")
+        # ---- IS EACH ARM STILL DRIFTING? -----------------------------
+        # A fresh LoRA every round puts a noise floor under any
+        # vanishing-step test, so drift is measured as the change in the
+        # MEAN between the two halves of the last 6 rounds, compared with
+        # the round-to-round jitter over the same window. An arm whose
+        # half-to-half shift exceeds that jitter is STILL MOVING and its
+        # position must not be read as a settled value.
+        print(f"\nSTILL DRIFTING? (last 6 rounds, halves compared)")
+        print(f"{'q':>6}{'first3':>10}{'last3':>10}{'shift':>10}"
+              f"{'jitter':>9}  verdict")
+        for q in QS:
+            if q not in data: continue
+            m = data[q].mean(axis=1)[-6:]
+            a3, b3 = float(m[:3].mean()), float(m[3:].mean())
+            shift = b3 - a3
+            jit = float(np.abs(np.diff(m)).mean())
+            moving = abs(shift) > max(jit, 1e-4)
+            print(f"{q:>6g}{a3:>10.4f}{b3:>10.4f}{shift:>+10.4f}{jit:>9.4f}"
+                  f"  {'STILL DRIFTING' if moving else 'settled'}")
+    print(f"\n[mix] {ROUNDS} rounds is a DIRECTIONAL test, NOT an equilibrium;\n      an arm flagged STILL DRIFTING has no settled position to quote.")
     print(f"[mix] wrote CSVs under {a.out}")
     return 0
 

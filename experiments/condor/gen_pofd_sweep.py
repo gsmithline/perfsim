@@ -5738,8 +5738,10 @@ def mem_sub(smoke=False):
 # ---------------------------------------------------------------------
 # section3_label_mix[_smoke] (2026-08-23). FIXED vs LIVE LABEL MIXTURE.
 #
-# A 5-round DIRECTIONAL SMOKE TEST, not an equilibrium result, and every
-# artifact and the analyzer say so.
+# A 10-round DIRECTIONAL test, not an equilibrium result, and every
+# artifact and the analyzer say so. The analyzer additionally reports a
+# per-arm DRIFT flag from the last few rounds, so an arm that is still
+# moving is labelled as such rather than read as a settled position.
 #
 # Each round the SFT set keeps all 723 rows. A fraction q of them carry
 # the agent's CURRENT post-peer opinion; the remaining 1-q carry that
@@ -5759,21 +5761,21 @@ def mem_sub(smoke=False):
 # REUSE. q = 1 is ordinary SFT, and pofdps_qwen3_8b_sft_sw100_... already
 # ran that exact surface for 60 rounds -- same checkpoint, thinking off,
 # W = 1, k = 1, AB_SWEEPS = 100, sft/kl_beta 0, 723 agents, seed 0, both
-# gates open. Its first 5 rounds ARE the q = 1 arm, so only the four
-# partial-mixture arms are queued: 4 GPU jobs.
+# gates open. Its first 10 rounds ARE the q = 1 arm, so only the eight
+# partial-mixture arms are queued: 8 GPU jobs.
 MIX_KEY = "section3_label_mix"
 MIX_SMOKE_KEY = "section3_label_mix_smoke"
 MIX_MODEL = "qwen3_8b"
 MIX_W = 1.0
 MIX_K = 1.0
 MIX_SWEEPS = 100
-MIX_ROUNDS = 5
+MIX_ROUNDS = 10
 MIX_SMOKE_ROUNDS = 3
 MIX_SEED = 0
 MIX_SEL_SEED = 0                  # REF_REPLAY_SEED: the row-selection stream
 MIX_H100 = S3_H100
 MIX_EPS_SOCIAL = S3_EPS_SOCIAL
-MIX_QS = [0.1, 0.2, 0.5, 0.75]    # queued; 1.0 is the reused ordinary-SFT cell
+MIX_QS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75]  # 1.0 = reused SFT cell
 MIX_Q_REUSED = 1.0
 MIX_REUSED_TAG = ("pofds3_placeholder")   # set below, after ps_tag exists
 MIX_REF_RUN = "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
@@ -11223,9 +11225,9 @@ def main():
     cube_subs[os.path.join(HERE, f"at_pofd_{MEM_SMOKE_KEY}.sub")] = mem_sub(smoke=True)
     # ---- fixed/live label mixture (MIX) --------------------------------
     rows_mix = mix_rows()
-    assert len(rows_mix) == 4, len(rows_mix)      # q in {.1,.2,.5,.75}
+    assert len(rows_mix) == 8, len(rows_mix)      # q grid minus the reused 1.0
     _mix_tags = [r.split(",")[0] for r in rows_mix]
-    assert len(set(_mix_tags)) == 4, _mix_tags
+    assert len(set(_mix_tags)) == 8, _mix_tags
     # q = 1 is ordinary SFT and is REUSED, never queued
     assert not any("_q1_" in t for t in _mix_tags), _mix_tags
     for r in rows_mix:
@@ -11259,7 +11261,7 @@ def main():
         f"MIX q=1 reuse {mix_reused_tag()} is not generated"
     p = os.path.join(HERE, f"configs_pofd_{MIX_KEY}.txt")
     files[p] = rows_mix
-    expected[p] = 4
+    expected[p] = 8
     cube_subs[os.path.join(HERE, f"at_pofd_{MIX_KEY}.sub")] = _mix_sub
     rows_mixs = mix_smoke_rows()
     assert len(rows_mixs) == 1
