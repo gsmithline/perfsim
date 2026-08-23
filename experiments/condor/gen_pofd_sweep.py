@@ -5525,6 +5525,27 @@ def s3_sub(smoke=False):
 # 60-round run only if the population and peer streams are stateless in
 # (seed, round). That is the documented design, but it is an assumption
 # about the stream, not a measurement.
+# DEFAULT HORIZON FOR NEW CLOSED-LOOP WAVES: 30 ROUNDS (2026-08-23).
+# The outcome that sets the horizon is POPULATION convergence, and it
+# settles early. The 100-round S=1 Qwen3 cells were stationary from
+# round ~40 with late SD slopes under .004/100rd; the peer-sweep cells
+# had SD slopes of ~1e-5/round by round 16; and the balance is a genuine
+# fixed point, sigma* = c*a*sigma_innate / [1 - c(1-a)] with a = 0.5k at
+# W = 0.5, approached geometrically at ratio c(1-a) -- about .17/round
+# at S = 20, so ~99% of the way there in three rounds.
+# TWO EXCEPTIONS. (1) MODEL-side quantities converge more slowly than
+# the population: ordinary SFT's served SD was still falling at round 16
+# and lambda=1's equilibrium mean was still drifting, so a served-map or
+# retention claim wants the longer horizon -- say so rather than
+# shortening silently. (2) Never kill a RUNNING wave to save rounds:
+# trajectory.pt and raw_gen_log.json.gz are written only at completion,
+# so stopping mid-run forfeits the entire artifact and costs more than
+# finishing.
+# The PS and MEM waves below keep 60 because they were already RUNNING
+# when this default was set; changing their constants would retag cells
+# whose directories are on the cluster under the old horizon.
+NEW_WAVE_ROUNDS = 30
+
 PS_KEY = "section3_peer_sweeps"
 PS_SMOKE_KEY = "section3_peer_sweeps_smoke"
 PS_MODEL = "qwen3_8b"
