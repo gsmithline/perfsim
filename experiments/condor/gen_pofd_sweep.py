@@ -5494,6 +5494,146 @@ def s3_sub(smoke=False):
               else "SECTION-3 RETENTION TABLE, 100 ROUNDS"))
 
 
+# ---------------------------------------------------------------------
+# section3_peer_sweeps[_smoke] (2026-08-23). MATCHED PEER-SWEEP STRENGTH.
+#
+# QUESTION. Ordinary SFT holds a POSITIVE post-peer SD plateau on the Wu
+# boundary. Is that an artifact of running only ONE peer sweep between
+# retraining rounds? If the plateau is set by how much contraction the
+# peer process gets per round, more sweeps should push it down.
+# Stated as a HYPOTHESIS, not a gating expectation: the analyzer reports
+# what the plateau does, including "it did not move".
+#
+# The Section 3 Qwen3 surface is held FIXED -- W = 1, k = 1, both gates
+# all_open, movielens/Action 723 agents, seed 0, fresh LoRA r512 every
+# round, forward KL only -- and the ONLY thing that varies is
+# AB_SWEEPS. 60 rounds.
+#
+# AB_SWEEPS RIDES THE QUEUE. It is an ordinary env var (default 1) that
+# no Section 3 sub sets, so it is added as a $(sweeps) column here. One
+# sweep keeps its existing meaning: approximately one population-wide
+# set of sampled pair interactions. NO new population operator.
+#
+# REUSE. S = 1 already exists at 100 rounds for all three arms; rounds
+# 1-60 are a prefix of those runs, and a field-level audit found every
+# scientific field identical (model, thinking off, dataset, 723 agents,
+# seed, forward direction, EMPTY reference adapter, W, k, both gate
+# modes, eps, ab_sweeps = 1, fresh LoRA, rank, lr, epochs, cap, no ICL,
+# serve_eval_mode, anch2 marker). So S = 1 is NOT re-run: 3 arms x 3 new
+# sweep counts = 9 production jobs.
+# CAVEAT recorded rather than hidden: a 100-round prefix equals a
+# 60-round run only if the population and peer streams are stateless in
+# (seed, round). That is the documented design, but it is an assumption
+# about the stream, not a measurement.
+PS_KEY = "section3_peer_sweeps"
+PS_SMOKE_KEY = "section3_peer_sweeps_smoke"
+PS_MODEL = "qwen3_8b"
+PS_W = 1.0
+PS_K = 1.0
+PS_ROUNDS = 60
+PS_SMOKE_ROUNDS = 3
+PS_SEED = 0
+PS_H100 = S3_H100
+PS_EPS_SOCIAL = S3_EPS_SOCIAL
+# (arm token, training_style, lambda). Forward KL only -- no reverse.
+PS_ARMS = [("sft", "sft", "0"), ("fwdlam1", "sft_kl", "1"),
+           ("fwdlam8", "sft_kl", "8")]
+PS_SWEEPS_NEW = [5, 20, 100]      # queued
+PS_SWEEPS_REUSED = 1              # served by the archived S3 100-round cells
+PS_REUSED = {
+    "sft": "pofds3_qwen3_8b_sft_eaopen_w1_k1_esopen_anch2_s0_r100",
+    "fwdlam1": "pofds3_qwen3_8b_fwdlam1_eaopen_w1_k1_esopen_anch2_s0_r100",
+    "fwdlam8": "pofds3_qwen3_8b_fwdlam8_eaopen_w1_k1_esopen_anch2_s0_r100",
+}
+
+ROW_PS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
+          "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {kldir}, {sweeps}, "
+          "{iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}, "
+          "{basemodel}, {chatthink}, {mem}, {disk}, {pplbatch}")
+
+
+def ps_tag(arm, sweeps, rounds=PS_ROUNDS, smoke=False):
+    """pofdps_qwen3_8b_fwdlam8_sw100_eaopen_w1_k1_esopen_anch2_s0_r60.
+
+    The sweep count AND the horizon are both in the tag: a 60-round
+    S = 20 cell and the 100-round S = 1 Section 3 cell of the same arm
+    are different objects, and neither may be mistaken for the other."""
+    pre = "pofdpssmk" if smoke else "pofdps"
+    return (f"{pre}_{PS_MODEL}_{arm}_sw{sweeps}_eaopen_w{_num(PS_W)}"
+            f"_k{_num(PS_K)}_esopen_{S3_OP_TOKEN}_s{PS_SEED}_r{rounds}")
+
+
+def ps_row(arm, style, lam, sweeps, rounds=PS_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS["b1"]
+    m = FAM_MODELS[PS_MODEL]
+    return ROW_PS.format(
+        tag=ps_tag(arm, sweeps, rounds, smoke), style=style, beta=lam,
+        seed=PS_SEED, es=f"{PS_EPS_SOCIAL:g}", wplat=f"{PS_W:g}",
+        lam=f"{PS_K:g}", kldir="forward", sweeps=sweeps,
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def ps_rows():
+    return [ps_row(arm, style, lam, S)
+            for S in PS_SWEEPS_NEW for arm, style, lam in PS_ARMS]
+
+
+def ps_smoke_rows():
+    """The most demanding path in one job: forward lambda = 8 at S = 100,
+    i.e. the strongest anchor and 100 peer sweeps per round."""
+    return [ps_row("fwdlam8", "sft_kl", "8", 100,
+                   rounds=PS_SMOKE_ROUNDS, smoke=True)]
+
+
+def ps_sub(smoke=False):
+    rows = ps_smoke_rows() if smoke else ps_rows()
+    key = PS_SMOKE_KEY if smoke else PS_KEY
+    return PS_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=PS_H100, bad=BAD_NODE_REQ,
+        rounds=(PS_SMOKE_ROUNDS if smoke else PS_ROUNDS),
+        kind=("3-ROUND S=100 FORWARD-lambda8 SMOKE" if smoke
+              else "PEER-SWEEP STRENGTH, 60 ROUNDS"))
+
+
+PS_SUB_TEMPLATE = """\
+# HTCondor: SECTION-3 PEER-SWEEP STRENGTH -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the PS block. Never edit by hand.
+# The Section 3 Qwen3 surface held FIXED (W = 1, k = 1, both gates
+# all_open, movielens/Action 723, seed 0, fresh LoRA r512, forward KL
+# only, {rounds} rounds); ONLY AB_SWEEPS varies, and it rides the queue
+# as $(sweeps). S = 1 is NOT queued -- the archived 100-round Section 3
+# cells serve it, audited field by field.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 S3_SUB_TEMPLATE = """\
 # HTCondor: SECTION-3 RETENTION -- {kind}, {n_jobs} jobs.
 # GENERATED by gen_pofd_sweep.py from the S3 block. Never edit by hand:
@@ -10659,6 +10799,59 @@ def main():
     files[p] = rows_s3s
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{S3_SMOKE_KEY}.sub")] = _s3s_sub
+    # ---- peer-sweep strength (PS) --------------------------------------
+    rows_ps = ps_rows()
+    assert len(rows_ps) == 9, len(rows_ps)          # 3 arms x S in {5,20,100}
+    _ps_tags = [r.split(",")[0] for r in rows_ps]
+    assert len(set(_ps_tags)) == 9, _ps_tags
+    assert all(t.startswith("pofdps_") for t in _ps_tags), _ps_tags
+    # S = 1 is REUSED and must never be queued
+    assert not any("_sw1_" in t for t in _ps_tags), _ps_tags
+    for S in PS_SWEEPS_NEW:
+        assert sum(f"_sw{S}_" in t for t in _ps_tags) == 3, (S, _ps_tags)
+    for r in rows_ps:
+        _c = [c.strip() for c in r.split(",")]
+        assert _c[3] == "0", r                       # seed
+        assert _c[10] == "0.0", r                    # homophily gamma
+        assert _c[11] == "1", r                      # W = 1
+        assert _c[14] == "1", r                      # k = 1
+        assert _c[15] == "forward", r                # forward KL only
+        assert int(_c[16]) in PS_SWEEPS_NEW, r       # sweeps column
+        assert _c[23] == str(PS_ROUNDS), r
+        assert _c[25] == "0", r                      # Qwen3 thinking OFF
+        # the sweep count in the TAG must equal the sweeps COLUMN
+        assert f"_sw{_c[16]}_" in _c[0], r
+    _ps_sub = ps_sub()
+    _ps_env = next(l for l in _ps_sub.splitlines() if l.startswith("environment"))
+    assert "AB_SWEEPS=$(sweeps)" in _ps_env, _ps_env
+    assert "KL_DIRECTION=$(kldir)" in _ps_env
+    assert "POP_MODEL=fj" not in _ps_env             # AB_SWEEPS>1 needs ab
+    _ps_q = next(l for l in _ps_sub.splitlines() if l.startswith("queue "))
+    # env referencing a column the queue never declares expands to "" and
+    # AB_SWEEPS silently falls back to 1 -- on every cell
+    assert ", kldir, sweeps, iclk," in _ps_q, _ps_q
+    _prior_ps = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_ps_tags) & _prior_ps), set(_ps_tags) & _prior_ps
+    for _arm, _t in PS_REUSED.items():
+        assert _t in _prior_ps, f"PS_REUSED {_arm} -> {_t} is not generated"
+    p = os.path.join(HERE, f"configs_pofd_{PS_KEY}.txt")
+    files[p] = rows_ps
+    expected[p] = 9
+    cube_subs[os.path.join(HERE, f"at_pofd_{PS_KEY}.sub")] = _ps_sub
+    rows_pss = ps_smoke_rows()
+    assert len(rows_pss) == 1
+    _pss = [c.strip() for c in rows_pss[0].split(",")]
+    assert _pss[0].startswith("pofdpssmk_") and "_sw100_" in _pss[0]
+    assert _pss[1] == "sft_kl" and _pss[2] == "8" and _pss[16] == "100"
+    assert _pss[23] == str(PS_SMOKE_ROUNDS)
+    assert _pss[0] not in set(_ps_tags)
+    _pss_sub = ps_sub(smoke=True)
+    assert "AB_SWEEPS=$(sweeps)" in next(
+        l for l in _pss_sub.splitlines() if l.startswith("environment"))
+    p = os.path.join(HERE, f"configs_pofd_{PS_SMOKE_KEY}.txt")
+    files[p] = rows_pss
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{PS_SMOKE_KEY}.sub")] = _pss_sub
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

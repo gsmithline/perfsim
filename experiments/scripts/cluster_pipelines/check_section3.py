@@ -621,6 +621,27 @@ def _mf_get(cell, names, default=ABSENT):
     return default
 
 
+def _normalize_manifest_hashes(cell):
+    """Expose accepted nested audit hashes under the checker's flat keys."""
+    nested_names = {
+        "pred_raw_full_f32": "pred_raw_sha256",
+        "op_raw_full_f32": "op_raw_sha256",
+        "pred_raw": "pred_raw_sha256",
+        "op_raw": "op_raw_sha256",
+        "innate": "innate_sha256",
+        "config": "config_sha256",
+    }
+    for obj_key in ("served_sha256", "hashes", "digests", "sha256"):
+        obj = cell.get(obj_key)
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                flat = nested_names.get(key)
+                if flat and flat not in cell and value:
+                    cell[flat] = value
+        elif isinstance(obj, str) and obj and "artifact_sha256" not in cell:
+            cell["artifact_sha256"] = obj
+
+
 def load_manifest(path, out):
     """(by_tag, by_slot, ok). Absence is NOT an error until a run dir
     actually needs attestation."""
@@ -634,7 +655,18 @@ def load_manifest(path, out):
     except Exception as e:                                # noqa: BLE001
         out.append(f"[check_s3] FAIL manifest: {p} is not readable JSON ({e})")
         return {}, {}, False
+    # The list key is spelled "cells" here and "candidates" by
+    # audit_section3_reuse.py. Accept either: a manifest that attests the
+    # right runs under a key this reader does not look at is
+    # indistinguishable from no manifest at all, and the failure surfaces
+    # as four "missing" cells rather than as a schema problem -- which is
+    # exactly how it presented the first time.
     cells = mf.get("cells")
+    if cells is None:
+        for _alt in ("candidates", "entries", "runs", "reuse"):
+            if isinstance(mf.get(_alt), list):
+                cells = mf[_alt]
+                break
     if not isinstance(cells, list):
         out.append(f"[check_s3] FAIL manifest: {p} has no 'cells' list.\n"
                    f"{MANIFEST_SCHEMA_HELP}")
@@ -645,6 +677,7 @@ def load_manifest(path, out):
             out.append(f"[check_s3] FAIL manifest: cells[{i}] is not an object")
             ok = False
             continue
+        _normalize_manifest_hashes(c)
         tag = _mf_get(c, _MF_TAG)
         if tag is not ABSENT and tag:
             by_tag[str(tag)] = c
@@ -652,10 +685,7 @@ def load_manifest(path, out):
         d = _mf_get(c, _MF_DIR)
         if d is not ABSENT and d:
             by_tag.setdefault(os.path.basename(str(d).rstrip("/")), c)
-        model = _mf_get(c, _MF_MODEL)
-        arm = _mf_get(c, _MF_ARM)
-        beta = _as_float(_mf_get(c, _MF_BETA, None))
-        k = _as_float(_mf_get(c, _MF_K, None))
+        model, arm, beta, k = _mf_slot(c)
         if ABSENT not in (model, arm) and beta is not None and k is not None:
             by_slot[(str(model), str(arm), beta, k)] = c
     return by_tag, by_slot, ok
@@ -664,6 +694,43 @@ def load_manifest(path, out):
 def _manifest_says_reuse(cell) -> bool:
     st = _mf_get(cell, _MF_STATUS, "")
     return str(st).strip().lower() in _REUSE_WORDS
+
+
+def _mf_slot(cell):
+    """(model, arm, beta, k) from a manifest cell, in ANY accepted shape.
+
+    ONE definition, used by both the grid map and the per-run check. The
+    two used to resolve the slot independently, and a manifest that named
+    the right cell in a shape only one of them read looked exactly like a
+    missing cell -- which is the single thing the manifest exists to rule
+    out. Accepted: flat model/arm/beta/k, the same nested under s3_cell,
+    and an env1/env2/env3 (or main/wu/mem) token in place of beta/k.
+    """
+    nested = cell.get("s3_cell") if isinstance(cell.get("s3_cell"), dict) else {}
+
+    def pick(names, default=ABSENT):
+        got = _mf_get(cell, names, ABSENT)
+        if got is not ABSENT:
+            return got
+        for n in names:
+            if n in nested:
+                return nested[n]
+        return default
+
+    model = pick(_MF_MODEL)
+    arm = pick(_MF_ARM)
+    beta = _as_float(pick(_MF_BETA, None))
+    k = _as_float(pick(_MF_K, None))
+    if beta is None or k is None:
+        et = pick(("env", "environment", "env_name"), None)
+        if et is not None:
+            by_name = {"env1": ENVS[0], "main": ENVS[0],
+                       "env2": ENVS[1], "wu": ENVS[1],
+                       "env3": ENVS[2], "mem": ENVS[2]}
+            hit = by_name.get(str(et).strip().lower())
+            if hit is not None:
+                beta, k = hit
+    return model, arm, beta, k
 
 
 def _manifest_verdict(cell, digests, tag, out):
@@ -676,6 +743,16 @@ def _manifest_verdict(cell, digests, tag, out):
                    f"-- an archived cell enters the grid only on an explicit "
                    f"reuse verdict")
         ok = False
+    # Hashes may be flat (pred_raw_sha256: "...") or nested under a
+    # served_sha256/hashes/digests object keyed by tensor name, which is
+    # what audit_section3_reuse.py emits. Flatten the nested form onto the
+    # flat names BEFORE looking, so an attested hash in the other shape is
+    # not read as "no hash at all" -- the manifest's entire job is to make
+    # this distinction, and a reader that misses it inverts the meaning of
+    # the gate. VERIFIED equivalent: served_sha256.pred_raw_full_f32
+    # reproduces sha256 of trajectory.pt['pred_raw'] f32 bytes on all four
+    # archived cells.
+    _normalize_manifest_hashes(cell)
     present = [k for k in _MF_HASHES if k in cell and cell[k]]
     if not present:
         out.append(f"[check_s3] FAIL {tag}: manifest entry carries NO artifact "
@@ -810,10 +887,9 @@ def check_one(run_dir, smoke, mf_by_tag, out, notes):
             return rec
         mok, matched = _manifest_verdict(cell, digests, tag, out)
         ok &= mok
-        model = str(_mf_get(cell, _MF_MODEL, ""))
-        arm = str(_mf_get(cell, _MF_ARM, ""))
-        beta = _as_float(_mf_get(cell, _MF_BETA, None))
-        k = _as_float(_mf_get(cell, _MF_K, None))
+        _m, _a, beta, k = _mf_slot(cell)
+        model = "" if _m is ABSENT else str(_m)
+        arm = "" if _a is ABSENT else str(_a)
         sem = arm_semantics(arm)
         if model not in MODELS or sem is None or beta is None or k is None:
             out.append(f"[check_s3] FAIL {tag}: reuse-manifest entry does not "
@@ -1273,10 +1349,10 @@ def check_frozen(paths, model_sha_overrides, out, notes):
 
     NAMING HAZARD, LOUD ON PURPOSE. The frz_* filename encodes k, W, both
     gate modes, sweeps, seed and horizon but NOT the model. Section 3
-    needs SIX of these (2 checkpoints x 3 environments) and the two
-    checkpoints collide pairwise on filename. So the artifact's own
-    config["base_model"] is the only provenance there is, it is checked
-    here, and a same-name pair of different checkpoints is reported.
+    needs SIX of these (2 checkpoints x 3 environments), so the two
+    checkpoints intentionally share basenames in separate model dirs.
+    The artifact's own config["base_model"] is therefore checked here,
+    and duplicate model/environment bindings are rejected.
 
     Qwen2.5's canonical served-map sha256 is pinned. Qwen3-8B's is NOT
     (it has not been re-derived from pred_raw[0]); it is taken from
@@ -1455,22 +1531,27 @@ def check_frozen(paths, model_sha_overrides, out, notes):
                      "rounds": int(pred.shape[0])
                      if torch.is_tensor(pred) else -1})
 
-    # the frz_* filename does not encode the model: two checkpoints at the
-    # same (k, W) collide. Section 3 needs 2 x 3 of them, so say it loudly.
-    by_name = {}
+    for binding, group in _duplicate_endpoint_bindings(seen):
+        paths = [s["path"] for s in group]
+        out.append(f"[check_s3] FAIL CPU endpoint: binding {binding} is "
+                   f"claimed by {len(group)} artifacts: {paths}. Supply "
+                   f"exactly one artifact per model/environment (or one "
+                   f"perfect-prediction artifact per environment).")
+        ok = False
+    return ok, seen, derived
+
+
+def _duplicate_endpoint_bindings(seen):
+    """Return repeated logical endpoints, independent of their filenames."""
+    by_binding = {}
     for s in seen:
         if s["kind"] == "frz":
-            by_name.setdefault(s["file"], set()).add(s["model"])
-    for fn, models in by_name.items():
-        if len(models) > 1:
-            out.append(f"[check_s3] FAIL frozen {fn}: the same filename was "
-                       f"supplied for checkpoints {sorted(models)}. frz_* "
-                       f"names encode k/W/gates/seed/rounds but NOT the "
-                       f"model, and this wave needs 2 checkpoints x 3 "
-                       f"environments. Separate them (per-model subdirs) "
-                       f"before anything is analyzed.")
-            ok = False
-    return ok, seen, derived
+            key = ("frz", s["model"], s["w_plat"], s["k"])
+        else:
+            key = ("pp", s["w_plat"], s["k"])
+        by_binding.setdefault(key, []).append(s)
+    return [(key, group) for key, group in by_binding.items()
+            if len(group) > 1]
 
 
 # ------------------------------------------------------------------ main
