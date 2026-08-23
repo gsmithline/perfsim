@@ -1,3 +1,12 @@
-pofdmem_qwen3_8b_sft_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
-pofdmem_qwen3_8b_fwdlam1_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
-pofdmem_qwen3_8b_fwdlam8_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 8, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_sft_sw1_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 1, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam1_sw1_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 1, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam8_sw1_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 8, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 1, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_sft_sw20_eaopen_w0p5_k1_esopen_anch2_s0_r60, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam1_sw20_eaopen_w0p5_k1_esopen_anch2_s0_r60, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam8_sw20_eaopen_w0p5_k1_esopen_anch2_s0_r60, sft_kl, 8, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_sft_sw20_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam1_sw20_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam8_sw20_eaopen_w0p5_k0p5_esopen_anch2_s0_r60, sft_kl, 8, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.5, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_sft_sw20_eaopen_w0p5_k0p2_esopen_anch2_s0_r60, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam1_sw20_eaopen_w0p5_k0p2_esopen_anch2_s0_r60, sft_kl, 1, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdmem_qwen3_8b_fwdlam8_sw20_eaopen_w0p5_k0p2_esopen_anch2_s0_r60, sft_kl, 8, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, forward, 20, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
