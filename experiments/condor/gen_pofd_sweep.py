@@ -5843,13 +5843,14 @@ def mix_sub(smoke=False):
 # section3_lambda_fill[_smoke] (2026-08-23). More forward-KL doses on the
 # two EXISTING S = 100 figures. No redesign: every parameter is copied
 # from the family the cell joins, and only lambda is new.
-#   family 1  W = 1,   k = 1 (k drops out at W = 1), 60 rounds -- the
-#             pofdps_ no-memory figure
-#   family 2  W = .5,  k in {1, .5, .2},  30 rounds -- the pofdmem_
-#             memory figure
-# The horizons DIFFER because the families do; matching each cell to its
-# own family is what makes it reusable alongside the existing lambda
-# 0/1/8 runs rather than a new surface.
+#   family 1  W = 1,   k = 1 (k drops out at W = 1) -- the pofdps_
+#             no-memory figure
+#   family 2  W = .5,  k in {1, .5, .2} -- the pofdmem_ memory figure
+# BOTH AT 30 ROUNDS. Family 1's existing lambda 0/1/8 cells ran 60, but
+# the population settles long before 30 and the streams are stateless in
+# (seed, round), so their first 30 rounds ARE the 30-round run and the
+# analyzer truncates them. Comparing at a common horizon is what makes
+# the two families one figure.
 # lambda 0, 1, 8 are already run in both families and lambda -> infinity
 # is the CPU frozen replay, so only .25, .5, 2 and 4 are queued:
 #   family 1: 4 x 1 = 4      family 2: 4 x 3 = 12      total 16 GPU jobs.
@@ -5864,7 +5865,7 @@ LAM_EPS_SOCIAL = S3_EPS_SOCIAL
 LAM_NEW = [0.25, 0.5, 2.0, 4.0]        # queued
 LAM_EXISTING = [0.0, 1.0, 8.0]         # already run in both families
 # (W, k, rounds) per family, copied from the runs being extended
-LAM_FAMILIES = [(1.0, 1.0, 60)] + [(0.5, k, 30) for k in (1.0, 0.5, 0.2)]
+LAM_FAMILIES = [(1.0, 1.0, 30)] + [(0.5, k, 30) for k in (1.0, 0.5, 0.2)]
 
 
 def lam_tag(lam, w, k, rounds, smoke=False):
@@ -5902,7 +5903,7 @@ def lam_sub(smoke=False):
     key = LAM_SMOKE_KEY if smoke else LAM_KEY
     return PS_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=LAM_H100, bad=BAD_NODE_REQ,
-        rounds=(LAM_SMOKE_ROUNDS if smoke else 60),
+        rounds=(LAM_SMOKE_ROUNDS if smoke else 30),
         kind=("3-ROUND lambda=4 SMOKE" if smoke
               else "FORWARD-KL DOSE FILL ON THE TWO S=100 FIGURES"))
 

@@ -1,7 +1,7 @@
-pofdlam_qwen3_8b_fwdlam0p25_sw100_eaopen_w1_k1_esopen_anch2_s0_r60, sft_kl, 0.25, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
-pofdlam_qwen3_8b_fwdlam0p5_sw100_eaopen_w1_k1_esopen_anch2_s0_r60, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
-pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_s0_r60, sft_kl, 2, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
-pofdlam_qwen3_8b_fwdlam4_sw100_eaopen_w1_k1_esopen_anch2_s0_r60, sft_kl, 4, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 60, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdlam_qwen3_8b_fwdlam0p25_sw100_eaopen_w1_k1_esopen_anch2_s0_r30, sft_kl, 0.25, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdlam_qwen3_8b_fwdlam0p5_sw100_eaopen_w1_k1_esopen_anch2_s0_r30, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_s0_r30, sft_kl, 2, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdlam_qwen3_8b_fwdlam4_sw100_eaopen_w1_k1_esopen_anch2_s0_r30, sft_kl, 4, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
 pofdlam_qwen3_8b_fwdlam0p25_sw100_eaopen_w0p5_k1_esopen_anch2_s0_r30, sft_kl, 0.25, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
 pofdlam_qwen3_8b_fwdlam0p5_sw100_eaopen_w0p5_k1_esopen_anch2_s0_r30, sft_kl, 0.5, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
 pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k1_esopen_anch2_s0_r30, sft_kl, 2, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, Qwen/Qwen3-8B, 0, 128G, 40G, 64
