@@ -701,38 +701,32 @@ def test_runner_default_direction_is_still_reverse():
 
 
 # --------------------------------------------------- REF_REPLAY_ALL_FIXED
-def _mix_env(**over):
-    """The env a q=0 all-fixed row actually presents to the runner."""
-    e = {"REF_REPLAY_Q": "0", "REF_REPLAY_ALL_FIXED": "1",
-         "REF_REPLAY_SEED": "0", "REF_REPLAY_REF_RUN": "some_run"}
-    e.update(over)
-    return e
-
-
-def test_all_fixed_validation_accepts_q0_with_a_reference_run():
-    """q = 0 has BOTH q == 0 and a reference run set. An earlier version
-    rejected exactly that combination, because the branch handling q > 0
-    was narrowed to exclude all-fixed and the 'inert knob' elif then
-    caught it -- the job held on the cluster with
-    'REF_REPLAY_REF_RUN / REF_REPLAY_SEED without REF_REPLAY_Q>0'.
-    This pins the accepted shape as plain data so the combination cannot
-    silently become invalid again."""
-    import re
-    src = open(os.path.join(HERE, "experiments", "scripts",
-                            "cluster_pipelines",
-                            "run_pokec_gated_lm.py")).read()
-    # the inert-knob guard must key off ref_replay_on, not off falling
-    # through from the q > 0 branch
-    m = re.search(r"elif not ref_replay_on and \(ref_replay_ref_run",
-                  src)
-    assert m, ("the REF_REPLAY inert-knob guard must be conditioned on "
-               "`not ref_replay_on`; otherwise ALL_FIXED (q=0 + ref run) "
-               "falls into it and every q=0 job is held")
+def test_all_fixed_guard_is_conditioned_on_ref_replay_on():
+    """q = 0 sets BOTH q == 0 and a reference run. An earlier version
+    rejected exactly that: the branch handling q > 0 had been narrowed to
+    exclude all-fixed, so q = 0 fell into the elif that rejects a
+    reference run without q > 0, and every q = 0 job held on the cluster
+    with 'REF_REPLAY_REF_RUN / REF_REPLAY_SEED without REF_REPLAY_Q>0'.
+    The guard must key off ref_replay_on, not off falling through."""
+    src = open(RUNNER).read()
+    assert "elif not ref_replay_on and (ref_replay_ref_run" in src, (
+        "the REF_REPLAY inert-knob guard must be conditioned on "
+        "`not ref_replay_on`; otherwise ALL_FIXED (q=0 + a reference run) "
+        "lands in it and every q=0 job is held")
     assert "ref_replay_on = ref_replay_q > 0 or ref_replay_all_fixed" in src
-    assert 'ref_replay_all_fixed = _env_int("REF_REPLAY_ALL_FIXED", 0) == 1' in src
+    assert ('ref_replay_all_fixed = _env_int("REF_REPLAY_ALL_FIXED", 0) == 1'
+            in src)
 
 
-def test_generator_marks_only_q0_as_all_fixed(gen):
-    for r in gen.mix_rows():
+def test_generator_marks_only_q0_as_all_fixed(generated):
+    """The allfixed column must be 1 for q = 0 and 0 everywhere else. A
+    q > 0 row carrying the flag would silently discard its live set."""
+    rows = [r for r in
+            generated["configs_pofd_section3_label_mix.txt"].splitlines()
+            if r.strip()]
+    assert len(rows) == 4, rows
+    for r in rows:
         c = [x.strip() for x in r.split(",")]
         assert (c[18] == "1") == (float(c[17]) == 0.0), r
+    assert sum(1 for r in rows
+               if [x.strip() for x in r.split(",")][18] == "1") == 1, rows
