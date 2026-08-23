@@ -150,7 +150,7 @@ def main():
     print(f"\n{'cell':<62}{'q':>6}{'mean':>9}{'SD':>9}")
     for r in sorted(recs, key=lambda x: x["q"]):
         print(f"{r['tag']:<62}{r['q']:>6g}{r['mean_last']:>9.4f}{r['sd_last']:>9.4f}")
-    print("\n5 rounds is a DIRECTIONAL test, not an equilibrium.")
+    print(f"\n{want_rounds}-round run: check the drift flag before quoting a position.")
     allok = bool(recs) and all(r["ok"] for r in recs) and not any(
         l.startswith("FAIL") for l in out)
     print(f"[check_mix] {'PASS' if allok else 'FAILED'} -- {len(a.runs)} run(s)")

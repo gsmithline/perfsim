@@ -1098,7 +1098,15 @@ def main() -> int:
     ref_replay_q = _env_float("REF_REPLAY_Q", 0.0)
     ref_replay_seed = _env_int("REF_REPLAY_SEED", 0)
     ref_replay_ref_run = os.environ.get("REF_REPLAY_REF_RUN", "")
-    ref_replay_on = ref_replay_q > 0
+    # REF_REPLAY_ALL_FIXED (2026-08-23): the q = 0 endpoint -- EVERY label
+    # is the frozen reference b, no row is live. It is a SEPARATE opt-in
+    # rather than a relaxation of REF_REPLAY_Q, because gp.ref_replay_n_live
+    # deliberately refuses an empty live set: a q so small it empties S_t is
+    # a mistake, and silently turning that into an all-reference run is the
+    # failure that guard exists to prevent. Absent (the default) leaves
+    # every existing path byte-identical.
+    ref_replay_all_fixed = _env_int("REF_REPLAY_ALL_FIXED", 0) == 1
+    ref_replay_on = ref_replay_q > 0 or ref_replay_all_fixed
     # FEEDBACK_MODE (in-context reward-hacking probe, Pan et al. 2402.06627;
     # frozen + ab only). Each round's prompt carries a GLOBAL feedback block
     # summarizing the PREVIOUS round so the model can refine its output in-context:
@@ -1505,10 +1513,19 @@ def main() -> int:
     # whole design rests on the round's batch being the untouched
     # one-row-per-agent replace batch in canonical order: anything else
     # rewriting it makes "the live set" mean two different things at once.
+    if ref_replay_all_fixed:
+        if ref_replay_q != 0:
+            raise ValueError(
+                f"REF_REPLAY_ALL_FIXED=1 is the q = 0 endpoint and requires "
+                f"REF_REPLAY_Q=0; got {ref_replay_q}. Two different live "
+                f"fractions cannot both be in force.")
+        if not ref_replay_ref_run:
+            raise ValueError("REF_REPLAY_ALL_FIXED=1 requires "
+                             "REF_REPLAY_REF_RUN (every label IS b)")
     if ref_replay_q < 0:
         raise ValueError(f"REF_REPLAY_Q must be >= 0 (0 = off); got "
                          f"{ref_replay_q}")
-    if ref_replay_on:
+    if ref_replay_on and not ref_replay_all_fixed:
         if not (0.0 < ref_replay_q <= 1.0):
             raise ValueError(f"REF_REPLAY_Q must be in (0, 1]; got "
                              f"{ref_replay_q}")
@@ -1535,6 +1552,7 @@ def main() -> int:
                              "targets, so substituting a frozen prediction "
                              "would silently change what is being judged")
     elif ref_replay_ref_run or os.environ.get("REF_REPLAY_SEED"):
+        # (ALL_FIXED already turned ref_replay_on above, so it never lands here)
         # a set-but-inert knob is the worst outcome: the tag would claim a
         # design the run never had
         raise ValueError("REF_REPLAY_REF_RUN / REF_REPLAY_SEED without "
@@ -1602,8 +1620,8 @@ def main() -> int:
         # |S_t| comes from b's own length, which is the only population size
         # known before the dataset loads; the length is then hard-checked
         # against n below, so the two can never disagree in a run that survives
-        ref_replay_n_live = gp.ref_replay_n_live(
-            int(ref_replay_ref_vec.shape[0]), ref_replay_q)
+        ref_replay_n_live = (0 if ref_replay_all_fixed else gp.ref_replay_n_live(
+            int(ref_replay_ref_vec.shape[0]), ref_replay_q))
         print(f"[run] REF_REPLAY q={ref_replay_q} seed={ref_replay_seed}: "
               f"{ref_replay_n_live} live of {int(ref_replay_ref_vec.shape[0])} "
               f"rows/round, b from {ref_replay_ref_run!r} pred_raw[0] "
@@ -1800,6 +1818,7 @@ def main() -> int:
             "ref_replay_q": ref_replay_q,
             "ref_replay_seed": ref_replay_seed,
             "ref_replay_n_live": ref_replay_n_live,
+            "ref_replay_all_fixed": ref_replay_all_fixed,
             "ref_replay_ref_run": ref_replay_ref_run,
             "ref_replay_ref_sha256": ref_replay_ref_sha256,
         })
@@ -2662,8 +2681,10 @@ def main() -> int:
                 _y_rr = train_data["y"]
                 _y_rr = (_y_rr.squeeze(-1) if _y_rr.ndim > 1
                          else _y_rr).detach().cpu().float()
-                _live_rr = gp.ref_replay_live(n, ref_replay_q,
-                                              ref_replay_seed, t)
+                _live_rr = (torch.empty(0, dtype=torch.long)
+                            if ref_replay_all_fixed
+                            else gp.ref_replay_live(n, ref_replay_q,
+                                                    ref_replay_seed, t))
                 _lab_rr = gp.ref_replay_labels(_y_rr, ref_replay_ref_vec,
                                                _live_rr)
                 # NEW dict: initial_data (which IS train_data at t=0) must

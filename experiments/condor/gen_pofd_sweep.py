@@ -5769,13 +5769,16 @@ MIX_MODEL = "qwen3_8b"
 MIX_W = 1.0
 MIX_K = 1.0
 MIX_SWEEPS = 100
-MIX_ROUNDS = 10
+MIX_ROUNDS = 30
 MIX_SMOKE_ROUNDS = 3
 MIX_SEED = 0
 MIX_SEL_SEED = 0                  # REF_REPLAY_SEED: the row-selection stream
 MIX_H100 = S3_H100
 MIX_EPS_SOCIAL = S3_EPS_SOCIAL
-MIX_QS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75]  # 1.0 = reused SFT cell
+# q = 0 is the ALL-FIXED endpoint (every label is b). It rides its own
+# env flag REF_REPLAY_ALL_FIXED, not REF_REPLAY_Q, because
+# gp.ref_replay_n_live deliberately refuses an empty live set.
+MIX_QS = [0.0, 0.25, 0.5, 0.75]   # 1.0 = the reused ordinary-SFT cell
 MIX_Q_REUSED = 1.0
 MIX_REUSED_TAG = ("pofds3_placeholder")   # set below, after ps_tag exists
 MIX_REF_RUN = "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
@@ -5790,7 +5793,7 @@ def mix_reused_tag():
 
 ROW_MIX = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
            "ab, {es}, 0.0, {wplat}, loop, 0.0, {lam}, {kldir}, {sweeps}, "
-           "{refq}, {iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
+           "{refq}, {allfixed}, {iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, "
            "{nrounds}, {basemodel}, {chatthink}, {mem}, {disk}, {pplbatch}")
 
 
@@ -5808,7 +5811,7 @@ def mix_row(q, rounds=MIX_ROUNDS, smoke=False):
     return ROW_MIX.format(
         tag=mix_tag(q, rounds, smoke), style="sft", beta="0",
         seed=MIX_SEED, es=f"{MIX_EPS_SOCIAL:g}", wplat=f"{MIX_W:g}",
-        lam=f"{MIX_K:g}", kldir="forward", sweeps=MIX_SWEEPS, refq=q,
+        lam=f"{MIX_K:g}", kldir="forward", sweeps=MIX_SWEEPS, refq=q, allfixed=(1 if q == 0.0 else 0),
         iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
         fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
         basemodel=m["base_model"], chatthink=m["chatthink"],
@@ -5862,7 +5865,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) REF_REPLAY_Q=$(refq) REF_REPLAY_SEED={selseed} REF_REPLAY_REF_RUN={refrun} ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) REF_REPLAY_Q=$(refq) REF_REPLAY_ALL_FIXED=$(allfixed) REF_REPLAY_SEED={selseed} REF_REPLAY_REF_RUN={refrun} ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_{key}"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
@@ -5874,7 +5877,7 @@ on_exit_hold      = (ExitCode =!= 0)
 periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
 periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
 
-queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, refq, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, refq, allfixed, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
 """
 
 
@@ -11225,9 +11228,9 @@ def main():
     cube_subs[os.path.join(HERE, f"at_pofd_{MEM_SMOKE_KEY}.sub")] = mem_sub(smoke=True)
     # ---- fixed/live label mixture (MIX) --------------------------------
     rows_mix = mix_rows()
-    assert len(rows_mix) == 8, len(rows_mix)      # q grid minus the reused 1.0
+    assert len(rows_mix) == 4, len(rows_mix)      # q grid minus the reused 1.0
     _mix_tags = [r.split(",")[0] for r in rows_mix]
-    assert len(set(_mix_tags)) == 8, _mix_tags
+    assert len(set(_mix_tags)) == 4, _mix_tags
     # q = 1 is ordinary SFT and is REUSED, never queued
     assert not any("_q1_" in t for t in _mix_tags), _mix_tags
     for r in rows_mix:
@@ -11239,8 +11242,8 @@ def main():
         assert _c[14] == "1", r                       # k = 1
         assert int(_c[16]) == MIX_SWEEPS, r           # S = 100
         assert float(_c[17]) in MIX_QS, r             # q column
-        assert _c[24] == str(MIX_ROUNDS), r
-        assert _c[26] == "0", r                       # Qwen3 thinking OFF
+        assert _c[25] == str(MIX_ROUNDS), r
+        assert _c[27] == "0", r                       # Qwen3 thinking OFF
         assert f"_q{_num(float(_c[17]))}_" in _c[0], r
     _mix_sub = mix_sub()
     _mix_env = next(l for l in _mix_sub.splitlines() if l.startswith("environment"))
@@ -11254,20 +11257,25 @@ def main():
         assert _leak not in _mix_env, _leak
     assert "TRAIN_CAP=723" in _mix_env and "N_LABELED=723" in _mix_env
     _mix_q = next(l for l in _mix_sub.splitlines() if l.startswith("queue "))
-    assert ", sweeps, refq, iclk," in _mix_q, _mix_q
+    assert ", sweeps, refq, allfixed, iclk," in _mix_q, _mix_q
+    assert "REF_REPLAY_ALL_FIXED=$(allfixed)" in _mix_env, _mix_env
+    # q = 0 must carry the flag and q > 0 must not
+    for _r in rows_mix:
+        _cc = [c.strip() for c in _r.split(",")]
+        assert (_cc[18] == "1") == (float(_cc[17]) == 0.0), _r
     _prior_mix = {r.split(",")[0] for rows in files.values() for r in rows}
     assert not (set(_mix_tags) & _prior_mix), set(_mix_tags) & _prior_mix
     assert mix_reused_tag() in _prior_mix, \
         f"MIX q=1 reuse {mix_reused_tag()} is not generated"
     p = os.path.join(HERE, f"configs_pofd_{MIX_KEY}.txt")
     files[p] = rows_mix
-    expected[p] = 8
+    expected[p] = 4
     cube_subs[os.path.join(HERE, f"at_pofd_{MIX_KEY}.sub")] = _mix_sub
     rows_mixs = mix_smoke_rows()
     assert len(rows_mixs) == 1
     _xs = [c.strip() for c in rows_mixs[0].split(",")]
     assert _xs[0].startswith("pofdmixsmk_") and "_q0p1_" in _xs[0]
-    assert float(_xs[17]) == 0.1 and _xs[24] == str(MIX_SMOKE_ROUNDS)
+    assert float(_xs[17]) == 0.1 and _xs[25] == str(MIX_SMOKE_ROUNDS)
     assert _xs[0] not in set(_mix_tags)
     p = os.path.join(HERE, f"configs_pofd_{MIX_SMOKE_KEY}.txt")
     files[p] = rows_mixs

@@ -7,7 +7,8 @@ so, and no convergence flag is emitted, because none would be honest.
 
 q is the fraction of SFT rows carrying the agent's CURRENT post-peer
 opinion; the remaining 1-q carry that agent's ORIGINAL frozen-Qwen
-prediction. q = 1 is ordinary SFT and comes from the archived
+prediction. q = 0 pins EVERY label to the frozen prediction; q = 1 is ordinary
+SFT and comes from the archived
 pofdps_qwen3_8b_sft_sw100_... cell, truncated to 5 rounds.
 
 Endpoints: the frozen-Qwen population at the SAME surface (W=1, k=1,
@@ -18,10 +19,10 @@ import argparse, os, sys
 import numpy as np, torch
 torch.set_num_threads(1)
 
-N, ROUNDS = 723, 10
-QS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 1.0]
+N, ROUNDS = 723, 30
+QS = [0.0, 0.25, 0.5, 0.75, 1.0]
 SFT_TAG = "pofdps_qwen3_8b_sft_sw100_eaopen_w1_k1_esopen_anch2_s0_r60"
-FRZ = "notes/pofd/frozen_replay/frz_k1_w1_eaopen_esopen_sw100_s0_r10.pt"
+FRZ = "notes/pofd/frozen_replay/frz_k1_w1_eaopen_esopen_sw100_s0_r30.pt"
 
 
 def _num(v):
@@ -89,10 +90,17 @@ def main():
     open(os.path.join(a.out, "label_mix_per_round.csv"), "w").write(
         "\n".join(rows) + "\n")
 
-    if fz is not None and 1.0 in data:
-        fzm, sftm = float(fz[-1].mean()), float(data[1.0][-1].mean())
+    # ENDPOINTS: the matched q=0 and q=1 ARMS, not the CPU frozen replay.
+    # q=0 trains every round on the frozen labels, so it is the trained
+    # counterpart of the frozen model and the right zero for this ladder;
+    # the CPU replay never trains and is reported alongside for reference.
+    if 0.0 in data and 1.0 in data:
+        fzm, sftm = float(data[0.0][-1].mean()), float(data[1.0][-1].mean())
+        if fz is not None:
+            print(f"\n(CPU frozen replay, never trained: "
+                  f"{float(fz[-1].mean()):.4f})")
         print(f"\nROUND-{ROUNDS} MEAN vs the two endpoints")
-        print(f"  frozen-Qwen = {fzm:.4f}   plain SFT (q=1) = {sftm:.4f}")
+        print(f"  q=0 all-fixed = {fzm:.4f}   plain SFT (q=1) = {sftm:.4f}")
         print(f"{'q':>6}{'mean':>10}{'d(frozen)':>12}{'d(SFT)':>10}"
               f"{'position':>11}")
         s2 = ["q,mean_r5,dist_frozen,dist_sft,frac_toward_frozen"]
@@ -106,7 +114,7 @@ def main():
             s2.append(f"{q:g},{mv:.6f},{df:.6f},{ds:.6f},{frac:.4f}")
         open(os.path.join(a.out, "label_mix_round5.csv"), "w").write(
             "\n".join(s2) + "\n")
-        print("\nposition: 0 = on plain SFT, 1 = on frozen Qwen.")
+        print("\nposition: 0 = on plain SFT (q=1), 1 = on the q=0 all-fixed arm.")
         # ---- IS EACH ARM STILL DRIFTING? -----------------------------
         # A fresh LoRA every round puts a noise floor under any
         # vanishing-step test, so drift is measured as the change in the
