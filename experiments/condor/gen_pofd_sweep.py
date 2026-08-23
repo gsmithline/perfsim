@@ -5654,7 +5654,7 @@ MEM_KS = [1.0, 0.5, 0.2]          # k = INNATE_LAMBDA (re-anchor strength)
 # S = number of COMPLETE Deffuant sweeps between retraining rounds, NOT
 # individual pair interactions. S = 20 is the primary condition; S = 1 is
 # the Section 3 setting and is mostly already run.
-MEM_SWEEPS = [1, 20]
+MEM_SWEEPS = [1, 20, 100]
 # (S, k) pairs already served by archived Section 3 cells -- never queued
 MEM_REUSED_SK = [(1, 1.0), (1, 0.2)]
 # 30, per the NEW_WAVE_ROUNDS default above: the outcome here is
@@ -11028,17 +11028,18 @@ def main():
     cube_subs[os.path.join(HERE, f"at_pofd_{PS_SMOKE_KEY}.sub")] = _pss_sub
     # ---- memory extension (MEM), an S x k grid --------------------------
     rows_mem = mem_rows()
-    # 2 sweep counts x 3 k x 3 arms = 18 conceptual, minus the 6 archived
-    # Section 3 cells at (S=1, k=1) and (S=1, k=0.2) = 12 queued
-    assert len(rows_mem) == 12, len(rows_mem)
+    # 3 sweep counts x 3 k x 3 arms = 27 conceptual, minus the 6 archived
+    # Section 3 cells at (S=1, k=1) and (S=1, k=0.2) = 21 queued
+    assert len(rows_mem) == 21, len(rows_mem)
     _mem_tags = [r.split(",")[0] for r in rows_mem]
-    assert len(set(_mem_tags)) == 12, _mem_tags
+    assert len(set(_mem_tags)) == 21, _mem_tags
     # the reused (S, k) corners must never be queued
     for _S, _k in MEM_REUSED_SK:
         assert not any(f"_sw{_S}_" in t and f"_k{_num(_k)}_" in t
                        for t in _mem_tags), (_S, _k)
     assert sum("_sw1_" in t for t in _mem_tags) == 3, _mem_tags    # k=0.5 only
     assert sum("_sw20_" in t for t in _mem_tags) == 9, _mem_tags   # all three k
+    assert sum("_sw100_" in t for t in _mem_tags) == 9, _mem_tags  # all three k
     for r in rows_mem:
         _c = [c.strip() for c in r.split(",")]
         assert _c[10] == "0.0", r                    # homophily gamma
@@ -11065,7 +11066,7 @@ def main():
     assert len(mem_reused()) == 6, len(mem_reused())
     p = os.path.join(HERE, f"configs_pofd_{MEM_KEY}.txt")
     files[p] = rows_mem
-    expected[p] = 12
+    expected[p] = 21
     cube_subs[os.path.join(HERE, f"at_pofd_{MEM_KEY}.sub")] = _mem_sub
     rows_mems = mem_smoke_rows()
     assert len(rows_mems) == 1

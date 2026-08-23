@@ -40,7 +40,7 @@ torch.set_num_threads(1)
 ROUNDS, ENDPOINT_ROUNDS, W = 30, 60, 0.5
 KS = [1.0, 0.5, 0.2]
 # S = COMPLETE Deffuant sweeps per retraining round, not pair interactions
-SWEEPS = [1, 20]
+SWEEPS = [1, 20, 100]
 TRAINED = [("sft", "plain SFT"), ("fwdlam1", "forward $\\lambda=1$"),
            ("fwdlam8", "forward $\\lambda=8$")]
 # the ordering under test, from most population-driven to most model-driven
