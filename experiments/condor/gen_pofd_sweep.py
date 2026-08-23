@@ -5657,7 +5657,13 @@ MEM_KS = [1.0, 0.5, 0.2]          # k = INNATE_LAMBDA (re-anchor strength)
 MEM_SWEEPS = [1, 20]
 # (S, k) pairs already served by archived Section 3 cells -- never queued
 MEM_REUSED_SK = [(1, 1.0), (1, 0.2)]
-MEM_ROUNDS = 60
+# 30, per the NEW_WAVE_ROUNDS default above: the outcome here is
+# POPULATION convergence and it settles well before 30. The wave had
+# been submitted at 60 and was cancelled a few minutes in, so nothing is
+# forfeited by retagging -- the "never kill a running wave" caveat
+# applies to a wave far enough along that its artifacts are worth more
+# than the remaining rounds, which was not the case here.
+MEM_ROUNDS = 30
 MEM_SMOKE_ROUNDS = 3
 MEM_SEED = 0
 MEM_H100 = S3_H100

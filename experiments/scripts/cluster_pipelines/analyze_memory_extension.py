@@ -32,7 +32,12 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 torch.set_num_threads(1)
 
-ROUNDS, W = 60, 0.5
+# ROUNDS is the analysis horizon; ENDPOINT_ROUNDS is the horizon the CPU
+# endpoint artifacts were generated at. They differ on purpose: a 60-round
+# perfect-prediction or frozen replay is deterministic given the seed, so
+# its first 30 rounds ARE the 30-round run and the artifacts are reused by
+# slicing rather than regenerated.
+ROUNDS, ENDPOINT_ROUNDS, W = 30, 60, 0.5
 KS = [1.0, 0.5, 0.2]
 # S = COMPLETE Deffuant sweeps per retraining round, not pair interactions
 SWEEPS = [1, 20]
@@ -96,7 +101,7 @@ def main():
             for kind, dirp, key in (("pp", a.pp_dir, "perfect"),
                                     ("frz", a.fz_dir, "frozen")):
                 f = os.path.join(dirp, f"{kind}_k{_num(k)}_w{_num(W)}"
-                                       f"_eaopen_esopen_sw{S}_s0_r{ROUNDS}.pt")
+                                       f"_eaopen_esopen_sw{S}_s0_r{ENDPOINT_ROUNDS}.pt")
                 g = load_cpu(f)
                 if g is None: missing.append(f)
                 else:
@@ -113,7 +118,7 @@ def main():
 
     # ---- CSVs ---------------------------------------------------------
     per = ["sweeps,k,arm,round,post_peer_mean,post_peer_sd"]
-    summ = ["sweeps,k,arm,final_mean,final_sd,mean_51_60,sd_51_60,drift_mean,drift_sd,settled"]
+    summ = ["sweeps,k,arm,final_mean,final_sd,mean_late,sd_late,drift_mean,drift_sd,settled"]
     for S in SWEEPS:
       for k in KS:
         for arm in ORDER:
@@ -122,7 +127,7 @@ def main():
             m, s = op.mean(axis=1), op.std(axis=1)
             for t in range(op.shape[0]):
                 per.append(f"{S},{k:g},{arm},{t+1},{m[t]:.6f},{s[t]:.6f}")
-            lm, ls = m[50:], s[50:]
+            lm, ls = m[ROUNDS-10:], s[ROUNDS-10:]
             dm = float(lm[-5:].mean() - lm[:5].mean())
             ds = float(ls[-5:].mean() - ls[:5].mean())
             summ.append(f"{S},{k:g},{arm},{m[-1]:.6f},{s[-1]:.6f},{lm.mean():.6f},"
@@ -173,12 +178,12 @@ def main():
     def late(S, k, arm, stat):
         op = data[(S, k, arm)]
         v = op.mean(axis=1) if stat == "mean" else op.std(axis=1)
-        return float(v[50:].mean())
+        return float(v[ROUNDS-10:].mean())
     L = ["MEMORY EXTENSION x PEER STRENGTH", "",
          f"innate: mean {innate.mean():.4f}  SD {innate.std():.4f}",
          "S = COMPLETE Deffuant sweeps per retraining round.", ""]
-    for stat, title in (("mean", "Late-window (51-60) MEAN"),
-                        ("sd", "Late-window (51-60) SD")):
+    for stat, title in (("mean", f"Late-window (last 10 of {ROUNDS}) MEAN"),
+                        ("sd", f"Late-window (last 10 of {ROUNDS}) SD")):
         L += [title, ""]
         L.append(f"{'S':>3} {'k':>5}  " + "".join(f"{x:<20}" for x in ORDER))
         for S in SWEEPS:
@@ -197,7 +202,7 @@ def main():
                 L.append(f"  k={k:g} {arm:<12} SD {a1:.4f} -> {a20:.4f}  "
                          f"({'contracts' if a20 < a1 else 'DOES NOT contract'})")
     L += ["", "TEST 2 -- do the arms still select different MEANS once",
-          "variance has contracted (S=20)?", ""]
+          f"variance has contracted (S=20)?", ""]
     for k in KS:
         ms = [(arm, late(20,k,arm,"mean")) for arm in ORDER if (20,k,arm) in data]
         if len(ms) >= 2:
