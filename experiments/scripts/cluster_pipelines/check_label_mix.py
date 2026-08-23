@@ -81,17 +81,28 @@ def check_one(d, smoke, out, live_by_round):
     op, pr = dd.get("op_raw"), dd.get("pred_raw")
     for nm, t in (("op_raw", op), ("pred_raw", pr)):
         if not torch.is_tensor(t) or tuple(t.shape) != (want_rounds, N):
-            bad(f"{nm} shape wrong"); return {"ok": False, "tag": tag}
+            bad(f"{nm} shape wrong")
+            return {"ok": False, "tag": tag, "q": q,
+                    "mean_last": float("nan"), "sd_last": float("nan")}
         if not torch.isfinite(t).all(): bad(f"{nm} non-finite")
     op = op.float().numpy()
 
     # ---- THE MIXTURE ITSELF -------------------------------------------
     idx, lab, b = (dd.get("ref_replay_live_idx"), dd.get("ref_replay_labels"),
                    dd.get("ref_replay_ref_vec"))
-    if not all(torch.is_tensor(x) and x.numel() for x in (idx, lab, b)):
-        bad("ref_replay_live_idx / labels / ref_vec missing -- the mixture "
-            "cannot be verified from this artifact")
-        return {"ok": False, "tag": tag}
+    # q = 0 is the ALL-FIXED endpoint: the live set is EMPTY by design, so
+    # live_idx is a [T, 0] tensor with numel 0. Requiring it non-empty
+    # rejected the one arm whose whole point is having no live rows.
+    if not all(torch.is_tensor(x) for x in (idx, lab, b)) or \
+            not (lab.numel() and b.numel()):
+        bad("ref_replay_labels / ref_vec missing -- the mixture cannot be "
+            "verified from this artifact")
+        return {"ok": False, "tag": tag, "q": q, "mean_last": float("nan"),
+                "sd_last": float("nan")}
+    if q > 0 and idx.numel() == 0:
+        bad("live set is empty but q > 0")
+        return {"ok": False, "tag": tag, "q": q, "mean_last": float("nan"),
+                "sd_last": float("nan")}
     lab = lab.float().numpy(); b = b.float().numpy()
     n_live = int(round(q * N))
     if idx.shape[1] != n_live:
@@ -99,7 +110,7 @@ def check_one(d, smoke, out, live_by_round):
     inn = dd["innate"].float().numpy()
     prev = np.vstack([inn[None, :], op[:-1]])   # x at the START of each round
     for t in range(want_rounds):
-        live = idx[t].numpy()
+        live = idx[t].numpy() if idx.numel() else np.empty(0, dtype=np.int64)
         exp = b.copy()
         exp[live] = prev[t][live]
         if not np.array_equal(np.round(lab[t], 6), np.round(exp, 6)):
@@ -150,7 +161,8 @@ def main():
     print(f"\n{'cell':<62}{'q':>6}{'mean':>9}{'SD':>9}")
     for r in sorted(recs, key=lambda x: x["q"]):
         print(f"{r['tag']:<62}{r['q']:>6g}{r['mean_last']:>9.4f}{r['sd_last']:>9.4f}")
-    print(f"\n{want_rounds}-round run: check the drift flag before quoting a position.")
+    print("\nDirectional test: check the analyzer's drift flag before "
+          "quoting any arm's position.")
     allok = bool(recs) and all(r["ok"] for r in recs) and not any(
         l.startswith("FAIL") for l in out)
     print(f"[check_mix] {'PASS' if allok else 'FAILED'} -- {len(a.runs)} run(s)")

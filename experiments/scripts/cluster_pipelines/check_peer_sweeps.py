@@ -32,15 +32,20 @@ SMOKE_ROUNDS = 3
 # keeps a single gate rather than two that can drift apart, and W/k are
 # read FROM THE TAG and checked against the config rather than assumed.
 TAG_RE = re.compile(
-    r"^(?P<pre>pofdps|pofdpssmk|pofdmem|pofdmemsmk)_qwen3_8b_"
-    r"(?P<arm>sft|fwdlam1|fwdlam8)_sw(?P<sw>\d+)_eaopen_"
+    r"^(?P<pre>pofdps|pofdpssmk|pofdmem|pofdmemsmk|pofdlam|pofdlamsmk)"
+    r"_qwen3_8b_(?P<arm>sft|fwdlam[0-9p]+)_sw(?P<sw>\d+)_eaopen_"
     r"w(?P<w>[0-9p]+)_k(?P<k>[0-9p]+)_esopen_anch2_s0_r(?P<r>\d+)$")
 
 
 def _unnum(tok):
     """tag number grammar back to a float: 0p5 -> 0.5, 1 -> 1.0"""
     return float(tok.replace("p", "."))
-ARM_LAM = {"sft": 0.0, "fwdlam1": 1.0, "fwdlam8": 8.0}
+def arm_lambda(arm):
+    """lambda from the arm token. Parsed rather than table-looked-up, so a
+    new dose (fwdlam0p25, fwdlam2, ...) does not need the gate edited --
+    an unlisted arm used to fail as a GRAMMAR error, which reads like a
+    malformed tag rather than a missing table entry."""
+    return 0.0 if arm == "sft" else _unnum(arm[len("fwdlam"):])
 
 
 def check_one(d, smoke, out):
@@ -84,8 +89,8 @@ def check_one(d, smoke, out):
         elif got != v: bad(f"{k}={got!r}, expected {v!r}")
     if c.get("chat_thinking") not in (False, 0):
         bad(f"chat_thinking={c.get('chat_thinking')!r} -- Qwen3 thinking must be OFF")
-    if float(c.get("kl_beta", -1)) != ARM_LAM[arm]:
-        bad(f"kl_beta={c.get('kl_beta')!r}, expected {ARM_LAM[arm]}")
+    if float(c.get("kl_beta", -1)) != arm_lambda(arm):
+        bad(f"kl_beta={c.get('kl_beta')!r}, expected {arm_lambda(arm)}")
     if (c.get("hardware") or {}).get("gpu_name") != H100:
         bad(f"gpu={(c.get('hardware') or {}).get('gpu_name')!r}")
 
@@ -118,7 +123,7 @@ def check_one(d, smoke, out):
         gn = [float(r["grad_norm0"]) for r in tel if r.get("grad_norm0") is not None]
         if len(gn) != want_rounds: bad(f"grad_norm0 for {len(gn)} of {want_rounds} rounds")
         if gn and max(gn) == 0.0: bad("grad_norm0 zero in every round -- never trained")
-        if ARM_LAM[arm] > 0:
+        if arm_lambda(arm) > 0:
             kg = [float(r["grad_kl_norm0"]) for r in tel
                   if r.get("grad_kl_norm0") is not None]
             if len(kg) > 1 and max(kg[1:]) <= 0:
@@ -152,7 +157,7 @@ def check_one(d, smoke, out):
             f"A sweep is an averaging step; it cannot add dispersion.")
     ratio = float(np.mean(post / np.maximum(pre, 1e-12)))
     return {"ok": ok, "tag": tag, "arm": arm, "sweeps": sw, "w": tag_w,
-            "k": tag_k, "lam": ARM_LAM[arm], "post_sd_last": float(post[-1]),
+            "k": tag_k, "lam": arm_lambda(arm), "post_sd_last": float(post[-1]),
             "pre_sd_last": float(pre[-1]), "contract": ratio,
             "n_viol": len(viol)}
 

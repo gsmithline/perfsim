@@ -15,8 +15,13 @@ Endpoints: the frozen-Qwen population at the SAME surface (W=1, k=1,
 S=100) from replay_frozen_offline, and plain SFT = the q=1 arm itself.
 """
 from __future__ import annotations
-import argparse, os, sys
+import argparse, os, sys, tempfile
+os.environ.setdefault("MPLCONFIGDIR",
+                      os.path.join(tempfile.gettempdir(), "perfsim-plot-cache"))
 import numpy as np, torch
+import matplotlib.pyplot as plt
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 torch.set_num_threads(1)
 
 N, ROUNDS = 723, 30
@@ -90,6 +95,65 @@ def main():
     open(os.path.join(a.out, "label_mix_per_round.csv"), "w").write(
         "\n".join(rows) + "\n")
 
+    # Paper-facing view: t=0 is the shared innate population; every later
+    # point is the population after the complete platform + peer loop.
+    if data:
+        qs = [q for q in QS if q in data]
+        cmap = plt.get_cmap("viridis")
+        colors = {q: cmap(i / max(1, len(qs) - 1))
+                  for i, q in enumerate(qs)}
+        fig, axes = plt.subplots(1, 3, figsize=(15.5, 4.35))
+        rounds = np.arange(ROUNDS + 1)
+        for q in qs:
+            mean = np.r_[innate.mean(), data[q].mean(axis=1)]
+            sd = np.r_[innate.std(), data[q].std(axis=1)]
+            label = f"q={q:g}"
+            axes[0].plot(rounds, mean, marker="o", ms=2.8, lw=2,
+                         color=colors[q], label=label)
+            axes[1].plot(rounds, sd, marker="o", ms=2.8, lw=2,
+                         color=colors[q], label=label)
+
+        axes[0].axhline(innate.mean(), color="0.45", ls=":", lw=1.5,
+                        label="innate $t=0$")
+        axes[1].axhline(innate.std(), color="0.45", ls=":", lw=1.5)
+        axes[0].set_title("Post-peer population mean")
+        axes[1].set_title("Post-peer population SD")
+        for ax in axes[:2]:
+            ax.set_xlabel("Completed retraining round")
+            ax.grid(alpha=.22)
+            ax.set_xlim(0, ROUNDS)
+        axes[0].set_ylabel("Population mean")
+        axes[1].set_ylabel("Population SD")
+
+        final_means = np.array([data[q][-1].mean() for q in qs])
+        axes[2].plot(qs, final_means, color="0.25", lw=1.3, zorder=1)
+        for q, value in zip(qs, final_means):
+            axes[2].scatter(q, value, s=64, color=colors[q],
+                            edgecolor="white", linewidth=.8, zorder=2)
+        axes[2].axhline(final_means[0], color=colors[qs[0]], ls=":", lw=1.5,
+                        label="all frozen labels")
+        axes[2].axhline(final_means[-1], color=colors[qs[-1]], ls=":", lw=1.5,
+                        label="plain SFT")
+        if .5 in data:
+            axes[2].annotate("still drifting", (.5, data[.5][-1].mean()),
+                             xytext=(7, -17), textcoords="offset points",
+                             fontsize=9)
+        axes[2].set_title("Round-30 population mean")
+        axes[2].set_xlabel("Live-label fraction $q$")
+        axes[2].set_ylabel("Population mean")
+        axes[2].set_xticks(qs)
+        axes[2].grid(alpha=.22)
+        axes[2].legend(frameon=False, fontsize=8, loc="best")
+
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper center", ncol=6,
+                   frameon=False, bbox_to_anchor=(.5, 1.025))
+        fig.tight_layout(rect=(0, 0, 1, .92))
+        for ext in ("png", "pdf"):
+            fig.savefig(os.path.join(a.out, f"label_mix_30round.{ext}"),
+                        dpi=240, bbox_inches="tight")
+        plt.close(fig)
+
     # ENDPOINTS: the matched q=0 and q=1 ARMS, not the CPU frozen replay.
     # q=0 trains every round on the frozen labels, so it is the trained
     # counterpart of the frozen model and the right zero for this ladder;
@@ -134,8 +198,43 @@ def main():
             moving = abs(shift) > max(jit, 1e-4)
             print(f"{q:>6g}{a3:>10.4f}{b3:>10.4f}{shift:>+10.4f}{jit:>9.4f}"
                   f"  {'STILL DRIFTING' if moving else 'settled'}")
+    # ---- figure: mean and SD, one line per q ---------------------------
+    # ROUNDS+1 points per line: innate at t=0 then post-peer rounds 1..N.
+    COL = {0.0: "0.15", 0.25: "#4c72b0", 0.5: "#c44e52",
+           0.75: "#55a868", 1.0: "#8172b2"}
+    fig, axes = plt.subplots(1, 2, figsize=(11.2, 4.2))
+    t = np.arange(0, ROUNDS + 1)
+    for ax, stat in zip(axes, ("mean", "sd")):
+        for q in QS:
+            if q not in data: continue
+            op = data[q]
+            y0 = innate.mean() if stat == "mean" else innate.std()
+            y = np.concatenate([[y0], op.mean(axis=1) if stat == "mean"
+                                else op.std(axis=1)])
+            ax.plot(t, y, lw=1.6, color=COL.get(q, "0.5"),
+                    label=f"$q={q:g}$" + (" (all fixed)" if q == 0 else
+                                          " (plain SFT)" if q == 1 else ""))
+        ax.plot([0], [innate.mean() if stat == "mean" else innate.std()],
+                marker="*", ms=11, color="k", ls="none", zorder=6)
+        if stat == "mean" and fz is not None:
+            ax.axhline(float(fz[-1].mean()), color="0.55", ls=":", lw=1.2)
+            ax.annotate("frozen Qwen (CPU replay)",
+                        xy=(ROUNDS * 0.55, float(fz[-1].mean())),
+                        fontsize=8, color="0.4", va="bottom")
+        ax.set_xlabel("round (post-peer, end of round)")
+        ax.set_ylabel("population mean" if stat == "mean"
+                      else "population SD")
+        ax.grid(alpha=.25, lw=.6); ax.set_xlim(-0.6, ROUNDS + 0.6)
+    axes[0].legend(frameon=False, fontsize=8.5)
+    fig.tight_layout()
+    for ext in ("png", "pdf"):
+        fig.savefig(os.path.join(a.out, f"label_mix.{ext}"), dpi=200,
+                    bbox_inches="tight")
+    plt.close(fig)
+    print(f"[mix] figure -> {os.path.join(a.out, 'label_mix.png')}")
+
     print(f"\n[mix] {ROUNDS} rounds is a DIRECTIONAL test, NOT an equilibrium;\n      an arm flagged STILL DRIFTING has no settled position to quote.")
-    print(f"[mix] wrote CSVs under {a.out}")
+    print(f"[mix] wrote CSVs and figure under {a.out}")
     return 0
 
 
