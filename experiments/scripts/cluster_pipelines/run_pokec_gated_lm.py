@@ -1551,12 +1551,17 @@ def main() -> int:
                              "the preference judge x_judge, not SFT "
                              "targets, so substituting a frozen prediction "
                              "would silently change what is being judged")
-    elif ref_replay_ref_run or os.environ.get("REF_REPLAY_SEED"):
-        # (ALL_FIXED already turned ref_replay_on above, so it never lands here)
+    elif not ref_replay_on and (ref_replay_ref_run
+                                or os.environ.get("REF_REPLAY_SEED")):
         # a set-but-inert knob is the worst outcome: the tag would claim a
-        # design the run never had
+        # design the run never had.
+        # The guard is on `not ref_replay_on`, NOT on the preceding branch
+        # falling through: REF_REPLAY_ALL_FIXED=1 legitimately has q = 0 AND
+        # a reference run, and an earlier version of this elif rejected it,
+        # because the branch above had been narrowed to exclude all-fixed.
         raise ValueError("REF_REPLAY_REF_RUN / REF_REPLAY_SEED without "
-                         "REF_REPLAY_Q>0 would be a silent no-op")
+                         "REF_REPLAY_Q>0 or REF_REPLAY_ALL_FIXED=1 would be "
+                         "a silent no-op")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     # donor context load (ICL_CTX_SOURCE=donor): the exact opinion vector the
