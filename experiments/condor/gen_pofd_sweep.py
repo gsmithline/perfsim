@@ -8154,6 +8154,463 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# section4_gate_anch2[_smoke] (2026-08-24): the SECTION-4 CORRECTED-GATE
+# WAVE -- the Mistral bottom-20% FIXED-vs-EVOLVING experiment re-run
+# under the CORRECTED AI gate, at three seeds.
+#
+# WHAT CHANGED, AND ONLY THIS. Every archived Section-4 cell
+# (pofdclamp_ / pofdevo_ / the pofdclamp_+pofdevo_ three-seed
+# replication) gated the platform on the RAW start-of-round opinion:
+#     |m - x0| <= eps_AI      AI_GATE_REFERENCE=x0
+#     config population_update == "nested_ai_then_social_v1"
+# This wave gates on the ANCHORED opinion x' = k*innate + (1-k)*x, the
+# same quantity the round operator actually moves:
+#     |m - x'| <= eps_AI      AI_GATE_REFERENCE=anchor
+#     config population_update == "nested_ai_anchored_then_social_v2"
+# AI_GATE_REFERENCE has DEFAULTED to "anchor" since 2026-08-22, so these
+# rows would get v2 without touching the env -- it is PINNED EXPLICITLY
+# in both sub templates anyway, because this wave's entire point is the
+# gate reference and a future default flip must not silently rewrite it.
+# Everything else is byte-matched to the completed Section-4 surface:
+# mistral7b, movielens Action, the same 723 agents / graph / prompts /
+# training settings, W_PLAT=0.5 (the paper's beta), INNATE_LAMBDA=0.2
+# (the paper's gamma, the innate anchor k), homophily gamma=0, greedy
+# serving, WITH_TWIN=1, KL_DIRECTION=forward, TRAIN_CAP=N_LABELED=723,
+# LORA_R=512, SFT_LR=5e-5, 30 rounds, numeric strict-< threshold gate.
+#
+# THE GRID -- 72 production jobs, asserted, never forced:
+#   2 gates ea {0.2, 1}
+# x 3 social gates es {0, 0.2, 1}
+# x 2 arms {b0 = ordinary SFT, d8 = frozen personal-history ICL, D=8}
+# x 2 conditions {fixed, evolving}
+# x 3 seeds {0, 42, 43}                                          = 72
+# NO REUSE IS POSSIBLE OR CLAIMED: every archived Section-4 cell carries
+# the v1 operator, so not one of them can serve a cell of this wave. The
+# generator asserts the new tags are disjoint from every other key's.
+#
+# TAGS. New pofds4g_ family, and every tag carries "_anch2_":
+#   pofds4g_mistral7b_{arm}_{cond}_anch2_ea{ea}_w0p5_l0p2_es{es}_s{seed}
+#   cond token: fixb20 (bottom-20% clamp) | evoall (all 723 evolve)
+# The token is TRUE BY CONSTRUCTION -- "anch2" <-> config
+# population_update == "nested_ai_anchored_then_social_v2", the only
+# other emittable marker being v1. Old Section-4 tags carry no operator
+# token at all, so a pofds4g_ tag can never be confused with one, and
+# the prefix alone already makes collision impossible.
+#
+# TWO QUEUE SCHEMAS UNDER ONE UMBRELLA NAME, exactly as the completed
+# three-seed replication (B20R) does it, because the two conditions need
+# DIFFERENT environments and the evolving sub must carry NO clamp env at
+# all (a shared schema would need an empty queue column -- untested in
+# this repo, and a column-shift bug there would silently corrupt 72 GPU
+# jobs):
+#   section4_gate_anch2_fixed  36 rows, 26 cols (bottom clamp + stubborn
+#                              peers ride the env; SFT_EXCLUDE_CLAMPED=0)
+#   section4_gate_anch2_evo    36 rows, 24 cols (no clamp env anywhere)
+# and the same split for the smoke.
+#
+# COHORT PAIRING, AND WHY IT IS FREE. Cohort A is the 145 LOWEST-innate
+# agents under the deterministic innate-then-id ranking. In the fixed
+# condition it is pinned bit-exact in the population AND the twin; in the
+# evolving condition it exists only as an ANALYSIS mask.
+# The pairing holds for a stronger reason than "same seed": for
+# movielens, `innate` does not depend on the seed AT ALL.
+# load_movielens_setup(ml_dir, target, knn) takes no seed -- innate is
+# (rating - 1)/4 on the LCC of a cosine 10-NN graph, a pure function of
+# (dataset, target) -- so every cell of this wave, both conditions and
+# all three seeds, shares one innate vector, and gp.innate_clamp_mask in
+# "bottom" mode is a pure sorted(range(n), key=(innate[i], i)) with no
+# RNG draw. INNATE_CLAMP_SEED therefore only matters for the
+# stratified_random mode, which this wave does not use.
+# What the seed DOES vary is the training/serving stream, so the check
+# that a seed actually reached the runner is that two seeds of one cell
+# must NOT produce identical op_raw -- not that their innate differs.
+# check_section4_gate.py hard-fails a pair whose innate vectors differ.
+#
+# NO SAVE_RAW_GEN, DELIBERATELY. The archived Section-4 cells did not
+# set it, so neither do these: "match the existing experiment exactly"
+# wins over auditability here, and save_raw_gen is a CONFIG FIELD, so
+# setting it would make every new cell differ from the archived cell it
+# is compared against on a field a reuse auditor treats as matched.
+# CONSEQUENCE: raw_gen_log.json.gz is not written, and parse_fail_frac
+# lives nowhere else. check_section4_gate.py therefore gates the SAME
+# event out of trajectory.pt -- an unparsable generation is stored as
+# NaN, so any non-finite pred_raw entry hard-fails -- and offers
+# --require-raw-gen for the literal strict gate. The F4R wave below DOES
+# set SAVE_RAW_GEN=1, because its archived Figure-4 counterparts do.
+#
+# SMOKE: 4 x 3 rounds at seed 0, ea=1, es=0.2 -- {b0, d8} x {fixed,
+# evolving}, i.e. all four execution paths, in production configuration.
+S4G_KEY = "section4_gate_anch2"
+S4G_SMOKE_KEY = "section4_gate_anch2_smoke"
+S4G_FIXED_KEY = S4G_KEY + "_fixed"
+S4G_EVO_KEY = S4G_KEY + "_evo"
+S4G_SMOKE_FIXED_KEY = S4G_SMOKE_KEY + "_fixed"
+S4G_SMOKE_EVO_KEY = S4G_SMOKE_KEY + "_evo"
+S4G_ARMS = ["b0", "d8"]
+S4G_GATES = [0.2, 1.0]
+S4G_ESS = [0.0, 0.2, 1.0]
+S4G_SEEDS = [0, 42, 43]
+S4G_CONDS = ["fixed", "evolving"]
+S4G_COND_TOK = {"fixed": "fixb20", "evolving": "evoall"}
+S4G_OP_TOKEN = "anch2"          # <-> nested_ai_anchored_then_social_v2
+S4G_ROUNDS = 30
+S4G_SMOKE_ROUNDS = 3
+S4G_SMOKE_EA = 1.0
+S4G_SMOKE_ES = 0.2
+S4G_N_PER_COND = 36             # 2 ea x 3 es x 2 arms x 3 seeds
+S4G_N_TOTAL = 72
+
+
+def s4g_tag(arm, cond, gate, es, seed, prefix="pofds4g"):
+    return (f"{prefix}_mistral7b_{arm}_{S4G_COND_TOK[cond]}"
+            f"_{S4G_OP_TOKEN}_ea{_num(gate)}_{w_tok()}"
+            f"_es{_num(es)}_s{seed}")
+
+
+def s4g_row(arm, cond, gate, es, seed, nrounds=S4G_ROUNDS,
+            prefix="pofds4g"):
+    """One config row. The FIXED rows use the completed bottom-20 wave's
+    26-col schema (ROW_B20) and the EVOLVING rows the pofdevo 24-col one
+    (ROW_EVO) -- the same builders the archived Section-4 cells used, so
+    the only thing this wave changes is the tag and the gate reference
+    pinned in the sub env."""
+    assert cond in S4G_CONDS, cond
+    a = REACH_ARM_COLS[arm]
+    common = dict(
+        tag=s4g_tag(arm, cond, gate, es, seed, prefix),
+        style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
+        eps_ai=f"{gate:g}", iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
+        gg=a["gg"], nrounds=nrounds,
+        icldays=8 if arm == "d8" else 0)
+    if cond == "fixed":
+        # cmode=bottom + FRAC/SEED/PEER_MODE pinned in the sub env;
+        # sftexcl=0 -- b0xa (source exclusion) is NOT part of this wave
+        return ROW_B20.format(cmode="bottom", sftexcl=0, **common)
+    return ROW_EVO.format(**common)
+
+
+def s4g_rows(cond, nrounds=S4G_ROUNDS, prefix="pofds4g", seeds=None):
+    seeds = S4G_SEEDS if seeds is None else seeds
+    return [s4g_row(arm, cond, gate, es, seed, nrounds, prefix)
+            for seed in seeds
+            for arm in S4G_ARMS
+            for gate in S4G_GATES
+            for es in S4G_ESS]
+
+
+def s4g_smoke_rows(cond):
+    """3-round production-configuration smoke: both arms of one
+    condition at ea=1, es=0.2, seed 0."""
+    return [s4g_row(arm, cond, S4G_SMOKE_EA, S4G_SMOKE_ES, 0,
+                    nrounds=S4G_SMOKE_ROUNDS, prefix="pofds4gsmk")
+            for arm in S4G_ARMS]
+
+
+def s4g_sub(cond, smoke=False):
+    key = {("fixed", False): S4G_FIXED_KEY,
+           ("fixed", True): S4G_SMOKE_FIXED_KEY,
+           ("evolving", False): S4G_EVO_KEY,
+           ("evolving", True): S4G_SMOKE_EVO_KEY}[(cond, smoke)]
+    rows = (s4g_smoke_rows(cond) if smoke else s4g_rows(cond))
+    kind = ("3-ROUND SMOKE (seed 0, ea1 es0p2, both arms, production "
+            "configuration)" if smoke else
+            "PRODUCTION -- 2 ea x 3 es x 2 arms x 3 seeds")
+    tmpl = (S4G_FIXED_SUB_TEMPLATE if cond == "fixed"
+            else S4G_EVO_SUB_TEMPLATE)
+    return tmpl.format(key=key, n_jobs=len(rows), kind=kind,
+                       **REACH_MODELS["mistral7b"])
+
+
+S4G_FIXED_SUB_TEMPLATE = """\
+# HTCondor: SECTION-4 CORRECTED-GATE WAVE, FIXED condition -- {kind}.
+# GENERATED by gen_pofd_sweep.py from the S4G block. Never edit by hand:
+# rerun the script. {n_jobs} job(s).
+# THE CORRECTED AI GATE: AI_GATE_REFERENCE=anchor tests |m - x'| <=
+# eps_AI on the ANCHORED opinion x' = k*innate + (1-k)*x, and makes
+# config population_update == "nested_ai_anchored_then_social_v2". Every
+# archived Section-4 cell carries the old "nested_ai_then_social_v1"
+# (gate on the raw x0), so NOTHING here reuses an archived run and no
+# archived run can serve a cell of this key. The variable is pinned
+# explicitly rather than inherited from the runner default.
+# Everything else matches the completed bottom-20 fixed wave exactly:
+# cohort A = the 145 LOWEST-innate agents (INNATE_CLAMP_MODE=bottom,
+# FRAC=0.2, deterministic innate-then-id ranking, cohort seed = run
+# seed), pinned bit-exact at innate in population AND twin; B = the
+# other 578. Every row runs the one-sided STUBBORN peer operator (inert
+# at the es=0 baselines). SFT_EXCLUDE_CLAMPED=0 -- b0xa is not part of
+# this wave. b0 trains fresh on all 723 labels; d8 is frozen
+# personal-history ICL (ICL_K=0, ICL_DAYS=8, icl_days_log.json.gz for
+# the byte-exact replay). ICL_DAYS rides queue col 25, the exclusion
+# flag col 26 (always 0). W=0.5, lam=0.2, gamma=0, greedy serving,
+# WITH_TWIN=1, movielens Action, ea {{0.2, 1}} x es {{0, 0.2, 1}},
+# SEEDS 0/42/43.
+# GATE every pull with check_section4_gate.py (operator, grid, clamp
+# reconstruction, fixed/evolving cohort pairing) -- that is the wave's
+# own checker and the one to run. check_pofd_sanity has no pofds4g_
+# prefix section: its GENERIC path (the _w/_l/_es tokens, the twin, the
+# operator-marker replay) still applies and is worth running, but its
+# CLAMP-specific section will NOT fire on these tags.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) AI_GATE_REFERENCE=anchor ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) INNATE_CLAMP_PEER_MODE=stubborn SFT_EXCLUDE_CLAMPED=$(sftexcl) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofds4g_fixed"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, cmode, icldays, sftexcl from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+S4G_EVO_SUB_TEMPLATE = """\
+# HTCondor: SECTION-4 CORRECTED-GATE WAVE, EVOLVING condition -- {kind}.
+# GENERATED by gen_pofd_sweep.py from the S4G block. Never edit by hand:
+# rerun the script. {n_jobs} job(s).
+# THE CORRECTED AI GATE: AI_GATE_REFERENCE=anchor tests |m - x'| <=
+# eps_AI on the ANCHORED opinion x' = k*innate + (1-k)*x, and makes
+# config population_update == "nested_ai_anchored_then_social_v2". Every
+# archived Section-4 cell carries the old "nested_ai_then_social_v1", so
+# NOTHING here reuses an archived run. Pinned explicitly rather than
+# inherited from the runner default.
+# Everything else matches the completed pofdevo wave exactly: ALL 723
+# agents evolve normally -- NO fixed cohort, NO exclusion, NO clamp env
+# ANYWHERE -- standard symmetric peer dynamics, matched no-platform twin
+# (WITH_TWIN=1). b0 trains fresh each round on all 723 current opinions;
+# d8 serves frozen weights with each agent's OWN last 8 opinions as
+# context (ICL_K=0, ICL_DAYS=8, icl_days_log.json.gz for the byte-exact
+# replay -- no other agent's opinion may enter a prompt). Cohort A (the
+# 145 lowest-innate agents) exists only in the ANALYSIS mask, and is
+# reconstructed from the SAME seed-determined innate vector its FIXED
+# partner clamps, so every fixed/evolving pair shares a cohort.
+# ICL_DAYS rides queue col 24 (8 on d8, 0 on b0). W=0.5, lam=0.2,
+# gamma=0, greedy serving, movielens Action, ea {{0.2, 1}} x es
+# {{0, 0.2, 1}}, SEEDS 0/42/43.
+# GATE every pull with check_section4_gate.py (operator, grid, no-clamp
+# integrity, fixed/evolving cohort pairing) -- that is the wave's own
+# checker and the one to run. check_pofd_sanity has no pofds4g_ prefix
+# section: its GENERIC path still applies, but its EVO-specific section
+# will NOT fire on these tags.
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = {mem}
+request_disk      = {disk}
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) AI_GATE_REFERENCE=anchor ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofds4g_evo"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, icldays from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+# fig4_family_prior_repl100 (2026-08-24): the FIGURE-4 REPLICATION AND
+# CONVERGENCE WAVE -- the exact condition Figure 4 currently displays,
+# at THREE SEEDS and a 100-ROUND horizon.
+#
+# WHAT FIGURE 4 IS. paper/bialign_neurips27/neurips_2026_sft_icl_rework
+# .tex renders figures/sft_family_prior_one_row.pdf, built by
+# experiments/llm/plot_sft_family_prior_one_row.py, which loads per
+# checkpoint exactly
+#     pofdfam_{slug}_b1_ea1_w0p5_l0p2_es0p05_s0   (the displayed arm)
+#     pofdfam_{slug}_k0_ea1_w0p5_l0p2_es0p05_s0   (the frozen control)
+# i.e. forward-KL SFT at lambda = 1, EPS_AI = 1 under the numeric
+# strict-< threshold gate, eps_social = 0.05, W_PLAT = 0.5 (the paper's
+# beta), INNATE_LAMBDA = 0.2 (the paper's gamma / the innate anchor k),
+# homophily gamma = 0, seed 0, 30 rounds, matched twin, greedy serving,
+# fresh r512 LoRA each round, SAVE_RAW_GEN=1, movielens Action, 723
+# agents. This key re-runs the b1 arm of that condition at seeds
+# {0, 42, 43} for 30 rounds: 6 checkpoints x 3 seeds = 18 jobs.
+#
+# HORIZON 30, NOT 100 (user decision, 2026-08-24: 100 rounds was too
+# expensive). The key is named _repl30 to match: a key named repl100
+# that emits 30-round runs is exactly the provenance trap these waves
+# exist to close. Consequence: the seed-0 rows are now
+# configuration-identical to the displayed Figure-4 cells apart from the
+# operator provenance marker, so the ONLY row-level differences across
+# the whole key are the TAG and the SEED (asserted below).
+#
+# FIELD-BY-FIELD IDENTITY IS BY CONSTRUCTION, NOT BY INSPECTION. f4r_row
+# CALLS fam_row -- the same builder that produced the displayed cells --
+# and then substitutes only the tag. So every queue column except the
+# tag and nrounds is literally the same value the Figure-4 cell carries,
+# and main() asserts that column-by-column against
+# fam_row(model, "b1", 0.05, seed=0). The three intended differences are
+# therefore exactly: seed, round count, and the operator provenance
+# marker (below). check_fig4_repl.py --against-fig4 repeats the same
+# comparison at the CONFIG level once the runs exist.
+#
+# THE PROVENANCE MARKER. AI_GATE_REFERENCE=anchor is pinned in the sub
+# env, so config population_update == "nested_ai_anchored_then_social_v2"
+# and the tags carry "_anch2_". The archived pofdfam_ cells were written
+# before 2026-08-22 and carry "nested_ai_then_social_v1" (gate on the raw
+# x0). At EPS_AI=1 under the strict-< threshold gate the two references
+# agree on essentially every pair -- the gate is open unless |m - x|
+# reaches 1 exactly -- so this is a provenance correction, not an
+# expected behavioural change; the checker still refuses a v1 run.
+#
+# TAGS. New pofdf4r_ family, disjoint from pofdfam_ by prefix:
+#   pofdf4r_{slug}_b1_anch2_ea1_w0p5_l0p2_es0p05_r100_s{seed}
+# The explicit _r100_ token keeps the 100-round cells distinguishable
+# from the 30-round Figure-4 cells at a glance as well as by config.
+#
+# NO REUSE, NO SMOKE. No archived run has 100 rounds at these seeds, so
+# all 18 are new. No smoke: this is the b1 envelope, already production-
+# validated on all six checkpoints by the completed family-prior scout
+# (and its own 3-round smoke), with only the horizon and seeds changed.
+# ONE sub serves all six checkpoints; BASE_MODEL / CHAT_THINKING / mem /
+# disk / PPL_BATCH ride the queue. Qwen3-8B runs CHAT_THINKING=0.
+# All checkpoints load from the offline lustre cache.
+# NO GPU-ARCHITECTURE PIN: this wave is compared within itself (three
+# seeds of the same condition), not bit-matched against an archived run,
+# and pinning one SKU schedules badly for no gain here.
+#
+# THE SERVING PATH IS ALSO CORRECTED, AND THAT IS NOT COSMETIC. The
+# archived Figure-4 configs carry NO serve_eval_mode key (verified on the
+# cluster, 2026-08-24): they predate the 2026-08-21 fix that puts the
+# model in eval() for the duration of generation, so they served with
+# LoRA DROPOUT LIVE. Every run launched today records
+# serve_eval_mode=True and serves with dropout off. So "the same
+# condition as Figure 4" is exact at the level of every queue field and
+# every config dial, but the RUNNER changed underneath on 2026-08-21 and
+# that change is behavioural. Treat any displayed-vs-replicated
+# difference as gate-reference + serving path together, never as the
+# gate alone. check_fig4_repl.py --against-fig4 flags this field
+# explicitly rather than bucketing it as environment noise.
+F4R_KEY = "fig4_family_prior_repl30"
+F4R_MODELS = ["qwen7b", "qwen3_8b", "olmo7b", "olmo3_7b",
+              "mistral7b", "ministral8b"]     # keys into FAM_MODELS
+F4R_ARM = "b1"                                # forward-KL SFT, lambda=1
+F4R_EA = 1.0                                  # ROW_FAM pins ea=1
+F4R_ES = 0.05
+F4R_SEEDS = [0, 42, 43]
+F4R_ROUNDS = 30
+F4R_OP_TOKEN = "anch2"
+F4R_N = 18                                    # 6 checkpoints x 3 seeds
+F4R_NROUNDS_COL = 22                          # ROW_FAM column index
+
+
+def f4r_tag(model, seed):
+    return (f"pofdf4r_{model}_{F4R_ARM}_{F4R_OP_TOKEN}"
+            f"_ea{_num(F4R_EA)}_{w_tok()}_es{_num(F4R_ES)}"
+            f"_r{F4R_ROUNDS}_s{seed}")
+
+
+def f4r_row(model, seed):
+    """The Figure-4 row, verbatim, with only the tag swapped. Built by
+    CALLING fam_row so no column can drift from the displayed cell."""
+    cols = [c.strip() for c in
+            fam_row(model, F4R_ARM, F4R_ES, nrounds=F4R_ROUNDS,
+                    seed=seed).split(",")]
+    cols[0] = f4r_tag(model, seed)
+    return ", ".join(cols)
+
+
+def f4r_rows():
+    return [f4r_row(model, seed)
+            for seed in F4R_SEEDS
+            for model in F4R_MODELS]
+
+
+def f4r_sub():
+    return F4R_SUB_TEMPLATE.format(key=F4R_KEY, n_jobs=len(f4r_rows()))
+
+
+F4R_SUB_TEMPLATE = """\
+# HTCondor: FIGURE-4 REPLICATION AND CONVERGENCE WAVE -- {n_jobs} jobs:
+# the exact condition Figure 4 displays (forward-KL SFT at lambda=1,
+# EPS_AI=1 numeric strict-< threshold, eps_social=0.05, W=0.5, lam=0.2,
+# gamma=0, matched twin, greedy serving, fresh r512 LoRA each round,
+# SAVE_RAW_GEN=1, movielens Action, 723 agents) on all SIX checkpoints
+# at seeds 0/42/43 for 30 ROUNDS (the displayed horizon, matched).
+# GENERATED by gen_pofd_sweep.py from the F4R block. Never edit by hand:
+# rerun the script.
+# Every queue column except the tag is produced by the SAME builder as
+# the displayed Figure-4 cells (fam_row) and the generator asserts that
+# column-by-column, so at this matched 30-round horizon the SEED and the
+# operator provenance marker are the only intended differences.
+# CAVEAT the analysis must carry: the archived Figure-4 configs have no
+# serve_eval_mode key -- they predate the 2026-08-21 eval()-during-
+# generation fix and served with LoRA DROPOUT LIVE. These runs do not.
+# Displayed-vs-replicated differences are gate reference + serving path
+# together, never the gate alone.
+# AI_GATE_REFERENCE=anchor is pinned explicitly: config population_update
+# == "nested_ai_anchored_then_social_v2" and every tag carries "_anch2_".
+# The archived pofdfam_ cells carry the old v1 marker; at EPS_AI=1 the
+# two gate references agree on essentially every pair, so this is a
+# provenance correction rather than a behavioural change.
+# BASE_MODEL / CHAT_THINKING / mem / disk / PPL_BATCH ride the queue
+# (cols 24-28). Qwen3-8B runs CHAT_THINKING=0 (thinking pinned OFF; the
+# runner's qwen3 marker keeps completion-only SFT masking correct). All
+# six checkpoints load from the offline lustre cache -- they are already
+# cached from the completed family-prior wave.
+# MEASURED runtime from the condor logs of the very cells this key
+# replicates: the 30-round family-prior b1 runs took 2h14m (mistral7b) to
+# 2h32m (qwen3_8b). Budget ~2.5h per job, ~45 GPU-hours for all 18. This
+# key does NOT pin a GPU architecture, so expect spread with the hardware
+# each job lands on.
+# Gate every pull with check_fig4_repl.py (operator, models, seeds,
+# round count, zero parse failures, shared population/graph, and
+# --against-fig4 field-by-field vs the displayed seed-0 cells).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) AI_GATE_REFERENCE=anchor ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig4repl100"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -11391,6 +11848,157 @@ def main():
     files[p] = rows_lams
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{LAM_SMOKE_KEY}.sub")] = lam_sub(smoke=True)
+    # ---- Section-4 corrected-gate wave (S4G) ---------------------------
+    # 72 production rows across TWO queue schemas (fixed 26 cols with the
+    # clamp env, evolving 24 cols with none) + 4 smoke rows. Every count,
+    # every column and the operator pin are asserted here: a silent grid
+    # or provenance drift must fail the generator, not the wave.
+    _s4g_expect = {(a, g, e, s) for a in S4G_ARMS for g in S4G_GATES
+                   for e in S4G_ESS for s in S4G_SEEDS}
+    assert len(_s4g_expect) == S4G_N_PER_COND, len(_s4g_expect)
+    _s4g_tags_all = set()
+    for _cond, _ncols in (("fixed", 26), ("evolving", 24)):
+        _rows = s4g_rows(_cond)
+        assert len(_rows) == S4G_N_PER_COND, (_cond, len(_rows))
+        _seen = set()
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert len(_c) == _ncols, (_cond, len(_c), _r)
+            _t = _c[0]
+            assert _t.startswith("pofds4g_mistral7b_"), _r
+            # the provenance token is the whole point of the wave
+            assert f"_{S4G_OP_TOKEN}_" in _t, _r
+            assert S4G_COND_TOK[_cond] in _t, _r
+            _arm = "d8" if "_d8_" in _t else "b0"
+            _a = REACH_ARM_COLS[_arm]
+            assert _c[1] == _a["style"] and _c[2] == _a["beta"], _r
+            assert int(_c[16]) == _a["iclk"] and int(_c[18]) == _a["uselora"], _r
+            assert int(_c[19]) == _a["fresh"], _r
+            assert _c[10] == "0.0", _r            # homophily gamma stays 0
+            assert _c[11] == "0.5", _r            # W_PLAT = the paper's beta
+            assert _c[15] == "threshold", _r      # numeric strict-< gate
+            assert _c[22] == str(S4G_ROUNDS), _r
+            assert int(_c[_ncols - 2 if _cond == "fixed" else _ncols - 1]) \
+                == (8 if _arm == "d8" else 0), _r
+            if _cond == "fixed":
+                assert _c[23] == "bottom", _r     # cmode
+                assert _c[25] == "0", _r          # never the b0xa exclusion
+            assert float(_c[14]) in S4G_GATES and float(_c[9]) in S4G_ESS, _r
+            assert f"_ea{_num(float(_c[14]))}_" in _t, _r
+            assert f"_es{_num(float(_c[9]))}_" in _t, _r
+            assert _t.endswith(f"_s{_c[3]}"), _r
+            _seen.add((_arm, float(_c[14]), float(_c[9]), int(_c[3])))
+        assert _seen == _s4g_expect, (_cond, _s4g_expect ^ _seen)
+        _s4g_tags_all |= {r.split(",")[0].strip() for r in _rows}
+        # the sub env carries the corrected gate reference EXPLICITLY --
+        # never inherited from the runner default, which could flip
+        _sub = s4g_sub(_cond)
+        _env = next(l for l in _sub.splitlines() if l.startswith("environment"))
+        assert "AI_GATE_REFERENCE=anchor" in _env, _cond
+        assert "INNATE_LAMBDA=0.2" in _env and "WITH_TWIN=1" in _env, _cond
+        assert "KL_DIRECTION=forward" in _env, _cond
+        assert "TRAIN_CAP=723" in _env and "N_LABELED=723" in _env, _cond
+        if _cond == "fixed":
+            assert "INNATE_CLAMP_MODE=$(cmode)" in _env
+            assert "INNATE_CLAMP_FRAC=0.2" in _env
+            assert "INNATE_CLAMP_SEED=$(seed)" in _env
+            assert "INNATE_CLAMP_PEER_MODE=stubborn" in _env
+            assert "SFT_EXCLUDE_CLAMPED=$(sftexcl)" in _env
+        else:
+            # the evolving sub must not carry ANY clamp env (the B20R
+            # precedent: a clamp key here would change the config surface)
+            assert "INNATE_CLAMP" not in _env, "evolving sub carries clamp env"
+            assert "SFT_EXCLUDE_CLAMPED" not in _env
+    assert len(_s4g_tags_all) == S4G_N_TOTAL, len(_s4g_tags_all)
+    # no collision with ANY other generated key, and never an old Section-4 tag
+    _prior_s4g = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (_s4g_tags_all & _prior_s4g), _s4g_tags_all & _prior_s4g
+    assert not any(t.startswith(("pofdclamp_", "pofdevo_"))
+                   for t in _s4g_tags_all)
+    for _cond, _key in (("fixed", S4G_FIXED_KEY), ("evolving", S4G_EVO_KEY)):
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = s4g_rows(_cond)
+        expected[p] = S4G_N_PER_COND
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = s4g_sub(_cond)
+    for _cond, _key in (("fixed", S4G_SMOKE_FIXED_KEY),
+                        ("evolving", S4G_SMOKE_EVO_KEY)):
+        _rows = s4g_smoke_rows(_cond)
+        assert len(_rows) == len(S4G_ARMS), len(_rows)
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert _c[0].startswith("pofds4gsmk_mistral7b_"), _r
+            assert f"_{S4G_OP_TOKEN}_" in _c[0], _r
+            assert _c[22] == str(S4G_SMOKE_ROUNDS), _r
+            assert float(_c[14]) == S4G_SMOKE_EA, _r
+            assert float(_c[9]) == S4G_SMOKE_ES, _r
+            assert int(_c[3]) == 0, _r
+            assert _c[0] not in _s4g_tags_all, _r
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = len(S4G_ARMS)
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
+            s4g_sub(_cond, smoke=True)
+    # ---- Figure-4 replication + convergence wave (F4R) ------------------
+    # 18 rows. The field-by-field identity with the CURRENTLY DISPLAYED
+    # Figure-4 cells is enforced here, column by column, against the very
+    # builder that produced them: only the tag, the seed and the horizon
+    # may differ.
+    rows_f4r = f4r_rows()
+    assert len(rows_f4r) == F4R_N == len(F4R_MODELS) * len(F4R_SEEDS)
+    _f4r_tags = [r.split(",")[0].strip() for r in rows_f4r]
+    assert len(set(_f4r_tags)) == F4R_N, _f4r_tags
+    for _model in F4R_MODELS:
+        assert _model in FAM_MODELS, _model
+        _ref = [c.strip() for c in
+                fam_row(_model, F4R_ARM, F4R_ES, seed=0).split(",")]
+        assert len(_ref) == 28, len(_ref)
+        # the displayed cell IS the 30-round seed-0 family-prior b1 cell
+        assert _ref[0] == fam_tag(_model, F4R_ARM, F4R_ES, 0), _ref[0]
+        # the displayed cell's horizon -- and now this wave's horizon too
+        assert _ref[22] == str(F4R_ROUNDS) == "30", _ref[22]
+        for _seed in F4R_SEEDS:
+            _c = [c.strip() for c in f4r_row(_model, _seed).split(",")]
+            assert len(_c) == 28, len(_c)
+            assert _c[0] == f4r_tag(_model, _seed) != _ref[0]
+            assert _c[0].startswith("pofdf4r_"), _c[0]
+            assert f"_{F4R_OP_TOKEN}_" in _c[0], _c[0]
+            assert f"_r{F4R_ROUNDS}_" in _c[0], _c[0]
+            assert _c[0].endswith(f"_s{_seed}"), _c[0]
+            # THE FIELD-BY-FIELD CHECK. At the matched 30-round horizon
+            # the ONLY columns allowed to move off the Figure-4 cell are
+            # the tag (0) and the seed (3): nrounds now agrees too, and
+            # this loop asserts that rather than exempting it.
+            for _i in range(1, 28):
+                if _i == 3:
+                    continue
+                assert _c[_i] == _ref[_i], (_model, _seed, _i, _c[_i], _ref[_i])
+            assert int(_c[3]) == _seed and _c[22] == str(F4R_ROUNDS)
+            assert _c[1] == "sft_kl" and _c[2] == "1", _c     # forward-KL, lam 1
+            assert _c[9] == f"{F4R_ES:g}" and _c[14] == _num(F4R_EA), _c
+            assert _c[10] == "0.0" and _c[11] == "0.5", _c    # gamma 0, W 0.5
+            assert _c[15] == "threshold", _c
+            assert int(_c[16]) == 0 and int(_c[18]) == 1, _c  # ICL_K 0, LoRA on
+            assert _c[23] == FAM_MODELS[_model]["base_model"], _c
+            assert _c[24] == FAM_MODELS[_model]["chatthink"], _c
+    _f4r_sub = f4r_sub()
+    _f4r_env = next(l for l in _f4r_sub.splitlines()
+                    if l.startswith("environment"))
+    assert "AI_GATE_REFERENCE=anchor" in _f4r_env
+    assert "KL_DIRECTION=forward" in _f4r_env
+    assert "SAVE_RAW_GEN=1" in _f4r_env and "WITH_TWIN=1" in _f4r_env
+    assert "INNATE_LAMBDA=0.2" in _f4r_env
+    assert "HF_HUB_OFFLINE=1" in _f4r_env
+    assert "REF_REPLAY" not in _f4r_env and "INNATE_CLAMP" not in _f4r_env
+    assert "AB_SWEEPS" not in _f4r_env
+    _prior_f4r = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_f4r_tags) & _prior_f4r), set(_f4r_tags) & _prior_f4r
+    # the displayed 30-round Figure-4 cells are NEVER re-queued by this key
+    assert not any(t.startswith("pofdfam_") for t in _f4r_tags)
+    p = os.path.join(HERE, f"configs_pofd_{F4R_KEY}.txt")
+    files[p] = rows_f4r
+    expected[p] = F4R_N
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4R_KEY}.sub")] = _f4r_sub
+
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(
