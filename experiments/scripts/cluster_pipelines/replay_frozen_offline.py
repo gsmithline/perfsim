@@ -2,7 +2,7 @@
 """OFFLINE POPULATION REPLAY under a real frozen-Qwen prediction vector
 (2026-08-20, qwen_mechanism diagnostic). CPU only.
 
-WHAT THIS IS, EXACTLY. A frozen Qwen2.5 prompted with K = D = 0 never
+WHAT THIS IS, EXACTLY. A frozen model prompted with K = D = 0 never
 sees the population: the prompt is the agent's static profile, decoding is
 greedy, and nothing trains. Its parsed prediction vector is therefore a
 CONSTANT -- bit-identical in every round, and independent of eps_AI and
@@ -17,7 +17,10 @@ around it offline, through the IDENTICAL operator path the LLM runs use
 second copy of the dynamics anywhere).
 
 BE CLEAR ABOUT WHAT IS AND IS NOT MEASURED. The served values are genuine
-H100 Qwen2.5 outputs. The population dynamics are a faithful offline
+H100 outputs of whatever checkpoint the SOURCE RUN served (the artifact
+records base_model and replay_note straight from the source config --
+never hardcode a model name here: nine 2026-08-24 artifacts briefly
+claimed Qwen2.5 while replaying a Qwen3-8B vector). The population dynamics are a faithful offline
 replay. What is NOT re-measured is the model: this cannot detect a frozen
 model whose predictions would have drifted, because the whole premise --
 verified, not assumed -- is that they do not. Every artifact records
@@ -126,6 +129,17 @@ def main():
                     choices=("threshold", "all_open"))
     ap.add_argument("--sweeps", type=int, default=1)
     ap.add_argument("--gamma", type=float, default=0.0)
+    # Deffuant alpha (2026-08-24): sim_perfect_predictor.build_config
+    # started reading args.alpha, which this parser did not define -- the
+    # replay path died with AttributeError before writing anything. The
+    # default 0.5 is the value every archived frozen artifact was built
+    # with (sim_perfect_predictor.simulate defaults deffuant_alpha=0.5 and
+    # artifact_name emits NO _a token at 0.5, which is why the existing
+    # filenames carry none), so this restores the old behaviour exactly
+    # rather than choosing a new one.
+    ap.add_argument("--alpha", type=float, default=0.5,
+                    help="Deffuant step size; 0.5 reproduces every "
+                         "archived frozen replay")
     ap.add_argument("--rounds", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
@@ -133,6 +147,8 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
+    if not 0.0 <= args.alpha <= 0.5:
+        ap.error("--alpha must lie in [0, 0.5]")
     if args.peer_gate_mode == "all_open" and args.eps_social <= 0:
         ap.error("--peer-gate-mode all_open with --eps-social 0 is "
                  "contradictory (eps_social=0 is the NO-PEER condition)")
@@ -148,9 +164,13 @@ def main():
     cfg.update({
         "platform": "frozen_offline_replay",
         "frozen_pred_sha256": sha,
-        "replay_note": ("offline population replay; served values are real "
-                        "H100 Qwen2.5 frozen K=D=0 outputs, held constant "
-                        "as the archived run demonstrates they are"),
+        # the model name comes from the SOURCE RUN's config, never a
+        # literal: the 2026-08-24 audit caught nine artifacts whose note
+        # said Qwen2.5 while the source was a Qwen3-8B run
+        "replay_note": (f"offline population replay; served values are real "
+                        f"H100 {src.get('base_model', 'UNKNOWN-MODEL')} "
+                        f"frozen K=D=0 outputs, held constant as the "
+                        f"archived run demonstrates they are"),
         **src,
     })
     # eps_social is a real dial here (it drives the peer gate), and the

@@ -8611,6 +8611,353 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# fig3_full_loop[_smoke|_ext] (2026-08-24, v2 UNIFIED GRID). THE
+# REDESIGNED FIGURE 3.
+#
+# Figure 3 is paper/figures/reference_retention_memory_equilibrium.pdf.
+# The FINAL design is ONE row of FOUR panels, one per gamma in
+# {1, .5, .2, 0}; within every panel the x-axis is the full ladder
+# lambda in {0, .25, .5, 1, 2, 4, 8, inf}, color is beta in
+# {0, .25, .5, .75, 1}, and y is the post-peer population outcome, with
+# the perfect-prediction baseline dashed. There is NO panel-A/panel-B
+# split any more: one unified (beta x gamma x lambda) grid feeds all
+# four panels.
+#
+# THE NAMES, ONCE, BECAUSE THEY COLLIDE IN THIS REPO:
+#   beta   = W_PLAT, platform susceptibility      -> queue col wplat
+#   gamma  = INNATE_LAMBDA, the innate re-anchor  -> queue col lam
+#   lambda = kl_beta, the forward-KL coefficient  -> queue col beta
+# The homophily gamma column is a DIFFERENT gamma and stays 0.0 here, as
+# in every pofd wave.
+#
+# ENVIRONMENT, held identical to the cells the figure already contains:
+# Qwen3-8B (thinking OFF), movielens/Action 723 agents, 30 outer rounds,
+# S = 100 complete Deffuant sweeps per round, BOTH gates genuinely open
+# (all_open, not the numeric threshold 1), seed 0, fresh LoRA r512 every
+# round, forward KL, matched twin, greedy eval-mode serving,
+# SAVE_RAW_GEN=1, anch2 operator.
+#
+# STRUCTURAL DEDUPLICATION -- the 5 x 4 x 8 = 160 nominal points reduce
+# to 108 UNIQUE cells, and each reduction was VERIFIED in the source,
+# not assumed:
+#
+#  1. beta = 0: lambda DROPS OUT. At W = 0 the round operator is
+#     x' = (1-W)h + W*pred = h -- the served vector never enters. That
+#     process is ALREADY IN EVERY RUN as the matched twin:
+#         ab_x_cf = innate_lambda*ab_innate + (1-innate_lambda)*ab_x_cf
+#         for sw in range(ab_sweeps): gp.ab_sweep(ab_x_cf, ...)
+#     (run_pokec_gated_lm.py, same gamma, same S, mirrored RNG). ONE
+#     twin per gamma serves the whole beta = 0 edge: 4 cells, 0 jobs,
+#     and the checker enforces that twins at one gamma agree across
+#     lambda -- the model cannot reach them.
+#  2. beta = 1: gamma DROPS OUT. At W = 1 the operator is x' = pred and
+#     the human component vanishes (the S3 block refuses to generate
+#     (W=1, k=0.2) for the same algebraic reason). ONE cell per lambda:
+#     8 cells, not 32. The archived cells spell it w1_k1.
+#  3. lambda = inf: the FROZEN MODEL, CPU-ONLY. A frozen Qwen3 at
+#     ICL_K = D = 0 never sees the population, so its served vector is a
+#     constant (verified empirically: one shared sha256 across every
+#     round of the archived cells). replay_frozen_offline.py replays the
+#     population around that constant through
+#     sim_perfect_predictor.simulate -- the IDENTICAL operator path.
+#     The population loop still runs recursively; only the model is
+#     frozen, which is exactly what lambda = inf means. All 13 replays
+#     share ONE source vector (pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0,
+#     frozen_pred_sha256 fdfdeab7...).
+#
+# THE COUNTS (asserted in main(), never forced):
+#   108 unique cells
+#     = 91 finite-lambda GPU cells   (3 betas x 4 gammas x 7 + 7 at beta=1)
+#     + 13 frozen CPU cells          (3 betas x 4 gammas + 1 at beta=1)
+#     +  4 beta = 0 twins            (one per gamma, free)
+#   GPU: 28 REUSED (audited on the cluster tag by tag, every one DONE
+#        with a trajectory.pt) + 63 NEW production jobs
+#     reused = 21 at beta=.5, gamma in {.2,.5,1}   (pofdmem_ 9 + pofdlam_ 12)
+#            +  7 at beta=1, the complete ladder   (pofdps_ 3 + pofdlam_ 4)
+#     new    = 56 at beta in {.25,.75} x 4 gammas x 7 lambdas
+#            +  7 at beta=.5, gamma=0 x 7 lambdas
+#   CPU: 4 REUSED frozen endpoints + 9 already-generated replays
+#        (gen_fig3_frozen_replays.sh; NOT Condor jobs).
+#
+# HORIZONS. The three reused pofdps_ cells ran 60 rounds and everything
+# else 30; the figure truncates to the common 30. The horizon is in
+# every tag, so a 30-round cell can never be mistaken for a 60-round one.
+#
+# TARGETED HORIZON EXTENSIONS (fig3_full_loop_ext). A cell that has not
+# settled by round 30 must NOT be called an equilibrium. The analyzer
+# classifies every cell (settled / needs extension / long-run-cyclic)
+# and writes fig3_extension_request.json; committed to
+# experiments/condor/, that file drives this key: each requested cell
+# re-runs the identical surface at 60 or 100 rounds under a pofdf3_
+# _r60/_r100 tag. A request at 60 rounds is REFUSED for cells whose
+# reused artifact already has 60 (the pofdps_ trio) -- ask for 100.
+# Seeded 2026-08-24 with the one cell verified unsettled at r30:
+# (beta=.5, gamma=.2, lambda=1), drift +0.0107 > 0.005.
+#
+# SMOKE: one 3-round cell at beta = .25, gamma = 0, lambda = 8 -- both
+# genuinely new dials at once (a beta never run, and the gamma = 0
+# no-re-anchor regime) at the strongest anchor and S = 100, the most
+# demanding path this wave contains.
+F3_KEY = "fig3_full_loop"
+F3_SMOKE_KEY = "fig3_full_loop_smoke"
+F3X_KEY = "fig3_full_loop_ext"
+F3X_REQUEST_PATH = os.path.join(HERE, "fig3_extension_request.json")
+F3X_ROUNDS_OK = (60, 100)
+F3_MODEL = "qwen3_8b"
+F3_SWEEPS = 100
+F3_ROUNDS = 30
+F3_SMOKE_ROUNDS = 3
+F3_SEED = 0
+F3_INF = float("inf")          # lambda = infinity: the frozen model
+F3_H100 = S3_H100
+F3_EPS_SOCIAL = S3_EPS_SOCIAL          # inert under all_open; runner refuses 0
+F3_BETAS = [0.0, 0.25, 0.5, 0.75, 1.0]        # W_PLAT
+F3_GAMMAS = [0.0, 0.2, 0.5, 1.0]              # INNATE_LAMBDA
+F3_LAMS = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, F3_INF]   # kl_beta ladder
+F3_FROZEN_SOURCE = "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
+F3_FROZEN_SHA = ("fdfdeab7466345159cd7ae16ee487d498"
+                 "2d686cfdb93287780ae4d109ccba3f7")
+F3_N_CELLS = 108
+F3_N_GPU = 91
+F3_N_NEW_GPU = 63
+F3_N_REUSED_GPU = 28
+F3_N_FROZEN = 13
+F3_N_NEW_CPU = 9
+F3_N_REUSED_CPU = 4
+F3_N_TWIN = 4
+
+# Archived cells that already sit at this exact surface. Audited on the
+# cluster tag by tag (2026-08-24): every one has a trajectory.pt. Keyed
+# by the conceptual cell (beta, gamma, lambda) so a lookup can never
+# drift from the grid. beta = 1 stores gamma as None: gamma is
+# algebraically absent there and storing 1.0 would imply a choice that
+# was never made (the archived tags spell it k1 because INNATE_LAMBDA=1
+# is the inert value the runner was handed).
+F3_REUSED = {
+    # beta = .5 -- pofdmem_ (lambda 0, 1, 8) and pofdlam_ (.25, .5, 2, 4)
+    **{(0.5, g, lam): (f"pofdmem_qwen3_8b_{arm}_sw100_eaopen_w0p5"
+                       f"_k{_num(g)}_esopen_anch2_s0_r30")
+       for g in (1.0, 0.5, 0.2)
+       for lam, arm in ((0.0, "sft"), (1.0, "fwdlam1"), (8.0, "fwdlam8"))},
+    **{(0.5, g, lam): (f"pofdlam_qwen3_8b_fwdlam{_num(lam)}_sw100_eaopen"
+                       f"_w0p5_k{_num(g)}_esopen_anch2_s0_r30")
+       for g in (1.0, 0.5, 0.2)
+       for lam in (0.25, 0.5, 2.0, 4.0)},
+    # beta = 1 -- gamma drops out; the COMPLETE 7-dose ladder exists:
+    # pofdps_ ran {0, 1, 8} at 60 rounds, pofdlam_ {.25, .5, 2, 4} at 30
+    (1.0, None, 0.0): ("pofdps_qwen3_8b_sft_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r60"),
+    (1.0, None, 1.0): ("pofdps_qwen3_8b_fwdlam1_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r60"),
+    (1.0, None, 8.0): ("pofdps_qwen3_8b_fwdlam8_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r60"),
+    (1.0, None, 0.25): ("pofdlam_qwen3_8b_fwdlam0p25_sw100_eaopen_w1_k1"
+                        "_esopen_anch2_s0_r30"),
+    (1.0, None, 0.5): ("pofdlam_qwen3_8b_fwdlam0p5_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r30"),
+    (1.0, None, 2.0): ("pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r30"),
+    (1.0, None, 4.0): ("pofdlam_qwen3_8b_fwdlam4_sw100_eaopen_w1_k1"
+                       "_esopen_anch2_s0_r30"),
+}
+
+
+def f3_arm(lam):
+    """Tag arm token. Shares the pofdmem_/pofdlam_ grammar so the
+    figure's reused and new cells read the same way."""
+    return "sft" if lam == 0.0 else f"fwdlam{_num(lam)}"
+
+
+def f3_tag(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False):
+    pre = "pofdf3smk" if smoke else "pofdf3"
+    return (f"{pre}_{F3_MODEL}_{f3_arm(lam)}_sw{F3_SWEEPS}_eaopen"
+            f"_w{_num(beta)}_k{_num(gamma)}_esopen_{S3_OP_TOKEN}"
+            f"_s{F3_SEED}_r{rounds}")
+
+
+def f3_row(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False):
+    assert lam != F3_INF, "lambda = inf is a CPU replay, never a GPU job"
+    assert beta > 0.0, "beta = 0 is the twin, never a GPU job"
+    a = REACH_ARM_COLS["b1"]
+    m = FAM_MODELS[F3_MODEL]
+    return ROW_PS.format(
+        tag=f3_tag(beta, gamma, lam, rounds, smoke),
+        style=("sft" if lam == 0.0 else "sft_kl"), beta=f"{lam:g}",
+        seed=F3_SEED, es=f"{F3_EPS_SOCIAL:g}", wplat=f"{beta:g}",
+        lam=f"{gamma:g}", kldir="forward", sweeps=F3_SWEEPS,
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def f3_cells():
+    """Every UNIQUE conceptual cell of the redesigned figure, as
+    (beta, gamma, lambda, kind) with kind in {'twin', 'frozen', 'gpu'}.
+    gamma is None where beta = 1 dedups it; lambda is None where beta = 0
+    dedups it. This is the SINGLE definition of the figure -- the
+    generator, the checker, the analyzer and the tests all read the grid
+    from here."""
+    out = []
+    for beta in F3_BETAS:
+        if beta == 0.0:
+            # the model cannot reach the population: one twin per gamma
+            # serves the whole lambda ladder
+            for gamma in F3_GAMMAS:
+                out.append((0.0, gamma, None, "twin"))
+        elif beta == 1.0:
+            # the human component vanishes: one cell per lambda
+            for lam in F3_LAMS:
+                out.append((1.0, None, lam,
+                            "frozen" if lam == F3_INF else "gpu"))
+        else:
+            for gamma in F3_GAMMAS:
+                for lam in F3_LAMS:
+                    out.append((beta, gamma, lam,
+                                "frozen" if lam == F3_INF else "gpu"))
+    return out
+
+
+def f3_missing_gpu():
+    """The finite-lambda cells with no archived run -- the queue."""
+    return [(b, g, l) for (b, g, l, kind) in f3_cells()
+            if kind == "gpu" and (b, g, l) not in F3_REUSED]
+
+
+def f3_missing_frozen():
+    """(beta, gamma) needing a NEW offline frozen replay. The four
+    archived endpoints: k in {1, .5, .2} at W = .5, and k = 1 at W = 1."""
+    have = {(1.0, 1.0), (0.5, 1.0), (0.5, 0.5), (0.5, 0.2)}
+    out = []
+    for (b, g, l, kind) in f3_cells():
+        if kind != "frozen":
+            continue
+        key = (b, 1.0 if g is None else g)
+        if key not in have:
+            out.append(key)
+    return sorted(set(out))
+
+
+def f3_rows():
+    return [f3_row(b, g, l) for (b, g, l) in
+            sorted(f3_missing_gpu(), key=lambda c: (c[0], c[1], c[2]))]
+
+
+def f3_smoke_rows():
+    """Both new dials at once (beta = .25 never run, gamma = 0 the
+    no-re-anchor regime) at the strongest anchor and S = 100."""
+    return [f3_row(0.25, 0.0, 8.0, rounds=F3_SMOKE_ROUNDS, smoke=True)]
+
+
+def f3x_requests():
+    """[(beta, gamma, lam, rounds)] from the committed extension-request
+    file; [] when no file exists. Every entry is validated against the
+    grid HERE so a malformed request fails the generator, not a wave."""
+    if not os.path.exists(F3X_REQUEST_PATH):
+        return []
+    req = json.load(open(F3X_REQUEST_PATH))
+    gpu_cells = {(b, g, l) for (b, g, l, k) in f3_cells() if k == "gpu"}
+    out = []
+    for e in req["cells"]:
+        beta = float(e["beta"])
+        gamma = None if e["gamma"] is None else float(e["gamma"])
+        lam, rounds = float(e["lam"]), int(e["rounds"])
+        assert rounds in F3X_ROUNDS_OK, e
+        assert (beta, gamma, lam) in gpu_cells, \
+            f"extension request names a cell outside the grid: {e}"
+        base = F3_REUSED.get((beta, gamma, lam), "")
+        assert not (rounds == 60 and base.endswith("_r60")), \
+            (f"extension to 60 rounds is redundant for {e}: the reused "
+             f"artifact {base} already has 60 -- request 100")
+        out.append((beta, gamma, lam, rounds))
+    assert len(set(out)) == len(out), "duplicate extension requests"
+    return out
+
+
+def f3x_rows():
+    """Extension rows: identical surface, longer horizon, _r60/_r100
+    tags. beta = 1 extensions carry gamma = 1 (inert at W = 1, matching
+    the archived w1_k1 spelling)."""
+    return [f3_row(b, (1.0 if g is None else g), l, rounds=r)
+            for (b, g, l, r) in sorted(f3x_requests())]
+
+
+def f3_sub(kind="main"):
+    """kind: 'main' | 'smoke' | 'ext'."""
+    key = {"main": F3_KEY, "smoke": F3_SMOKE_KEY, "ext": F3X_KEY}[kind]
+    rows = {"main": f3_rows, "smoke": f3_smoke_rows, "ext": f3x_rows}[kind]()
+    what = {"main": "REDESIGNED FIGURE 3, MISSING FULL-LOOP CELLS",
+            "smoke": "3-ROUND beta=.25 gamma=0 lambda=8 SMOKE",
+            "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, driven "
+                    "by fig3_extension_request.json)")}[kind]
+    rounds = {"main": str(F3_ROUNDS), "smoke": str(F3_SMOKE_ROUNDS),
+              "ext": "60/100 (per-row nrounds)"}[kind]
+    return F3_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=F3_H100, bad=BAD_NODE_REQ,
+        rounds=rounds, kind=what,
+        gateflag=(" --smoke" if kind == "smoke" else ""))
+
+
+F3_SUB_TEMPLATE = """\
+# HTCondor: REDESIGNED FIGURE 3 FULL-LOOP CELLS -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the F3 block. Never edit by hand:
+# rerun the script.
+# THE FULL RECURSIVE LOOP, every row: retrain a FRESH r512 LoRA on the
+# current population labels, serve, mix the served vector into the
+# population at W_PLAT, run S = 100 complete Deffuant sweeps, and feed
+# the resulting post-peer opinions into the next round's training pool.
+# No row here is a replay or a snapshot.
+# Surface held identical to the cells this figure already contains:
+# Qwen3-8B with CHAT_THINKING=0, movielens/Action 723, {rounds} rounds,
+# AB_SWEEPS=100, BOTH gates genuinely open (all_open, not the numeric
+# threshold 1), homophily gamma 0, seed 0, forward KL, matched twin
+# (WITH_TWIN=1), greedy eval-mode serving, SAVE_RAW_GEN=1.
+# beta = W_PLAT rides $(wplat); gamma = INNATE_LAMBDA rides $(lam);
+# lambda = the KL coefficient rides $(beta). Those three names collide
+# in this repo -- the queue columns are the authority.
+# AI_GATE_REFERENCE=anchor is pinned EXPLICITLY so config
+# population_update == "nested_ai_anchored_then_social_v2" and the anch2
+# tag token is true by construction rather than inherited from a default
+# that could flip. Under all_open the v1 and v2 operators are
+# numerically identical, so this is provenance, not a behavioural
+# change, and the archived anch2 cells this wave joins are directly
+# comparable.
+# NOT QUEUED, BY CONSTRUCTION: beta = 0 (that is twin_raw, already in
+# every run), beta = 1 at any gamma but the inert k=1 spelling (gamma
+# drops out algebraically), and lambda = inf (replay_frozen_offline.py,
+# CPU).
+# Gate: python experiments/scripts/cluster_pipelines/check_fig3_full_loop.py{gateflag}
+# -- per-round training telemetry is the HARD retraining witness (a
+# settled loop may legitimately serve a constant map, so "the served
+# vector moved" is only a diagnostic).
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig3fullloop"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -11998,7 +12345,135 @@ def main():
     files[p] = rows_f4r
     expected[p] = F4R_N
     cube_subs[os.path.join(HERE, f"at_pofd_{F4R_KEY}.sub")] = _f4r_sub
-
+    # ---- redesigned Figure 3, unified 108-cell grid (F3) ----------------
+    # 160 nominal (beta x gamma x lambda) points reduce to 108 unique
+    # cells under the three documented dedups; only finite-lambda,
+    # beta > 0 cells can be GPU jobs, and 28 of those 91 are already on
+    # disk. Every count is asserted for CONSISTENCY with the 2026-08-24
+    # cluster audit, never forced to a split.
+    _f3_cells = f3_cells()
+    assert len(_f3_cells) == F3_N_CELLS == 108, len(_f3_cells)
+    _f3_kinds = {}
+    for _b, _g, _l, _kind in _f3_cells:
+        _f3_kinds[_kind] = _f3_kinds.get(_kind, 0) + 1
+    assert _f3_kinds == {"gpu": F3_N_GPU, "frozen": F3_N_FROZEN,
+                         "twin": F3_N_TWIN}, _f3_kinds
+    assert (F3_N_GPU, F3_N_FROZEN, F3_N_TWIN) == (91, 13, 4)
+    # the grid itself, under the two structural dedups
+    _f3_set = {(b, g, l) for (b, g, l, _k) in _f3_cells}
+    _want = {(0.0, g, None) for g in F3_GAMMAS}
+    _want |= {(1.0, None, l) for l in F3_LAMS}
+    _want |= {(b, g, l) for b in (0.25, 0.5, 0.75)
+              for g in F3_GAMMAS for l in F3_LAMS}
+    assert _f3_set == _want, _f3_set ^ _want
+    assert len(_f3_set) == len(_f3_cells), "duplicate cells in the grid"
+    # the reuse map covers EXACTLY the audited 28: the full beta=.5
+    # ladder at gamma {.2,.5,1} and the complete beta=1 ladder
+    _gpu_cells = {(b, g, l) for (b, g, l, k) in _f3_cells if k == "gpu"}
+    _want_reused = {(0.5, g, l) for g in (0.2, 0.5, 1.0)
+                    for l in F3_LAMS if l != F3_INF}
+    _want_reused |= {(1.0, None, l) for l in F3_LAMS if l != F3_INF}
+    assert set(F3_REUSED) == _want_reused, set(F3_REUSED) ^ _want_reused
+    assert len(F3_REUSED) == F3_N_REUSED_GPU == 28
+    assert set(F3_REUSED) <= _gpu_cells
+    # the queue is exactly the audited-missing complement:
+    # 56 at beta {.25,.75} x 4 gammas x 7 + 7 at (beta=.5, gamma=0)
+    _want_missing = {(b, g, l) for b in (0.25, 0.75)
+                     for g in F3_GAMMAS for l in F3_LAMS if l != F3_INF}
+    _want_missing |= {(0.5, 0.0, l) for l in F3_LAMS if l != F3_INF}
+    assert set(f3_missing_gpu()) == _want_missing
+    assert len(f3_missing_gpu()) == F3_N_NEW_GPU == 63
+    assert len(f3_missing_frozen()) == F3_N_NEW_CPU == 9
+    rows_f3 = f3_rows()
+    assert len(rows_f3) == F3_N_NEW_GPU, len(rows_f3)
+    _f3_tags = [r.split(",")[0].strip() for r in rows_f3]
+    assert len(set(_f3_tags)) == F3_N_NEW_GPU, _f3_tags
+    for _r in rows_f3:
+        _c = [x.strip() for x in _r.split(",")]
+        assert len(_c) == 29, (len(_c), _r)
+        _t = _c[0]
+        assert _t.startswith(f"pofdf3_{F3_MODEL}_"), _r
+        assert f"_{S3_OP_TOKEN}_" in _t, _r          # anch2 provenance
+        assert f"_sw{F3_SWEEPS}_" in _t, _r
+        assert "_eaopen_" in _t and "_esopen_" in _t, _r
+        assert _t.endswith(f"_s{F3_SEED}_r{F3_ROUNDS}"), _r
+        _lam, _beta, _gam = float(_c[2]), float(_c[11]), float(_c[14])
+        assert _c[1] == ("sft" if _lam == 0.0 else "sft_kl"), _r
+        assert f"_{f3_arm(_lam)}_sw" in _t, _r      # arm token <-> lambda
+        assert f"_w{_num(_beta)}_" in _t, _r        # beta  = W_PLAT
+        assert f"_k{_num(_gam)}_" in _t, _r         # gamma = INNATE_LAMBDA
+        assert _beta in F3_BETAS and 0.0 < _beta < 1.0, \
+            ("beta=0 is the twin and the complete beta=1 ladder reuses", _r)
+        assert _gam in F3_GAMMAS, _r
+        assert _c[9] == f"{F3_EPS_SOCIAL:g}", _r
+        assert _c[10] == "0.0", _r                  # homophily gamma stays 0
+        assert _c[15] == "forward", _r
+        assert int(_c[16]) == F3_SWEEPS, _r
+        assert int(_c[17]) == 0, _r                 # ICL_K = 0, no context arm
+        assert _c[23] == str(F3_ROUNDS), _r
+        assert _c[24] == FAM_MODELS[F3_MODEL]["base_model"], _r
+        assert _c[25] == "0", _r                    # Qwen3 thinking OFF
+        assert (_beta, _gam, _lam) in _want_missing, _r
+    # never re-queue an archived cell, and never collide with another key
+    _prior_f3 = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_f3_tags) & _prior_f3), set(_f3_tags) & _prior_f3
+    assert not (set(_f3_tags) & set(F3_REUSED.values()))
+    # every declared reuse must be a tag SOME other key really generates,
+    # so renaming the mem/lam/ps blocks can never silently orphan a cell
+    _missing_reuse = sorted(t for t in F3_REUSED.values()
+                            if t not in _prior_f3)
+    assert not _missing_reuse, f"F3 reuse tags not generated: {_missing_reuse}"
+    _f3_sub = f3_sub("main")
+    _f3_env = next(l for l in _f3_sub.splitlines()
+                   if l.startswith("environment"))
+    assert "AI_GATE_REFERENCE=anchor" in _f3_env
+    assert "AI_GATE_MODE=all_open" in _f3_env
+    assert "PEER_GATE_MODE=all_open" in _f3_env
+    assert "AB_SWEEPS=$(sweeps)" in _f3_env
+    assert "INNATE_LAMBDA=$(lam)" in _f3_env
+    assert "KL_DIRECTION=$(kldir)" in _f3_env
+    assert "WITH_TWIN=1" in _f3_env and "SAVE_RAW_GEN=1" in _f3_env
+    assert "FRESH_EACH_ROUND=$(fresh)" in _f3_env
+    assert "REF_REPLAY" not in _f3_env and "INNATE_CLAMP" not in _f3_env
+    p = os.path.join(HERE, f"configs_pofd_{F3_KEY}.txt")
+    files[p] = rows_f3
+    expected[p] = F3_N_NEW_GPU
+    cube_subs[os.path.join(HERE, f"at_pofd_{F3_KEY}.sub")] = _f3_sub
+    rows_f3s = f3_smoke_rows()
+    assert len(rows_f3s) == 1
+    _fs = [x.strip() for x in rows_f3s[0].split(",")]
+    assert _fs[0].startswith("pofdf3smk_") and f"_{S3_OP_TOKEN}_" in _fs[0]
+    assert _fs[0].endswith(f"_r{F3_SMOKE_ROUNDS}")
+    assert float(_fs[2]) == 8.0 and _fs[11] == "0.25" and _fs[14] == "0"
+    assert _fs[23] == str(F3_SMOKE_ROUNDS)
+    assert _fs[0] not in set(_f3_tags)
+    _f3s_sub = f3_sub("smoke")
+    assert "check_fig3_full_loop.py --smoke" in _f3s_sub, \
+        "the smoke sub must name the gate command WITH --smoke"
+    p = os.path.join(HERE, f"configs_pofd_{F3_SMOKE_KEY}.txt")
+    files[p] = rows_f3s
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{F3_SMOKE_KEY}.sub")] = _f3s_sub
+    # ---- targeted horizon extensions (F3X), request-file driven ---------
+    rows_f3x = f3x_rows()
+    if rows_f3x:
+        _fx_tags = [r.split(",")[0].strip() for r in rows_f3x]
+        assert len(set(_fx_tags)) == len(_fx_tags)
+        for _r in rows_f3x:
+            _c = [x.strip() for x in _r.split(",")]
+            _t = _c[0]
+            assert _t.startswith(f"pofdf3_{F3_MODEL}_"), _r
+            assert _t.endswith("_r60") or _t.endswith("_r100"), _r
+            assert _c[23] in ("60", "100"), _r
+        _prior_fx = {r.split(",")[0] for rows in files.values()
+                     for r in rows}
+        assert not (set(_fx_tags) & _prior_fx), set(_fx_tags) & _prior_fx
+        assert not (set(_fx_tags) & set(F3_REUSED.values()))
+        p = os.path.join(HERE, f"configs_pofd_{F3X_KEY}.txt")
+        files[p] = rows_f3x
+        expected[p] = len(rows_f3x)
+        cube_subs[os.path.join(HERE, f"at_pofd_{F3X_KEY}.sub")] = \
+            f3_sub("ext")
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

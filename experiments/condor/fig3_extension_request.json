@@ -1,0 +1,13 @@
+{
+  "_what": "Targeted horizon extensions for the redesigned Figure 3 (fig3_full_loop_ext). Written by analyze_fig3_full_loop.py when a cell fails the settled() drift test at its current horizon; copy the analyzer's fig3_extension_request.json here and commit so the cluster generator can emit the rows. Every entry re-runs the identical surface at 60 or 100 rounds under a pofdf3_ _r60/_r100 tag. gen_pofd_sweep.py validates each entry against the grid and refuses 60-round requests for cells whose reused artifact already has 60 rounds.",
+  "_convention": "beta = W_PLAT, gamma = INNATE_LAMBDA (null where beta=1 dedups it), lam = the forward-KL coefficient; rounds in {60, 100}.",
+  "cells": [
+    {
+      "beta": 0.5,
+      "gamma": 0.2,
+      "lam": 1.0,
+      "rounds": 60,
+      "reason": "drift +0.0107 > 0.005 over rounds 21-30 of the reused pofdmem_ cell (verified locally 2026-08-24); the one cell of the completed 28 that fails the settled() test"
+    }
+  ]
+}
