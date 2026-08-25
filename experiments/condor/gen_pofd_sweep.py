@@ -9464,6 +9464,331 @@ def s4g2_sub(cond, kind="main"):
     return s4g_sub(cond, key=key, rows=rows, kind=what, grid=S4G2_GRID_TXT)
 
 
+# fig4_anchor_tradeoff[_smoke|_ext|_zsprior] (2026-08-25).  FIGURE-4
+# ANCHOR TRADE-OFF: the corrected-operator (anch2) beta x gamma surface
+# under a SOCIAL THRESHOLD GATE, two entering models, ONE Deffuant sweep
+# per round.
+#
+# QUESTION.  With the AI gate fully open (AI_GATE_MODE=all_open, EPS_AI=1
+# inert) and the peer gate a strict-< threshold at es in {.05, .2}, how
+# does the population's equilibrium trade platform susceptibility
+# beta = W_PLAT against the innate re-anchor gamma = INNATE_LAMBDA, and
+# how much of it is the entering model (Qwen2.5-7B vs Qwen3-8B)?
+#
+# SURFACE.  MovieLens/Action 723, 30 outer rounds, AB_SWEEPS=1,
+# DEFFUANT_ALPHA=0.5, forward-KL lambda=2 (queue col beta = kl_beta),
+# fresh r512 LoRA each round (181 optimizer steps: 723 rows / batch 4,
+# no SFT_GRAD_ACCUM), ICL_K=0, seed 0, homophily gamma 0.
+# beta {0,.25,.5,.75,1} x gamma {1,.5,.2,0} x es {.05,.2} x 2 models
+# = 80 nominal cells.
+# NAMING COLLISIONS, once: beta(paper) = W_PLAT (col wplat); gamma(paper)
+# = INNATE_LAMBDA (col lam); lambda(paper, KL) = kl_beta (col beta).
+#
+# ALGEBRAIC DEDUPLICATION (exact, by the operator).  The pre-social step
+# is z = (1 - w) h + w served with h = gamma innate + (1 - gamma) x and
+# w = beta (platform_sus == 1 for every MovieLens agent):
+#   beta = 1 -> z = served, gamma drops out: ONE trained cell per
+#               (model, es) at gamma = 1 stands in for gamma in
+#               {.5, .2, 0}  (kind "dup", source (model, es, 1, 1));
+#   beta = 0 -> z = h, the population never sees the model and equals
+#               the matched twin bit-for-bit: trained ONLY for
+#               F4A_BETA0_MODEL (qwen3_8b); the qwen7b beta = 0 cells are
+#               dups of (qwen3_8b, es, 0, gamma).  The checker proves
+#               op_raw == twin_raw bit-exactly on every beta = 0 run.
+# => 80 cells = 60 trained (GPU) + 20 dup (12 at beta=1, 8 at beta=0);
+#    per es: 3 betas x 4 gammas x 2 models + beta=1 x 2 + beta=0 x 4 = 30.
+#
+# EVIDENCE PINNED IN THE ENV.  PARSE_MODE=strict + SAVE_RAW_GEN=1 (the
+# parser serves a FINITE 0.5 on failure; parse_fail_frac lives only in
+# raw_gen_log.json.gz), WITH_TWIN=1 (the matched no-AI twin, mirrored
+# RNG) and TRAIN_WITNESS=1 (per-round witness_* telemetry: optimizer
+# steps == 181 requested, 723 rows, LoRA B-norm > 0, final data/KL loss,
+# teacher-forced probe KL against the frozen reference on the shared
+# 64-agent probe set).  The AI gate is the STRICT inequality
+# |m - x'| < eps_AI on the anchored opinion x'; all_open bypasses it.
+#
+# ZERO-SHOT PRIORS.  Qwen3-8B's pofdzsprior_ artifact exists (sha256 of
+# pred_raw[0] pinned in F4A_ZSPRIOR_SHA); Qwen2.5-7B's is queued with the
+# smoke on its own zsprior-template sub (fig4_anchor_tradeoff_zsprior --
+# the 25-column zsprior row cannot ride the 29-column F4A sub, and the
+# archived zsprior_screen config is never touched).  The lambda = inf
+# offline replays (CPU) are named by f4a_frozen_name; beta = 0 replays
+# are model-independent and carry the model slug "shared".
+#
+# EXTENSIONS.  experiments/condor/fig4_anchor_extension_request.json
+# (written by analyze_fig4_anchor.py: a JSON list of
+# {model, es, beta, gamma, rounds}) drives the _ext key at 60/100 rounds
+# under _r60/_r100 tags; only TRAINED cells on the grid are accepted.
+# Absent or empty -> no _ext files are written.
+F4A_KEY = "fig4_anchor_tradeoff"
+F4A_SMOKE_KEY = "fig4_anchor_tradeoff_smoke"
+F4A_EXT_KEY = "fig4_anchor_tradeoff_ext"
+F4A_ZSPRIOR_KEY = "fig4_anchor_tradeoff_zsprior"
+F4A_MODELS = ("qwen7b", "qwen3_8b")
+F4A_ES = (0.05, 0.2)
+F4A_BETAS = (0.0, 0.25, 0.5, 0.75, 1.0)
+F4A_GAMMAS = (1.0, 0.5, 0.2, 0.0)
+F4A_SEED = 0
+F4A_ROUNDS = 30
+F4A_SMOKE_ROUNDS = 3
+F4A_SWEEPS = 1
+F4A_LAMBDA = 2.0
+F4A_ALPHA = 0.5
+# The 2026-08-25 reuse audit proved F4A_REUSED == {} (0/80 exact
+# matches: every archived anch2 run is esopen, every threshold-es run
+# is the v1 operator); the dict stays empty unless a future audit
+# supplies evidence.
+F4A_REUSED = {}                 # (model, es, beta, gamma) -> archived tag; audit only
+F4A_BETA0_MODEL = "qwen3_8b"
+F4A_EXT_REQUEST_PATH = os.path.join(HERE, "fig4_anchor_extension_request.json")
+F4A_EXT_ROUNDS_OK = (60, 100)
+F4A_H100 = S3_H100
+F4A_SMOKE_CELLS = (("qwen7b", 0.2, 0.5, 0.5), ("qwen3_8b", 0.2, 0.5, 0.5))
+F4A_ZSPRIOR = {"qwen3_8b": zsprior_tag("qwen3_8b"),
+               "qwen7b": zsprior_tag("qwen7b")}
+F4A_ZSPRIOR_SHA = {"qwen3_8b": F3_FROZEN_SHA,   # replay_frozen_offline record
+                   "qwen7b": None}               # unknown until it runs
+# the ARCHIVED Qwen2.5-7B frozen prior (7 archived H100 runs agree); the
+# checker WARNs (never fails) if the fresh qwen7b zsprior differs from it
+F4A_ZSPRIOR_WARN_SHA = {"qwen7b": ("1674ee5f8d833f46de672791d933e1d3"
+                                   "bdeefb07484c2d110dec84ce71da30bb")}
+F4A_N_CELLS = 80
+F4A_N_GPU = 60
+F4A_N_DUP = 20
+F4A_N_DUP_BETA1 = 12
+F4A_N_DUP_BETA0 = 8
+
+
+def f4a_source(model, es, beta, gamma):
+    """The TRAINED cell whose trajectory serves (model, es, beta, gamma):
+    itself for a trained cell, the algebraic source for a dup."""
+    if beta == 1.0:
+        return (model, es, 1.0, 1.0)
+    if beta == 0.0:
+        return (F4A_BETA0_MODEL, es, 0.0, gamma)
+    return (model, es, beta, gamma)
+
+
+def f4a_cells():
+    """Every nominal cell as (model, es, beta, gamma, kind, source), kind
+    in {'gpu', 'dup'}; source == the (model, es, beta, gamma) of the
+    trained cell that provides the trajectory (itself for gpu). The
+    SINGLE definition of the Figure-4 anchor grid: generator, checker,
+    analyzer, plotter and tests all read it here."""
+    out = []
+    for model in F4A_MODELS:
+        for es in F4A_ES:
+            for beta in F4A_BETAS:
+                for gamma in F4A_GAMMAS:
+                    src = f4a_source(model, es, beta, gamma)
+                    kind = "gpu" if src == (model, es, beta, gamma) else "dup"
+                    out.append((model, es, beta, gamma, kind, src))
+    return out
+
+
+def f4a_tag(model, es, beta, gamma, rounds=F4A_ROUNDS, smoke=False):
+    """pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30."""
+    pre = "pofdf4asmk" if smoke else "pofdf4a"
+    return (f"{pre}_{model}_fwdlam{_num(F4A_LAMBDA)}_sw{F4A_SWEEPS}_eaopen"
+            f"_w{_num(beta)}_k{_num(gamma)}_es{_num(es)}_{S3_OP_TOKEN}"
+            f"_s{F4A_SEED}_r{rounds}")
+
+
+def f4a_row(model, es, beta, gamma, rounds=F4A_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS["b1"]
+    m = FAM_MODELS[model]
+    return ROW_PS.format(
+        tag=f4a_tag(model, es, beta, gamma, rounds, smoke), style="sft_kl",
+        beta=f"{F4A_LAMBDA:g}", seed=F4A_SEED, es=f"{es:g}",
+        wplat=f"{beta:g}", lam=f"{gamma:g}", kldir="forward",
+        sweeps=F4A_SWEEPS, iclk=a["iclk"], snap=a["snap"],
+        uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"],
+        nrounds=rounds, basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def f4a_rows():
+    """The 60 trained cells (minus any audited reuse), grid order."""
+    return [f4a_row(model, es, beta, gamma)
+            for (model, es, beta, gamma, kind, _src) in f4a_cells()
+            if kind == "gpu" and (model, es, beta, gamma) not in F4A_REUSED]
+
+
+def f4a_smoke_rows():
+    """The two 3-round smoke cells (both models at es=.2, beta=.5,
+    gamma=.5) on the F4A sub. The Qwen2.5-7B zero-shot prior rides the
+    separate zsprior-template sub (f4a_zsprior_rows)."""
+    return [f4a_row(model, es, beta, gamma, rounds=F4A_SMOKE_ROUNDS,
+                    smoke=True)
+            for (model, es, beta, gamma) in F4A_SMOKE_CELLS]
+
+
+def f4a_zsprior_rows():
+    """The Qwen2.5-7B zero-shot prior serve: the qwen3_8b zsprior_screen
+    row with slug / BASE_MODEL / CHAT_THINKING=default swapped."""
+    m = FAM_MODELS["qwen7b"]
+    return [ROW_ZSPRIOR.format(tag=F4A_ZSPRIOR["qwen7b"],
+                               basemodel=m["base_model"],
+                               chatthink=m["chatthink"])]
+
+
+def f4a_ext_requests(path=None):
+    """[(model, es, beta, gamma, rounds)] from the manifest (a JSON list
+    of {model, es, beta, gamma, rounds}; a {"cells": [...]} wrapper is
+    tolerated); [] when absent or empty. Validated against the grid
+    HERE: only TRAINED cells, rounds in F4A_EXT_ROUNDS_OK."""
+    path = F4A_EXT_REQUEST_PATH if path is None else path
+    if not os.path.exists(path):
+        return []
+    req = json.load(open(path))
+    if isinstance(req, dict):
+        req = req.get("cells", [])
+    gpu = {(m, e, b, g) for (m, e, b, g, k, _s) in f4a_cells() if k == "gpu"}
+    out = []
+    for e in req:
+        key = (str(e["model"]), float(e["es"]), float(e["beta"]),
+               float(e["gamma"]))
+        rounds = int(e["rounds"])
+        assert rounds in F4A_EXT_ROUNDS_OK, e
+        assert key in gpu, \
+            f"extension request names a dup or off-grid cell: {e}"
+        out.append(key + (rounds,))
+    assert len(set(out)) == len(out), "duplicate extension requests"
+    return out
+
+
+def f4a_ext_rows():
+    return [f4a_row(m, e, b, g, rounds=r)
+            for (m, e, b, g, r) in sorted(f4a_ext_requests())]
+
+
+def f4a_frozen_name(model, es, beta, gamma, rounds=F4A_ROUNDS):
+    """lambda = inf offline replay artifact; beta = 0 replays never see
+    the model and are shared across models."""
+    if beta == 0.0:
+        model = "shared"
+    return (f"frozen_f4a_{model}_w{_num(beta)}_k{_num(gamma)}_es{_num(es)}"
+            f"_sw{F4A_SWEEPS}_r{rounds}.pt")
+
+
+def f4a_sub(kind="main"):
+    """kind: 'main' | 'smoke' | 'ext'."""
+    key = {"main": F4A_KEY, "smoke": F4A_SMOKE_KEY, "ext": F4A_EXT_KEY}[kind]
+    rows = {"main": f4a_rows, "smoke": f4a_smoke_rows,
+            "ext": f4a_ext_rows}[kind]()
+    what = {"main": "60 TRAINED CELLS (the 20 dups are algebraic, 0 jobs)",
+            "smoke": "3-ROUND SMOKE (both models at es=.2 beta=.5 gamma=.5)",
+            "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, driven by "
+                    "fig4_anchor_extension_request.json)")}[kind]
+    rounds = {"main": str(F4A_ROUNDS), "smoke": str(F4A_SMOKE_ROUNDS),
+              "ext": "60/100 (per-row nrounds)"}[kind]
+    return F4A_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=F4A_H100, bad=BAD_NODE_REQ,
+        rounds=rounds, kind=what,
+        gateflag=(" --smoke" if kind == "smoke" else ""))
+
+
+def f4a_zsprior_sub():
+    return F4A_ZSPRIOR_SUB_TEMPLATE.format(key=F4A_ZSPRIOR_KEY,
+                                           n_jobs=len(f4a_zsprior_rows()))
+
+
+F4A_SUB_TEMPLATE = """\
+# HTCondor: FIGURE-4 ANCHOR TRADE-OFF -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the F4A block. Never edit by hand.
+# beta = W_PLAT {{0,.25,.5,.75,1}} x gamma = INNATE_LAMBDA {{1,.5,.2,0}} x
+# es {{.05,.2}} x {{Qwen2.5-7B-Instruct, Qwen3-8B thinking-off}} = 80
+# cells; 60 trained here, 20 exact algebraic dups (beta=1: gamma drops
+# out, one cell per (model, es); beta=0: the population equals the twin,
+# trained for Qwen3-8B only and shared with Qwen2.5-7B).
+# Corrected operator AI_GATE_REFERENCE=anchor (config population_update
+# nested_ai_anchored_then_social_v2, tag token anch2). AI gate all_open
+# (EPS_AI=1 inert; the threshold form is the STRICT inequality
+# |m - x'| < eps_AI on the anchored opinion x', bypassed here). Peer
+# gate PEER_GATE_MODE=threshold at es (queue col eps), ONE Deffuant
+# sweep per round (AB_SWEEPS=1), DEFFUANT_ALPHA=0.5, forward-KL
+# lambda=2, fresh r512 LoRA each round (181 optimizer steps), ICL_K=0,
+# seed 0, {rounds} rounds, MovieLens/Action 723. Homophily gamma stays 0.
+# PARSE_MODE=strict + SAVE_RAW_GEN=1 (zero parse failures proven from
+# raw_gen_log.json.gz), WITH_TWIN=1 (matched no-AI twin), TRAIN_WITNESS=1
+# (per-round witness_* telemetry incl. the probe KL to the frozen
+# reference on the shared 64-agent probe set).
+# Gate: python experiments/scripts/cluster_pipelines/check_fig4_anchor.py{gateflag}
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=threshold AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) DEFFUANT_ALPHA=0.5 ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 PARSE_MODE=strict TRAIN_WITNESS=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig4_anchor_tradeoff"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
+# The Qwen2.5-7B zero-shot prior rides the ARCHIVED zsprior_screen
+# template verbatim below the header (env and queue line asserted
+# identical in main()); only the header names this wave.
+F4A_ZSPRIOR_SUB_TEMPLATE = """\
+# HTCondor: FIGURE-4 ANCHOR TRADE-OFF -- Qwen2.5-7B-Instruct ZERO-SHOT
+# PRIOR, one 1-round frozen probe. GENERATED by gen_pofd_sweep.py from
+# the F4A block (zsprior template, env identical to zsprior_screen).
+# Never edit by hand: rerun the script. {n_jobs} job(s).
+# The paper's 723 MovieLens Action profiles, seed 0, greedy decoding,
+# frozen weights, no LoRA, no context, es=0, EPS_AI=0 under the
+# strict-< threshold gate: no agent is ever contacted, opinions cannot
+# update, and pred_raw[0] is the checkpoint's zero-shot prior -- the
+# entering-model overlay of every Qwen2.5-7B Figure-4 panel and the
+# source vector of its lambda = inf offline replays.
+# SAVE_RAW_GEN=1 writes raw_gen_log.json.gz (every raw decoded
+# response + parsed values); BASE_MODEL and CHAT_THINKING ride the
+# queue (CHAT_THINKING=default for Qwen2.5).
+# Gate: python experiments/scripts/cluster_pipelines/check_fig4_anchor.py --smoke
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+#   (fig4_anchor_tradeoff_smoke queues this sub alongside the two smoke cells)
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_zsprior_screen"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, eps_ai, gatemode, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 def main():
     verify = "--verify" in sys.argv
     files, expected = {}, {}
@@ -13257,6 +13582,221 @@ def main():
         expected[p] = len(_rows)
         cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
             s4g2_sub(_cond, "ext")
+
+    # ---- Figure-4 anchor trade-off (F4A): beta x gamma x es x 2 models ----
+    # ---- under the threshold peer gate; 60 trained + 20 algebraic dups ----
+    _f4 = f4a_cells()
+    assert len(_f4) == F4A_N_CELLS == 80 and len(set(_f4)) == 80
+    _f4k = {}
+    for _cell in _f4:
+        _f4k[_cell[4]] = _f4k.get(_cell[4], 0) + 1
+    assert _f4k == {"gpu": F4A_N_GPU, "dup": F4A_N_DUP}, _f4k
+    assert F4A_N_GPU + F4A_N_DUP == F4A_N_CELLS
+    assert {(m, e, b, g) for (m, e, b, g, _k, _s) in _f4} == \
+        {(m, e, b, g) for m in F4A_MODELS for e in F4A_ES
+         for b in F4A_BETAS for g in F4A_GAMMAS}
+    _f4_gpu = {(m, e, b, g) for (m, e, b, g, k, _s) in _f4 if k == "gpu"}
+    _f4_dup1 = [c for c in _f4 if c[4] == "dup" and c[2] == 1.0]
+    _f4_dup0 = [c for c in _f4 if c[4] == "dup" and c[2] == 0.0]
+    assert len(_f4_dup1) == F4A_N_DUP_BETA1 == 12
+    assert len(_f4_dup0) == F4A_N_DUP_BETA0 == 8
+    assert len(_f4_dup1) + len(_f4_dup0) == F4A_N_DUP
+    for (m, e, b, g, k, s) in _f4:
+        assert s in _f4_gpu, ("every source must be a trained cell", (m, e, b, g), s)
+        assert s == f4a_source(m, e, b, g)
+        if k == "gpu":
+            assert s == (m, e, b, g)
+        elif b == 1.0:
+            assert g != 1.0 and s == (m, e, 1.0, 1.0)      # gamma drops out
+        else:
+            assert b == 0.0 and m != F4A_BETA0_MODEL and \
+                s == (F4A_BETA0_MODEL, e, 0.0, g)           # population == twin
+    for _e in F4A_ES:                                       # 30 trained per es
+        assert sum(1 for c in _f4 if c[4] == "gpu" and c[1] == _e) == 30
+    assert set(F4A_REUSED) <= _f4_gpu, "a reuse must name a trained cell"
+    # lambda = inf replay names: 60 unique (beta=0 shared across models)
+    _f4_frz = {f4a_frozen_name(*s) for (*_c, s) in _f4}
+    assert len(_f4_frz) == 60, len(_f4_frz)
+    assert all(n.startswith("frozen_f4a_") and n.endswith("_sw1_r30.pt")
+               for n in _f4_frz)
+    assert sum(1 for n in _f4_frz if "_shared_" in n) == 8
+    assert all("_shared_" in f4a_frozen_name(m, e, 0.0, g)
+               for m in F4A_MODELS for e in F4A_ES for g in F4A_GAMMAS)
+    assert F4A_ZSPRIOR == {
+        "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0",
+        "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0"}
+    assert F4A_ZSPRIOR_SHA["qwen3_8b"] == F3_FROZEN_SHA and \
+        len(F4A_ZSPRIOR_SHA["qwen3_8b"]) == 64 and \
+        F4A_ZSPRIOR_SHA["qwen7b"] is None
+    assert set(F4A_ZSPRIOR_WARN_SHA) == {"qwen7b"} and \
+        len(F4A_ZSPRIOR_WARN_SHA["qwen7b"]) == 64
+
+    rows_f4a = f4a_rows()
+    assert len(rows_f4a) == F4A_N_GPU - len(F4A_REUSED) == 60, len(rows_f4a)
+    _f4a_tags = [r.split(",")[0].strip() for r in rows_f4a]
+    assert len(set(_f4a_tags)) == len(_f4a_tags)
+    _f4a_seen = set()
+    for _r in rows_f4a:
+        _c = [x.strip() for x in _r.split(",")]
+        assert len(_c) == 29, (len(_c), _r)
+        _t = _c[0]
+        _model = next(m for m in F4A_MODELS if _t.startswith(f"pofdf4a_{m}_"))
+        _es, _beta, _gam = float(_c[9]), float(_c[11]), float(_c[14])
+        assert _t == f4a_tag(_model, _es, _beta, _gam), _r
+        assert _c[1] == "sft_kl" and float(_c[2]) == F4A_LAMBDA == 2.0, _r
+        assert int(_c[3]) == F4A_SEED == 0, _r
+        assert _c[4:9] == ["1", "replace", "1.0", "fixed", "ab"], _r
+        assert _es in F4A_ES and _beta in F4A_BETAS and _gam in F4A_GAMMAS, _r
+        assert _c[10] == "0.0", _r                   # homophily gamma stays 0
+        assert _c[12] == "loop" and _c[13] == "0.0", _r
+        assert _c[15] == "forward" and int(_c[16]) == F4A_SWEEPS == 1, _r
+        assert int(_c[17]) == 0 and int(_c[18]) == -1, _r     # ICL_K 0, no snap
+        assert int(_c[19]) == 1 and int(_c[20]) == 1, _r      # LoRA, fresh
+        assert int(_c[21]) == 16 and int(_c[22]) == 0, _r
+        assert int(_c[23]) == F4A_ROUNDS == 30, _r
+        assert _c[24] == FAM_MODELS[_model]["base_model"], _r
+        assert _c[25] == FAM_MODELS[_model]["chatthink"], _r
+        assert _c[25] == ("0" if _model == "qwen3_8b" else "default"), _r
+        assert f"_w{_num(_beta)}_k{_num(_gam)}_es{_num(_es)}_" in _t, _r
+        assert "_fwdlam2_sw1_eaopen_" in _t and f"_{S3_OP_TOKEN}_" in _t, _r
+        assert _t.endswith(f"_s{F4A_SEED}_r{F4A_ROUNDS}"), _r
+        _key = (_model, _es, _beta, _gam)
+        assert f4a_source(*_key) == _key, ("a dup must never queue", _r)
+        _f4a_seen.add(_key)
+    assert _f4a_seen == _f4_gpu - set(F4A_REUSED)
+    assert {m for (m, *_x) in _f4a_seen} == set(F4A_MODELS)
+    assert {e for (_m, e, *_x) in _f4a_seen} == set(F4A_ES)
+    # a NEW family: no tag shared with, and no pofdf4a prefix in, any other key
+    _prior_f4a = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_f4a_tags) & _prior_f4a), set(_f4a_tags) & _prior_f4a
+    assert not any(t.startswith("pofdf4a") for t in _prior_f4a), \
+        "pofdf4a_ must be a new tag family"
+    assert not (set(_f4a_tags) & set(F4A_REUSED.values()))
+    _missing_f4a_reuse = sorted(t for t in F4A_REUSED.values()
+                                if t not in _prior_f4a)
+    assert not _missing_f4a_reuse, \
+        f"F4A reuse tags not generated by any key: {_missing_f4a_reuse}"
+    _f4a_sub = f4a_sub("main")
+    _f4a_env = next(l for l in _f4a_sub.splitlines()
+                    if l.startswith("environment"))
+    for _tok in ("DATASET=movielens", "ML_TARGET=Action",
+                 "AI_GATE_MODE=all_open", "PEER_GATE_MODE=threshold",
+                 "AI_GATE_REFERENCE=anchor", "EPS_AI=1",
+                 "INNATE_LAMBDA=$(lam)", "AB_SWEEPS=$(sweeps)",
+                 "DEFFUANT_ALPHA=0.5", "KL_DIRECTION=$(kldir)",
+                 "WITH_TWIN=1", "SAVE_RAW_GEN=1", "PARSE_MODE=strict",
+                 "TRAIN_WITNESS=1", "CHAT_THINKING=$(chatthink)",
+                 "BASE_MODEL=$(basemodel)", "ICL_K=$(iclk)",
+                 "USE_LORA=$(uselora)", "FRESH_EACH_ROUND=$(fresh)",
+                 "N_ROUNDS=$(nrounds)", "LORA_R=512", "SFT_LR=5e-5",
+                 "SFT_EPOCHS=1", "SFT_BATCH_SIZE=4", "TRAIN_CAP=723",
+                 "N_LABELED=723", "PPL_BATCH=$(pplbatch)",
+                 "WANDB_RUN_SUFFIX=_fig4_anchor_tradeoff"):
+        assert f" {_tok} " in _f4a_env.replace('"', " "), (_tok, _f4a_env)
+    for _bad in ("SFT_GRAD_ACCUM", "REF_REPLAY", "INNATE_CLAMP",
+                 "PEER_GATE_MODE=all_open", "AI_GATE_MODE=threshold"):
+        assert _bad not in _f4a_env, _bad
+    assert "<=" not in _f4a_sub and "< eps_AI" in _f4a_sub, \
+        "the AI gate is a STRICT inequality; the header must say <"
+    assert "check_fig4_anchor.py" in _f4a_sub and "60 jobs" in _f4a_sub
+    _f4a_q = next(l for l in _f4a_sub.splitlines() if l.startswith("queue "))
+    _f4a_cols = [c.strip() for c in
+                 _f4a_q.split(" from ")[0][len("queue "):].split(",")]
+    assert len(_f4a_cols) == 29
+    _rest = _f4a_sub
+    while "$(" in _rest:
+        _rest = _rest[_rest.index("$(") + 2:]
+        _macro = _rest[:_rest.index(")")]
+        assert _macro in _f4a_cols, ("env macro not a queue column", _macro)
+    p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}.txt")
+    files[p] = rows_f4a
+    expected[p] = F4A_N_GPU - len(F4A_REUSED)
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _f4a_sub
+
+    rows_f4as = f4a_smoke_rows()
+    assert len(rows_f4as) == 2 and len(F4A_SMOKE_CELLS) == 2
+    for _r, _cell in zip(rows_f4as, F4A_SMOKE_CELLS):
+        _c = [x.strip() for x in _r.split(",")]
+        assert len(_c) == 29
+        assert _c[0] == f4a_tag(*_cell, rounds=F4A_SMOKE_ROUNDS, smoke=True)
+        assert _c[0].startswith("pofdf4asmk_") and \
+            _c[0].endswith(f"_s{F4A_SEED}_r{F4A_SMOKE_ROUNDS}")
+        assert "_w0p5_k0p5_es0p2_" in _c[0] and _c[23] == str(F4A_SMOKE_ROUNDS)
+        assert _c[0] not in _prior_f4a and _c[0] not in set(_f4a_tags)
+        assert _cell in _f4_gpu, "the smoke must exercise a trained cell"
+        # everything but the tag and the horizon is byte-identical to the
+        # production row of the same cell
+        _prod = [x.strip() for x in f4a_row(*_cell).split(",")]
+        assert _c[1:23] == _prod[1:23] and _c[24:] == _prod[24:], _r
+    assert {c[0] for c in F4A_SMOKE_CELLS} == set(F4A_MODELS)
+    _f4as_sub = f4a_sub("smoke")
+    assert "check_fig4_anchor.py --smoke" in _f4as_sub
+    assert next(l for l in _f4as_sub.splitlines()
+                if l.startswith("environment")) == _f4a_env
+    p = os.path.join(HERE, f"configs_pofd_{F4A_SMOKE_KEY}.txt")
+    files[p] = rows_f4as
+    expected[p] = 2
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4A_SMOKE_KEY}.sub")] = _f4as_sub
+
+    # the Qwen2.5-7B zero-shot prior: ONE zsprior-template row on its own
+    # sub; the archived zsprior_screen file must not gain a row
+    rows_f4az = f4a_zsprior_rows()
+    assert len(rows_f4az) == 1
+    _z = [x.strip() for x in rows_f4az[0].split(",")]
+    assert len(_z) == 25 and _z[0] == F4A_ZSPRIOR["qwen7b"]
+    assert _z[0] not in _prior_f4a and _z[0] not in set(_f4a_tags)
+    assert F4A_ZSPRIOR["qwen3_8b"] in _prior_f4a, \
+        "the Qwen3-8B zero-shot prior must be a tag zsprior_screen generates"
+    _zq3 = [x.strip() for x in
+            next(r for r in zsprior_rows() if "_qwen3_8b_" in r).split(",")]
+    assert len(_zq3) == 25 and _zq3[0] == F4A_ZSPRIOR["qwen3_8b"]
+    assert _z[1:23] == _zq3[1:23], "mirror the qwen3_8b zsprior row exactly"
+    assert _z[1] == "frozen" and _z[9] == "0" and _z[22] == "1"
+    assert _z[23] == FAM_MODELS["qwen7b"]["base_model"] and _z[24] == "default"
+    assert _zq3[23] == FAM_MODELS["qwen3_8b"]["base_model"] and _zq3[24] == "0"
+    assert len(files[os.path.join(HERE, f"configs_pofd_{ZSPRIOR_KEY}.txt")]) \
+        == ZSPRIOR_EXPECT_NEW == 4
+    _f4az_sub = f4a_zsprior_sub()
+
+    def _f4a_body(sub, key):
+        return [l for l in sub.replace(f"configs_pofd_{key}.txt",
+                                       "configs_pofd_KEY.txt").splitlines()
+                if not l.startswith("#")]
+    assert _f4a_body(_f4az_sub, F4A_ZSPRIOR_KEY) == \
+        _f4a_body(zsprior_sub(), ZSPRIOR_KEY), \
+        "the zsprior sub must be the archived template below the header"
+    assert "<=" not in _f4az_sub
+    p = os.path.join(HERE, f"configs_pofd_{F4A_ZSPRIOR_KEY}.txt")
+    files[p] = rows_f4az
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4A_ZSPRIOR_KEY}.sub")] = _f4az_sub
+
+    # ---- targeted horizon extensions (F4A ext), manifest-driven ---------
+    rows_f4ax = f4a_ext_rows()
+    if rows_f4ax:
+        _fx_tags = [r.split(",")[0].strip() for r in rows_f4ax]
+        assert len(set(_fx_tags)) == len(_fx_tags)
+        for _r in rows_f4ax:
+            _c = [x.strip() for x in _r.split(",")]
+            assert len(_c) == 29
+            assert _c[0].startswith("pofdf4a_"), _r
+            assert _c[0].endswith(("_r60", "_r100")) and _c[23] in ("60", "100"), _r
+            _model = next(m for m in F4A_MODELS
+                          if _c[0].startswith(f"pofdf4a_{m}_"))
+            _key = (_model, float(_c[9]), float(_c[11]), float(_c[14]))
+            assert _key in _f4_gpu and f4a_source(*_key) == _key, _r
+            assert _c[0] == f4a_tag(*_key, rounds=int(_c[23])), _r
+            _prod = [x.strip() for x in f4a_row(*_key).split(",")]
+            assert _c[1:23] == _prod[1:23] and _c[24:] == _prod[24:], _r
+        assert not (set(_fx_tags) & _prior_f4a), set(_fx_tags) & _prior_f4a
+        assert not (set(_fx_tags) & set(_f4a_tags))
+        _f4ax_sub = f4a_sub("ext")
+        assert next(l for l in _f4ax_sub.splitlines()
+                    if l.startswith("environment")) == _f4a_env
+        p = os.path.join(HERE, f"configs_pofd_{F4A_EXT_KEY}.txt")
+        files[p] = rows_f4ax
+        expected[p] = len(rows_f4ax)
+        cube_subs[os.path.join(HERE, f"at_pofd_{F4A_EXT_KEY}.sub")] = _f4ax_sub
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

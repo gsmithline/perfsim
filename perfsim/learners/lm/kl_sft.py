@@ -114,6 +114,20 @@ class KLSFTLearner(SFTLearner):
         self._anchor_mode = anchor_mode
         self._kl_direction = kl_direction
         self._ref_model: "PreTrainedModel | None" = None
+        # LAST-STEP LOSS TERMS (2026-08-25, training witness). TRL logs only
+        # the total loss, so the raw KL value at the final optimizer step is
+        # otherwise unrecoverable. When record_last_terms is True (the
+        # runner sets it under TRAIN_WITNESS=1) compute_loss stashes the
+        # detached (ce, kl) of its most recent call -- the last microbatch,
+        # which IS the final optimizer step at gradient_accumulation_steps=1
+        # -- and train() converts them once to last_loss_terms
+        # {"data_loss_last", "kl_last"}. Default False: compute_loss runs
+        # the same statements as before, and the training arithmetic is
+        # untouched either way (detach only, no extra forward, no sync
+        # inside the loop).
+        self.record_last_terms: bool = False
+        self.last_loss_terms: dict[str, float] = {}
+        self._last_terms: "tuple[torch.Tensor, torch.Tensor | None] | None" = None
 
     @property
     def kl_beta(self) -> float:
@@ -128,7 +142,17 @@ class KLSFTLearner(SFTLearner):
         return self._kl_direction
 
     def train(self, data: Any) -> None:
+        self._last_terms = None
+        self.last_loss_terms = {}
         super().train(data)
+        if self.record_last_terms and self._last_terms is not None:
+            ce, kl = self._last_terms
+            self.last_loss_terms = {
+                "data_loss_last": float(ce.detach().float().item()),
+                "kl_last": (float(kl.detach().float().item())
+                            if kl is not None else 0.0),
+            }
+            self._last_terms = None
         if self._anchor_mode == "chained" and self._kl_beta > 0:
             self._chain_ref()
 
@@ -171,6 +195,8 @@ class KLSFTLearner(SFTLearner):
         ref_model = self._ensure_ref() if self._kl_beta > 0 else None
         kl_beta = self._kl_beta
         kl_direction = self._kl_direction
+        record = bool(self.record_last_terms)
+        learner_self = self
 
         class _KLSFTTrainer(SFTTrainer):
             def compute_loss(
@@ -183,6 +209,8 @@ class KLSFTLearner(SFTLearner):
                 outputs = model(**inputs)
                 ce = outputs.loss
                 if ref_model is None or kl_beta == 0.0:
+                    if record:
+                        learner_self._last_terms = (ce.detach(), None)
                     return (ce, outputs) if return_outputs else ce
                 with torch.no_grad():
                     ref_logits = ref_model(
@@ -207,6 +235,8 @@ class KLSFTLearner(SFTLearner):
                     logp, logq, kl_direction)
                 kl = (kl_per_token * mask_shift).sum() / mask_shift.sum().clamp_min(1.0)
                 total = ce + kl_beta * kl
+                if record:
+                    learner_self._last_terms = (ce.detach(), kl.detach())
                 return (total, outputs) if return_outputs else total
 
         _sig = inspect.signature(SFTTrainer.__init__).parameters

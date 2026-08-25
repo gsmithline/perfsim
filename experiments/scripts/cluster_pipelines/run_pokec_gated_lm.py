@@ -811,6 +811,24 @@ def main() -> int:
     parse_mode = os.environ.get("PARSE_MODE", "legacy")
     if parse_mode not in ("legacy", "strict"):
         raise ValueError("PARSE_MODE must be 'legacy' or 'strict'")
+    # TRAIN_WITNESS (2026-08-25, Figure-4 anchor-tradeoff wave): per-round
+    # proof that the finite-lambda update happened -- optimizer steps taken
+    # vs requested, rows consumed, LoRA B / BA norms after training, the
+    # data and raw-KL loss terms at the final optimizer step, and a
+    # teacher-forced adapter-vs-base divergence on the fixed probe set --
+    # appended as witness_* fields to the round's telemetry row (see
+    # _gated_pop.train_witness_block). Off (default) adds nothing anywhere:
+    # byte-identical telemetry rows, config and code path. Needs the sft_kl
+    # style with KL_BETA > 0 (the reference model) and USE_LORA=1 (the LoRA
+    # factors), so anything else is refused up front rather than writing a
+    # half-empty witness the checker would fail 30 rounds later.
+    train_witness = _env_int("TRAIN_WITNESS", 0) == 1
+    if train_witness and not (training_style == "sft_kl" and kl_beta > 0
+                              and use_lora):
+        raise ValueError("TRAIN_WITNESS=1 requires TRAINING_STYLE=sft_kl, "
+                         "KL_BETA > 0 and USE_LORA=1; got "
+                         f"style={training_style!r} kl_beta={kl_beta} "
+                         f"use_lora={use_lora}")
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
     # SFT_SAMPLE_N (2026-08-21, qwen_subsample wave): OBSERVATION-RATE
@@ -1848,6 +1866,11 @@ def main() -> int:
     if "PARSE_MODE" in os.environ:
         # recorded ONLY when the env names it (absent == legacy)
         config["parse_mode"] = parse_mode
+    if train_witness:
+        # recorded ONLY when on (absent == off, the audit convention); the
+        # checker keys on both fields
+        config["train_witness"] = True
+        config["witness_probe_n"] = n_probe
     if ref_replay_on:
         # recorded ONLY when on (absent == off, the audit convention), so
         # every pre-2026-08-22 config stays byte-identical. CONTRACT field
@@ -2204,6 +2227,10 @@ def main() -> int:
     else:
         raise ValueError(f"unknown TRAINING_STYLE: {training_style!r}")
 
+    if train_witness:
+        # the learner stashes the final microbatch's (ce, kl) only when asked
+        learner.record_last_terms = True
+
     # fresh-each-round: snapshot the pristine (base-behavior) adapter once; we
     # reset to it before every round's training so no weights carry over.
     fresh_adapter_snap = None
@@ -2419,6 +2446,18 @@ def main() -> int:
         "innate": innate[probe_idx].tolist(),
         "prompts": probe_prompts,
     }, indent=2))
+    probe_y = None
+    if train_witness:
+        # the witness is teacher-forced on the labels the probe set already
+        # carries (innate), so the scored texts are fixed for the whole run
+        probe_y = innate[probe_idx]
+        if int(probe_idx.shape[0]) != n_probe:
+            # n < N_PROBE: record the REALIZED size the rows will carry
+            config["witness_probe_n"] = int(probe_idx.shape[0])
+            (out_dir / "config.json").write_text(
+                json.dumps(config, indent=2, default=str))
+        print(f"[run] TRAIN_WITNESS on: probe n={int(probe_idx.shape[0])} "
+              f"sha256={gp.probe_sha(probe_idx)[:12]}...", flush=True)
     tel_path = out_dir / "telemetry.json"
     tel_path.write_text("")  # truncate any stale rows from a previous attempt
 
@@ -2911,6 +2950,32 @@ def main() -> int:
                                    or {})
                     if _tstats:
                         sft_dose_rows.append({"round": t, **_tstats})
+                    if train_witness:
+                        # TRAINING WITNESS: measured on the just-trained
+                        # adapter (the one that serves next), before any
+                        # snapshot/save below; contract fields -> tel_row
+                        _wn = int(loss_block.get("n_train", 0))
+                        _wreq = (gp.witness_steps_requested(
+                                    _wn, sft_batch_size, sft_grad_accum,
+                                    sft_epochs)
+                                 if sft_epochs > 0 else int(max_steps))
+                        _wit = gp.train_witness_block(
+                            True, lm=lm, learner=learner, train_stats=_tstats,
+                            n_train=_wn, probe_idx=probe_idx, probe_y=probe_y,
+                            fmt=format_number, steps_requested=_wreq)
+                        loss_block.update(_wit)
+                        print(f"[witness] round {t}: steps="
+                              f"{_wit['witness_steps']}/"
+                              f"{_wit['witness_steps_requested']} "
+                              f"rows={_wit['witness_n_rows']} "
+                              f"|B|={_wit['witness_lora_b_norm']:.4g} "
+                              f"|BA|={_wit['witness_lora_ab_norm']:.4g} "
+                              f"ce_last={_wit['witness_data_loss_last']:.4g} "
+                              f"kl_last={_wit['witness_kl_last']:.4g} "
+                              f"probe_kl_fwd={_wit['witness_probe_kl_fwd']:.4g} "
+                              f"rev={_wit['witness_probe_kl_rev']:.4g} "
+                              f"agree={_wit['witness_probe_argmax_agree']:.3f}",
+                              flush=True)
             cur_dep += 1
             if t == 0:
                 # round-0 adapter + batch, kept on disk for the 2x2 evals
@@ -3486,6 +3551,16 @@ def main() -> int:
                 # peer_pairs == accepted is the invariant the checker
                 # gates on -- one rejected pair breaks it and cannot hide
                 # inside an aggregate.
+                row["peer_gate_mode"] = peer_gate_mode
+                row["peer_pairs"] = int(n) * int(ab_sweeps)
+            elif train_witness:
+                # TRAIN_WITNESS=1 (2026-08-25, Figure-4 anchor wave): the
+                # runtime-gate evidence its checker gates on (peer_gate_mode
+                # == "threshold", peer_pairs == n * ab_sweeps, accepted <=
+                # peer_pairs) is written in EVERY peer mode under the
+                # witness -- the same two keys, same values, as the
+                # all_open branch above, which stays exactly as it is.
+                # Off-witness rows in any other mode stay byte-identical.
                 row["peer_gate_mode"] = peer_gate_mode
                 row["peer_pairs"] = int(n) * int(ab_sweeps)
             if ab_sweeps > 1:

@@ -7,7 +7,9 @@ the pipeline via importlib, like _collapse_metrics.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import re
 
@@ -776,3 +778,174 @@ def append_telemetry(path, row):
         fh.write(json.dumps(row) + "\n")
         fh.flush()
         os.fsync(fh.fileno())
+
+
+# ---------------------------------------------------------------------------
+# TRAINING WITNESS (2026-08-25, Figure-4 anchor-tradeoff wave; runner env
+# TRAIN_WITNESS=1). Per-round proof that the finite-lambda update actually
+# happened, appended as witness_* fields to the round's telemetry row:
+# optimizer steps taken vs requested, rows consumed, the LoRA adapter's B and
+# BA norms after training (a fresh adapter starts at B = 0, so ||B|| IS the
+# parameter change), the last-step data/KL loss terms as the trainer saw
+# them, and a teacher-forced adapter-vs-reference divergence on the run's
+# fixed probe set. Measurement only: no RNG is drawn, no parameter is
+# written, and the modules' train/eval flags and use_cache are restored on
+# exit. train_witness_block(False) returns {} so a run without the witness
+# writes byte-identical rows.
+
+def witness_steps_requested(n_rows, batch, accum, epochs):
+    """Optimizer steps an epochs-mode trainer schedules for one train():
+    ceil(n_rows / (batch * accum)) * epochs. Exactly HF's per-epoch
+    ceil(ceil(n / b) / a) (the ceil of a ceil over an integer divisor is the
+    ceil of the joint quotient): 723 rows, batch 4, accum 1 -> 181; accum 10
+    -> 19. 0 when any argument is non-positive."""
+    n_rows, batch, accum, epochs = int(n_rows), int(batch), int(accum), int(epochs)
+    if n_rows <= 0 or batch <= 0 or accum <= 0 or epochs <= 0:
+        return 0
+    per_step = batch * accum
+    return ((n_rows + per_step - 1) // per_step) * epochs
+
+
+def probe_sha(idx):
+    """sha256 over the probe set's agent indices (decimal, comma-joined, in
+    probe order): the identity of the witness's evaluation set, identical
+    across rounds and across every run that built the same probe set."""
+    ints = [int(i) for i in (idx.tolist() if hasattr(idx, "tolist") else idx)]
+    return hashlib.sha256(",".join(str(i) for i in ints).encode()).hexdigest()
+
+
+def _lora_weight(obj):
+    """The weight tensor behind one LoRA factor entry (nn.Linear or tensor)."""
+    return obj.weight if hasattr(obj, "weight") else obj
+
+
+def _lora_factors(container):
+    """[(adapter_name, weight)] for one LoRA factor container. peft keeps
+    lora_A / lora_B as nn.ModuleDict({adapter: nn.Linear}) (ParameterDict for
+    embeddings); a bare module or tensor counts as the 'default' adapter."""
+    if isinstance(container, (torch.nn.ModuleDict, torch.nn.ParameterDict, dict)):
+        return [(str(k), _lora_weight(v)) for k, v in container.items()]
+    return [("default", _lora_weight(container))]
+
+
+def lora_pairs(module):
+    """(name, A, B) for every LoRA factor pair under `module`, matched by
+    adapter name inside each LoRA layer. A is [r, in], B is [out, r]."""
+    pairs = []
+    for name, sub in module.named_modules():
+        a_c = getattr(sub, "lora_A", None)
+        b_c = getattr(sub, "lora_B", None)
+        if a_c is None or b_c is None:
+            continue
+        a_by, b_by = dict(_lora_factors(a_c)), dict(_lora_factors(b_c))
+        for k in a_by:
+            if k in b_by and torch.is_tensor(a_by[k]) and torch.is_tensor(b_by[k]):
+                pairs.append((f"{name}.{k}" if name else k, a_by[k], b_by[k]))
+    return pairs
+
+
+@torch.no_grad()
+def lora_norms(module):
+    """(b_norm, ab_norm) = (sqrt(sum_i ||B_i||_F^2), sqrt(sum_i ||B_i A_i||_F^2))
+    over every LoRA pair, no scaling applied. ||BA||_F^2 = <B^T B, A A^T>
+    (both r x r, A A^T symmetric), so the [out, in] product is never
+    materialized. (0.0, 0.0) when no LoRA pair exists or every B is zero."""
+    b_sq, ab_sq = 0.0, 0.0
+    for _, a, b in lora_pairs(module):
+        a32 = a.detach().float()
+        b32 = b.detach().float()
+        b_sq += float(b32.pow(2).sum())
+        ab_sq += float(((b32.t() @ b32) * (a32 @ a32.t())).sum())
+    return float(b_sq ** 0.5), float(max(ab_sq, 0.0) ** 0.5)
+
+
+def _set_use_cache(module, value):
+    cfg = getattr(module, "config", None)
+    if cfg is None or not hasattr(cfg, "use_cache"):
+        return None
+    was = bool(cfg.use_cache)
+    cfg.use_cache = value
+    return was
+
+
+@torch.no_grad()
+def probe_divergence(module, ref, examples):
+    """Teacher-forced adapter-vs-reference divergence over `examples`
+    ([(ids [1, L], labels [1, L])], prompt tokens labelled -100), mean per
+    LABEL token with the next-token shift (mask_shift), exactly the token
+    set the KL anchor trains on: kl_fwd = KL(ref || adapter), kl_rev =
+    KL(adapter || ref), argmax_agree = fraction of label tokens where both
+    argmaxes coincide, n_tokens = label tokens scored. Both modules are put
+    in eval mode (LoRA dropout off) and restored; use_cache is guarded as in
+    the other telemetry helpers; log-softmax in fp32."""
+    was_train = bool(getattr(module, "training", False))
+    was_ref_train = bool(getattr(ref, "training", False))
+    was_cache = _set_use_cache(module, False)
+    was_ref_cache = _set_use_cache(ref, False)
+    fwd_sum = rev_sum = agree_sum = 0.0
+    n_tok = 0
+    try:
+        module.eval()
+        ref.eval()
+        for ids, labels in examples:
+            logits = module(input_ids=ids).logits
+            ref_logits = ref(input_ids=ids).logits
+            logp = F.log_softmax(logits[:, :-1, :].float(), dim=-1)
+            logq = F.log_softmax(ref_logits[:, :-1, :].float(), dim=-1)
+            mask_shift = (labels != -100).float()[:, 1:]
+            fwd = (logq.exp() * (logq - logp)).sum(dim=-1)
+            rev = (logp.exp() * (logp - logq)).sum(dim=-1)
+            agree = (logp.argmax(dim=-1) == logq.argmax(dim=-1)).float()
+            fwd_sum += float((fwd * mask_shift).sum())
+            rev_sum += float((rev * mask_shift).sum())
+            agree_sum += float((agree * mask_shift).sum())
+            n_tok += int(mask_shift.sum())
+    finally:
+        module.train(was_train)
+        ref.train(was_ref_train)
+        if was_cache is not None:
+            _set_use_cache(module, was_cache)
+        if was_ref_cache is not None:
+            _set_use_cache(ref, was_ref_cache)
+    d = float(max(n_tok, 1))
+    return {"kl_fwd": fwd_sum / d, "kl_rev": rev_sum / d,
+            "argmax_agree": agree_sum / d, "n_tokens": int(n_tok)}
+
+
+def probe_examples(lm, probe_idx, probe_y, fmt):
+    """Teacher-forced (ids, labels) for the probe set: prompt + fmt(label)
+    with the prompt masked, the same construction (_example_ids) every other
+    telemetry helper uses."""
+    return [_example_ids(lm, int(i), float(y), fmt)
+            for i, y in zip(probe_idx, probe_y)]
+
+
+def train_witness_block(on, lm=None, learner=None, train_stats=None, n_train=0,
+                        probe_idx=None, probe_y=None, fmt=None,
+                        steps_requested=0):
+    """The witness_* fields for one round, measured AFTER learner.train()
+    on the adapter that will serve next. Returns {} when `on` is False, so
+    the caller's telemetry row is byte-identical to a run without the
+    witness. Field names are a CONTRACT with check_fig4_anchor.py."""
+    if not on:
+        return {}
+    stats = dict(train_stats or {})
+    terms = dict(getattr(learner, "last_loss_terms", {}) or {})
+    module = lm.inner_model
+    ref = learner._ensure_ref()
+    b_norm, ab_norm = lora_norms(module)
+    div = probe_divergence(module, ref, probe_examples(lm, probe_idx, probe_y, fmt))
+    return {
+        "witness_steps": int(stats.get("global_step", -1)),
+        "witness_steps_requested": int(steps_requested),
+        "witness_n_rows": int(stats.get("n_rows", n_train)),
+        "witness_lora_b_norm": float(b_norm),
+        "witness_lora_ab_norm": float(ab_norm),
+        "witness_data_loss_last": float(terms.get("data_loss_last", float("nan"))),
+        "witness_kl_last": float(terms.get("kl_last", float("nan"))),
+        "witness_probe_kl_fwd": float(div["kl_fwd"]),
+        "witness_probe_kl_rev": float(div["kl_rev"]),
+        "witness_probe_argmax_agree": float(div["argmax_agree"]),
+        "witness_probe_n": int(len(probe_idx)),
+        "witness_probe_sha": probe_sha(probe_idx),
+    }
