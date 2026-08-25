@@ -66,8 +66,10 @@ def main():
     if set(rows) != set(ORDER):
         ap.error(f"expected exactly six models; got {sorted(rows)}")
     if not all(r["all_converged"] == "True" and
+               r.get("any_cyclic", "False") == "False" and
                r["all_consensus"] == "True" for r in rows.values()):
-        ap.error("at least one model contains an unsettled/non-consensus seed")
+        ap.error("at least one model contains an unsettled, cyclic or "
+                 "non-consensus seed")
     summary = json.loads(summary_path.read_text())
     perfect = float(summary["perfect_prediction_mean"])
 
@@ -104,7 +106,8 @@ def main():
 
     ax.set_xticks(X)
     ax.set_xticklabels([LABEL[m] for m in ORDER], fontsize=9.1)
-    ax.set_ylabel("Population equilibrium", fontsize=10.0, labelpad=3)
+    ax.set_ylabel("Mean post-peer opinion\n(rounds 21\u201330)",
+                  fontsize=10.0, labelpad=3)
     low = min(float(lo.min()), perfect)
     high = max(float(hi.max()), perfect)
     pad = max(.025, .10 * (high - low))

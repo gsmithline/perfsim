@@ -7,6 +7,14 @@ three seeds, beta=1, gamma=1, forward-KL lambda=2, Deffuant alpha=.5,
 Every production cell is fresh under one provenance; no lambda=0 cell is
 part of this figure.  Perfect prediction is the shared innate-mean reference
 and therefore needs no model job.
+
+Parse failures are STRICT here: the runner stores a FINITE 0.5 for an
+unparsable generation, so pred_raw can never reveal one; parse_fail_frac
+lives only in raw_gen_log.json.gz.  Every cell of this wave runs with
+SAVE_RAW_GEN=1 and reuses no archived cell, so the log is REQUIRED (a
+missing log is a failure, never a fallback), must carry exactly rounds
+0..n_rounds-1 once each, parse_fail_frac == 0 in every round, and 723
+parsed values per round.
 """
 from __future__ import annotations
 
@@ -16,6 +24,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import argparse
+import gzip
 import json
 import sys
 from pathlib import Path
@@ -28,7 +37,6 @@ from check_fig3_full_loop import (
     _sha_t,
     check_arrays,
     check_full_loop,
-    check_parse,
 )
 
 torch.set_num_threads(1)
@@ -42,6 +50,129 @@ DEFAULT_RUN_ROOTS = (
 )
 N_AGENTS = 723
 TOL = 1e-9
+
+
+def check_raw_generations(run_dir, rounds, errs):
+    """STRICT zero-parse-failure gate (no NaN fallback, no escape hatch).
+
+    The Figure-3 helper ``check_parse`` tolerates a missing log by falling
+    back to a NaN scan of pred_raw, which is right for that wave's archived
+    reuse cells but CANNOT detect a parse failure (the runner stores a
+    finite 0.5).  This wave has no archived cells and pins SAVE_RAW_GEN=1,
+    so the log itself is the evidence and its absence is a failure."""
+    gz = Path(run_dir) / "raw_gen_log.json.gz"
+    if not gz.exists():
+        errs.append("PARSE raw_gen_log.json.gz ABSENT -- parse_fail_frac is "
+                    "recorded nowhere else and the parser stores a finite "
+                    "0.5 on failure, so this cell's parse rate cannot be "
+                    "established (SAVE_RAW_GEN=1 is mandatory here)")
+        return
+    rows = []
+    try:
+        with gzip.open(gz, "rt") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    rows.append(json.loads(line))
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        errs.append(f"PARSE raw_gen_log.json.gz unreadable: {e}")
+        return
+    got = [r.get("round") for r in rows]
+    if got != list(range(rounds)):
+        absent = [t for t in range(rounds) if t not in got]
+        errs.append(f"PARSE raw_gen_log must carry exactly rounds "
+                    f"0..{rounds - 1} in order, once; it holds "
+                    f"{got[:6]}{'...' if len(got) > 6 else ''} -- "
+                    f"{len(absent)} round(s) without a logged parse rate")
+    bad = []
+    for r in rows:
+        v = r.get("parse_fail_frac")
+        ok = (isinstance(v, (int, float)) and not isinstance(v, bool)
+              and float(v) == 0.0)
+        if not ok:
+            bad.append((r.get("round"), v))
+    if bad:
+        errs.append(f"PARSE parse_fail_frac must be exactly 0 in every "
+                    f"round (an absent field counts as a failure); "
+                    f"{len(bad)} bad round(s), e.g. {bad[:4]}")
+    short = [(r.get("round"), len(r.get("parsed") or []))
+             for r in rows if len(r.get("parsed") or []) != N_AGENTS]
+    if short:
+        errs.append(f"PARSE {len(short)} round(s) parsed fewer than "
+                    f"{N_AGENTS} agents, e.g. {short[:4]}")
+
+
+def check_kl_witness_every_round(run_dir, rounds, errs):
+    """Per-round LIVE KL-gradient witness.
+
+    ``check_full_loop`` accepts a single positive grad_kl_norm0 in any round
+    after round 0.  This wave rests on the anchor binding in EVERY round
+    (a fresh adapter is regularised toward the same reference each round),
+    and the pulled Figure-3 lambda=2 fresh-LoRA cells record a positive
+    grad_kl_norm0 in all 30 rounds, so require it round by round."""
+    tel = Path(run_dir) / "telemetry.json"
+    if not tel.exists():
+        return  # check_full_loop already reported the absence
+    rows = []
+    for line in tel.read_text().splitlines():
+        line = line.strip()
+        if line:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    by_round = {}
+    for r in rows:
+        if "grad_kl_norm0" in r and r.get("round") is not None:
+            by_round[int(r["round"])] = r["grad_kl_norm0"]
+    bad = []
+    for t in range(rounds):
+        v = by_round.get(t)
+        try:
+            live = v is not None and float(v) > 0.0
+        except (TypeError, ValueError):
+            live = False
+        if not live:
+            bad.append((t, v))
+    if bad:
+        errs.append(f"KL-WITNESS grad_kl_norm0 must be recorded and > 0 in "
+                    f"every round 0..{rounds - 1}; {len(bad)} round(s) fail, "
+                    f"e.g. {bad[:4]}")
+
+
+def check_runtime_open_gates(d, rounds, errs):
+    """Runtime evidence (not just config) that both gates were open in
+    EVERY round: the trajectory rows carry contact (the AI-gate open
+    fraction, 1.0 under all_open), peer_gate_mode, and the all-open peer
+    invariant peer_pairs == accepted == 723 * ab_sweeps."""
+    tr = d.get("trajectory", []) or []
+    cfg = d.get("config", {}) or {}
+    sweeps = cfg.get("ab_sweeps")
+    if not isinstance(sweeps, int) or sweeps <= 0:
+        errs.append(f"GATE-RUNTIME config ab_sweeps={sweeps!r} unusable")
+        return
+    want_pairs = N_AGENTS * sweeps
+    bad = []
+    for t in range(min(rounds, len(tr))):
+        row = tr[t] or {}
+        try:
+            contact_ok = abs(float(row.get("contact")) - 1.0) <= TOL
+        except (TypeError, ValueError):
+            contact_ok = False
+        mode_ok = row.get("peer_gate_mode") == "all_open"
+        pairs, acc = row.get("peer_pairs"), row.get("accepted")
+        pairs_ok = (isinstance(pairs, int) and isinstance(acc, int)
+                    and pairs == want_pairs and acc == pairs)
+        if not (contact_ok and mode_ok and pairs_ok):
+            bad.append((t, row.get("contact"), row.get("peer_gate_mode"),
+                        pairs, acc))
+    if len(tr) < rounds:
+        bad.append(("rows", len(tr), "<", rounds))
+    if bad:
+        errs.append(f"GATE-RUNTIME every round must record contact == 1.0, "
+                    f"peer_gate_mode == 'all_open' and peer_pairs == "
+                    f"accepted == {want_pairs}; {len(bad)} round(s) fail, "
+                    f"e.g. {bad[:3]}")
 
 
 def _eq(cfg, key, want, errs):
@@ -109,10 +240,11 @@ def check_cell(tag, model, seed, rounds, g, roots):
                     "(want False)")
 
     check_arrays(d, rounds, errs)
+    check_runtime_open_gates(d, rounds, errs)
     if all(not e.startswith("ARTIFACT") for e in errs):
         check_full_loop(d, path.parent, g.S3M_LAMBDA, rounds, errs, notes)
-        check_parse(path.parent, torch.as_tensor(d["pred_raw"]).float(),
-                    rounds, errs)
+        check_kl_witness_every_round(path.parent, rounds, errs)
+        check_raw_generations(path.parent, rounds, errs)
 
     op = torch.as_tensor(d.get("op_raw", torch.empty(0))).float()
     rec = {
