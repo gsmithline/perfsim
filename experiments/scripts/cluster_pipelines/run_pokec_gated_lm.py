@@ -749,6 +749,20 @@ def main() -> int:
     wandb_project = os.environ.get("WANDB_PROJECT")
     max_steps = _env_int("SFT_MAX_STEPS", 1)
     sft_epochs = _env_int("SFT_EPOCHS", 1)
+    # SFT_GRAD_ACCUM (2026-08-25, update-dose recursive wave): optimizer-
+    # STEP FREQUENCY at fixed data exposure. With SFT_EPOCHS=1 every round
+    # still consumes all rows exactly once in the same sampler order; this
+    # only sets how many minibatches accumulate into one averaged step.
+    # 723 rows at microbatch 4 = 181 minibatches (181 is PRIME), so the
+    # realized global_step is ceil(181/accum): 181 -> 1, 37 -> 5, 10 -> 19,
+    # 1 -> 181. 1/absent is byte-identical legacy behaviour.
+    sft_grad_accum = _env_int("SFT_GRAD_ACCUM", 1)
+    if sft_grad_accum < 1:
+        raise ValueError(f"SFT_GRAD_ACCUM must be >= 1; got {sft_grad_accum}")
+    if sft_grad_accum > 1 and sft_epochs <= 0:
+        raise ValueError("SFT_GRAD_ACCUM > 1 requires SFT_EPOCHS > 0 -- the "
+                         "whole point is a full pass at a different step "
+                         "frequency, not a step cap")
     gen_batch_size = _env_int("GEN_BATCH_SIZE", 32)
     sft_batch_size = _env_int("SFT_BATCH_SIZE", 2)
     lora_r = _env_int("LORA_R", 8)
@@ -1805,6 +1819,8 @@ def main() -> int:
             config["sft_exclude_clamped"] = True
     if save_sft_order:
         config["save_sft_order"] = True
+    if sft_grad_accum > 1:
+        config["sft_grad_accum"] = sft_grad_accum
     if sft_sample_n > 0:
         # recorded ONLY when on (absent == off, the audit convention), so
         # every pre-2026-08-21 config stays byte-identical
@@ -2114,6 +2130,8 @@ def main() -> int:
     trainer_kwargs = {"bf16": device == "cuda", "use_cpu": device != "cuda"}
     if sft_epochs > 0:
         trainer_kwargs.update({"num_train_epochs": sft_epochs, "max_steps": -1})
+    if sft_grad_accum > 1:
+        trainer_kwargs["gradient_accumulation_steps"] = sft_grad_accum
     # assistant-turn marker per model family; the string is only tokenize-matched
     # on the old-TRL collator path (new TRL masks via prompt/completion format)
     bm = base_model.lower()

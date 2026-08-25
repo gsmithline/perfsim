@@ -1,0 +1,1 @@
+pofdudsmk_qwen3_8b_sft_u1_sw100_eaopen_w1_k1_esopen_anch2_s0_r2, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 181, 0, -1, 1, 1, 16, 0, 2, Qwen/Qwen3-8B, 0, 128G, 40G, 64
