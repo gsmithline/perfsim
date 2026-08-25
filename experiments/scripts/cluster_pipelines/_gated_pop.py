@@ -758,6 +758,12 @@ def probe_predictions(lm, probe_prompts):
     """
     outputs = lm._generate(probe_prompts)
     lm._last_raw = list(outputs)
+    if hasattr(lm, "parse_ok"):
+        # honours PARSE_MODE; legacy mode is byte-identical to the old mirror
+        lm._last_parse_fail = sum(
+            1 for o in outputs if not lm.parse_ok(o)
+        ) / max(1, len(outputs))
+        return [lm.parse(o) for o in outputs]
     lm._last_parse_fail = sum(
         1 for o in outputs if re.search(r"\d", o) is None
     ) / max(1, len(outputs))

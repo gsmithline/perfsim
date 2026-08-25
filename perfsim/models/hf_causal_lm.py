@@ -75,6 +75,15 @@ class HFCausalLMModel(Model):
         # these surface that instead of hiding it as a fake collapse-to-0.5.
         self._last_raw: list[str] = []
         self._last_parse_fail: float = 0.0
+        # PARSE_MODE (2026-08-25): "legacy" keeps _parse's first-digit-run
+        # regex byte-for-byte for every archived run; "strict" (opt-in, set
+        # by the runner from the env and recorded in the config) requires a
+        # well-formed number in [0, 1] at the start of the generation,
+        # accepts a leading-dot form (".64" -> 0.64), and counts anything
+        # else as a parse failure instead of clamping it. Found on the
+        # Section 3 cross-model wave: Mistral-7B's lambda=2 adapter emitted
+        # ".64 (" which legacy parsed as 64 -> 1.0 with NO failure flagged.
+        self.parse_mode: str = "legacy"
 
         length = getattr(profiles, "__len__", lambda: -1)()
         if length == -1:
@@ -190,10 +199,10 @@ class HFCausalLMModel(Model):
 
         self._last_raw = list(outputs)
         self._last_parse_fail = sum(
-            1 for o in outputs if re.search(r"\d", o) is None
+            1 for o in outputs if not self.parse_ok(o)
         ) / max(1, len(outputs))
         values = torch.tensor(
-            [self._parse(o) for o in outputs],
+            [self.parse(o) for o in outputs],
             dtype=torch.float32,
             device=x.device,
         ).unsqueeze(-1)
@@ -284,7 +293,7 @@ class HFCausalLMModel(Model):
         draws = []
         for _ in range(k):
             outs = self._generate(prompts, do_sample=True, temperature=temperature)
-            draws.append(torch.tensor([self._parse(o) for o in outs],
+            draws.append(torch.tensor([self.parse(o) for o in outs],
                                       dtype=torch.float32))
         vals = torch.stack(draws)                       # [k, n_sub]
         top1, ent = [], []
@@ -390,7 +399,12 @@ class HFCausalLMModel(Model):
 
     @staticmethod
     def _parse(text: str, default: float = 0.5) -> float:
-        """Extract the first numeric value from generated text, clipped to [0, 1]."""
+        """LEGACY: first digit run in the text, clipped to [0, 1].
+
+        Never change this: every archived run was served through it. Note
+        its failure modes -- ".64 (" -> 64 -> 1.0, "58 (58" -> 1.0 -- are
+        NOT counted as failures (a failure is only a digit-free string).
+        Use parse()/parse_ok() and PARSE_MODE=strict for new waves."""
         m = re.search(r"\d+\.?\d*", text)
         if m is None:
             return default
@@ -399,6 +413,38 @@ class HFCausalLMModel(Model):
         except ValueError:
             return default
         return max(0.0, min(1.0, v))
+
+    _STRICT_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
+
+    @classmethod
+    def _parse_strict(cls, text: str, default: float = 0.5):
+        """STRICT: (value, ok). The generation must START with a well-formed
+        number in [0, 1]; a leading-dot form (".64") is read as 0.64;
+        trailing text after the number is ignored. Anything else -- a
+        number above 1, a bare integer run like "58 (58", text before the
+        number, no number -- is a parse FAILURE: ok=False and the default is
+        served (finite, so the population update stays defined; the
+        failure is counted in _last_parse_fail and logged per round)."""
+        m = cls._STRICT_RE.match(text or "")
+        if m is None:
+            return default, False
+        try:
+            v = float(m.group(1))
+        except ValueError:
+            return default, False
+        if not 0.0 <= v <= 1.0:
+            return default, False
+        return v, True
+
+    def parse(self, text: str) -> float:
+        if self.parse_mode == "strict":
+            return self._parse_strict(text)[0]
+        return self._parse(text)
+
+    def parse_ok(self, text: str) -> bool:
+        if self.parse_mode == "strict":
+            return self._parse_strict(text)[1]
+        return re.search(r"\d", text or "") is not None
 
  
     def get_params(self) -> Tensor:

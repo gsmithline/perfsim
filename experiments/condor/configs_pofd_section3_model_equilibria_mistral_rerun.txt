@@ -1,0 +1,3 @@
+pofds3m_mistral7b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_pstrict_s0_r30, sft_kl, 2, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, mistralai/Mistral-7B-Instruct-v0.3, default, 128G, 40G, 64
+pofds3m_mistral7b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_pstrict_s42_r30, sft_kl, 2, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, mistralai/Mistral-7B-Instruct-v0.3, default, 128G, 40G, 64
+pofds3m_mistral7b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_pstrict_s43_r30, sft_kl, 2, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 30, mistralai/Mistral-7B-Instruct-v0.3, default, 128G, 40G, 64

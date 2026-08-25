@@ -15,6 +15,19 @@ SAVE_RAW_GEN=1 and reuses no archived cell, so the log is REQUIRED (a
 missing log is a failure, never a fallback), must carry exactly rounds
 0..n_rounds-1 once each, parse_fail_frac == 0 in every round, and 723
 parsed values per round.
+
+Every generation must also be WELL-FORMED: a number in [0, 1] at the start
+of the string (leading-dot ".64" allowed), and the logged parsed value must
+equal that number.  This is stricter than the runner's legacy parser, which
+read Mistral-7B's ".64 (" as 64 -> 1.0 without flagging a failure; the
+check proves, generation by generation, that a cell's served values are
+what the model wrote.
+
+PROVENANCE EXEMPTION (S3M_RERUN): Mistral-7B was rerun under
+PARSE_MODE=strict with new tags.  The gate admits exactly two git SHAs --
+one shared by every kept cell, one shared by every rerun cell -- requires
+parse_mode == "strict" on rerun cells and legacy on kept cells, and records
+both SHAs in the verdict.
 """
 from __future__ import annotations
 
@@ -26,6 +39,7 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 import argparse
 import gzip
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -50,6 +64,26 @@ DEFAULT_RUN_ROOTS = (
 )
 N_AGENTS = 723
 TOL = 1e-9
+
+
+# Mirror of HFCausalLMModel._parse_strict (perfsim/models/hf_causal_lm.py);
+# duplicated so the login-node gate never imports transformers/peft.
+# tests/test_section3_model_equilibria.py pins the two to agree.
+_STRICT_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
+
+
+def strict_parse(text):
+    """(value, ok): well-formed number in [0,1] at the start, else (None, False)."""
+    m = _STRICT_RE.match(text or "")
+    if m is None:
+        return None, False
+    try:
+        v = float(m.group(1))
+    except ValueError:
+        return None, False
+    if not 0.0 <= v <= 1.0:
+        return None, False
+    return v, True
 
 
 def check_raw_generations(run_dir, rounds, errs):
@@ -100,6 +134,36 @@ def check_raw_generations(run_dir, rounds, errs):
     if short:
         errs.append(f"PARSE {len(short)} round(s) parsed fewer than "
                     f"{N_AGENTS} agents, e.g. {short[:4]}")
+    # WELL-FORMED generations: every raw string must strict-parse, and the
+    # value the run actually served (parsed[i]) must equal it.  A legacy
+    # cell whose parser silently clamped ".64 (" -> 1.0 fails here.
+    malformed, mismatched, total = [], [], 0
+    for r in rows:
+        raws = r.get("raw") or []
+        parsed = r.get("parsed") or []
+        if len(raws) != len(parsed):
+            errs.append(f"PARSE round {r.get('round')} logs {len(raws)} raw "
+                        f"strings but {len(parsed)} parsed values")
+            continue
+        for i, (txt, pv) in enumerate(zip(raws, parsed)):
+            total += 1
+            v, ok = strict_parse(txt)
+            if not ok:
+                malformed.append((r.get("round"), i, str(txt)[:20]))
+            elif abs(float(pv) - v) > 1e-6:
+                mismatched.append((r.get("round"), i, str(txt)[:20],
+                                   float(pv)))
+    if malformed:
+        errs.append(f"PARSE {len(malformed)}/{total} generation(s) are not "
+                    f"a well-formed number in [0,1] at the start of the "
+                    f"string, e.g. {malformed[:3]} -- the served value is "
+                    f"not what the model wrote")
+    if mismatched:
+        errs.append(f"PARSE {len(mismatched)}/{total} served value(s) "
+                    f"differ from the number the model wrote, e.g. "
+                    f"{mismatched[:3]}")
+    return {"generations": total, "malformed": len(malformed),
+            "mismatched": len(mismatched)}
 
 
 def check_kl_witness_every_round(run_dir, rounds, errs):
@@ -185,7 +249,7 @@ def _eq(cfg, key, want, errs):
         errs.append(f"CONFIG {key}={got!r} (want {want!r})")
 
 
-def check_cell(tag, model, seed, rounds, g, roots):
+def check_cell(tag, model, seed, rounds, g, roots, strict=False):
     errs, notes = [], []
     path = _resolve(tag, roots)
     if path is None:
@@ -238,13 +302,21 @@ def check_cell(tag, model, seed, rounds, g, roots):
     if model == "qwen3_8b" and cfg.get("chat_thinking") is not False:
         errs.append(f"CONFIG Qwen3 chat_thinking={cfg.get('chat_thinking')!r} "
                     "(want False)")
+    pm = cfg.get("parse_mode", "legacy")
+    if strict and pm != "strict":
+        errs.append(f"CONFIG parse_mode={pm!r} (rerun cell must be 'strict')")
+    if not strict and pm != "legacy":
+        errs.append(f"CONFIG parse_mode={pm!r} (kept cell must be legacy; "
+                    "a strict-parsed cell needs the rerun tag)")
 
     check_arrays(d, rounds, errs)
     check_runtime_open_gates(d, rounds, errs)
     if all(not e.startswith("ARTIFACT") for e in errs):
         check_full_loop(d, path.parent, g.S3M_LAMBDA, rounds, errs, notes)
         check_kl_witness_every_round(path.parent, rounds, errs)
-        check_raw_generations(path.parent, rounds, errs)
+        gen_stats = check_raw_generations(path.parent, rounds, errs)
+    else:
+        gen_stats = None
 
     op = torch.as_tensor(d.get("op_raw", torch.empty(0))).float()
     rec = {
@@ -255,6 +327,9 @@ def check_cell(tag, model, seed, rounds, g, roots):
         "errors": errs,
         "notes": notes,
         "git_sha": cfg.get("git_sha"),
+        "parse_mode": pm,
+        "rerun": bool(strict),
+        "generations": gen_stats,
         "innate_sha": (_sha_t(torch.as_tensor(d["innate"]).float())
                        if "innate" in d else None),
         "twin_sha": (_sha_t(torch.as_tensor(d["twin_raw"]).float()[:rounds])
@@ -270,38 +345,75 @@ def main():
     ap = argparse.ArgumentParser(
         description="gate the Section 3 open-gate cross-model equilibrium wave")
     ap.add_argument("--run-root", action="append", default=None)
-    ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--smoke", action="store_true",
+                    help="the 3-round OLMo-3 smoke (legacy parse)")
+    ap.add_argument("--rerun-smoke", action="store_true",
+                    help="the 3-round Mistral-7B PARSE_MODE=strict smoke")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
     roots = [Path(r) for r in (args.run_root or DEFAULT_RUN_ROOTS)]
     g = _load_gen()
+    smoke = args.smoke or args.rerun_smoke
+    if args.smoke and args.rerun_smoke:
+        ap.error("--smoke and --rerun-smoke are exclusive")
     if args.smoke:
         cells = [(g.S3M_SMOKE_MODEL, g.S3M_SMOKE_SEED,
                   g.s3m_tag(g.S3M_SMOKE_MODEL, g.S3M_SMOKE_SEED,
                             rounds=g.S3M_SMOKE_ROUNDS, smoke=True),
-                  g.S3M_SMOKE_ROUNDS)]
+                  g.S3M_SMOKE_ROUNDS, False)]
+    elif args.rerun_smoke:
+        cells = [(g.S3M_RERUN_SMOKE_MODEL, g.S3M_SMOKE_SEED,
+                  g.s3m_tag(g.S3M_RERUN_SMOKE_MODEL, g.S3M_SMOKE_SEED,
+                            rounds=g.S3M_SMOKE_ROUNDS, smoke=True,
+                            strict=True),
+                  g.S3M_SMOKE_ROUNDS, True)]
     else:
-        cells = [(model, seed, g.s3m_tag(model, seed), g.S3M_ROUNDS)
+        # rerun models resolve to their strict-parse tags (s3m_cell_tag)
+        cells = [(model, seed, g.s3m_cell_tag(model, seed), g.S3M_ROUNDS,
+                  model in g.S3M_RERUN)
                  for model in g.S3M_MODELS for seed in g.S3M_SEEDS]
 
-    records = [check_cell(tag, model, seed, rounds, g, roots)
-               for model, seed, tag, rounds in cells]
+    records = [check_cell(tag, model, seed, rounds, g, roots, strict=strict)
+               for model, seed, tag, rounds, strict in cells]
+    provenance = None
 
-    # All production cells must share the same population and code version.
-    if not args.smoke:
+    # All production cells must share the same population; code provenance
+    # is one SHA per group (kept cells / strict-parse rerun cells).
+    if not smoke:
         innate = {r.get("innate_sha") for r in records if r.get("innate_sha")}
         if len(innate) != 1:
             records.append({"tag": "<cross-cell innate>", "model": "-",
                             "seed": "-", "status": "FAIL", "notes": [],
                             "errors": [f"{len(innate)} distinct innate hashes; "
                                        "all model cells must share one population"]})
-        shas = {r.get("git_sha") for r in records if r.get("git_sha")}
-        if len(shas) != 1:
-            records.append({"tag": "<cross-cell provenance>", "model": "-",
+        kept = {r.get("git_sha") for r in records
+                if r.get("git_sha") and not r.get("rerun")}
+        rerun = {r.get("git_sha") for r in records
+                 if r.get("git_sha") and r.get("rerun")}
+        n_kept = sum(1 for r in records if "rerun" in r and not r["rerun"])
+        n_rerun = sum(1 for r in records if r.get("rerun"))
+        if len(kept) != 1:
+            records.append({"tag": "<kept-cell provenance>", "model": "-",
                             "seed": "-", "status": "FAIL", "notes": [],
-                            "errors": [f"{len(shas)} distinct git SHAs; this "
-                                       "wave requires one common provenance"]})
+                            "errors": [f"{len(kept)} distinct git SHAs across "
+                                       f"the {n_kept} kept cells; they must "
+                                       "share one provenance"]})
+        if n_rerun and len(rerun) != 1:
+            records.append({"tag": "<rerun-cell provenance>", "model": "-",
+                            "seed": "-", "status": "FAIL", "notes": [],
+                            "errors": [f"{len(rerun)} distinct git SHAs across "
+                                       f"the {n_rerun} rerun cells; they must "
+                                       "share one provenance"]})
+        provenance = {
+            "kept_cells": n_kept, "kept_sha": sorted(kept),
+            "rerun_cells": n_rerun, "rerun_sha": sorted(rerun),
+            "rerun_models": sorted(g.S3M_RERUN),
+            "exemption": ("S3M_RERUN: Mistral-7B rerun under PARSE_MODE="
+                          "strict after the legacy parser read '.64 (' as "
+                          "1.0; kept cells are proven well-formed on every "
+                          "generation (see 'generations' per cell)"),
+        }
         for seed in g.S3M_SEEDS:
             twins = {r.get("twin_sha") for r in records
                      if r.get("seed") == seed and r.get("twin_sha")}
@@ -327,18 +439,24 @@ def main():
             print(f"    NOTE {n}")
 
     n_bad = sum(r["status"] != "PASS" for r in records)
+    if provenance:
+        print(f"PROVENANCE kept {provenance['kept_cells']} cell(s) @ "
+              f"{provenance['kept_sha']}; rerun {provenance['rerun_cells']} "
+              f"cell(s) ({', '.join(provenance['rerun_models'])}) @ "
+              f"{provenance['rerun_sha']} -- {provenance['exemption']}")
     if args.json:
         out = Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"ok": ok, "n_cells": len(cells),
-                                   "n_failing": n_bad, "cells": records},
+                                   "n_failing": n_bad, "cells": records,
+                                   "provenance": provenance},
                                   indent=2, default=str))
         print(f"[check_s3m] verdict -> {out}")
     if ok:
         print("[check_s3m] PASS -- every model-seed cell matches the fixed "
               "surface, retrained in every round with a live KL anchor, "
-              "served without parse failures, and shares one population "
-              "and code provenance.")
+              "served well-formed numbers without parse failures, and "
+              "shares one population and one provenance per group.")
         return 0
     print(f"[check_s3m] FAIL -- {n_bad} failing record(s).")
     return 1

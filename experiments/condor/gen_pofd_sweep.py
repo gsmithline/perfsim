@@ -9014,18 +9014,45 @@ S3M_SMOKE_MODEL = "olmo3_7b"
 S3M_H100 = S3_H100
 S3M_EPS_SOCIAL = S3_EPS_SOCIAL  # inert under all_open; runner refuses 0
 
+# MISTRAL-7B STRICT-PARSE RERUN (2026-08-25, provenance exemption).  The
+# 18-job wave gated PASS, but Mistral-7B's three cells were a PARSER
+# artifact, not an equilibrium: its lambda=2 fresh adapter emitted ".64 ("
+# (seeds 0, 43 at round 0) and "58 (58" (seed 42 at round 2), which the
+# legacy first-digit-run parser read as 64 -> clamp 1.0 with NO failure
+# flagged; at beta=1 the served vector IS the population, so every agent
+# jumped to 1.0, the next adapter trained on "1.00" and emitted "0 (0 (0",
+# and the loop locked at 0.00.  The other five models produced 0 malformed
+# generations out of 21,690 each (seed 0), so their legacy-parsed values
+# are identical to strict-parsed ones -- the checker verifies that on every
+# generation, which is what justifies keeping them.  Only Mistral-7B is
+# rerun, under PARSE_MODE=strict, with NEW tags (the idempotent wrapper
+# would otherwise skip the completed collapsed runs).  The checker admits
+# exactly two git SHAs: one shared by the 15 kept cells, one by the 3 rerun
+# cells, and records the exemption in the verdict.
+S3M_RERUN = {"mistral7b": "pstrict"}     # model -> tag token
+S3M_RERUN_KEY = "section3_model_equilibria_mistral_rerun"
+S3M_RERUN_SMOKE_KEY = "section3_model_equilibria_mistral_rerun_smoke"
+S3M_RERUN_SMOKE_MODEL = "mistral7b"
 
-def s3m_tag(model, seed, rounds=S3M_ROUNDS, smoke=False):
+
+def s3m_tag(model, seed, rounds=S3M_ROUNDS, smoke=False, strict=False):
     pre = "pofds3msmk" if smoke else "pofds3m"
+    tok = f"_{S3M_RERUN[model]}" if strict else ""
     return (f"{pre}_{model}_fwdlam2_sw{S3M_SWEEPS}_eaopen_w1_k1"
-            f"_esopen_{S3_OP_TOKEN}_s{seed}_r{rounds}")
+            f"_esopen_{S3_OP_TOKEN}{tok}_s{seed}_r{rounds}")
 
 
-def s3m_row(model, seed, rounds=S3M_ROUNDS, smoke=False):
+def s3m_cell_tag(model, seed):
+    """The tag the checker/analyzer resolve for a production cell: the
+    strict-parse rerun tag for rerun models, the original tag otherwise."""
+    return s3m_tag(model, seed, strict=model in S3M_RERUN)
+
+
+def s3m_row(model, seed, rounds=S3M_ROUNDS, smoke=False, strict=False):
     a = REACH_ARM_COLS["b1"]
     m = FAM_MODELS[model]
     return ROW_PS.format(
-        tag=s3m_tag(model, seed, rounds, smoke), style="sft_kl",
+        tag=s3m_tag(model, seed, rounds, smoke, strict), style="sft_kl",
         beta=f"{S3M_LAMBDA:g}", seed=seed,
         es=f"{S3M_EPS_SOCIAL:g}", wplat=f"{S3M_BETA:g}",
         lam=f"{S3M_GAMMA:g}", kldir="forward", sweeps=S3M_SWEEPS,
@@ -9046,15 +9073,36 @@ def s3m_smoke_rows():
                     rounds=S3M_SMOKE_ROUNDS, smoke=True)]
 
 
-def s3m_sub(smoke=False):
-    key = S3M_SMOKE_KEY if smoke else S3M_KEY
-    rows = s3m_smoke_rows() if smoke else s3m_rows()
+def s3m_rerun_rows():
+    """Strict-parse rerun cells: every seed of every rerun model."""
+    return [s3m_row(model, seed, strict=True)
+            for model in S3M_RERUN for seed in S3M_SEEDS]
+
+
+def s3m_rerun_smoke_rows():
+    return [s3m_row(S3M_RERUN_SMOKE_MODEL, S3M_SMOKE_SEED,
+                    rounds=S3M_SMOKE_ROUNDS, smoke=True, strict=True)]
+
+
+def s3m_sub(smoke=False, rerun=False):
+    if rerun:
+        key = S3M_RERUN_SMOKE_KEY if smoke else S3M_RERUN_KEY
+        rows = s3m_rerun_smoke_rows() if smoke else s3m_rerun_rows()
+        kind = ("3-ROUND MISTRAL-7B STRICT-PARSE RERUN SMOKE" if smoke else
+                "MISTRAL-7B STRICT-PARSE RERUN (provenance exemption)")
+        extra_env = " PARSE_MODE=strict"
+        gateflag = " --rerun-smoke" if smoke else ""
+    else:
+        key = S3M_SMOKE_KEY if smoke else S3M_KEY
+        rows = s3m_smoke_rows() if smoke else s3m_rows()
+        kind = ("3-ROUND OLMo-3 SMOKE" if smoke
+                else "OPEN-GATE CROSS-MODEL EQUILIBRIA")
+        extra_env = ""
+        gateflag = " --smoke" if smoke else ""
     return S3M_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
         rounds=S3M_SMOKE_ROUNDS if smoke else S3M_ROUNDS,
-        kind=("3-ROUND OLMo-3 SMOKE" if smoke
-              else "OPEN-GATE CROSS-MODEL EQUILIBRIA"),
-        gateflag=" --smoke" if smoke else "")
+        kind=kind, gateflag=gateflag, extra_env=extra_env)
 
 
 S3M_SUB_TEMPLATE = """\
@@ -9082,7 +9130,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) DEFFUANT_ALPHA=0.5 ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_section3_model_equilibria"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) DEFFUANT_ALPHA=0.5 ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1{extra_env} WANDB_RUN_SUFFIX=_section3_model_equilibria"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
@@ -12963,6 +13011,54 @@ def main():
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{S3M_SMOKE_KEY}.sub")] = \
         _s3ms_sub
+
+    # ---- S3M Mistral-7B strict-parse rerun (provenance exemption) ------
+    assert set(S3M_RERUN) == {"mistral7b"}, "the exemption covers Mistral only"
+    rows_s3mr = s3m_rerun_rows()
+    assert len(rows_s3mr) == len(S3M_RERUN) * len(S3M_SEEDS) == 3
+    _s3mr_tags = [r.split(",")[0].strip() for r in rows_s3mr]
+    _prior_all = {r.split(",")[0] for rows in files.values() for r in rows}
+    assert not (set(_s3mr_tags) & _prior_all), set(_s3mr_tags) & _prior_all
+    for _r in rows_s3mr:
+        _c = [x.strip() for x in _r.split(",")]
+        assert "_pstrict_" in _c[0] and _c[0].startswith("pofds3m_mistral7b_")
+        assert _c[0] == s3m_cell_tag("mistral7b", int(_c[3]))
+        assert _c[0] != s3m_tag("mistral7b", int(_c[3]))
+        # everything but the tag is byte-identical to the collapsed row
+        assert _c[1:] == [x.strip() for x in
+                          s3m_row("mistral7b", int(_c[3])).split(",")][1:]
+    for _m in S3M_MODELS:
+        if _m not in S3M_RERUN:
+            for _s in S3M_SEEDS:
+                assert s3m_cell_tag(_m, _s) == s3m_tag(_m, _s)
+    _s3mr_sub = s3m_sub(rerun=True)
+    _s3mr_env = next(l for l in _s3mr_sub.splitlines()
+                     if l.startswith("environment"))
+    assert " PARSE_MODE=strict " in _s3mr_env, _s3mr_env
+    assert "SAVE_RAW_GEN=1" in _s3mr_env
+    assert "PARSE_MODE" not in _s3m_env      # the kept cells ran legacy
+    assert _s3mr_env.replace(" PARSE_MODE=strict", "") == _s3m_env
+    p = os.path.join(HERE, f"configs_pofd_{S3M_RERUN_KEY}.txt")
+    files[p] = rows_s3mr
+    expected[p] = 3
+    cube_subs[os.path.join(HERE, f"at_pofd_{S3M_RERUN_KEY}.sub")] = _s3mr_sub
+
+    rows_s3mrs = s3m_rerun_smoke_rows()
+    assert len(rows_s3mrs) == 1
+    _s3mrs = [x.strip() for x in rows_s3mrs[0].split(",")]
+    assert _s3mrs[0] == s3m_tag(S3M_RERUN_SMOKE_MODEL, S3M_SMOKE_SEED,
+                                rounds=S3M_SMOKE_ROUNDS, smoke=True,
+                                strict=True)
+    assert "_pstrict_" in _s3mrs[0] and _s3mrs[23] == str(S3M_SMOKE_ROUNDS)
+    assert _s3mrs[0] not in _prior_all and _s3mrs[0] not in set(_s3mr_tags)
+    _s3mrs_sub = s3m_sub(smoke=True, rerun=True)
+    assert "check_section3_model_equilibria.py --rerun-smoke" in _s3mrs_sub
+    assert " PARSE_MODE=strict " in _s3mrs_sub
+    p = os.path.join(HERE, f"configs_pofd_{S3M_RERUN_SMOKE_KEY}.txt")
+    files[p] = rows_s3mrs
+    expected[p] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{S3M_RERUN_SMOKE_KEY}.sub")] = \
+        _s3mrs_sub
 
     # ---- recursive update-dose test (UD) --------------------------------
     rows_ud = ud_rows()

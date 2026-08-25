@@ -550,7 +550,9 @@ case "$WHAT" in
   fig3_full_loop|fig3_full_loop_smoke|fig3_full_loop_ext) TARGETS="$WHAT" ;;
   # Open-gate cross-model consensus comparison for Section 3: six models x
   # three seeds, all freshly run under one provenance (18 production jobs).
-  section3_model_equilibria|section3_model_equilibria_smoke) TARGETS="$WHAT" ;;
+  # Mistral-7B strict-parse rerun (provenance exemption, 3 jobs + smoke):
+  # the legacy parser read Mistral's ".64 (" as 1.0; see the S3M_RERUN note.
+  section3_model_equilibria|section3_model_equilibria_smoke|section3_model_equilibria_mistral_rerun|section3_model_equilibria_mistral_rerun_smoke) TARGETS="$WHAT" ;;
   # RECURSIVE UPDATE-DOSE (2026-08-25): plain SFT at the Section 3
   # no-memory/full-adoption surface with ONLY optimizer-step frequency
   # varied via SFT_GRAD_ACCUM (u1/u5/u19; u181 = the archived pofdps_

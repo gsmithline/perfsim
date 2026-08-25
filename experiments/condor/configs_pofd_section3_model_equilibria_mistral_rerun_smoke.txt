@@ -1,0 +1,1 @@
+pofds3msmk_mistral7b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_pstrict_s991_r3, sft_kl, 2, 991, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 0, -1, 1, 1, 16, 0, 3, mistralai/Mistral-7B-Instruct-v0.3, default, 128G, 40G, 64

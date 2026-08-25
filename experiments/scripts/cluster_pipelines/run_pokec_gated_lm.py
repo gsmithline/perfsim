@@ -804,6 +804,13 @@ def main() -> int:
     # raw_gen_log.json.gz. Off (default) writes nothing -- byte-identical
     # legacy outputs.
     save_raw_gen = _env_int("SAVE_RAW_GEN", 0) == 1
+    # PARSE_MODE (2026-08-25): "legacy" (default, byte-identical to every
+    # archived run) or "strict" (well-formed number in [0,1] at the start of
+    # the generation, leading-dot accepted, anything else a COUNTED parse
+    # failure). Recorded in the config only when the env carries it.
+    parse_mode = os.environ.get("PARSE_MODE", "legacy")
+    if parse_mode not in ("legacy", "strict"):
+        raise ValueError("PARSE_MODE must be 'legacy' or 'strict'")
     seed_base_data = _env_int("SEED_BASE_DATA", 1) == 1
     train_cap = _env_int("TRAIN_CAP", 0)
     # SFT_SAMPLE_N (2026-08-21, qwen_subsample wave): OBSERVATION-RATE
@@ -1838,6 +1845,9 @@ def main() -> int:
     if save_raw_gen:
         # recorded ONLY when on (absent == off, the audit convention)
         config["save_raw_gen"] = True
+    if "PARSE_MODE" in os.environ:
+        # recorded ONLY when the env names it (absent == legacy)
+        config["parse_mode"] = parse_mode
     if ref_replay_on:
         # recorded ONLY when on (absent == off, the audit convention), so
         # every pre-2026-08-22 config stays byte-identical. CONTRACT field
@@ -2123,7 +2133,9 @@ def main() -> int:
         temperature=gen_temperature,
         load_now=True,
     )
-    print(f"[run] LM loaded in {time.time() - t0:.1f}s", flush=True)
+    lm.parse_mode = parse_mode
+    print(f"[run] LM loaded in {time.time() - t0:.1f}s "
+          f"(parse_mode={parse_mode})", flush=True)
 
     # Fixed reference set for perplexity: prompt + true-answer for the first
     # n_ppl agents. Stable across rounds, so perplexity tracks model drift.

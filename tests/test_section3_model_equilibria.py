@@ -71,7 +71,9 @@ def test_sub_pins_the_scientific_surface_and_routes_submission():
     assert "18 jobs" in sub
     assert "check_section3_model_equilibria.py" in sub
     submit = SUBMIT.read_text()
-    assert ("section3_model_equilibria|section3_model_equilibria_smoke) "
+    assert ("section3_model_equilibria|section3_model_equilibria_smoke|"
+            "section3_model_equilibria_mistral_rerun|"
+            "section3_model_equilibria_mistral_rerun_smoke) "
             "TARGETS=\"$WHAT\" ;;" in submit)
 
 
@@ -241,7 +243,7 @@ def test_settled_rejects_a_small_two_cycle_that_half_split_drift_passes():
 def test_analyzer_refuses_smoke_or_stale_gate_verdicts():
     a = _load(ANALYZE, "_analyze_s3m_gate_test")
     g = _load(GEN, "_gen_s3m_gate_test")
-    full = [{"tag": g.s3m_tag(m, s), "status": "PASS", "git_sha": "abc"}
+    full = [{"tag": g.s3m_cell_tag(m, s), "status": "PASS", "git_sha": "abc"}
             for m in g.S3M_MODELS for s in g.S3M_SEEDS]
     assert a.gate_binds_wave({"ok": True, "n_cells": 18, "cells": full}, g) is None
     smoke = {"ok": True, "n_cells": 1,
@@ -281,3 +283,125 @@ def test_checker_requires_runtime_open_gate_evidence_every_round():
     c.check_runtime_open_gates({"trajectory": [{"contact": 1.0}] * 3,
                                 "config": {"ab_sweeps": 100}}, 3, errs)
     assert len(errs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Mistral-7B strict-parse rerun (provenance exemption)
+# ---------------------------------------------------------------------------
+
+STRICT_CASES = [
+    (".64 (\n", (0.64, True)), ("0.64", (0.64, True)), ("0.61 (", (0.61, True)),
+    ("58 (58", (None, False)), ("0 (0 (0", (0.0, True)), ("0.00", (0.0, True)),
+    ("1.0", (1.0, True)), ("1", (1.0, True)), (" 0.35\n", (0.35, True)),
+    ("Answer: 0.4", (None, False)), ("", (None, False)), ("abc", (None, False)),
+    ("1.2", (None, False)), (".5", (0.5, True)),
+]
+
+
+def test_strict_parser_reads_leading_dot_and_refuses_clamping():
+    import os
+    os.environ.setdefault("USE_TF", "0")
+    from perfsim.models.hf_causal_lm import HFCausalLMModel as H
+    for text, (want_v, want_ok) in STRICT_CASES:
+        v, ok = H._parse_strict(text)
+        assert ok == want_ok, text
+        if want_ok:
+            assert abs(v - want_v) < 1e-12, text
+        else:
+            assert v == 0.5, text                      # finite default, flagged
+    # the legacy parser is untouched: the two observed collapse strings
+    assert H._parse(".64 (\n") == 1.0 and H._parse("58 (58") == 1.0
+    assert H._parse("0.64") == 0.64
+    # the checker's login-node mirror agrees with the wrapper on every case
+    c = _load_checker()
+    for text, (want_v, want_ok) in STRICT_CASES:
+        v, ok = c.strict_parse(text)
+        assert ok == want_ok and (v is None or abs(v - want_v) < 1e-12), text
+
+
+def test_runner_plumbs_parse_mode_opt_in_and_records_it():
+    source = RUNNER.read_text()
+    assert 'parse_mode = os.environ.get("PARSE_MODE", "legacy")' in source
+    assert 'lm.parse_mode = parse_mode' in source
+    assert 'if "PARSE_MODE" in os.environ:' in source   # recorded only when set
+    assert 'config["parse_mode"] = parse_mode' in source
+
+
+def test_rerun_grid_is_mistral_only_with_new_tags_and_strict_env():
+    g = _load(GEN, "_gen_s3m_rerun_test")
+    assert set(g.S3M_RERUN) == {"mistral7b"}
+    rows = g.s3m_rerun_rows()
+    assert len(rows) == 3
+    main_tags = {r.split(",")[0] for r in g.s3m_rows()}
+    for row in rows:
+        c = [x.strip() for x in row.split(",")]
+        assert c[0].startswith("pofds3m_mistral7b_") and "_pstrict_" in c[0]
+        assert c[0] not in main_tags                       # idempotent wrapper
+        assert c[0] == g.s3m_cell_tag("mistral7b", int(c[3]))
+        legacy = [x.strip() for x in g.s3m_row("mistral7b", int(c[3])).split(",")]
+        assert c[1:] == legacy[1:]                         # only the tag differs
+    for m in g.S3M_MODELS:
+        for s in g.S3M_SEEDS:
+            if m != "mistral7b":
+                assert g.s3m_cell_tag(m, s) == g.s3m_tag(m, s)
+    env_main = next(l for l in g.s3m_sub().splitlines() if l.startswith("environment"))
+    env_rerun = next(l for l in g.s3m_sub(rerun=True).splitlines()
+                     if l.startswith("environment"))
+    assert "PARSE_MODE" not in env_main
+    assert env_rerun.replace(" PARSE_MODE=strict", "") == env_main
+    smoke = g.s3m_rerun_smoke_rows()[0].split(",")[0]
+    assert "_pstrict_" in smoke and smoke.startswith("pofds3msmk_mistral7b_")
+    assert "--rerun-smoke" in g.s3m_sub(smoke=True, rerun=True)
+    submit = SUBMIT.read_text()
+    assert "section3_model_equilibria_mistral_rerun|" in submit
+    assert "section3_model_equilibria_mistral_rerun_smoke)" in submit
+
+
+def test_checker_fails_malformed_or_misparsed_generations(tmp_path):
+    c = _load_checker()
+    # well-formed log passes and reports counts
+    _write_raw_log(tmp_path, _good_rows(3))
+    errs = []
+    st = c.check_raw_generations(tmp_path, 3, errs)
+    assert errs == [] and st == {"generations": 3 * 723, "malformed": 0,
+                                 "mismatched": 0}
+    # Mistral's actual round-0 string, legacy-served as 1.0: malformed AND
+    # the served value is not what the model wrote
+    rows = _good_rows(3)
+    rows[0]["raw"] = [".64 (\n"] * 723
+    rows[0]["parsed"] = [1.0] * 723
+    _write_raw_log(tmp_path, rows)
+    errs = []
+    c.check_raw_generations(tmp_path, 3, errs)
+    assert any("served value" in e for e in errs) or any("well-formed" in e for e in errs)
+    # a clamped bare-integer run is malformed even when parse_fail_frac == 0
+    rows = _good_rows(3)
+    rows[2]["raw"] = ["58 (58"] * 723
+    rows[2]["parsed"] = [1.0] * 723
+    _write_raw_log(tmp_path, rows)
+    errs = []
+    c.check_raw_generations(tmp_path, 3, errs)
+    assert any("well-formed" in e for e in errs)
+    # a trailing-paren quirk with the right value is fine
+    rows = _good_rows(3)
+    rows[1]["raw"] = ["0.65 ("] * 723
+    rows[1]["parsed"] = [0.65] * 723
+    _write_raw_log(tmp_path, rows)
+    errs = []
+    c.check_raw_generations(tmp_path, 3, errs)
+    assert errs == []
+
+
+def test_analyzer_binds_to_rerun_cell_tags_and_records_accepted_cycle():
+    a = _load(ANALYZE, "_analyze_s3m_rerun_test")
+    g = _load(GEN, "_gen_s3m_rerun_gate_test")
+    full = [{"tag": g.s3m_cell_tag(m, s), "status": "PASS", "git_sha": "abc"}
+            for m in g.S3M_MODELS for s in g.S3M_SEEDS]
+    assert a.gate_binds_wave({"ok": True, "n_cells": 18, "cells": full}, g) is None
+    # a verdict built on the collapsed (legacy) Mistral tags is refused
+    stale = [{"tag": g.s3m_tag(m, s), "status": "PASS"}
+             for m in g.S3M_MODELS for s in g.S3M_SEEDS]
+    assert "not PASS" in a.gate_binds_wave({"ok": True, "n_cells": 18,
+                                            "cells": stale}, g)
+    src = ANALYZE.read_text()
+    assert "--accept-limit-cycle" in src and "accepted_limit_cycle" in src

@@ -142,10 +142,10 @@ def tci3(vals):
 
 def gate_binds_wave(verdict, g):
     """The gate JSON must be this wave's full production verdict: PASS,
-    18 cells, and every production tag present with status PASS."""
+    18 cells, and every production (cell) tag present with status PASS."""
     if not verdict.get("ok"):
         return "gate is not PASS"
-    want = {g.s3m_tag(m, s) for m in g.S3M_MODELS for s in g.S3M_SEEDS}
+    want = {g.s3m_cell_tag(m, s) for m in g.S3M_MODELS for s in g.S3M_SEEDS}
     cells = verdict.get("cells") or []
     got = {c.get("tag"): c.get("status") for c in cells}
     if verdict.get("n_cells") != len(want):
@@ -168,7 +168,15 @@ def main():
     ap.add_argument("--consensus-sd-tol", type=float,
                     default=CONSENSUS_SD_TOL)
     ap.add_argument("--paper", action="store_true")
+    ap.add_argument("--accept-limit-cycle", action="append", default=[],
+                    metavar="MODEL",
+                    help="treat this model's bounded oscillation as its "
+                         "equilibrium (recorded in summary.json; the "
+                         "window mean +- t-CI is still the estimate)")
     args = ap.parse_args()
+    for m in args.accept_limit_cycle:
+        if m not in DISPLAY:
+            ap.error(f"--accept-limit-cycle {m!r}: unknown model")
 
     gate_path = Path(args.gate_json)
     if not gate_path.exists():
@@ -193,7 +201,7 @@ def main():
     rows, missing, innate_means = [], [], []
     for model in g.S3M_MODELS:
         for seed in g.S3M_SEEDS:
-            tag = g.s3m_tag(model, seed)
+            tag = g.s3m_cell_tag(model, seed)
             path = _find(tag, roots)
             if path is None:
                 missing.append(tag)
@@ -225,6 +233,9 @@ def main():
                 "alternating_frac": f"{stats['alternating_frac']:.4f}",
                 "converged": settled(stats, args.drift_tol),
                 "cyclic": cyclic(stats, args.drift_tol),
+                "accepted_limit_cycle": model in args.accept_limit_cycle,
+                "parse_mode": (d.get("config", {}) or {}).get("parse_mode",
+                                                              "legacy"),
                 "consensus": stats["final_sd"] <= args.consensus_sd_tol,
                 "git_sha": (d.get("config", {}) or {}).get("git_sha"),
                 "path": str(path),
@@ -262,6 +273,7 @@ def main():
             "shift_from_perfect": f"{mean - perfect_mean:.8f}",
             "all_converged": all(r["converged"] for r in selected),
             "any_cyclic": any(r["cyclic"] for r in selected),
+            "accepted_limit_cycle": model in args.accept_limit_cycle,
             "all_consensus": all(r["consensus"] for r in selected),
         })
 
@@ -276,14 +288,23 @@ def main():
         writer.writeheader()
         writer.writerows(model_rows)
 
-    unsettled = [r for r in rows if not r["converged"]]
-    cyclic_rows = [r for r in rows if r["cyclic"]]
+    unsettled = [r for r in rows if not r["converged"]
+                 and not r["accepted_limit_cycle"]]
+    cyclic_rows = [r for r in rows if r["cyclic"]
+                   and not r["accepted_limit_cycle"]]
     nonconsensus = [r for r in rows if not r["consensus"]]
     summary = {
         "gated": True,
         "gate_json": str(gate_path),
         "gate_n_cells": verdict.get("n_cells"),
         "git_sha": gate_shas,
+        "provenance": verdict.get("provenance"),
+        "accepted_limit_cycle": sorted(set(args.accept_limit_cycle)),
+        "accepted_limit_cycle_note": (
+            "cells of these models are reported at their window mean +- "
+            "3-seed t-CI although they fail the settling test; the user "
+            "accepted the bounded oscillation as the equilibrium"
+            if args.accept_limit_cycle else None),
         "n_cells": len(rows),
         "n_models": len(model_rows),
         "seeds": list(g.S3M_SEEDS),
@@ -315,7 +336,9 @@ def main():
     print(f"{'model':<14}{'mean':>10}{'95% CI':>25}{'shift':>11}  status")
     for r in model_rows:
         status = ("equilibrium/consensus" if r["all_converged"] and
-                  r["all_consensus"] and not r["any_cyclic"] else "CHECK")
+                  r["all_consensus"] and not r["any_cyclic"] else
+                  ("limit-cycle (accepted)" if r["accepted_limit_cycle"]
+                   and r["all_consensus"] else "CHECK"))
         ci = f"[{float(r['ci95_low']):.4f}, {float(r['ci95_high']):.4f}]"
         print(f"{r['model_label']:<14}{float(r['equilibrium_mean']):>10.4f}"
               f"{ci:>25}{float(r['shift_from_perfect']):>+11.4f}  {status}")
