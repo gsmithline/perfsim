@@ -548,6 +548,9 @@ case "$WHAT" in
   # -> analyze -> commit updated fig3_extension_request.json if needed ->
   # fig3_full_loop_ext.
   fig3_full_loop|fig3_full_loop_smoke|fig3_full_loop_ext) TARGETS="$WHAT" ;;
+  # Open-gate cross-model consensus comparison for Section 3: six models x
+  # three seeds, all freshly run under one provenance (18 production jobs).
+  section3_model_equilibria|section3_model_equilibria_smoke) TARGETS="$WHAT" ;;
   # RECURSIVE UPDATE-DOSE (2026-08-25): plain SFT at the Section 3
   # no-memory/full-adoption surface with ONLY optimizer-step frequency
   # varied via SFT_GRAD_ACCUM (u1/u5/u19; u181 = the archived pofdps_

@@ -1070,6 +1070,10 @@ def main() -> int:
     # innate seed a Deffuant run, the population relaxes under the platform,
     # the model trains on the relaxed outcome.
     ab_sweeps = _env_int("AB_SWEEPS", 1)
+    # Symmetric Deffuant compromise rate. 0.5 is the archived midpoint
+    # operator; naming it explicitly lets new figures certify the paper's
+    # alpha rather than relying on a function default.
+    deffuant_alpha = _env_float("DEFFUANT_ALPHA", 0.5)
     # POP_ORDER (ab only): RETIRED by population_update="nested_ai_then_social_v1",
     # whose order is fixed -- human/AI mixture first, peer sweeps last. Kept
     # only so archived configs (which recorded it) stay readable; setting it to
@@ -1309,6 +1313,8 @@ def main() -> int:
         raise ValueError("POP_RESET=1 requires POP_MODEL=ab")
     if ab_sweeps != 1 and pop_model != "ab":
         raise ValueError("AB_SWEEPS>1 requires POP_MODEL=ab")
+    if not 0.0 <= deffuant_alpha <= 0.5:
+        raise ValueError("DEFFUANT_ALPHA must lie in [0, 0.5]")
     if pop_order != "peer_first":
         raise ValueError(
             "POP_ORDER is retired: population_update='nested_ai_then_social_v1' "
@@ -1730,7 +1736,8 @@ def main() -> int:
         "n_probe": n_probe, "tel_eval_cap": tel_eval_cap, "grad_norm_n": grad_norm_n,
         "fresh_each_round": fresh_each_round, "pristine_frac": pristine_frac,
         "replay_frac": replay_frac,
-        "pop_reset": pop_reset, "ab_sweeps": ab_sweeps, "pop_order": pop_order,
+        "pop_reset": pop_reset, "ab_sweeps": ab_sweeps,
+        "deffuant_alpha": deffuant_alpha, "pop_order": pop_order,
         "profile_shuffle_p": shuffle_p, "profile_sort_q": sort_q,
         "profile_drop_cols": drop_cols, "profile_permute_cols": permute_cols,
         "teacher_label_delta": teacher_label_delta,
@@ -3333,7 +3340,8 @@ def main() -> int:
                 else:
                     accepted += gp.ab_sweep(ab_x, ab_adj, eps, gamma_bias,
                                             gen=ab_gen,
-                                            gate_mode=peer_gate_mode)
+                                            gate_mode=peer_gate_mode,
+                                            alpha=deffuant_alpha)
                 if ab_sweeps > 1 and (sw + 1) in (1, 3, 10, 30, 100, ab_sweeps):
                     relax_trace.append(round(float(ab_x.std()), 4))
             if clamp_mask_dev is not None:
@@ -3382,7 +3390,8 @@ def main() -> int:
                             gate_mode=peer_gate_mode)
                     else:
                         gp.ab_sweep(ab_x_cf, ab_adj, eps, gamma_bias,
-                                    gen=ab_gen_cf, gate_mode=peer_gate_mode)
+                                    gen=ab_gen_cf, gate_mode=peer_gate_mode,
+                                    alpha=deffuant_alpha)
                 if clamp_mask_dev is not None:
                     # the twin carries the SAME frozen cohort bit-exactly
                     ab_x_cf[clamp_mask_dev] = ab_innate[clamp_mask_dev]

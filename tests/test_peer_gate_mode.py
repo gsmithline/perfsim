@@ -284,6 +284,35 @@ def test_all_open_still_conserves_the_population_mean():
     assert abs(float(x.mean()) - m0) < 1e-6
 
 
+def test_explicit_midpoint_alpha_preserves_legacy_update_exactly():
+    """Naming the production default must not move archived trajectories."""
+    n = 120
+    adj = _ring(n)
+    implicit = _state(n)
+    explicit = implicit.clone()
+    gp.ab_sweep(implicit, adj, 0.2, 0.0,
+                gen=torch.Generator().manual_seed(17),
+                gate_mode="all_open")
+    gp.ab_sweep(explicit, adj, 0.2, 0.0,
+                gen=torch.Generator().manual_seed(17),
+                gate_mode="all_open", alpha=0.5)
+    assert torch.equal(implicit, explicit)
+
+
+def test_zero_deffuant_alpha_leaves_state_unchanged():
+    n = 120
+    adj = _ring(n)
+    before = _state(n)
+    after = before.clone()
+    accepted = gp.ab_sweep(
+        after, adj, 0.2, 0.0,
+        gen=torch.Generator().manual_seed(19),
+        gate_mode="all_open", alpha=0.0,
+    )
+    assert accepted == n
+    assert torch.equal(after, before)
+
+
 # -- the stubborn variant carries the mode identically -------------------
 
 def test_stubborn_sweep_takes_the_mode_and_defaults_to_threshold():

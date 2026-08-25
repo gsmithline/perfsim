@@ -50,7 +50,8 @@ def peer_gate(dist, eps, mode="threshold"):
     return dist < eps
 
 
-def ab_sweep(x, adj, eps, gamma, gen=None, gate_mode="threshold"):
+def ab_sweep(x, adj, eps, gamma, gen=None, gate_mode="threshold",
+             alpha=0.5):
     """Exactly N biased pair selections among graph neighbors; disjoint pairs
     per batch via Luby-style conflict resolution. Mutates x, returns accepted.
     `gen` isolates the population RNG from the global stream, which the HF
@@ -59,7 +60,14 @@ def ab_sweep(x, adj, eps, gamma, gen=None, gate_mode="threshold"):
     gate_mode="threshold" (the default) reproduces every archived run
     byte-for-byte; "all_open" accepts every sampled pair (see peer_gate).
     The mode is applied AFTER pair selection, so both modes draw the same
-    pairs from the same generator state."""
+    pairs from the same generator state.
+
+    alpha is the symmetric Deffuant compromise rate. The production default
+    alpha=0.5 retains the legacy midpoint update byte-for-byte; values in
+    [0, 0.5] permit the linear peer-influence sweep used by the Section 2
+    perfect-prediction baseline."""
+    if not 0.0 <= float(alpha) <= 0.5:
+        raise ValueError(f"Deffuant alpha must lie in [0, 0.5]; got {alpha}")
     n = x.shape[0]
     device = x.device
     bsz = min(AB_BATCH, n)
@@ -88,9 +96,16 @@ def ab_sweep(x, adj, eps, gamma, gen=None, gate_mode="threshold"):
         i1, i2 = ini[idx], par[idx]
         ok = peer_gate((x[i1] - x[i2]).abs(), eps, gate_mode)
         a1, a2 = i1[ok], i2[ok]
-        mid = 0.5 * (x[a1] + x[a2])
-        x[a1] = mid
-        x[a2] = mid
+        if float(alpha) == 0.5:
+            # Preserve the archived midpoint computation bit-for-bit.
+            mid = 0.5 * (x[a1] + x[a2])
+            x[a1] = mid
+            x[a2] = mid
+        else:
+            old1 = x[a1].clone()
+            old2 = x[a2].clone()
+            x[a1] = old1 + float(alpha) * (old2 - old1)
+            x[a2] = old2 + float(alpha) * (old1 - old2)
         done += len(idx)
         accepted += int(ok.sum())
     return accepted
