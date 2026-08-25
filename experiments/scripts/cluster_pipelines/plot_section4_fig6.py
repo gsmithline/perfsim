@@ -4,6 +4,8 @@ grid ``section4_gate_anch2_fig6``.
 
 READS ONLY the analyzer's outputs -- never a trajectory:
   <analysis-dir>/section4_fig6_source_effect.csv   (required)
+  <analysis-dir>/section4_fig6_method_gap.csv      (required; the paired
+                                                     method gap G)
   <analysis-dir>/section4_fig6_summary.json         (optional; sign text,
                                                      window rule, gate)
 written by analyze_section4_gate.py --wave fig6.
@@ -33,6 +35,15 @@ is drawn RINGED, connected to nothing, and named in the printed caption,
 so it can never be read as a level.  Line segments join only ADJACENT
 settled points of one series.
 
+THIRD OUTPUT -- THE PAIRED METHOD GAP.  G = T_SFT - T_ICL = t_a(b0,
+seed) - t_a(d8, seed) per seed, three-seed mean with the df = 2 paired
+t-interval (positive G = SFT's source effect exceeds ICL's), drawn
+against eps_social (categorical x), one line per eps_AI on the same hue
+scale, thin paired-t bars, a faint zero line.  At eps_AI = 0 both methods
+are twin-derived and G is IDENTICALLY 0 -- it is drawn: it is the
+structural anchor.  This is the direct test of whether SFT and ICL
+approach each other as eps_social grows.
+
 FILES (--out-dir; default notes/pofd/section4_fig6/previews; any out-dir
 with a ``paper`` path component is REFUSED)
   section4_fig6_candidate.pdf/.png          single panel (the primary
@@ -40,6 +51,9 @@ with a ``paper`` path component is REFUSED)
   section4_fig6_candidate_2panel.pdf/.png   one panel per method (the
                                             alternative, for a visual
                                             choice)
+  section4_fig6_candidate_gap.pdf/.png      G = T_SFT - T_ICL vs
+                                            eps_social, one line per
+                                            eps_AI
   section4_fig6_candidate_caption.txt       the printed caption block
 The figures carry NO title text (no set_title, no suptitle -- the
 project convention); the narrative is the caption block.
@@ -68,9 +82,11 @@ DEFAULT_OUT = os.path.join(REPO, "notes", "pofd", "section4_fig6",
                            "previews")
 
 SOURCE_CSV = "section4_fig6_source_effect.csv"
+GAP_CSV = "section4_fig6_method_gap.csv"
 SUMMARY_JSON = "section4_fig6_summary.json"
 STEM = "section4_fig6_candidate"
 T_A = "t_a_evolving_minus_fixed"
+G = "g_sft_minus_icl"
 NA = "NA"
 
 # ------------------------------------------------------------- house ink
@@ -156,6 +172,40 @@ def read_rows(analysis_dir):
     return rows
 
 
+def read_gap_rows(analysis_dir):
+    """The analyzer's paired-method-gap rows, typed like read_rows."""
+    path = os.path.join(analysis_dir, GAP_CSV)
+    if not os.path.exists(path):
+        print(f"[fig6] {path} not found -- run analyze_section4_gate.py "
+              f"--wave fig6 (it writes the method gap beside the source "
+              f"effect)", file=sys.stderr)
+        sys.exit(1)
+    with open(path) as fh:
+        raw = list(csv.DictReader(fh))
+    need = {"eps_ai", "eps_social", "status", f"{G}_mean", f"{G}_ci_lo",
+            f"{G}_ci_hi"}
+    miss = need - set(raw[0].keys()) if raw else need
+    if miss:
+        print(f"[fig6] {path} lacks columns {sorted(miss)}", file=sys.stderr)
+        sys.exit(1)
+    rows = []
+    for r in raw:
+        rows.append({
+            "arm": "gap",
+            "eps_ai": float(r["eps_ai"]),
+            "eps_social": float(r["eps_social"]),
+            "status": r["status"],
+            "settled": _b(r.get("settled", "False")),
+            "outcome": r.get("outcome") or "",
+            "mean": _f(r.get(f"{G}_mean")),
+            "lo": _f(r.get(f"{G}_ci_lo")),
+            "hi": _f(r.get(f"{G}_ci_hi")),
+            "excl0": _b(r.get(f"{G}_excludes_zero", "")),
+            "served_min": None,
+        })
+    return rows
+
+
 def read_summary(analysis_dir):
     path = os.path.join(analysis_dir, SUMMARY_JSON)
     if not os.path.exists(path):
@@ -212,7 +262,10 @@ def _style(ax, ess, ylabel):
 def _series_style(arm, color):
     if arm == "b0":
         return dict(ls="-", marker="o", mfc=color, mec=color)
-    return dict(ls=(0, (4, 2.5)), marker="s", mfc="white", mec=color)
+    if arm == "d8":
+        return dict(ls=(0, (4, 2.5)), marker="s", mfc="white", mec=color)
+    # the method gap: one series per eps_AI, solid line, filled diamonds
+    return dict(ls="-", marker="D", mfc=color, mec=color)
 
 
 def draw_panel(ax, drawable, ess, eas, arms, colors, dodge=0.075,
@@ -275,6 +328,7 @@ def legend_handles(eas, colors, arms):
 
 YLABEL = (r"$T_a=\mu_B^{\mathrm{eq}}(\mathrm{A\ evolving})"
           r"-\mu_B^{\mathrm{eq}}(\mathrm{A\ fixed})$")
+YLABEL_GAP = r"$G = T_a(\mathrm{SFT}) - T_a(\mathrm{ICL})$"
 
 
 def _save(fig, out_dir, stem):
@@ -328,6 +382,64 @@ def figure_two_panel(drawable, ess, eas, colors, out_dir):
     return paths, ringed
 
 
+def figure_gap(gap_drawable, ess, eas, colors, out_dir):
+    """G = T_SFT - T_ICL vs eps_social, one line per eps_AI (same hue
+    scale), paired-t bars, faint zero line, no titles."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    _rc()
+    fig, ax = plt.subplots(figsize=(4.3, 3.1))
+    ringed = draw_panel(ax, gap_drawable, ess, eas, ["gap"], colors,
+                        arm_dodge=0.0)
+    _style(ax, ess, YLABEL_GAP)
+    hs = legend_handles(eas, colors, [])
+    hs[0].set_label(hs[0].get_label().replace("(no AI: twin)",
+                                              "(no AI: twin, G = 0)"))
+    ax.legend(handles=hs, frameon=False, fontsize=7.2, loc="best",
+              handlelength=2.4, labelspacing=0.35)
+    fig.tight_layout()
+    paths = _save(fig, out_dir, f"{STEM}_gap")
+    plt.close(fig)
+    return paths, ringed
+
+
+def caption_gap(gap_rows, gap_drawable, gap_absent, gap_ringed, ess, eas):
+    n_sig = sum(1 for r in gap_drawable if r["excl0"] and r["settled"])
+    lines = [
+        "",
+        f"{STEM}_gap.pdf/.png -- the PAIRED METHOD GAP. y = G = T_a(SFT) -",
+        "T_a(ICL), formed PER SEED from the same paired per-seed T_a of the",
+        "two methods, then the three-seed mean and the 95% paired Student-t",
+        "interval (df = 2). Positive G = SFT's source effect exceeds ICL's;",
+        "G falling toward 0 with eps_social is the two methods approaching",
+        "each other. One line per eps_AI on the same hue scale; at eps_AI =",
+        "0 both methods are twin-derived and G is IDENTICALLY 0 -- drawn as",
+        "the structural anchor. Faint line: G = 0. Segments join only",
+        "adjacent settled points (both methods' pairs settled at every",
+        "seed).",
+        f"{len(gap_drawable)} of {len(gap_rows)} (eps_AI, eps_social) gap "
+        f"points drawn; {n_sig} settled points have an interval excluding 0.",
+    ]
+    if gap_ringed:
+        seen = {}
+        for _, ea, es, oc in gap_ringed:
+            seen.setdefault((ea, es), oc)
+        lines.append(f"RINGED = UNSETTLED gap points ({len(seen)}): "
+                     + "; ".join(f"eps_AI={cat_label(ea)} "
+                                 f"eps_social={cat_label(es)} [{oc}]"
+                                 for (ea, es), oc in seen.items()))
+    else:
+        lines.append("No gap point is ringed: every drawn gap point is "
+                     "settled.")
+    if gap_absent:
+        lines.append(f"Gap points NOT DRAWN ({len(gap_absent)}): " + "; ".join(
+            f"eps_AI={cat_label(r['eps_ai'])} "
+            f"eps_social={cat_label(r['eps_social'])} [{r['status']}]"
+            for r in gap_absent))
+    return lines
+
+
 def caption(rows, drawable, absent, ringed, ess, eas, summary, analysis_dir):
     n_drawn = len(drawable)
     n_sig = sum(1 for r in drawable if r["excl0"] and r["settled"])
@@ -335,8 +447,8 @@ def caption(rows, drawable, absent, ringed, ess, eas, summary, analysis_dir):
     quant = [r for r in rows if r["eps_ai"] != 0.0
              and r["served_min"] is not None and r["served_min"] <= 3]
     lines = [
-        f"CAPTION -- {STEM}.pdf/.png and {STEM}_2panel.pdf/.png "
-        "(the figures carry no title text)",
+        f"CAPTION -- {STEM}.pdf/.png, {STEM}_2panel.pdf/.png and "
+        f"{STEM}_gap.pdf/.png (the figures carry no title text)",
         "",
         "Figure 6 candidate: the source effect of a non-adapting cohort A",
         "on the responsive majority (cohort B) across the matched gate",
@@ -418,6 +530,7 @@ def main(argv=None):
     out_dir = os.path.abspath(args.out_dir)
     refuse_paper_dir(out_dir)
     rows = read_rows(analysis_dir)
+    gap_rows = read_gap_rows(analysis_dir)
     summary = read_summary(analysis_dir)
     ess = sorted({r["eps_social"] for r in rows})
     eas = sorted({r["eps_ai"] for r in rows})
@@ -427,19 +540,29 @@ def main(argv=None):
         sys.exit(1)
     colors = {ea: EA_RAMP[i] for i, ea in enumerate(eas)}
     drawable, absent = classify(rows)
+    gap_drawable, gap_absent = classify(gap_rows)
     print(f"[fig6] analysis-dir: {analysis_dir}")
     print(f"[fig6] out-dir     : {out_dir}")
     print(f"[fig6] series      : {len(rows)} rows, {len(drawable)} drawable, "
           f"{len(absent)} absent/incomplete, "
           f"{sum(1 for r in drawable if not r['settled'])} unsettled")
+    print(f"[fig6] gap         : {len(gap_rows)} rows, {len(gap_drawable)} "
+          f"drawable, {sum(1 for r in gap_drawable if not r['settled'])} "
+          f"unsettled")
     if summary.get("t_a_sign"):
         print(f"[fig6] sign        : {summary['t_a_sign']}")
+    if summary.get("g_sign"):
+        print(f"[fig6] G sign      : {summary['g_sign']}")
 
     os.makedirs(out_dir, exist_ok=True)
     paths, ringed = figure_single(drawable, ess, eas, colors, out_dir)
     paths2, _ = figure_two_panel(drawable, ess, eas, colors, out_dir)
+    paths3, gap_ringed = figure_gap(gap_drawable, ess, eas, colors, out_dir)
     cap = caption(rows, drawable, absent, ringed, ess, eas, summary,
                   analysis_dir)
+    # the gap block goes before the trailing source / exploratory lines
+    cap = cap[:-2] + caption_gap(gap_rows, gap_drawable, gap_absent,
+                                 gap_ringed, ess, eas) + cap[-2:]
     print("\n" + "\n".join(textwrap.fill(l, 78) if len(l) > 78 else l
                            for l in cap))
     cap_path = os.path.join(out_dir, f"{STEM}_caption.txt")

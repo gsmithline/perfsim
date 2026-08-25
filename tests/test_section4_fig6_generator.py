@@ -3,14 +3,17 @@
 
 Contract:
   cells    2 arms x 2 conds x ea {0,.1,.3,1} x es {0,.1,.3,1} x 3 seeds = 192
-  kinds    144 gpu (ea > 0) + 2 witness (ea = 0, evolving, es=.3, seed 0,
-           one per arm) + 46 twin-derived (ea = 0, 0 jobs)
+  kinds    144 gpu (ea > 0) + 4 witness (ea = 0, both arms x both
+           conds, es=.3, seed 0) + 44 twin-derived (ea = 0, 0 jobs)
   reused   0 -- the 2026-08-25 audit found NO corrected-gate cell on disk
-  jobs     146 = 72 fixed + 74 evolving; smoke 4 (ea=.1, es=.3, seed 0, 3r)
+  jobs     148 = 74 fixed + 74 evolving; smoke 4 (ea=.1, es=.3, seed 0, 3r)
   overlap  exactly the 24 (ea=1, es in {0,1}) tags are shared with the
            unrun section4_gate_anch2 key, byte-identical rows
   ea = 0   gp.ai_gate is strict-<, so the gate is closed everywhere: the
-           population IS twin_raw; only the two witnesses are queued
+           population IS twin_raw; only the four witnesses are queued
+  raw gen  SAVE_RAW_GEN=1 in every Section-4 sub: the parser falls back to
+           a FINITE 0.5 on failure, so parse_fail_frac (raw_gen_log only)
+           is the sole witness of zero parse failures
 """
 from __future__ import annotations
 
@@ -112,19 +115,20 @@ def test_grid_is_192_cells_of_three_kinds(gen):
     kinds = {}
     for *_c, k in cells:
         kinds[k] = kinds.get(k, 0) + 1
-    assert kinds == {"gpu": 144, "witness": 2, "twin": 46}, kinds
+    assert kinds == {"gpu": 144, "witness": 4, "twin": 44}, kinds
     assert {(a, c, ea, es, s) for (a, c, ea, es, s, _k) in cells} == {
         (a, c, ea, es, s) for a in ("b0", "d8") for c in ("fixed", "evolving")
         for ea in GATES for es in GATES for s in (0, 42, 43)}
 
 
-def test_ea_zero_is_twin_derived_except_the_two_witnesses(gen):
+def test_ea_zero_is_twin_derived_except_the_four_witnesses(gen):
     cells = gen.s4g2_cells()
     ea0 = [c for c in cells if c[2] == 0.0]
     assert len(ea0) == 48
     assert all(k in ("twin", "witness") for *_c, k in ea0)
     wit = [(a, c, es, s) for (a, c, _ea, es, s, k) in ea0 if k == "witness"]
-    assert wit == [("b0", "evolving", 0.3, 0), ("d8", "evolving", 0.3, 0)]
+    assert wit == [("b0", "fixed", 0.3, 0), ("b0", "evolving", 0.3, 0),
+                   ("d8", "fixed", 0.3, 0), ("d8", "evolving", 0.3, 0)]
     assert all(ea > 0.0 for (_a, _c, ea, _es, _s, k) in cells if k == "gpu")
 
 
@@ -133,12 +137,12 @@ def test_reuse_audit_is_zero(gen):
 
 
 # ================================================================= rows
-def test_146_jobs_split_72_fixed_74_evolving(generated):
+def test_148_jobs_split_74_fixed_74_evolving(generated):
     fixed = _rows(generated, CFG_FIXED)
     evo = _rows(generated, CFG_EVO)
-    assert len(fixed) == 72 and len(evo) == 74
+    assert len(fixed) == 74 and len(evo) == 74
     tags = [r.split(",")[0].strip() for r in fixed + evo]
-    assert len(set(tags)) == 146
+    assert len(set(tags)) == 148
 
 
 def test_every_row_matches_its_tag_and_the_grid(generated):
@@ -163,13 +167,14 @@ def test_every_row_matches_its_tag_and_the_grid(generated):
                 assert "cmode" not in cols
 
 
-def test_only_the_two_witnesses_run_at_ea_zero(generated):
+def test_only_the_four_witnesses_run_at_ea_zero(generated):
     evo = [r for r in _rows(generated, CFG_EVO) if "_ea0_" in r.split(",")[0]]
     fixed = [r for r in _rows(generated, CFG_FIXED)
              if "_ea0_" in r.split(",")[0]]
-    assert fixed == []
-    tags = sorted(r.split(",")[0].strip() for r in evo)
-    assert tags == [
+    assert sorted(r.split(",")[0].strip() for r in fixed) == [
+        "pofds4g_mistral7b_b0_fixb20_anch2_ea0_w0p5_l0p2_es0p3_s0",
+        "pofds4g_mistral7b_d8_fixb20_anch2_ea0_w0p5_l0p2_es0p3_s0"]
+    assert sorted(r.split(",")[0].strip() for r in evo) == [
         "pofds4g_mistral7b_b0_evoall_anch2_ea0_w0p5_l0p2_es0p3_s0",
         "pofds4g_mistral7b_d8_evoall_anch2_ea0_w0p5_l0p2_es0p3_s0"]
 
@@ -218,6 +223,9 @@ def test_subs_pin_the_corrected_gate_and_the_clamp_split(generated):
         env = [l for l in generated[sub].splitlines()
                if l.startswith("environment")][0]
         assert "AI_GATE_REFERENCE=anchor" in env
+        assert "SAVE_RAW_GEN=1" in env, ("the parser defaults failures to a "
+                                         "finite 0.5; only raw_gen_log "
+                                         "carries parse_fail_frac", sub)
         assert "WITH_TWIN=1" in env and "INNATE_LAMBDA=0.2" in env
         assert ("INNATE_CLAMP_PEER_MODE=stubborn" in env) == (cond == "fixed")
         assert "ea {0, .1, .3, 1} x es {0, .1, .3, 1}" in generated[sub]

@@ -37,6 +37,7 @@ PLOT = _load("_plot_s4fig6_t", PLOT_PATH)
 EAS = [0.0, 0.1, 0.3, 1.0]
 ESS = [0.0, 0.1, 0.3, 1.0]
 T_A = "t_a_evolving_minus_fixed"
+G = "g_sft_minus_icl"
 UNSETTLED = ("b0", 1.0, 0.3)
 ABSENT = ("d8", 0.3, 1.0)
 
@@ -91,9 +92,31 @@ def synth_analysis_dir(tmp_path):
                            "NA" if ea == 0.0 else 1 if arm == "d8" else 7)}
                 rows.append(row)
     write_csv(os.path.join(d, PLOT.SOURCE_CSV), rows)
+    # the paired method gap, G = T_a(b0) - T_a(d8), from the same rows
+    gap = []
+    for ea in EAS:
+        for es in ESS:
+            b0 = [r for r in rows if r["arm"] == "b0" and r["eps_ai"] == ea
+                  and r["eps_social"] == es][0]
+            d8 = [r for r in rows if r["arm"] == "d8" and r["eps_ai"] == ea
+                  and r["eps_social"] == es][0]
+            inc = b0["status"] != "complete" or d8["status"] != "complete"
+            g = None if inc else b0[f"{T_A}_mean"] - d8[f"{T_A}_mean"]
+            settled = (not inc) and b0["settled"] and d8["settled"]
+            gap.append({"eps_ai": ea, "eps_social": es, "arms": "b0-d8",
+                        "status": "incomplete" if inc else "complete",
+                        "settled": settled,
+                        "outcome": ("equilibrium" if settled else
+                                    "incomplete" if inc else "extend_to_60"),
+                        f"{G}_mean": "NA" if inc else g,
+                        f"{G}_ci_lo": "NA" if inc else g - 0.002,
+                        f"{G}_ci_hi": "NA" if inc else g + 0.002,
+                        f"{G}_excludes_zero": "NA" if inc else abs(g) > 0.002})
+    write_csv(os.path.join(d, PLOT.GAP_CSV), gap)
     with open(os.path.join(d, PLOT.SUMMARY_JSON), "w") as fh:
         json.dump({"primary_column": T_A,
                    "t_a_sign": "EVOLVING MINUS FIXED (synthetic)",
+                   "g_sign": "positive G = SFT exceeds ICL (synthetic)",
                    "gate_info": "ok (synthetic)",
                    "coverage_note": "192/192 cells present (synthetic)"},
                   fh)
@@ -122,6 +145,8 @@ def test_figure_files_exist(plotted):
                  "section4_fig6_candidate.png",
                  "section4_fig6_candidate_2panel.pdf",
                  "section4_fig6_candidate_2panel.png",
+                 "section4_fig6_candidate_gap.pdf",
+                 "section4_fig6_candidate_gap.png",
                  "section4_fig6_candidate_caption.txt"):
         p = os.path.join(out, name)
         assert os.path.exists(p) and os.path.getsize(p) > 0, name
@@ -165,6 +190,14 @@ def test_unsettled_cell_is_ringed_and_named_in_the_caption(plotted):
     assert "SERVED-VALUE QUANTIZATION" in text
     assert "no title text" in text
     assert "Gate verdict: ok (synthetic)" in text
+    # the gap block: G at eps_AI = 0 is the anchor, the unsettled gap
+    # point is ringed and named, the incomplete one is not drawn
+    assert "PAIRED METHOD GAP" in text
+    assert "G is IDENTICALLY 0" in text
+    assert "RINGED = UNSETTLED gap points (1): eps_AI=1 eps_social=.3 " \
+        "[extend_to_60]" in text
+    assert "Gap points NOT DRAWN (1): eps_AI=.3 eps_social=1 [incomplete]" \
+        in text
 
 
 def test_categorical_labels_and_ramp():
@@ -251,3 +284,28 @@ def test_end_to_end_from_the_real_analyzer_output(tmp_path, capsys):
     for name in ("section4_fig6_candidate.pdf",
                  "section4_fig6_candidate_2panel.png"):
         assert os.path.getsize(os.path.join(out, name)) > 0
+
+
+def test_gap_reader_and_zero_anchor(synth):
+    adir, _ = synth
+    gap = PLOT.read_gap_rows(adir)
+    assert len(gap) == 16
+    drawable, absent = PLOT.classify(gap)
+    assert len(drawable) == 15 and len(absent) == 1
+    for r in drawable:
+        if r["eps_ai"] == 0.0:
+            assert r["mean"] == 0.0 and r["settled"]
+    assert [(r["eps_ai"], r["eps_social"]) for r in drawable
+            if not r["settled"]] == [UNSETTLED[1:]]
+
+
+def test_missing_gap_csv_is_a_clean_failure(synth, tmp_path):
+    adir, _ = synth
+    import shutil
+    d2 = os.path.join(str(tmp_path), "nogap")
+    shutil.copytree(adir, d2)
+    os.remove(os.path.join(d2, PLOT.GAP_CSV))
+    with pytest.raises(SystemExit) as e:
+        PLOT.main(["--analysis-dir", d2, "--out-dir",
+                   os.path.join(str(tmp_path), "o")])
+    assert e.value.code == 1

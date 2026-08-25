@@ -106,13 +106,13 @@ def _scale(arm, cond, ea, es, seed):
 
 def build_cell(root, arm, cond, ea, es, seed, off=None, scale=None,
                rounds=T, tag=None, gpu=GPU, cfg_mut=None, post=None,
-               innate=None, drift=0.0):
+               innate=None, drift=0.0, cycle_amp=0.0):
     """Write ONE synthetic trajectory.pt with the real artifact schema.
 
     op_raw[t] is treated as the END-OF-ROUND POST-PEER state, exactly as
     the analyzer documents.  Cohort B is an affine image of innate, so
     every late-window statistic is known in closed form:
-        mean_B(t) = MU0_B + off + drift*(t - 25)
+        mean_B(t) = MU0_B + off + drift*(t - 25) + cycle_amp*(-1)**t
         SD_B(t)   = scale * SD0_B
     Cohort A is pinned bit-exactly at innate in the FIXED condition and
     displaced in the EVOLVING one.
@@ -128,7 +128,7 @@ def build_cell(root, arm, cond, ea, es, seed, off=None, scale=None,
     op, twin, pred, rows = [], [], [], []
     for t in range(rounds):
         x = innate.clone()
-        shift = off + drift * (t - AN.LATE_IDX[0])
+        shift = off + drift * (t - AN.LATE_IDX[0]) + cycle_amp * (-1) ** t
         x[b] = mu0 + scale * (innate[b] - mu0) + shift
         if cond == "evolving":
             x[mask] = innate[mask] + 0.03
@@ -970,12 +970,17 @@ def _served_values(arm, ea):
 # above fixed at seeds 0/42/43, so T_a = +gap by construction
 GAP_SERIES = ("b0", 0.3, 0.1)
 GAP = {0: 0.030, 42: 0.031, 43: 0.032}
+# ... and d8 at the same (ea, es) gets a smaller known gap, so the paired
+# method gap G = T_a(b0) - T_a(d8) is +0.020/+0.021/+0.022 by construction
+ICL_GAP = {0: 0.010, 42: 0.010, 43: 0.010}
+G_KNOWN = {s: GAP[s] - ICL_GAP[s] for s in GAP}
 # the drifting pair (fixed member drifts 0.01/round in the late window)
 DRIFT_PAIR = ("b0", 1.0, 0.3, 42)
 
 
 def build_fig6_cell(root, arm, cond, ea, es, seed, kind, rounds=T,
-                    tag_rounds=None, drift=0.0, off=None, scale=None):
+                    tag_rounds=None, drift=0.0, off=None, scale=None,
+                    cycle_amp=0.0):
     """One fig6 run: a build_cell whose twin_raw is the (cond, es, seed)
     twin (identical across arms and eps_AI), whose pred_raw carries the
     cell's served map, and -- for a witness -- whose op_raw IS twin_raw."""
@@ -1005,7 +1010,8 @@ def build_fig6_cell(root, arm, cond, ea, es, seed, kind, rounds=T,
 
     tag = AN.cell_tag(arm, cond, ea, es, seed, rounds=tag_rounds)
     return build_cell(root, arm, cond, ea, es, seed, rounds=rounds, tag=tag,
-                      post=post, drift=drift, off=off, scale=scale)
+                      post=post, drift=drift, off=off, scale=scale,
+                      cycle_amp=cycle_amp)
 
 
 def build_fig6_grid(root):
@@ -1013,9 +1019,10 @@ def build_fig6_grid(root):
         if kind == "twin":
             continue
         kw = {}
-        if (arm, ea, es) == GAP_SERIES:
+        if (ea, es) == GAP_SERIES[1:]:
+            gap = GAP if arm == "b0" else ICL_GAP
             kw["scale"] = 1.0
-            kw["off"] = 0.10 if cond == "fixed" else 0.10 + GAP[seed]
+            kw["off"] = 0.10 if cond == "fixed" else 0.10 + gap[seed]
         if (arm, ea, es, seed) == DRIFT_PAIR and cond == "fixed":
             kw["drift"] = 0.01
         build_fig6_cell(root, arm, cond, ea, es, seed, kind, **kw)
@@ -1077,7 +1084,11 @@ def test_fig6_grid_is_read_from_the_generator():
                                                "gen_pofd_sweep.py"))
     assert FIG6.cells == gen.s4g2_cells()
     assert FIG6.n_cells == 192
-    assert FIG6.n_kind == {"gpu": 144, "witness": 2, "twin": 46}
+    assert FIG6.n_kind == {"gpu": 144, "witness": 4, "twin": 44}
+    assert gen.S4G2_EA0_WITNESS == [("b0", "fixed", 0.3, 0),
+                                    ("b0", "evolving", 0.3, 0),
+                                    ("d8", "fixed", 0.3, 0),
+                                    ("d8", "evolving", 0.3, 0)]
     assert FIG6.gates == gen.S4G2_GATES == [0.0, 0.1, 0.3, 1.0]
     assert FIG6.ess == gen.S4G2_ESS == [0.0, 0.1, 0.3, 1.0]
     assert FIG6.seeds == gen.S4G2_SEEDS == AN.SEEDS
@@ -1154,8 +1165,8 @@ def test_fig6_full_grid_runs_and_writes_everything(fig6_run):
     assert summary["mode"] == "fig6"
     assert summary["key"] == "section4_gate_anch2_fig6"
     assert summary["n_cells_expected"] == 192 == summary["n_cells_located"]
-    assert summary["n_cells_from_run"] == 146
-    assert summary["n_cells_twin_derived"] == 46
+    assert summary["n_cells_from_run"] == 148
+    assert summary["n_cells_twin_derived"] == 44
     assert summary["missing_tags"] == [] and summary["partial"] is False
     assert summary["null_probe_failures"] == 0
     assert summary["n_series"] == 32
@@ -1168,7 +1179,7 @@ def test_fig6_full_grid_runs_and_writes_everything(fig6_run):
     assert summary["gate_ok"] is True
     cov = read_csv(os.path.join(out, "section4_fig6_coverage.csv"))
     assert len(cov) == 192 and all(r["present"] == "True" for r in cov)
-    assert sum(1 for r in cov if r["analysed_from"] == "twin_raw") == 46
+    assert sum(1 for r in cov if r["analysed_from"] == "twin_raw") == 44
     cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
     assert len(cells) == 192
     assert {r["kind"] for r in cells} == {"gpu", "witness", "twin"}
@@ -1230,7 +1241,7 @@ def test_fig6_paired_ci_is_the_df2_t_interval_over_per_seed_differences(
             AN.excludes(m - half, m + half, 0.0))
         # and the closed form of the fixture for the gpu cells
         arm, ea, es = r["arm"], float(r["eps_ai"]), float(r["eps_social"])
-        if ea > 0 and (arm, ea, es) != GAP_SERIES \
+        if ea > 0 and (ea, es) != GAP_SERIES[1:] \
                 and (arm, ea, es) != DRIFT_PAIR[:3]:
             want = [_off(arm, "evolving", ea, es, s)
                     - _off(arm, "fixed", ea, es, s) for s in AN.SEEDS]
@@ -1249,7 +1260,7 @@ def test_fig6_ea0_cells_are_twin_derived_and_the_method_collapses(fig6_run):
     assert len(ea0) == 48
     twins = [r for r in ea0 if r["kind"] == "twin"]
     wits = [r for r in ea0 if r["kind"] == "witness"]
-    assert len(twins) == 46 and len(wits) == 2
+    assert len(twins) == 44 and len(wits) == 4
     for r in twins:
         assert r["analysed_from"] == "twin_raw"
         assert r["derived_from"].startswith("pofds4g_")
@@ -1259,10 +1270,20 @@ def test_fig6_ea0_cells_are_twin_derived_and_the_method_collapses(fig6_run):
         want = MU0_B + _twin_off(r["cond"], float(r["eps_social"]),
                                  int(r["seed"]))
         assert float(r["mu_b_eq"]) == pytest.approx(want, abs=1e-6)
+    assert sorted((r["arm"], r["cond"]) for r in wits) == [
+        ("b0", "evolving"), ("b0", "fixed"), ("d8", "evolving"),
+        ("d8", "fixed")]
     for r in wits:
-        assert r["analysed_from"] == "op_raw" and r["cond"] == "evolving"
+        assert r["analysed_from"] == "op_raw"
         assert float(r["eps_social"]) == 0.3 and r["seed"] == "0"
         assert r["served_distinct"] != "n/a (gate closed)"
+        # a FIXED witness went through the clamp checks and equals the
+        # fixed twin (cohort A pinned in both)
+        assert float(r["mu_b_eq"]) == pytest.approx(
+            MU0_B + _twin_off(r["cond"], 0.3, 0), abs=1e-6)
+        assert float(r["mu_a_eq"]) == pytest.approx(
+            float(INNATE[MASK_A].mean()) + (0.0 if r["cond"] == "fixed"
+                                            else 0.01), abs=1e-6)
     # method collapse: b0 and d8 identical at every (cond, es, seed)
     by = {}
     for r in ea0:
@@ -1283,9 +1304,11 @@ def test_fig6_ea0_cells_are_twin_derived_and_the_method_collapses(fig6_run):
             want = _twin_off("evolving", es, s) - _twin_off("fixed", es, s)
             assert float(b0[f"t_a_evolving_minus_fixed_s{s}"]) == \
                 pytest.approx(want, abs=1e-6)
-        assert b0["kind_fixed"] == "twin|twin|twin"
         if es == 0.3:
-            assert b0["kind_evolving"].startswith("witness|")
+            assert b0["kind_fixed"] == "witness|twin|twin"
+            assert b0["kind_evolving"] == "witness|twin|twin"
+        else:
+            assert b0["kind_fixed"] == "twin|twin|twin"
     # the twin sha is one value per (cond, es, seed)
     _, _, summary = fig6_run
     assert all(len(v) == 1 for v in
@@ -1340,6 +1363,8 @@ def test_fig6_printed_report_puts_cardinality_next_to_t_a(fig6_root,
     assert "SERVED MAP QUANTIZED" in printed
     assert "UNSETTLED" in printed
     assert "extend_to_60" in printed
+    assert "paired method gap G = T_a(SFT) - T_a(ICL)" in printed
+    assert "positive G = SFT's source effect exceeds ICL's" in printed
     assert printed.count("CAPTION --") == 2
     assert "twin-derived" in printed.lower() or "twin" in printed
     # the caption names the unsettled series and the sign convention
@@ -1386,12 +1411,17 @@ def test_fig6_unsettled_pair_is_never_an_equilibrium_and_is_requested(
     for c in req["cells"]:
         assert (c["arm"], c["eps_ai"], c["eps_social"], c["seed"],
                 c["rounds"]) == (arm, ea, es, seed, 60)
-        assert "fixed" in c["reason"] and "extend_to_60" in c["reason"]
+        assert "fixed FAILED (a)(b)(c)" in c["reason"]
+        assert "evolving passed (a)(b)(c)" in c["reason"]
+        assert "extend_to_60" in c["reason"]
         assert f"tol {AN.DEFAULT_DRIFT_TOL:g}" in c["reason"]
+        assert not c["reason"].startswith("cyclic")
         assert set(c) >= {"arm", "cond", "eps_ai", "eps_social", "seed",
                           "rounds", "reason"}
     assert req["twin_derived_unsettled"] == []
+    assert req["not_extendable"] == []
     assert summary["extension_request"]["n_cells"] == 2
+    assert summary["n_pairs_cyclic"] == 0
     # ... and the GENERATOR accepts it as a matched pair
     monkeypatch.setattr(AN.GEN, "S4G2_EXT_REQUEST_PATH", os.path.join(
         out, "section4_fig6_extension_request.json"))
@@ -1628,3 +1658,237 @@ def test_fig6_csv_feeds_the_plot_script(fig6_run):
                if r["eps_ai"] == 0.0) is False   # witness rows carry one
     assert PLOT.read_summary(out)["primary_column"] == \
         "t_a_evolving_minus_fixed"
+    gap = PLOT.read_gap_rows(out)
+    assert len(gap) == 16
+    gd, ga = PLOT.classify(gap)
+    assert len(gd) == 16 and ga == []
+    assert [(r["eps_ai"], r["eps_social"]) for r in gd
+            if not r["settled"]] == [DRIFT_PAIR[1:3]]
+
+
+# ================================================= paired method gap G
+def test_fig6_method_gap_sign_is_sft_minus_icl(fig6_run):
+    """SFT and ICL built with a KNOWN T_a difference at one (ea, es):
+    g_sft_minus_icl must be +diff, per seed and in the mean."""
+    _, out, summary = fig6_run
+    p = os.path.join(out, "section4_fig6_method_gap.csv")
+    assert os.path.exists(p)
+    rows = read_csv(p)
+    assert len(rows) == 16
+    ea, es = GAP_SERIES[1:]
+    r = [x for x in rows if float(x["eps_ai"]) == ea
+         and float(x["eps_social"]) == es][0]
+    assert r["status"] == "complete" and r["settled"] == "True"
+    for s, g in G_KNOWN.items():
+        assert float(r[f"g_sft_minus_icl_s{s}"]) == pytest.approx(g, abs=1e-6)
+    m, sd, lo, hi = AN.tci3([G_KNOWN[s] for s in AN.SEEDS])
+    assert m > 0
+    assert float(r["g_sft_minus_icl_mean"]) == pytest.approx(m, abs=1e-6)
+    assert float(r["g_sft_minus_icl_ci_lo"]) == pytest.approx(lo, abs=1e-6)
+    assert float(r["g_sft_minus_icl_ci_hi"]) == pytest.approx(hi, abs=1e-6)
+    assert r["g_sft_minus_icl_excludes_zero"] == "True"
+    assert float(r["t_a_sft_mean"]) - float(r["t_a_icl_mean"]) == \
+        pytest.approx(m, abs=1e-6)
+    assert "positive" in r["sign"] and "SFT" in r["sign"]
+    # the JSON block and the sign statement
+    js = [x for x in summary["method_gap"]
+          if x["eps_ai"] == ea and x["eps_social"] == es][0]
+    assert js["g_sft_minus_icl_mean"] == pytest.approx(m, abs=1e-6)
+    assert "positive G = SFT's source effect exceeds ICL's" in summary["g_sign"]
+    assert "positive G = SFT's source effect exceeds ICL's" in AN.__doc__
+
+
+def test_fig6_method_gap_paired_ci_and_drift(fig6_run):
+    _, out, _ = fig6_run
+    rows = read_csv(os.path.join(out, "section4_fig6_method_gap.csv"))
+    src_rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    for r in rows:
+        assert r["status"] == "complete"
+        ea, es = float(r["eps_ai"]), float(r["eps_social"])
+        b0, d8 = _row(src_rows, "b0", ea, es), _row(src_rows, "d8", ea, es)
+        per_seed = [float(r[f"g_sft_minus_icl_s{s}"]) for s in AN.SEEDS]
+        want = [float(b0[f"t_a_evolving_minus_fixed_s{s}"])
+                - float(d8[f"t_a_evolving_minus_fixed_s{s}"])
+                for s in AN.SEEDS]
+        assert per_seed == pytest.approx(want, abs=1e-12)
+        m, sd, lo, hi = AN.tci3(per_seed)
+        half = AN.T_CRIT_DF2 * sd / math.sqrt(3)
+        assert float(r["g_sft_minus_icl_mean"]) == pytest.approx(m, abs=1e-9)
+        assert float(r["g_sft_minus_icl_sd"]) == pytest.approx(sd, abs=1e-9)
+        assert float(r["g_sft_minus_icl_ci_lo"]) == pytest.approx(m - half,
+                                                                  abs=1e-9)
+        assert float(r["g_sft_minus_icl_ci_hi"]) == pytest.approx(m + half,
+                                                                  abs=1e-9)
+        assert r["g_sft_minus_icl_excludes_zero"] == str(
+            AN.excludes(m - half, m + half, 0.0))
+        assert "g_sft_minus_icl_ci_excludes_zero" not in r
+        assert "g_sft_minus_icl_drift_mean" in r
+        # settled iff both arms' pairs are settled
+        want_settled = b0["settled"] == "True" and d8["settled"] == "True"
+        assert r["settled"] == str(want_settled)
+    unsettled = [r for r in rows if r["settled"] == "False"]
+    assert [(float(r["eps_ai"]), float(r["eps_social"])) for r in unsettled] \
+        == [DRIFT_PAIR[1:3]]
+    assert unsettled[0]["outcome"] == "extend_to_60"
+    # the drifting SFT pair makes G's own drift visible at that (ea, es)
+    assert abs(float(unsettled[0]["g_sft_minus_icl_drift_mean"])) > 0.002
+    assert unsettled[0]["g_sft_minus_icl_drift_flag"] == "True"
+
+
+def test_fig6_method_gap_is_identically_zero_at_eps_ai_zero(fig6_run):
+    _, out, _ = fig6_run
+    rows = read_csv(os.path.join(out, "section4_fig6_method_gap.csv"))
+    z = [r for r in rows if float(r["eps_ai"]) == 0.0]
+    assert len(z) == 4
+    for r in z:
+        for s in AN.SEEDS:
+            assert float(r[f"g_sft_minus_icl_s{s}"]) == 0.0
+        assert float(r["g_sft_minus_icl_mean"]) == 0.0
+        assert float(r["g_sft_minus_icl_sd"]) == 0.0
+        assert float(r["g_sft_minus_icl_ci_lo"]) == 0.0
+        assert float(r["g_sft_minus_icl_ci_hi"]) == 0.0
+        assert r["g_sft_minus_icl_excludes_zero"] == "False"
+        assert r["settled"] == "True" and r["outcome"] == "equilibrium"
+
+
+# =========================================== stronger convergence a/b/c
+def test_settle_verdict_needs_all_three_tests():
+    tol = 0.002
+    ok = {"mu_b_drift": 0.001, "late10_drift": 0.001, "late5_range": 0.003,
+          "cycle_alternation": 0.0}
+    v = AN.settle_verdict(ok, tol)
+    assert v["settled"] and v["settled_a"] and v["settled_b"] \
+        and v["settled_c"] and not v["cyclic"]
+    assert v["range_tol"] == 0.004
+    for k, bad in (("mu_b_drift", 0.0025), ("late10_drift", 0.0025),
+                   ("late5_range", 0.0045)):
+        d = dict(ok)
+        d[k] = bad
+        v = AN.settle_verdict(d, tol)
+        assert v["settled"] is False
+        assert v["settled_" + {"mu_b_drift": "a", "late10_drift": "b",
+                               "late5_range": "c"}[k]] is False
+        assert not v["cyclic"]
+    cyc = dict(ok)
+    cyc["late5_range"] = 0.009
+    cyc["cycle_alternation"] = 0.78
+    assert AN.settle_verdict(cyc, tol)["cyclic"] is True
+    cyc["cycle_alternation"] = 0.6
+    assert AN.settle_verdict(cyc, tol)["cyclic"] is False
+    # a SETTLED cell is never cyclic, whatever it alternation
+    ok2 = dict(ok)
+    ok2["cycle_alternation"] = 1.0
+    assert AN.settle_verdict(ok2, tol)["cyclic"] is False
+    missing = dict(ok)
+    missing["late10_drift"] = None
+    assert AN.settle_verdict(missing, tol)["settled_b"] is False
+
+
+def test_reduce_cell_reports_late10_drift_range_and_alternation(tmp_path):
+    rd = build_cell(tmp_path, "b0", "evolving", 1.0, 0.2, 0, off=0.0,
+                    scale=1.0, cycle_amp=0.0045)
+    _, late = AN.reduce_cell(AN.load(rd), MASK_A)
+    A = 0.0045
+    assert late["late10_rounds_1based"] == "21-25 vs 26-30"
+    # rounds 25..29: -A,+A,-A,+A,-A -> h1 = 0, h2 = -A/3
+    assert late["mu_b_drift"] == pytest.approx(-A / 3, abs=1e-6)
+    # rounds 20..24: +A,-A,+A,-A,+A -> +A/5 ; final five -> -A/5
+    assert late["late10_drift"] == pytest.approx(-2 * A / 5, abs=1e-6)
+    assert late["late5_range"] == pytest.approx(2 * A, abs=1e-6)
+    assert late["cycle_alternation"] == 1.0
+    rd = build_cell(tmp_path, "b0", "evolving", 1.0, 0.2, 42, off=0.0,
+                    scale=1.0, drift=0.0006)
+    _, late = AN.reduce_cell(AN.load(rd), MASK_A)
+    assert late["mu_b_drift"] == pytest.approx(0.0015, abs=1e-6)
+    assert late["late10_drift"] == pytest.approx(0.003, abs=1e-6)
+    assert late["late5_range"] == pytest.approx(0.0024, abs=1e-6)
+    assert late["cycle_alternation"] == 0.0
+
+
+def test_fig6_a_period_two_cycle_is_cyclic_not_an_equilibrium(
+        fig6_root, fig6_gate, tmp_path, capsys):
+    """Amplitude 0.0045: the final-5 half-split drift is A/3 = 0.0015 and
+    the final-10 drift 2A/5 = 0.0018, BOTH inside tol -- the old rule
+    would have called this settled.  The range 2A = 0.009 > 2*tol fails
+    (c), the sign alternation is 100%, so the pair is CYCLIC and in the
+    manifest with a 'cyclic:' reason."""
+    root = copy_grid(fig6_root, tmp_path)
+    arm, cond, ea, es, seed = "d8", "fixed", 0.1, 1.0, 43
+    build_fig6_cell(root, arm, cond, ea, es, seed, "gpu", cycle_amp=0.0045)
+    out = os.path.join(str(tmp_path), "out")
+    assert _fig6_main(root, out, fig6_gate) == 2
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    c = [x for x in cells if x["arm"] == arm and x["cond"] == cond
+         and float(x["eps_ai"]) == ea and float(x["eps_social"]) == es
+         and x["seed"] == str(seed)][0]
+    assert c["settled_a"] == "True" and c["settled_b"] == "True"
+    assert c["settled_c"] == "False" and c["settled"] == "False"
+    assert c["cyclic"] == "True"
+    assert float(c["cycle_alternation"]) == 1.0
+    assert float(c["late5_range"]) == pytest.approx(0.009, abs=1e-6)
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    r = _row(rows, arm, ea, es)
+    assert r["outcome"] == "cyclic" and r["settled"] == "False"
+    assert r[f"pair_outcome_s{seed}"] == "cyclic"
+    assert r[f"cyclic_fixed_s{seed}"] == "True"
+    assert r[f"settled_flags_fixed_s{seed}"] == "a:T b:T c:F"
+    assert r[f"settled_flags_evolving_s{seed}"] == "a:T b:T c:T"
+    req = json.load(open(os.path.join(
+        out, "section4_fig6_extension_request.json")))
+    cyc = [x for x in req["cells"] if x["arm"] == arm
+           and x["eps_social"] == es and x["seed"] == seed]
+    assert len(cyc) == 2 and {x["cond"] for x in cyc} == {"fixed", "evolving"}
+    for x in cyc:
+        assert x["rounds"] == 60
+        assert x["reason"].startswith("cyclic: ")
+        assert "fixed FAILED (c)" in x["reason"]
+        assert "CYCLIC" in x["reason"]
+        assert "evolving passed (a)(b)(c)" in x["reason"]
+    assert req["n_cells"] == 4                 # the drifting pair + this one
+    summary = json.load(open(os.path.join(out,
+                                          "section4_fig6_summary.json")))
+    assert summary["n_pairs_cyclic"] == 1 and summary["n_pairs_unsettled"] == 2
+    printed = capsys.readouterr().out
+    assert "1 cyclic" in printed
+    gap = read_csv(os.path.join(out, "section4_fig6_method_gap.csv"))
+    g = [x for x in gap if float(x["eps_ai"]) == ea
+         and float(x["eps_social"]) == es][0]
+    assert g["settled"] == "False" and g["outcome"] == "cyclic"
+
+
+def test_fig6_final10_drift_catches_a_slow_trend_the_final5_misses(
+        fig6_root, fig6_gate, tmp_path):
+    """0.0006 / round: final-5 half-split 0.0015 (passes a), range 0.0024
+    (passes c), but the final-10 half-split is 0.003 > tol -> (b) fails,
+    outcome extend_to_60, not cyclic."""
+    root = copy_grid(fig6_root, tmp_path)
+    arm, cond, ea, es, seed = "b0", "evolving", 0.3, 1.0, 0
+    build_fig6_cell(root, arm, cond, ea, es, seed, "gpu", drift=0.0006)
+    out = os.path.join(str(tmp_path), "out")
+    assert _fig6_main(root, out, fig6_gate) == 2
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    c = [x for x in cells if x["arm"] == arm and x["cond"] == cond
+         and float(x["eps_ai"]) == ea and float(x["eps_social"]) == es
+         and x["seed"] == str(seed)][0]
+    assert c["settled_a"] == "True" and c["settled_c"] == "True"
+    assert c["settled_b"] == "False" and c["settled"] == "False"
+    assert c["cyclic"] == "False"
+    assert float(c["late10_drift"]) == pytest.approx(0.003, abs=1e-6)
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    r = _row(rows, arm, ea, es)
+    assert r["outcome"] == "extend_to_60"
+    assert r[f"settled_flags_evolving_s{seed}"] == "a:T b:F c:T"
+    req = json.load(open(os.path.join(
+        out, "section4_fig6_extension_request.json")))
+    mine = [x for x in req["cells"] if x["arm"] == arm and x["eps_ai"] == ea
+            and x["eps_social"] == es and x["seed"] == seed]
+    assert len(mine) == 2
+    assert "evolving FAILED (b)" in mine[0]["reason"]
+    assert "fixed passed (a)(b)(c)" in mine[0]["reason"]
+    assert not mine[0]["reason"].startswith("cyclic")
+
+
+def test_gate_is_written_as_strict():
+    src = open(ANALYZER).read()
+    assert "|m - x'| <= eps_AI" not in src
+    assert "|m - x'| < eps_AI" in src

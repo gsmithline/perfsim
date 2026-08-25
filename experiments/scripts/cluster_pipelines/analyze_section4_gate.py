@@ -17,7 +17,8 @@ adds.  The paragraphs that follow describe the original wave.
 WHAT THIS WAVE IS. The published Section-4 experiment -- Mistral-7B,
 movielens Action, 723 agents, bottom-20% FIXED source cohort vs a fully
 EVOLVING population -- re-run under the CORRECTED AI gate: the acceptance
-test is |m - x'| <= eps_AI on the ANCHORED opinion x' = k*innate + (1-k)*x,
+test is |m - x'| < eps_AI (STRICT) on the ANCHORED opinion x' = k*innate +
+(1-k)*x,
 i.e. config ``population_update == "nested_ai_anchored_then_social_v2"``
 (the tag token ``anch2``).  Everything else is held at the Section-4
 surface: W_PLAT = 0.5, INNATE_LAMBDA (k) = 0.2, homophily gamma = 0,
@@ -200,7 +201,9 @@ FIGURE-6 MODE  (--wave section4_gate_anch2_fig6, alias fig6)
 GRID -- 192 cells from gen_pofd_sweep.s4g2_cells():
   arms {b0, d8} x conds {fixed, evolving} x eps_ai {0, .1, .3, 1}
   x eps_social {0, .1, .3, 1} x seeds {0, 42, 43}, each cell tagged
-  kind in {gpu, witness, twin}: 144 gpu + 2 witness + 46 twin-derived.
+  kind in {gpu, witness, twin}: 144 gpu + 4 witness + 44 twin-derived
+  (the counts are the generator's S4G2_N_GPU / _N_WITNESS / _N_TWIN and
+  are asserted at import, never typed here).
   Tags come from gen_pofd_sweep.s4g_tag(arm, cond, gate, es, seed,
   prefix='pofds4g', rounds=None); rounds=60/100 appends _r60/_r100 (the
   horizon-extension artifacts).  For every cell with a run the LONGEST
@@ -217,9 +220,11 @@ twin_raw.  Hence
     HARD FAIL otherwise), and the same cohort-B late-window statistics
     are computed on it.  b0 and d8 at eps_AI = 0 therefore share ONE
     value (method collapse) -- by construction, and asserted.
-  * 'witness' cells (b0 and d8, evolving, es = .3, seed 0, actually run
-    at eps_AI = 0) are analysed from op_raw normally and HARD FAIL unless
-    op_raw is bit-identical to twin_raw (torch.equal).
+  * 'witness' cells (generator S4G2_EA0_WITNESS: b0 and d8, FIXED and
+    EVOLVING, es = .3, seed 0, actually run at eps_AI = 0) are analysed
+    from op_raw normally -- a fixed witness through the full clamp checks
+    (stored mask == bottom cohort, cohort A pinned every round) -- and
+    HARD FAIL unless op_raw is bit-identical to twin_raw (torch.equal).
   * a run that exists for a 'twin' cell is treated as a witness (same
     identity check) and noted.
 
@@ -238,18 +243,42 @@ the analysed artifact: op_raw indices n-5..n-1, i.e. LATE = range(25, 30)
 late_window(30) == list(LATE) == [25, 26, 27, 28, 29]), 56-60 for _r60,
 96-100 for _r100.
 
-SETTLED / UNSETTLED.  Per CELL the late window is half-split (2 vs 3,
-LATE_H1 / LATE_H2) and drift = mean_B(second half) - mean_B(first half);
-a cell is settled when |drift| <= --drift-tol.  A PAIR is unsettled when
-EITHER member fails.  An unsettled pair is NEVER called an equilibrium:
-its outcome is 'extend_to_60' (base horizon analysed) or 'extend_to_100'
-(a _r60 artifact analysed), and ``section4_fig6_extension_request.json``
-is written into --out-dir with BOTH members of every unsettled pair as
-{arm, cond, eps_ai, eps_social, seed, rounds, reason} (the generator's
-s4g2_ext_requests() requires matched pairs).  An unsettled pair whose
-member is twin-derived has no GPU run to extend; it is listed under
-``twin_derived_unsettled`` (outside "cells", so the generator ignores it)
-and reported.  A pair still unsettled at 100 rounds is 'unsettled_at_100'.
+SETTLED / UNSETTLED -- three tests per CELL, ALL must hold (tol =
+--drift-tol, default 0.002 opinion units):
+  (a) final-5 half-split (2 vs 3, LATE_H1 / LATE_H2):
+      |mean_B(second half) - mean_B(first half)| <= tol   (``mu_b_drift``)
+  (b) final-10 half-split: |mean_B(final five) - mean_B(the five rounds
+      before them)| <= tol, i.e. rounds 26-30 vs 21-25 of a 30-round run
+      (``late10_drift``) -- a slow trend the final five cannot see;
+  (c) the RANGE (max - min) of the five late-window round means of
+      cohort B <= 2*tol (``late5_range``) -- a short cycle can average
+      out of (a) and (b) but cannot hide its amplitude.
+``settled_a/b/c`` are written per cell and ``settled`` = a and b and c.
+CYCLIC: an unsettled cell whose last 10 consecutive round-mean
+differences alternate in sign on >= 70% of the 9 steps between them
+(``cycle_alternation``) is classified ``cyclic`` -- a long-run / cyclic
+outcome, NEVER an equilibrium.  A PAIR is unsettled when EITHER member
+is; its outcome is 'cyclic' if either member cycles, else 'extend_to_60'
+(base horizon analysed) / 'extend_to_100' (a _r60 analysed).
+``section4_fig6_extension_request.json`` is written into --out-dir with
+BOTH members of every unsettled pair as {arm, cond, eps_ai, eps_social,
+seed, rounds, reason}; the reason names which of (a)/(b)/(c) each member
+failed and starts with "cyclic:" for a cyclic pair (the generator's
+s4g2_ext_requests() requires matched pairs).  A pair whose member is
+twin-derived has no GPU run to extend: it is listed under
+``twin_derived_unsettled`` (outside "cells"); a pair still unsettled at
+100 rounds is 'unsettled_at_100' and listed under ``not_extendable``.
+
+PAIRED METHOD GAP.  For every (eps_AI, eps_social),
+  G = T_SFT - T_ICL = t_a(b0, seed) - t_a(d8, seed)   PER SEED (paired on
+seed, from the same paired per-seed T_a), then the three-seed mean and
+the df=2 paired t-interval; columns ``g_sft_minus_icl_s{seed}``,
+``_mean``, ``_sd``, ``_ci_lo``, ``_ci_hi``, ``_excludes_zero`` and its own
+half-window drift, in ``section4_fig6_method_gap.csv``, the JSON block
+``method_gap`` and a printed table.
+SIGN: positive G = SFT's source effect exceeds ICL's.
+At eps_AI = 0 both methods are twin-derived, so G is IDENTICALLY 0
+(asserted) -- the structural anchor of the G plot.
 
 SERVED-VALUE CARDINALITY.  For every cell with a run, over the late
 window: ``served_distinct`` = number of distinct values in pred_raw
@@ -276,7 +305,8 @@ FIG6 EXIT CODES
 
 FIG6 OUTPUTS (--out-dir, stem section4_fig6_)
   section4_fig6_per_round.csv / _cells.csv / _source_effect.csv /
-  _dispersion.csv / _null_probe.csv / _coverage.csv / _captions.txt
+  _method_gap.csv / _dispersion.csv / _null_probe.csv / _coverage.csv /
+  _captions.txt
   section4_fig6_summary.json          always written
   section4_fig6_extension_request.json always written (cells may be [])
   section4_fig6_source_effect.pdf/.png, _dispersion.pdf/.png  NO TITLES
@@ -482,6 +512,9 @@ AI_GATE_MODE = "threshold"
 NULL_TOL = 1e-9
 NULL_TOL_XHW = 5e-3
 DEFAULT_DRIFT_TOL = 0.002    # analyze_section3.py tolerance, opinion units
+RANGE_TOL_MULT = 2           # (c): late-window range of round means <= 2*tol
+CYCLE_WINDOW = 10            # last 10 consecutive round-mean differences ...
+CYCLE_ALTERNATION_MIN = 0.7  # ... alternating in sign on >= 70% of the steps
 
 NA = "NA"
 
@@ -859,10 +892,40 @@ def reduce_cell(d, mask_a, late_idx=None):
         "sd_pop_h2": wmean(h2, "pop_sd"),
         "innate_sha256": innate_sha(innate),
     }
-    # per-CELL late-window drift (second half minus first half of the
-    # cohort-B mean); the settled verdict against --drift-tol is applied
-    # by the caller, which knows the tolerance
+    # per-CELL convergence statistics; the settled verdict against
+    # --drift-tol is applied by the caller (settle_verdict), which knows
+    # the tolerance
+    #   (a) final-5 half-split drift, second half minus first half
     late["mu_b_drift"] = late["mu_b_h2"] - late["mu_b_h1"]
+    b_means = [r["b_mean"] for r in rounds]
+    #   (b) final-10 half-split: the final five minus the five before them
+    n_late = len(late_idx)
+    prev_idx = [t - n_late for t in late_idx]
+    if prev_idx[0] >= 0:
+        late["mu_b_prev5"] = sum(b_means[t] for t in prev_idx) / n_late
+        late["late10_drift"] = late["mu_b_eq"] - late["mu_b_prev5"]
+        late["late10_rounds_1based"] = (
+            f"{prev_idx[0] + 1}-{prev_idx[-1] + 1} vs "
+            f"{late_idx[0] + 1}-{late_idx[-1] + 1}")
+    else:
+        late["mu_b_prev5"] = None
+        late["late10_drift"] = None
+        late["late10_rounds_1based"] = None
+    #   (c) range of the five late-window round means
+    lv = [b_means[t] for t in late_idx]
+    late["late5_range"] = max(lv) - min(lv)
+    #   cycle detector: sign alternation of the last CYCLE_WINDOW
+    #   consecutive round-mean differences (fraction of the steps
+    #   between consecutive differences on which the sign flips)
+    last = late_idx[-1]
+    if last - CYCLE_WINDOW >= 0:
+        diffs = [b_means[t] - b_means[t - 1]
+                 for t in range(last - CYCLE_WINDOW + 1, last + 1)]
+        steps = len(diffs) - 1
+        flips = sum(1 for i in range(steps) if diffs[i] * diffs[i + 1] < 0)
+        late["cycle_alternation"] = flips / steps
+    else:
+        late["cycle_alternation"] = None
     if pred is not None:
         late.update(served_cardinality(pred, late_idx))
     else:
@@ -871,6 +934,28 @@ def reduce_cell(d, mask_a, late_idx=None):
                      "served_top_value": None, "served_n_finite": None,
                      "served_n_nan": None})
     return rounds, late
+
+
+def settle_verdict(late, tol):
+    """The per-cell SETTLED verdict from reduce_cell's statistics:
+      settled_a  |final-5 half-split drift| <= tol
+      settled_b  |final-10 half-split drift| <= tol
+      settled_c  range of the five late round means <= RANGE_TOL_MULT*tol
+      settled    a and b and c
+      cyclic     not settled AND the last-10-difference sign alternation
+                 >= CYCLE_ALTERNATION_MIN  (a long-run / cyclic outcome)
+    """
+    d5, d10 = late.get("mu_b_drift"), late.get("late10_drift")
+    rg, alt = late.get("late5_range"), late.get("cycle_alternation")
+    a = d5 is not None and abs(d5) <= tol
+    b = d10 is not None and abs(d10) <= tol
+    c = rg is not None and rg <= RANGE_TOL_MULT * tol
+    settled = bool(a and b and c)
+    cyclic = bool((not settled) and alt is not None
+                  and alt >= CYCLE_ALTERNATION_MIN)
+    return {"settled_a": bool(a), "settled_b": bool(b), "settled_c": bool(c),
+            "settled": settled, "cyclic": cyclic, "drift_tol": tol,
+            "range_tol": RANGE_TOL_MULT * tol}
 
 
 def structural_checks(d, key, mask_a, ref_sha, tag=None, horizon=None):
@@ -1057,6 +1142,12 @@ T_A_SIGN = ("t_a_evolving_minus_fixed = mu_B^eq(A evolving) - mu_B^eq(A "
             "delta_mu_b = -t_a (fixed minus evolving).")
 
 
+G_COL = "g_sft_minus_icl"
+G_SIGN = ("g_sft_minus_icl = T_a(SFT, b0) - T_a(ICL, d8) PER SEED (paired "
+          "on seed): positive G = SFT's source effect exceeds ICL's; "
+          "identically 0 at eps_AI = 0 (both methods twin-derived).")
+
+
 def source_effect_block(d_b, primary_t_a):
     """The paired source-effect columns from the per-seed differences
     d_b = {seed: mu_b_eq(fixed) - mu_b_eq(evolving)}.
@@ -1093,6 +1184,8 @@ def pair_outcome(f, e, grid):
     settled = bool(f.get("settled")) and bool(e.get("settled"))
     if settled:
         return True, "equilibrium"
+    if f.get("cyclic") or e.get("cyclic"):
+        return False, "cyclic"
     if f.get("analysed_from") == "twin_raw" or \
             e.get("analysed_from") == "twin_raw":
         return False, "unsettled_twin_derived"
@@ -1101,6 +1194,12 @@ def pair_outcome(f, e, grid):
     if nxt:
         return False, f"extend_to_{nxt[0]}"
     return False, f"unsettled_at_{h}"
+
+
+def _flags(c):
+    """'a:T b:F c:T' -- which of the three settled tests a cell passed."""
+    return " ".join(f"{k}:{'T' if c.get('settled_' + k) else 'F'}"
+                    for k in ("a", "b", "c"))
 
 
 def _served_summary(cells_by_seed, key):
@@ -1173,11 +1272,32 @@ def build_source_rows(cells, drift_tol, grid=None):
                                                      else oc[1])
                         row[f"pair_horizon_s{s}"] = (
                             fx[s].get("horizon") if s in fx else None)
-                        row[f"mu_b_drift_fixed_s{s}"] = (
-                            fx[s].get("mu_b_drift") if s in fx else None)
-                        row[f"mu_b_drift_evolving_s{s}"] = (
-                            ev[s].get("mu_b_drift") if s in ev else None)
+                        row[f"pair_twin_derived_s{s}"] = (
+                            (fx[s].get("analysed_from") == "twin_raw"
+                             or ev[s].get("analysed_from") == "twin_raw")
+                            if s in fx else None)
+                        for cond, src in (("fixed", fx), ("evolving", ev)):
+                            c = src.get(s)
+                            row[f"mu_b_drift_{cond}_s{s}"] = (
+                                c.get("mu_b_drift") if c else None)
+                            row[f"late10_drift_{cond}_s{s}"] = (
+                                c.get("late10_drift") if c else None)
+                            row[f"late5_range_{cond}_s{s}"] = (
+                                c.get("late5_range") if c else None)
+                            row[f"settled_flags_{cond}_s{s}"] = (
+                                _flags(c) if c else None)
+                            row[f"cyclic_{cond}_s{s}"] = (
+                                c.get("cyclic") if c else None)
+                            row[f"cycle_alternation_{cond}_s{s}"] = (
+                                c.get("cycle_alternation") if c else None)
+                        # per-seed T_a on the two halves, for the paired
+                        # method gap's own drift
+                        row[f"t_a_h1_s{s}"] = (-d_b_h1[s] if s in d_b_h1
+                                               else None)
+                        row[f"t_a_h2_s{s}"] = (-d_b_h2[s] if s in d_b_h2
+                                               else None)
                     row["drift_tol"] = drift_tol
+                    row["range_tol"] = RANGE_TOL_MULT * drift_tol
                     for cond, src in (("fixed", fx), ("evolving", ev)):
                         vals, nums = _served_summary(src, "served_distinct")
                         row[f"served_distinct_{cond}"] = "|".join(
@@ -1206,60 +1326,146 @@ def build_source_rows(cells, drift_tol, grid=None):
     return rows
 
 
+def build_method_gap_rows(source_rows, drift_tol, grid):
+    """D. PAIRED METHOD GAP per (eps_AI, eps_social):
+    G = t_a(b0, seed) - t_a(d8, seed) PER SEED from the same paired
+    per-seed T_a, then the three-seed mean and the df=2 paired t
+    interval, its own half-window drift, and the settled verdict of the
+    six cells behind it.  Positive G = SFT's source effect exceeds ICL's.
+    At eps_AI = 0 both arms are twin-derived, so G is identically 0."""
+    rows = []
+    for ea in grid.gates:
+        for es in grid.ess:
+            rb, rd = _pick(source_rows, "b0", ea, es), \
+                _pick(source_rows, "d8", ea, es)
+            row = {"eps_ai": ea, "eps_social": es, "arms": "b0-d8",
+                   "sign": "positive = SFT source effect exceeds ICL's"}
+            if rb is None or rd is None:
+                row["status"] = "incomplete"
+                rows.append(row)
+                continue
+            complete = (rb["status"] == "complete"
+                        and rd["status"] == "complete")
+            row["status"] = "complete" if complete else "incomplete"
+            g, h1, h2, settled = {}, {}, {}, {}
+            for s in SEEDS:
+                tb, td = rb.get(f"{T_A_COL}_s{s}"), rd.get(f"{T_A_COL}_s{s}")
+                if tb is None or td is None:
+                    continue
+                g[s] = tb - td
+                if rb.get(f"t_a_h1_s{s}") is not None \
+                        and rd.get(f"t_a_h1_s{s}") is not None:
+                    h1[s] = rb[f"t_a_h1_s{s}"] - rd[f"t_a_h1_s{s}"]
+                    h2[s] = rb[f"t_a_h2_s{s}"] - rd[f"t_a_h2_s{s}"]
+                pb, pd = rb.get(f"pair_settled_s{s}"), \
+                    rd.get(f"pair_settled_s{s}")
+                settled[s] = (bool(pb) and bool(pd)) if (
+                    pb is not None and pd is not None) else None
+            n_set = sum(1 for v in settled.values() if v)
+            row["settled"] = bool(complete and n_set == len(SEEDS))
+            outs = sorted({o for r in (rb, rd)
+                           for o in (r.get("outcome") or "").split("|")
+                           if o and o != "equilibrium"})
+            row["outcome"] = ("equilibrium" if row["settled"]
+                              else "|".join(outs) or "incomplete")
+            row["n_pairs_settled"] = n_set
+            blk = agg_block(G_COL, g, 0.0, "zero")
+            blk[f"{G_COL}_excludes_zero"] = blk.pop(f"{G_COL}_ci_excludes_zero")
+            row.update(blk)
+            row.update(drift_block(G_COL, h1, h2, drift_tol,
+                                   _ci_half(row, G_COL)))
+            for s in SEEDS:
+                row[f"pair_settled_s{s}"] = settled.get(s)
+                row[f"pair_outcome_b0_s{s}"] = rb.get(f"pair_outcome_s{s}")
+                row[f"pair_outcome_d8_s{s}"] = rd.get(f"pair_outcome_s{s}")
+            row["t_a_sft_mean"] = rb.get(f"{T_A_COL}_mean")
+            row["t_a_icl_mean"] = rd.get(f"{T_A_COL}_mean")
+            row["horizon"] = "|".join(sorted({str(rb.get("horizon")),
+                                              str(rd.get("horizon"))}))
+            rows.append(row)
+    return rows
+
+
+def _member_reason(row, cond, s, drift_tol):
+    def _fmt(v, sign=True):
+        if v is None:
+            return "NA"
+        return f"{v:+.5f}" if sign else f"{v:.5f}"
+    flags = row.get(f"settled_flags_{cond}_s{s}") or ""
+    failed = [k for k in ("a", "b", "c") if f"{k}:F" in flags]
+    verdict = ("passed (a)(b)(c)" if not failed
+               else "FAILED " + "".join(f"({k})" for k in failed))
+    txt = (f"{cond} {verdict} [a final-5 half-split drift "
+           f"{_fmt(row.get(f'mu_b_drift_{cond}_s{s}'))}, b final-10 "
+           f"half-split drift {_fmt(row.get(f'late10_drift_{cond}_s{s}'))} "
+           f"(tol {drift_tol:g}), c final-5 range "
+           f"{_fmt(row.get(f'late5_range_{cond}_s{s}'), sign=False)} "
+           f"(tol {RANGE_TOL_MULT * drift_tol:g})]")
+    if row.get(f"cyclic_{cond}_s{s}"):
+        alt = row.get(f"cycle_alternation_{cond}_s{s}")
+        txt += (f" CYCLIC (last-{CYCLE_WINDOW} difference sign alternation "
+                f"{alt:.2f} >= {CYCLE_ALTERNATION_MIN:g})")
+    return txt
+
+
 def build_extension_request(source_rows, grid, drift_tol, run_root):
     """The section4_fig6_extension_request.json payload: BOTH members of
     every unsettled pair (matched, as gen_pofd_sweep.s4g2_ext_requests
     demands), each as {arm, cond, eps_ai, eps_social, seed, rounds,
-    reason}.  Pairs whose member is twin-derived cannot be extended by a
-    GPU job and are listed separately, OUTSIDE "cells"."""
-    req, twin_unsettled = [], []
+    reason}; the reason names which of (a)/(b)/(c) each member failed and
+    starts with "cyclic:" for a cyclic pair.  Pairs whose member is
+    twin-derived cannot be extended by a GPU job and are listed under
+    "twin_derived_unsettled"; pairs already at the last allowed horizon
+    under "not_extendable" -- both OUTSIDE "cells"."""
+    req, twin_unsettled, not_ext = [], [], []
     for row in source_rows:
         arm, ea, es = row["arm"], row["eps_ai"], row["eps_social"]
         for s in SEEDS:
             oc = row.get(f"pair_outcome_s{s}")
             if oc is None or oc == "equilibrium":
                 continue
-            df = row.get(f"mu_b_drift_fixed_s{s}")
-            de = row.get(f"mu_b_drift_evolving_s{s}")
-            h = row.get(f"pair_horizon_s{s}")
-
-            def _fmt(v):
-                return "NA" if v is None else f"{v:+.5f}"
-            failing = [c for c, v in (("fixed", df), ("evolving", de))
-                       if v is None or abs(v) > drift_tol]
-            reason = (f"late-window drift (final five post-peer rounds of "
-                      f"the {h}-round artifact, second half minus first "
-                      f"half, 2 vs 3): fixed {_fmt(df)}, evolving "
-                      f"{_fmt(de)}; |drift| > tol {drift_tol:g} for "
-                      f"{'+'.join(failing)}; pair outcome {oc}")
-            if oc.startswith("extend_to_"):
-                rounds = int(oc.rsplit("_", 1)[1])
+            h = int(row.get(f"pair_horizon_s{s}") or N_ROUNDS)
+            reason = (("cyclic: " if oc == "cyclic" else "")
+                      + "; ".join(_member_reason(row, c, s, drift_tol)
+                                  for c in grid.conds)
+                      + f"; analysed at {h} rounds; pair outcome {oc}")
+            entry = {"arm": arm, "eps_ai": ea, "eps_social": es, "seed": s,
+                     "outcome": oc, "reason": reason}
+            nxt = [r for r in sorted(grid.ext_rounds_ok) if r > h]
+            if row.get(f"pair_twin_derived_s{s}"):
+                twin_unsettled.append(entry)
+            elif not nxt:
+                not_ext.append(entry)
+            else:
                 for cond in grid.conds:
                     req.append({"arm": arm, "cond": cond, "eps_ai": ea,
                                 "eps_social": es, "seed": s,
-                                "rounds": rounds, "reason": reason})
-            else:
-                twin_unsettled.append({"arm": arm, "eps_ai": ea,
-                                       "eps_social": es, "seed": s,
-                                       "outcome": oc, "reason": reason})
+                                "rounds": nxt[0], "reason": reason})
     return {
         "key": grid.key,
         "generated_by": "analyze_section4_gate.py --wave fig6",
         "run_root": run_root,
         "drift_tol": drift_tol,
-        "settled_rule": ("a cell is settled when |mean_B(second half) - "
-                         "mean_B(first half)| <= drift_tol on the final "
-                         "five post-peer rounds (2 vs 3 split); a pair is "
-                         "unsettled when EITHER member fails"),
+        "settled_rule": (
+            f"a cell is settled only if ALL hold: (a) |final-5 half-split "
+            f"drift| <= tol, (b) |final-10 half-split drift| (final five "
+            f"vs the five before) <= tol, (c) range of the five late "
+            f"round means <= {RANGE_TOL_MULT}*tol; an unsettled cell whose "
+            f"last {CYCLE_WINDOW} round-mean differences alternate in sign "
+            f"on >= {CYCLE_ALTERNATION_MIN:.0%} of the steps is 'cyclic'; "
+            f"a pair is unsettled when EITHER member is"),
         "pairing": ("both members of every unsettled pair are listed; "
                     "gen_pofd_sweep.s4g2_ext_requests() rejects an "
                     "unpaired request"),
         "n_cells": len(req),
         "cells": req,
         "twin_derived_unsettled": twin_unsettled,
+        "not_extendable": not_ext,
         "note": ("twin_derived_unsettled pairs have an eps_AI = 0 member "
-                 "derived from twin_raw (no GPU run to extend); they are "
-                 "NOT in 'cells' and are never called an equilibrium"),
+                 "derived from twin_raw (no GPU run to extend); "
+                 "not_extendable pairs are unsettled at the last allowed "
+                 "horizon; neither is in 'cells' and neither is ever "
+                 "called an equilibrium"),
     }
 
 
@@ -1699,6 +1905,23 @@ def caption_fig6_source(source_rows, cover_note, drift_tol, shape, grid,
                      f"{grid.stem}_extension_request.json.")
     else:
         lines.append("Every pair is settled at the analysed horizon.")
+    n_cyc = sum(1 for r in unsettled if "cyclic" in (r.get("outcome") or ""))
+    lines.append(
+        "SETTLED requires all of (a) final-5 half-split drift, (b) final-10")
+    lines.append(
+        f"half-split drift (rounds 26-30 vs 21-25) within {drift_tol:g}, and "
+        f"(c) the")
+    lines.append(
+        f"range of the five late round means within {RANGE_TOL_MULT * drift_tol:g}; "
+        f"a sign-alternating")
+    lines.append(
+        f"unsettled cell is CYCLIC ({n_cyc} cyclic series here), never an "
+        f"equilibrium.")
+    lines.append(
+        "Paired method gap G = T_a(SFT) - T_a(ICL) per seed (positive = SFT's")
+    lines.append(
+        f"source effect exceeds ICL's; G = 0 at eps_AI = 0 by construction) "
+        f"is in {grid.stem}_method_gap.csv.")
     if quantized:
         lines.append(
             f"SERVED-VALUE QUANTIZATION: {len(quantized)} series have a "
@@ -1827,6 +2050,28 @@ def print_table(rows, title, mean_key, mark_key, fmt="%+.4f", grid=None):
     print("  (* = 95% CI excludes the reference; \u2020 = half-window "
           "drift exceeds the tolerance"
           + (" or the pair is unsettled)" if g.fig6 else ")"))
+
+
+def print_method_gap_table(gap_rows, grid):
+    print(f"\n== paired method gap G = T_a(SFT) - T_a(ICL) [{G_COL}] ==")
+    print(f"  {G_SIGN}")
+    print("        " + " ".join(f"{'es=' + f'{e:g}':>12}" for e in grid.ess))
+    for ea in grid.gates:
+        cellstr = []
+        for es in grid.ess:
+            r = next((x for x in gap_rows if x["eps_ai"] == ea
+                      and x["eps_social"] == es), None)
+            m = None if r is None else r.get(f"{G_COL}_mean")
+            if r is None or r["status"] != "complete" or m is None:
+                cellstr.append(f"{'--':>12}")
+                continue
+            s = f"{m:+.4f}"
+            s += "*" if r.get(f"{G_COL}_excludes_zero") else " "
+            s += "\u2020" if _flag_of(r, G_COL) else " "
+            cellstr.append(f"{s:>12}")
+        print(f"  ea={ea:<4g}" + " ".join(cellstr))
+    print("  (* = 95% paired CI excludes 0; \u2020 = drift flag or an "
+          "unsettled member pair; G == 0 at ea=0 by construction)")
 
 
 def print_fig6_detail(rows, grid):
@@ -2195,10 +2440,8 @@ def main(argv=None):
         if g.fig6:
             late.update({"kind": loc["kind"], "horizon": horizon,
                          "analysed_from": "op_raw", "derived_from": None,
-                         "drift_tol": args.drift_tol,
-                         "settled": bool(abs(late["mu_b_drift"])
-                                         <= args.drift_tol),
                          "twin_sha256": t_sha})
+            late.update(settle_verdict(late, args.drift_tol))
         cells[key] = late
 
     if g.fig6:
@@ -2231,10 +2474,8 @@ def main(argv=None):
                          "gpu_arch": arch, "kind": "twin",
                          "horizon": N_ROUNDS, "analysed_from": "twin_raw",
                          "derived_from": src_tag,
-                         "drift_tol": args.drift_tol,
-                         "settled": bool(abs(late["mu_b_drift"])
-                                         <= args.drift_tol),
                          "twin_sha256": sha})
+            late.update(settle_verdict(late, args.drift_tol))
             cells[key] = late
         # twin agreement across every base run at one (cond, es, seed)
         for cse in sorted(twin_shas):
@@ -2293,6 +2534,19 @@ def main(argv=None):
     source_rows = build_source_rows(cells, args.drift_tol, g)
     disp_rows = build_dispersion_rows(cells, args.drift_tol, g)
     null_rows = build_null_rows(cells, g)
+    gap_rows = build_method_gap_rows(source_rows, args.drift_tol, g) \
+        if g.fig6 else []
+    if g.fig6:
+        # G is identically 0 at eps_AI = 0: both arms are the same twin
+        for r in gap_rows:
+            if r["eps_ai"] == 0.0 and r["status"] == "complete":
+                bad0 = [s for s in SEEDS if r.get(f"{G_COL}_s{s}") != 0.0]
+                if bad0:
+                    print(f"[s4g] HARD FAIL: method gap at eps_AI=0, "
+                          f"es={r['eps_social']:g} is not identically 0 "
+                          f"(seeds {bad0}) -- the twin derivation is broken",
+                          file=sys.stderr)
+                    return 1
 
     n_complete = sum(1 for r in source_rows if r["status"] == "complete")
     cover_note = (f"{len(located)}/{g.n_cells} cells present, "
@@ -2334,6 +2588,8 @@ def main(argv=None):
     write_csv(out_dir, f"{stem}_cells.csv",
               [cells[k] for k in g.keys if k in cells])
     write_csv(out_dir, f"{stem}_source_effect.csv", source_rows)
+    if g.fig6:
+        write_csv(out_dir, f"{stem}_method_gap.csv", gap_rows)
     write_csv(out_dir, f"{stem}_dispersion.csv", disp_rows)
     write_csv(out_dir, f"{stem}_null_probe.csv", null_rows)
     write_csv(out_dir, f"{stem}_coverage.csv", coverage)
@@ -2348,17 +2604,22 @@ def main(argv=None):
         n_unsettled = sum(1 for r in source_rows for s in SEEDS
                           if r.get(f"pair_outcome_s{s}") not in
                           (None, "equilibrium"))
+        n_cyclic = sum(1 for r in source_rows for s in SEEDS
+                       if r.get(f"pair_outcome_s{s}") == "cyclic")
         print(f"[s4g] wrote {stem}_extension_request.json "
               f"({ext_req['n_cells']} cells = "
-              f"{ext_req['n_cells'] // 2} matched pairs to extend; "
-              f"{len(ext_req['twin_derived_unsettled'])} twin-derived "
-              f"unsettled pair(s) listed outside 'cells')")
+              f"{ext_req['n_cells'] // 2} matched pairs to extend, "
+              f"{n_cyclic} of them cyclic; "
+              f"{len(ext_req['twin_derived_unsettled'])} twin-derived and "
+              f"{len(ext_req['not_extendable'])} not-extendable unsettled "
+              f"pair(s) listed outside 'cells')")
         print_table(source_rows,
                     f"three-seed T_a = mu_B^eq(evolving) - mu_B^eq(fixed) "
                     f"[{T_A_COL}]",
                     f"{T_A_COL}_mean", f"{T_A_COL}_ci_excludes_zero",
                     grid=g)
         print_fig6_detail(source_rows, g)
+        print_method_gap_table(gap_rows, g)
     else:
         print_table(source_rows,
                     "three-seed source effect  mu_B(fixed) - mu_B(evolving)",
@@ -2444,6 +2705,10 @@ def main(argv=None):
         summary.update({
             "primary_column": T_A_COL,
             "t_a_sign": T_A_SIGN,
+            "g_sign": G_SIGN,
+            "method_gap": gap_rows,
+            "settled_rule": ext_req["settled_rule"],
+            "n_pairs_cyclic": n_cyclic,
             "n_cells_from_run": n_from_run,
             "n_cells_twin_derived": n_from_twin,
             "n_cells_extended_horizon": n_ext,
@@ -2474,8 +2739,8 @@ def main(argv=None):
     if g.fig6:
         if n_unsettled:
             print(f"\n[s4g] ***** {n_unsettled} pair(s) UNSETTLED at the "
-                  f"analysed horizon: NOT an equilibrium; extension "
-                  f"request written *****")
+                  f"analysed horizon ({n_cyclic} cyclic): NOT an "
+                  f"equilibrium; extension request written *****")
             return 2
         return 0
     if partial:

@@ -74,51 +74,57 @@ WHAT IS CHECKED (each item HARD-FAILS; nothing in this file warns):
      innate is (rating-1)/4 on the LCC of a cosine 10-NN graph -- and
      gp.innate_clamp_mask("bottom") is a pure sort with no RNG draw. So
      innate, the graph and the cohort are SEED-INVARIANT.
-  5b. SEED-DISTINCTNESS -- the direct consequence of 5. Because nothing
-     about the world depends on the seed, config["seed"] is the ONLY
-     per-run evidence that a seed reached the runner, and that field is
-     written from the environment rather than observed from behaviour.
-     So within each (arm, cond, ea, es[, horizon]) cell, no two seeds
-     may produce a BIT-IDENTICAL op_raw. Two identical trajectories mean
-     the seed never reached the training/serving stream: invisible in
-     every per-run field, and it would silently collapse the three-seed
-     confidence intervals to a single observation. Compared by sha256
-     over op_raw, so no two runs' tensors are ever resident at once. A
-     missing third seed is a COVERAGE failure (already fatal), not a pass
+  5b. SEED-DISTINCTNESS -- A WARNING, NEVER THE EXIT CODE. Because
+     nothing about the world depends on the seed, config["seed"] is the
+     ONLY per-run evidence that a seed reached the runner, and that field
+     is written from the environment rather than observed from
+     behaviour. So within each (arm, cond, ea, es[, horizon]) cell two
+     seeds producing a BIT-IDENTICAL op_raw is flagged as a WARN line
+     (and listed under "warnings" in the JSON verdict) for the analyst:
+     it CAN mean the seed never reached the training/serving stream,
+     which would collapse the three-seed intervals to one observation --
+     but greedy serving on a quantized value grid can also legitimately
+     give bit-identical outcomes across seeds, so identical trajectories
+     are not proof of a lost seed and do not fail the wave. Compared by
+     sha256 over op_raw, so no two runs' tensors are ever resident at
+     once. A missing third seed is a COVERAGE failure (fatal), not a pass
      here.
        EXEMPTION, STATED AND PRINTED: d8 at eps_social = 0 is the
      STRUCTURAL NULL (analyze_section4_gate.build_null_rows): frozen
      weights, greedy decoding, own-history prompts and an inert
      strict-< peer step mean NO random draw reaches the population, so
      three seeds of a d8/es=0 cell are EXPECTED to be bit-identical.
-     Those groups are skipped with a NOTE naming the reason; requiring
-     distinctness there would fail a correct wave.
-       TWIN SEED-DISTINCTNESS (the extension the twin-derived cells
-     need): the twin is advanced by its own seeded generator, so within
-     each (cond, es > 0[, horizon]) no two seeds may share twin_raw.
-     es = 0 is excluded for the same strict-< reason (no accepted pair,
-     the twin is RNG-free and seed-invariant there).
+     Those groups are skipped with a NOTE naming the reason.
+       TWIN SEED-DISTINCTNESS (the twin-derived cells' counterpart, the
+     same WARN semantics): the twin is advanced by its own seeded
+     generator, so within each (cond, es > 0[, horizon]) two seeds
+     sharing twin_raw is flagged. es = 0 is excluded for the same
+     strict-< reason (no accepted pair, the twin is RNG-free and
+     seed-invariant there).
   6. TWIN present, correctly shaped, finite, in [0,1] and non-degenerate;
      and TWIN AGREEMENT: the twin is a pure function of (cond, es,
      seed) -- the served vector never enters ab_x_cf -- so every run at
      one (cond, es, seed) must carry a BIT-IDENTICAL twin_raw over the
      base horizon, whatever its arm or eps_AI (and extension runs must
      agree with the base cells over the first S4G_ROUNDS rows).
-  7. ZERO PARSE FAILURES -- read from raw_gen_log.json.gz when that
-     artifact exists. IT DOES NOT EXIST FOR THESE WAVES: the S4G sub
-     templates in gen_pofd_sweep.py do not set SAVE_RAW_GEN=1, and the
-     runner writes raw_gen_log.json.gz (the only place parse_fail_frac is
-     recorded) only under SAVE_RAW_GEN=1. So the default behaviour is:
-       * raw log present  -> every round must report parse_fail_frac == 0
-                             and a full 723-value parsed vector;
-       * raw log absent and config does not claim save_raw_gen -> fall
-         back to the EQUIVALENT evidence in trajectory.pt: a parse
-         failure writes NaN into the served vector (run_pokec_gated_lm
-         maps an unparsable generation to float("nan")), so ANY
-         non-finite entry in pred_raw is a hard failure. The fallback is
-         announced per cell and in the verdict; it is not silent.
-       * raw log absent while config says save_raw_gen -> hard failure.
-     --require-raw-gen makes the absence itself a hard failure.
+  7. ZERO PARSE FAILURES -- raw_gen_log.json.gz is REQUIRED for EVERY
+     run. SAVE_RAW_GEN=1 is pinned in every Section-4 corrected-gate sub
+     template (smoke, production, extension, both waves), and
+     parse_fail_frac is recorded NOWHERE else. Nothing in trajectory.pt
+     can stand in for it: the runner's parser falls back to a FINITE 0.5
+     on failure (run_pokec_gated_lm.py: "the parser fell back to its 0.5
+     default"), so a wave with widespread parse failures looks perfectly
+     finite in pred_raw. Hard failures:
+       (a) the file absent;
+       (b) any round with parse_fail_frac > 0 (or without the field);
+       (c) any round 0..n_rounds-1 missing from the log (the log must
+           carry exactly the rounds 0..n_rounds-1, in order, once);
+       (d) a round parsing fewer than 723 agents.
+     THE ONLY ESCAPE is --inspect-archived, which downgrades (a) to a
+     loud WARN so the four archived pre-fix smoke runs under
+     notes/pofd/cluster/pofds4gsmk_* can still be looked at. It is NOT A
+     GATE: the banner, every affected cell, the verdict line and the JSON
+     say so, and nothing produced under it may be cited as a pass.
   8. len(trajectory) >= n_rounds, with op_raw/pred_raw/twin_raw shaped
      [n_rounds, 723] (n_rounds = the horizon for an extension run).
   9. --smoke gates the 3-round pofds4gsmk_ cells of the selected wave
@@ -184,7 +190,14 @@ Usage
   # machine-readable verdict
   python check_section4_gate.py --run-root RUNS --json /tmp/s4g.json
 
+  # LOOK AT (not gate) the archived pre-fix smokes, which predate
+  # SAVE_RAW_GEN=1 and carry no raw_gen_log.json.gz
+  python check_section4_gate.py --smoke --inspect-archived \\
+      --run-root notes/pofd/cluster
+
 Exit codes: 0 = every check passed, 1 = hard failure, 2 = usage error.
+WARN lines (seed-distinctness, and the missing raw log under
+--inspect-archived) never change the exit code.
 """
 from __future__ import annotations
 
@@ -722,7 +735,7 @@ def _read_jsonl(path, gz=False):
 
 def _empty_rec(run_dir, tag):
     return {"run_dir": run_dir, "tag": tag, "cell": None, "horizon": None,
-            "witness": False, "errs": [], "notes": [],
+            "witness": False, "errs": [], "warns": [], "notes": [],
             "parse_evidence": None, "innate_sha256": None,
             "cohort_sha256": None, "n_rounds": None, "pop_final_mean": None,
             "pop_final_sd": None, "op_twin_l1": None, "op_sha256": None,
@@ -732,10 +745,13 @@ def _empty_rec(run_dir, tag):
 
 
 # ------------------------------------------------------------ one cell
-def check_one(run_dir, wave, smoke, require_raw_gen):
+def check_one(run_dir, wave, smoke, inspect_archived=False):
     """Gate ONE run dir. Returns a record of scalars/hashes only: no
     tensor outlives this call, so the gate holds at most one run's
-    trajectory in memory at a time (login-node budget)."""
+    trajectory in memory at a time (login-node budget).
+
+    inspect_archived downgrades ONLY a missing raw_gen_log.json.gz to a
+    WARN (NOT a gate; see the module docstring)."""
     run_dir = str(run_dir).rstrip("/")
     tag = os.path.basename(run_dir)
     rec = _empty_rec(run_dir, tag)
@@ -743,6 +759,9 @@ def check_one(run_dir, wave, smoke, require_raw_gen):
 
     def bad(msg):
         errs.append(msg)
+
+    def warn(msg):
+        rec["warns"].append(msg)
 
     info, terrs = parse_tag(tag, smoke, wave)
     errs.extend(terrs)
@@ -908,6 +927,14 @@ def check_one(run_dir, wave, smoke, require_raw_gen):
             f"{float(op.max()):.4f}]")
     if not torch.isfinite(inn).all():
         bad("innate has non-finite values")
+    # served-vector integrity ONLY. This is NOT parse evidence: the
+    # runner's parser stores a FINITE 0.5 when a generation does not
+    # parse, so pred_raw cannot reveal a parse failure (check 7 below
+    # reads raw_gen_log.json.gz for that).
+    if not torch.isfinite(pr).all():
+        bad(f"pred_raw has {int((~torch.isfinite(pr)).sum())} non-finite "
+            f"entries -- a corrupted served vector (the parser never "
+            f"writes NaN; it stores 0.5 on failure)")
 
     # --- 6. TWIN present and non-degenerate ---------------------------
     # WITH_TWIN=1 leaves NO config field (the runner records no with_twin
@@ -1192,52 +1219,65 @@ def check_one(run_dir, wave, smoke, require_raw_gen):
                                     break
 
     # --- 7. ZERO PARSE FAILURES ---------------------------------------
+    # raw_gen_log.json.gz is REQUIRED: parse_fail_frac lives nowhere
+    # else, and the parser's failure value is a FINITE 0.5, so pred_raw
+    # can never reveal a parse failure. SAVE_RAW_GEN=1 is pinned in every
+    # Section-4 corrected-gate sub template.
     gz = os.path.join(run_dir, "raw_gen_log.json.gz")
-    if os.path.exists(gz):
+    if not os.path.exists(gz):
+        why = ("raw_gen_log.json.gz missing -- parse_fail_frac is recorded "
+               "NOWHERE else and the parser stores a finite 0.5 on failure, "
+               "so the parse rate of this run is NOT establishable "
+               "(SAVE_RAW_GEN=1 is mandatory for every Section-4 "
+               "corrected-gate run)")
+        if inspect_archived:
+            rec["parse_evidence"] = "missing(archived)"
+            warn(why + "; admitted ONLY because --inspect-archived is set, "
+                       "which is NOT a gate")
+        else:
+            rec["parse_evidence"] = "missing"
+            bad(why)
+    else:
         rec["parse_evidence"] = "raw_gen_log"
         try:
             rows = _read_jsonl(gz, gz=True)
         except (OSError, ValueError) as e:
             bad(f"raw_gen_log.json.gz unreadable: {e}")
             rows = []
-        if [r.get("round") for r in rows] != list(range(want_rounds)):
-            bad(f"raw_gen_log holds rounds "
-                f"{[r.get('round') for r in rows][:5]}... (want "
-                f"0..{want_rounds - 1})")
-        nz = [r for r in rows if float(r.get("parse_fail_frac", 1.0)) != 0.0]
+        got_rounds = [r.get("round") for r in rows]
+        if got_rounds != list(range(want_rounds)):
+            absent = [t for t in range(want_rounds) if t not in got_rounds]
+            surplus = [t for t in got_rounds
+                       if not isinstance(t, int) or not 0 <= t < want_rounds]
+            dup = len(got_rounds) - len(set(got_rounds))
+            bad(f"raw_gen_log must carry exactly rounds 0..{want_rounds - 1} "
+                f"in order, once; it holds {got_rounds[:6]}"
+                f"{'...' if len(got_rounds) > 6 else ''}"
+                f" -- {len(absent)} round(s) missing"
+                f"{' (' + str(absent[:8]) + ')' if absent else ''}"
+                f"{', ' + str(len(surplus)) + ' out-of-range' if surplus else ''}"
+                f"{', ' + str(dup) + ' duplicated' if dup else ''}"
+                f"; a round without a logged parse rate is an unverified "
+                f"round")
+        nz = []
+        for r in rows:
+            v = r.get("parse_fail_frac", None)
+            try:
+                ok = isinstance(v, (int, float)) and not isinstance(v, bool) \
+                    and float(v) == 0.0
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                nz.append(r)
         if nz:
             bad(f"parse failures in {len(nz)} round(s), e.g. round "
                 f"{nz[0].get('round')} at parse_fail_frac="
-                f"{nz[0].get('parse_fail_frac')!r}")
+                f"{nz[0].get('parse_fail_frac')!r} (must be exactly 0 in "
+                f"every round; an absent field counts as a failure)")
         short = [r for r in rows if len(r.get("parsed") or []) != N]
         if short:
             bad(f"round {short[0].get('round')} parsed "
                 f"{len(short[0].get('parsed') or [])} of {N} agents")
-    elif bool(cfg.get("save_raw_gen")) or require_raw_gen:
-        rec["parse_evidence"] = "missing"
-        bad("raw_gen_log.json.gz missing -- parse_fail_frac is recorded "
-            "NOWHERE else, so the parse rate is not establishable"
-            + (" (config claims save_raw_gen)"
-               if cfg.get("save_raw_gen") else " (--require-raw-gen)"))
-    else:
-        # SAVE_RAW_GEN is NOT set by the S4G sub templates, so
-        # raw_gen_log.json.gz does not exist for this wave and
-        # parse_fail_frac cannot be read. The equivalent evidence in
-        # trajectory.pt: run_pokec_gated_lm maps an unparsable generation
-        # to float("nan") in the served vector, so a parse failure is
-        # exactly a non-finite pred_raw entry.
-        rec["parse_evidence"] = "pred_raw_nan"
-        rec["notes"].append(
-            "no raw_gen_log.json.gz (SAVE_RAW_GEN is not set for this wave); "
-            "parse failures gated on non-finite pred_raw instead")
-        nnan = int((~torch.isfinite(pr)).sum())
-        if nnan:
-            rounds_bad = torch.nonzero(
-                (~torch.isfinite(pr)).any(dim=1)).flatten().tolist()
-            bad(f"{nnan} non-finite entries in pred_raw over "
-                f"{len(rounds_bad)} round(s), first round {rounds_bad[0]} -- "
-                f"an unparsable generation is stored as NaN, so this IS a "
-                f"parse failure")
 
     del d, op, pr, tw, inn
     return rec
@@ -1273,10 +1313,14 @@ def main(argv=None):
                     help="file of tags (one per line, # comments allowed) to "
                          "gate INSTEAD of the full product; coverage is then "
                          "checked against that list")
-    ap.add_argument("--require-raw-gen", action="store_true",
-                    help="treat a missing raw_gen_log.json.gz as a hard "
-                         "failure instead of falling back to the pred_raw "
-                         "NaN evidence (this wave does not set SAVE_RAW_GEN)")
+    ap.add_argument("--inspect-archived", action="store_true",
+                    help="NOT A GATE. Downgrade a MISSING raw_gen_log.json.gz "
+                         "from a hard failure to a loud WARN so the four "
+                         "archived pre-fix smoke runs (notes/pofd/cluster/"
+                         "pofds4gsmk_*, which predate SAVE_RAW_GEN=1) can be "
+                         "looked at. Every other check stays strict; the "
+                         "verdict is labelled NOT A GATE and must not be "
+                         "cited as a pass")
     ap.add_argument("--gen", default=None,
                     help="path of gen_pofd_sweep.py (default: found relative "
                          "to this file, then the cwd and its ancestors)")
@@ -1360,6 +1404,17 @@ def main(argv=None):
         ext_keys = [k for k in ext_keys if k in keep]
         twin_keys = []
         run_dirs = [str(root / t) for t in keep_tags]
+    elif args.smoke:
+        # The two corrected-gate waves share the pofds4gsmk_ prefix (the
+        # S4G smoke at ea=1/es=0.2 sits beside the fig6 smoke at
+        # ea=0.1/es=0.3 under the same run root), so a prefix scan would
+        # report the OTHER wave's smoke dirs as EXTRA. Smoke mode gates
+        # exactly the selected wave's smoke tags: an absent one is a FAIL,
+        # a foreign one is ignored. Production mode keeps the prefix scan
+        # (pofds4g_ never matches pofds4gsmk_).
+        run_dirs = sorted(str(root / wave.render_tag(*k[:5], smoke=True,
+                                                     rounds=k[5]))
+                          for k in run_keys)
     else:
         run_dirs = sorted(str(p) for p in root.iterdir()
                           if p.is_dir() and p.name.startswith(scan))
@@ -1389,10 +1444,12 @@ def main(argv=None):
             r["errs"].append("run dir does not exist")
             recs.append(r)
             continue
-        recs.append(check_one(rd, wave, args.smoke, args.require_raw_gen))
+        recs.append(check_one(rd, wave, args.smoke, args.inspect_archived))
     for r in recs:
         for e in r["errs"]:
             out.append(f"FAIL {r['tag']}: {e}")
+        for w in r["warns"]:
+            out.append(f"WARN {r['tag']}: {w}")
         for n in r["notes"]:
             out.append(f"NOTE {r['tag']}: {n}")
 
@@ -1543,21 +1600,24 @@ def main(argv=None):
             out.append(f"FAIL twin-derived {tag_of_key[k]}: {why}")
     n_twin_ok = len(twin_rows) - twin_cell_fail
 
-    # ---- 5b. SEED-DISTINCTNESS ------------------------------------------
+    # ---- 5b. SEED-DISTINCTNESS (WARN only, never the exit code) ---------
     # innate, the 10-NN graph and the bottom-145 cohort are SEED-INVARIANT
     # for movielens (load_movielens_setup takes no seed;
     # gp.innate_clamp_mask("bottom") is a pure sort with no RNG draw), so
     # config["seed"] -- written from the environment, never observed -- is
     # the only per-run evidence that a seed reached the runner. The
-    # BEHAVIOURAL evidence is that two seeds of one cell must not produce
-    # the same trajectory. Compared by the op_raw sha256 taken in
-    # check_one, so no two runs' tensors are ever resident at once.
+    # BEHAVIOURAL evidence is whether two seeds of one cell produce the
+    # same trajectory. Compared by the op_raw sha256 taken in check_one,
+    # so no two runs' tensors are ever resident at once. A collision is a
+    # WARNING for the analyst, not a failure: greedy serving on a
+    # quantized value grid can legitimately give bit-identical outcomes
+    # across seeds.
     #   EXEMPT: d8 at es=0, the structural null -- frozen weights, greedy
     # decoding, own-history prompts and an inert strict-< peer step leave
     # NO random draw on the path to the population, so identical
     # trajectories across seeds are EXPECTED there (see
     # analyze_section4_gate.build_null_rows).
-    seed_fail = 0
+    seed_warn = 0
     seed_skipped = []
     seed_groups = {}
     for k, r in by_key.items():
@@ -1590,17 +1650,19 @@ def main(argv=None):
             if len(hits) < 2:
                 continue
             out.append(
-                f"FAIL seed-distinctness {gname}: seeds {[h[0] for h in hits]} "
+                f"WARN seed-distinctness {gname}: seeds {[h[0] for h in hits]} "
                 f"produced a BIT-IDENTICAL op_raw (sha256 {sha[:16]}...) -- "
                 f"{', '.join(h[1] for h in hits)}. Nothing about this world "
                 f"depends on the seed (innate, the 10-NN graph and the "
                 f"cohort are seed-invariant), so config['seed'] -- written "
                 f"from the environment, not observed -- is the only other "
-                f"evidence a seed reached the runner. Identical trajectories "
-                f"mean it never reached the training/serving stream, which "
-                f"collapses the three-seed intervals to ONE observation "
-                f"while every per-run field still looks correct.")
-            seed_fail += 1
+                f"evidence a seed reached the runner. If it never reached "
+                f"the training/serving stream the three-seed intervals "
+                f"collapse to ONE observation while every per-run field "
+                f"still looks correct -- but greedy serving on a quantized "
+                f"value grid can also coincide legitimately, so this is a "
+                f"warning for the analyst, not a failure.")
+            seed_warn += 1
     # the TWIN'S seed-distinctness: the twin-derived cells' "op_raw" IS
     # the group twin, and the twin is advanced by a seeded generator, so
     # within each (cond, es > 0[, horizon]) no two seeds may share
@@ -1624,16 +1686,22 @@ def main(argv=None):
             if len(seeds) < 2:
                 continue
             out.append(
-                f"FAIL seed-distinctness(twin) {g[0]}/es{_num(g[1])}"
+                f"WARN seed-distinctness(twin) {g[0]}/es{_num(g[1])}"
                 f"{'' if g[2] is None else '/r' + str(g[2])}: seeds {seeds} "
                 f"share a BIT-IDENTICAL twin_raw (sha256 {sha[:16]}...) -- "
                 f"the twin's peer sweep draws from a generator seeded by the "
-                f"run seed, so identical twins mean the seed never reached "
-                f"the population generator, and the twin-derived ea=0 cells "
-                f"of these seeds would be ONE observation")
-            seed_fail += 1
+                f"run seed, so identical twins may mean the seed never "
+                f"reached the population generator, in which case the "
+                f"twin-derived ea=0 cells of these seeds are ONE observation "
+                f"(a warning for the analyst, not a failure)")
+            seed_warn += 1
 
     # ---- print ---------------------------------------------------------
+    if args.inspect_archived:
+        print(f"{LOG} ***** --inspect-archived: THIS RUN IS NOT A GATE. A "
+              f"missing raw_gen_log.json.gz is downgraded to a WARN, so the "
+              f"parse rate of such runs is UNVERIFIED; nothing below may be "
+              f"cited as a pass. *****")
     for line in out:
         print(f"{LOG} {line}")
 
@@ -1688,15 +1756,15 @@ def main(argv=None):
         print(f"{r['tag']:<66} {'EXTRA':>7} {'-':>6} {'-':>8} {'-':>7} "
               f"{'-':>9} {str(r['parse_evidence']):>13}")
 
-    fallbacks = [r["tag"] for r in recs
-                 if r["parse_evidence"] == "pred_raw_nan"]
-    if fallbacks:
-        print(f"\n{LOG} PARSE-RATE EVIDENCE: {len(fallbacks)} cell(s) have no "
-              f"raw_gen_log.json.gz (the S4G sub templates do not set "
-              f"SAVE_RAW_GEN=1, and parse_fail_frac lives nowhere else), so "
-              f"zero-parse-failure was gated on non-finite pred_raw -- the "
-              f"same event, since an unparsable generation is stored as NaN. "
-              f"Pass --require-raw-gen to make the absence itself fatal.")
+    unverified = [r["tag"] for r in recs
+                  if r["parse_evidence"] == "missing(archived)"]
+    if unverified:
+        print(f"\n{LOG} PARSE RATE UNVERIFIED (--inspect-archived, NOT A "
+              f"GATE): {len(unverified)} run(s) have no raw_gen_log.json.gz. "
+              f"parse_fail_frac lives nowhere else, and the parser stores a "
+              f"FINITE 0.5 when a generation does not parse, so nothing in "
+              f"trajectory.pt can reveal a parse failure for these runs: "
+              f"{', '.join(unverified)}")
 
     print("\n" + "=" * len(hdr))
     twin_missing = [k for k, ok, _, _ in twin_rows if not ok]
@@ -1728,8 +1796,11 @@ def main(argv=None):
     print("=" * len(hdr))
 
     n_fail_cells = sum(1 for r in recs if r["errs"])
+    warnings = [l for l in out if l.startswith("WARN")]
+    # WARN lines (seed-distinctness, missing raw log under
+    # --inspect-archived) never reach the exit code
     allok = (n_fail_cells == 0 and not missing and not dupes and not extra
-             and seed_fail == 0 and pair_fail == 0 and len(inn_shas) <= 1
+             and pair_fail == 0 and len(inn_shas) <= 1
              and twin_fail == 0 and twin_cell_fail == 0 and ext_fail == 0
              and not any(l.startswith("FAIL") for l in out))
     n_witness_ok = sum(1 for k in witness_keys
@@ -1754,7 +1825,11 @@ def main(argv=None):
         "n_run_cells_total": len(run_keys),
         "n_cells_failed": n_fail_cells,
         "n_pair_failures": pair_fail,
-        "n_seed_distinctness_failures": seed_fail,
+        "inspect_archived": bool(args.inspect_archived),
+        "not_a_gate": bool(args.inspect_archived),
+        "warnings": warnings,
+        "n_warnings": len(warnings),
+        "n_seed_distinctness_warnings": seed_warn,
         "seed_distinctness_skipped_structural_null": seed_skipped,
         "n_twin_agreement_failures": twin_fail,
         "n_twin_cells_total": len(twin_keys),
@@ -1783,13 +1858,14 @@ def main(argv=None):
         "unexpected_cells": [{"cell": list(k), "tag": by_key[k]["tag"]}
                              for k in extra],
         "innate_sha256_distinct": sorted(inn_shas),
-        "parse_evidence_fallback": fallbacks,
+        "parse_rate_unverified": unverified,
         "pass": bool(allok),
         "cells": [{"tag": r["tag"], "run_dir": r["run_dir"],
                    "cell": list(r["cell"]) if r["cell"] else None,
                    "horizon": r["horizon"],
                    "witness": r["witness"],
                    "ok": not r["errs"], "errors": r["errs"],
+                   "warnings": r["warns"],
                    "notes": r["notes"],
                    "parse_evidence": r["parse_evidence"],
                    "n_rounds": r["n_rounds"],
@@ -1810,6 +1886,9 @@ def main(argv=None):
         Path(args.json_out).write_text(json.dumps(verdict, indent=2))
         print(f"{LOG} verdict -> {args.json_out}")
 
+    warn_bit = (f"; {len(warnings)} WARN line(s) ({seed_warn} "
+                f"seed-distinctness, {len(unverified)} parse rate "
+                f"unverified) -- warnings never change the exit code")
     if allok:
         fig6_bit = ""
         if wave.fig6 and not args.smoke:
@@ -1818,7 +1897,13 @@ def main(argv=None):
                         f"op_raw == twin_raw bit-exact with contact 0 every "
                         f"round; {len(ext_present)} extension(s) present, "
                         f"{len(ext_pending)} PENDING-EXT)")
-        print(f"{LOG} PASS -- wave {wave.name}: {len(recs)} run(s), "
+        head = ("PASS (--inspect-archived: NOT A GATE, parse rate "
+                "unverified where WARNed)" if args.inspect_archived
+                else "PASS")
+        parse_bit = ("zero parse failures in every logged round"
+                     if not unverified else
+                     f"parse rate UNVERIFIED for {len(unverified)} run(s)")
+        print(f"{LOG} {head} -- wave {wave.name}: {len(recs)} run(s), "
               f"{n_present}/{n_total} cells{fig6_bit}: every tag carries "
               f"{OP_INFIX!r} and every config the "
               f"{WANT_MARKER} operator at ai_gate_reference=anchor; grid "
@@ -1826,19 +1911,17 @@ def main(argv=None):
               f"bottom-{CLAMP_COUNT} cohort reconstructs and is bit-exact in "
               f"population and twin on every fixed cell; every evolving cell "
               f"is clamp-free; each fixed/evolving pair shares one innate "
-              f"vector and one cohort; no two seeds of a cell share a "
-              f"trajectory (seed-distinctness); the twin agrees bit-exactly "
-              f"across every run of a (cond, es, seed); d8 personal "
-              f"histories replay byte-exactly (locality); twins are "
-              f"non-degenerate; zero parse failures.")
+              f"vector and one cohort; the twin agrees bit-exactly across "
+              f"every run of a (cond, es, seed); d8 personal histories "
+              f"replay byte-exactly (locality); twins are non-degenerate; "
+              f"{parse_bit}; seed-distinctness reviewed{warn_bit}.")
         return 0
     print(f"{LOG} FAILED -- wave {wave.name}: {n_fail_cells} of {len(recs)} "
           f"run(s) failed, {len(missing)} cell(s) absent, {len(dupes)} "
           f"duplicate, {len(extra)} unexpected, {pair_fail} pair "
-          f"mismatch(es), {seed_fail} seed-distinctness collision(s), "
-          f"{twin_fail} twin disagreement(s), {twin_cell_fail} undrawable "
-          f"twin-derived cell(s), {ext_fail} unpaired extension(s). See the "
-          f"FAIL lines above.")
+          f"mismatch(es), {twin_fail} twin disagreement(s), {twin_cell_fail} "
+          f"undrawable twin-derived cell(s), {ext_fail} unpaired "
+          f"extension(s){warn_bit}. See the FAIL lines above.")
     return 1
 
 

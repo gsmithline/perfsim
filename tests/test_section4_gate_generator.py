@@ -329,6 +329,10 @@ def test_s4g_env_pins_the_shared_section4_settings(generated):
         env = _env_line(_sub(generated, key))
         assert "INNATE_LAMBDA=0.2" in env, key      # the paper's gamma / k
         assert "WITH_TWIN=1" in env, key
+        # 2026-08-25 review: parse failures default to a FINITE 0.5, so
+        # raw_gen_log.json.gz is the only witness -- every Section-4 job
+        # must write it
+        assert "SAVE_RAW_GEN=1" in env, key
         assert "KL_DIRECTION=forward" in env, key
         assert "TRAIN_CAP=723" in env and "N_LABELED=723" in env, key
         assert "LORA_R=512" in env and "SFT_LR=5e-5" in env, key

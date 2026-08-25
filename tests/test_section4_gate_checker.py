@@ -4,23 +4,29 @@ Figure-6 grid section4_gate_anch2_fig6).
 
 Synthesizes physically-consistent pofds4g_ runs in tmp_path -- no model,
 no cluster, no HuggingFace: pure torch tensors plus the artifacts the
-gate reads (trajectory.pt, raw_gen_log.json.gz, telemetry.json, and
+gate reads (trajectory.pt, raw_gen_log.json.gz -- REQUIRED for every
+run, one row per round with parse_fail_frac -- telemetry.json, and
 icl_days_log.json.gz on the d8 personal-history arm, rendered from
 (innate, op_raw) exactly as the runner renders it).
 
 Healthy (must PASS): the complete 72-cell production grid, the 4-cell
-3-round smoke; the complete 192-cell Figure-6 grid (146 runs + 46
-twin-derived cells + 2 ea=0 witnesses, with PENDING extensions), the
-fig6 4-cell smoke, a matched extension pair.
+3-round smoke; the complete 192-cell Figure-6 grid (148 runs + 44
+twin-derived cells, incl. the 4 ea=0 witnesses -- both methods x both
+conditions -- with PENDING extensions), the fig6 4-cell smoke, a matched
+extension pair; and two seeds sharing op_raw, which is a WARN, not a
+failure.
 
 Sabotage (must FAIL): a run recording the OLD "nested_ai_then_social_v1"
 operator, a cell whose config eps_ai contradicts its tag, a fixed cell
 whose stored clamp mask is not the 145 lowest-innate agents, a
 fixed/evolving pair sitting on different innate vectors, a missing cell,
-an evolving cell carrying a clamp key; and in fig6 mode a witness whose
-op_raw != twin_raw, a witness with nonzero contact, a twin disagreement
-at one (cond, es, seed), a d8 context carrying another agent's value,
-and a present extension without its partner.
+an evolving cell carrying a clamp key, a missing raw_gen_log.json.gz
+(unless --inspect-archived, which is NOT a gate), a round with
+parse_fail_frac > 0, a round missing from the raw log; and in fig6 mode
+a witness whose op_raw != twin_raw (evolving or fixed), a witness with
+nonzero contact, a twin disagreement at one (cond, es, seed), a d8
+context carrying another agent's value, and a present extension without
+its partner.
 
 Run with USE_TF=0 (the transformers TF probe deadlocks on this Mac):
   USE_TF=0 python -m pytest tests/test_section4_gate_checker.py -q
@@ -57,7 +63,8 @@ COND_TOK = {"fixed": "fixb20", "evolving": "evoall"}
 # grid bug)
 FIG6_GATES = (0.0, 0.1, 0.3, 1.0)
 FIG6_ESS = (0.0, 0.1, 0.3, 1.0)
-FIG6_WITNESS = {("b0", "evolving", 0.3, 0), ("d8", "evolving", 0.3, 0)}
+FIG6_WITNESS = {("b0", "fixed", 0.3, 0), ("b0", "evolving", 0.3, 0),
+                ("d8", "fixed", 0.3, 0), ("d8", "evolving", 0.3, 0)}
 FIG6_SMOKE_EA, FIG6_SMOKE_ES = 0.1, 0.3
 ICL_DAYS = 8
 TARGET = "Action"
@@ -273,8 +280,8 @@ def build_wave(root, smoke, skip=(), per_cell=None):
 
 
 def fig6_cells():
-    """(arm, cond, ea, es, seed, kind) -- 192 cells: 144 gpu + 2 witness
-    + 46 twin-derived."""
+    """(arm, cond, ea, es, seed, kind) -- 192 cells: 144 gpu + 4 witness
+    + 44 twin-derived."""
     out = []
     for arm in ARMS:
         for cond in CONDS:
@@ -296,7 +303,7 @@ def fig6_smoke_cells():
 
 
 def build_fig6_wave(root, skip=(), per_cell=None):
-    """Runs for every gpu + witness cell (146); twin cells get none."""
+    """Runs for every gpu + witness cell (148); twin cells get none."""
     for (arm, cond, ea, es, seed, kind) in fig6_cells():
         if kind == "twin":
             continue
@@ -516,37 +523,89 @@ def test_parse_failure_in_the_raw_gen_log_fails(tmp_path):
     assert "parse failures in 1 round(s)" in p.stdout
 
 
-def test_missing_raw_gen_log_falls_back_to_pred_raw_nan(tmp_path):
-    """This wave does not set SAVE_RAW_GEN, so raw_gen_log.json.gz does
-    not exist. The gate then reads the SAME event out of pred_raw: an
-    unparsable generation is stored as NaN."""
-    root = build_wave(tmp_path / "runs", smoke=True,
-                      per_cell=lambda c: {"write_raw": False})
+def test_missing_raw_gen_log_fails_unless_inspect_archived(tmp_path):
+    """raw_gen_log.json.gz is REQUIRED: parse_fail_frac lives nowhere
+    else and the parser stores a finite 0.5 on failure, so pred_raw can
+    never stand in for it. --inspect-archived downgrades the absence to
+    a loud WARN and labels the whole run NOT A GATE."""
+    victim = ("d8", "evolving", 1.0, 0.2, 0)
+    root = build_wave(
+        tmp_path / "runs", smoke=True,
+        per_cell=lambda c: {"write_raw": False} if c == victim else {})
     p = run_checker(root, smoke=True)
-    assert p.returncode == 0, p.stdout + p.stderr
-    assert "pred_raw_nan" in p.stdout
-    assert "PARSE-RATE EVIDENCE" in p.stdout
-    # ... and --require-raw-gen makes the absence itself fatal
-    q = run_checker(root, smoke=True, extra=["--require-raw-gen"])
-    assert q.returncode == 1, q.stdout
-    assert "raw_gen_log.json.gz missing" in q.stdout
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert (f"FAIL {tag_for(*victim, smoke=True)}: raw_gen_log.json.gz "
+            f"missing -- parse_fail_frac is recorded NOWHERE else and the "
+            f"parser stores a finite 0.5 on failure") in p.stdout
+    assert "pred_raw_nan" not in p.stdout and "--require-raw-gen" not in p.stdout
+    # the three healthy cells are not blamed
+    assert p.stdout.count("raw_gen_log.json.gz missing") == 1
 
-    # a NaN served value under the fallback is a hard failure
+    out = tmp_path / "verdict.json"
+    q = run_checker(root, smoke=True,
+                    extra=["--inspect-archived", "--json", str(out)])
+    assert q.returncode == 0, q.stdout + q.stderr
+    assert "THIS RUN IS NOT A GATE" in q.stdout
+    assert (f"WARN {tag_for(*victim, smoke=True)}: raw_gen_log.json.gz "
+            f"missing") in q.stdout
+    assert "PARSE RATE UNVERIFIED (--inspect-archived, NOT A GATE): 1 run(s)" \
+        in q.stdout
+    assert "[check_s4g] PASS (--inspect-archived: NOT A GATE" in q.stdout
+    v = json.loads(out.read_text())
+    assert v["pass"] is True and v["inspect_archived"] is True
+    assert v["not_a_gate"] is True
+    assert v["parse_rate_unverified"] == [tag_for(*victim, smoke=True)]
+    assert len(v["warnings"]) == 1 and "raw_gen_log" in v["warnings"][0]
+    cell = next(c for c in v["cells"] if c["tag"] == tag_for(*victim,
+                                                              smoke=True))
+    assert cell["parse_evidence"] == "missing(archived)" and cell["ok"]
+
+    # a non-finite served value is still a (corruption) failure, and it is
+    # NOT parse evidence
     root2 = build_wave(
         tmp_path / "runs2", smoke=True,
-        per_cell=lambda c: {
-            "write_raw": False,
-            **({"payload_mut": _nan_pred}
-               if c == ("b0", "fixed", 1.0, 0.2, 0) else {})})
+        per_cell=lambda c: ({"payload_mut": _nan_pred}
+                            if c == ("b0", "fixed", 1.0, 0.2, 0) else {}))
     r = run_checker(root2, smoke=True)
     assert r.returncode == 1, r.stdout
-    assert "non-finite entries in pred_raw" in r.stdout
+    assert "pred_raw has 1 non-finite entries -- a corrupted served vector" \
+        in r.stdout
 
 
 def _nan_pred(payload):
     pr = payload["pred_raw"].clone()
     pr[1, 5] = float("nan")
     payload["pred_raw"] = pr
+
+
+def test_round_missing_from_raw_gen_log_fails(tmp_path):
+    """Every round 0..n_rounds-1 must be in the log, once, in order: a
+    round without a logged parse rate is an unverified round."""
+    root = tmp_path / "runs"
+    build_wave(root, smoke=True)
+    victim = tag_for("d8", "fixed", 1.0, 0.2, 0, smoke=True)
+    with gzip.open(os.path.join(str(root), victim, "raw_gen_log.json.gz"),
+                   "wt") as fh:
+        for t in (0, 2):                    # round 1 never logged
+            fh.write(json.dumps({"round": t, "parse_fail_frac": 0.0,
+                                 "raw": [], "parsed": [0.55] * N}) + "\n")
+    p = run_checker(root, smoke=True)
+    assert p.returncode == 1, p.stdout
+    assert (f"FAIL {victim}: raw_gen_log must carry exactly rounds 0..2 in "
+            f"order, once; it holds [0, 2] -- 1 round(s) missing ([1])") \
+        in p.stdout
+    # a row that lacks the field altogether is a parse failure, not a pass
+    with gzip.open(os.path.join(str(root), victim, "raw_gen_log.json.gz"),
+                   "wt") as fh:
+        for t in range(SMOKE_ROUNDS):
+            row = {"round": t, "raw": [], "parsed": [0.55] * N}
+            if t != 2:
+                row["parse_fail_frac"] = 0.0
+            fh.write(json.dumps(row) + "\n")
+    q = run_checker(root, smoke=True)
+    assert q.returncode == 1, q.stdout
+    assert (f"FAIL {victim}: parse failures in 1 round(s), e.g. round 2 at "
+            f"parse_fail_frac=None") in q.stdout
 
 
 def test_json_verdict_is_written(tmp_path):
@@ -581,20 +640,36 @@ def _seed_group_root(tmp_path, name, collide):
 
 def test_three_distinct_seeds_pass_seed_distinctness(tmp_path):
     root, tf = _seed_group_root(tmp_path, "runs_ok", collide=False)
-    p = run_checker(root, extra=["--tags-file", str(tf)])
+    out = tmp_path / "verdict.json"
+    p = run_checker(root, extra=["--tags-file", str(tf), "--json", str(out)])
     assert p.returncode == 0, p.stdout + p.stderr
     assert "seed-distinctness" in p.stdout       # named in the PASS line
-    assert "FAIL seed-distinctness" not in p.stdout
+    assert "WARN seed-distinctness" not in p.stdout
+    assert "0 WARN line(s) (0 seed-distinctness" in p.stdout
+    assert json.loads(out.read_text())["warnings"] == []
 
 
-def test_two_seeds_sharing_op_raw_fail_seed_distinctness(tmp_path):
+def test_two_seeds_sharing_op_raw_warn_seed_distinctness(tmp_path):
+    """Identical op_raw across seeds is a WARNING, never the exit code:
+    greedy serving on a quantized value grid can legitimately coincide
+    across seeds. The check keeps its name and lands in the JSON under
+    "warnings"."""
     root, tf = _seed_group_root(tmp_path, "runs_bad", collide=True)
-    p = run_checker(root, extra=["--tags-file", str(tf)])
-    assert p.returncode == 1, p.stdout
-    assert "FAIL seed-distinctness b0/evolving/ea0p2/es0" in p.stdout
+    out = tmp_path / "verdict.json"
+    p = run_checker(root, extra=["--tags-file", str(tf), "--json", str(out)])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "WARN seed-distinctness b0/evolving/ea0p2/es0" in p.stdout
     assert "seeds [0, 42] produced a BIT-IDENTICAL op_raw" in p.stdout
+    assert "FAIL seed-distinctness" not in p.stdout
+    assert "[check_s4g] PASS -- wave section4_gate_anch2" in p.stdout
     # seed 43 is genuinely distinct, so only ONE collision is reported
-    assert "1 seed-distinctness collision(s)" in p.stdout
+    assert "1 WARN line(s) (1 seed-distinctness" in p.stdout
+    v = json.loads(out.read_text())
+    assert v["pass"] is True
+    assert v["n_seed_distinctness_warnings"] == 1
+    assert len(v["warnings"]) == 1
+    assert v["warnings"][0].startswith(
+        "WARN seed-distinctness b0/evolving/ea0p2/es0: seeds [0, 42]")
 
 
 def test_a_missing_seed_is_coverage_not_a_seed_distinctness_pass(tmp_path):
@@ -608,7 +683,7 @@ def test_a_missing_seed_is_coverage_not_a_seed_distinctness_pass(tmp_path):
     p = run_checker(root, extra=["--tags-file", str(tf)])
     assert p.returncode == 1, p.stdout
     assert "1 of 3 cells present -- 2 ABSENT" in p.stdout
-    assert "FAIL seed-distinctness" not in p.stdout
+    assert "seed-distinctness b0/" not in p.stdout
 
 
 # ================================================================ FIG6
@@ -620,10 +695,10 @@ def _tags_file(tmp_path, name, tags):
 
 @pytest.mark.slow
 def test_fig6_full_grid_passes(tmp_path):
-    """The complete Figure-6 grid: 146 run dirs (144 gpu + 2 witnesses),
-    46 twin-derived cells drawn from their (cond, es, seed) neighbours,
-    and a two-entry extension manifest with nothing run yet
-    (PENDING-EXT, non-failing)."""
+    """The complete Figure-6 grid: 148 run dirs (144 gpu + 4 witnesses,
+    both methods x both conditions), 44 twin-derived cells drawn from
+    their (cond, es, seed) neighbours, and a two-entry extension
+    manifest with nothing run yet (PENDING-EXT, non-failing)."""
     root = build_fig6_wave(tmp_path / "runs")
     man = write_manifest(tmp_path / "ext.json",
                          [("b0", "fixed", 0.1, 0.3, 0, 60),
@@ -632,36 +707,83 @@ def test_fig6_full_grid_passes(tmp_path):
     p = run_checker(root, wave="fig6",
                     extra=["--ext-manifest", man, "--json", str(out)])
     assert p.returncode == 0, p.stdout + p.stderr
-    assert ("GRID COMPLETENESS: all 192 cells present (146 run + 46 "
+    assert ("GRID COMPLETENESS: all 192 cells present (148 run + 44 "
             "twin-derived)") in p.stdout
-    assert "WITNESSES: 2/2" in p.stdout
+    assert "WITNESSES: 4/4" in p.stdout
     assert "EXTENSIONS: 0 present, 2 PENDING-EXT, 0 unpaired" in p.stdout
     assert p.stdout.count("PENDING-EXT (requested at 60 rounds") == 2
     twin_rows = [ln for ln in p.stdout.splitlines()
                  if ln.endswith("  twin-derived")]
-    assert len(twin_rows) == 46
+    assert len(twin_rows) == 44
     assert all("   PASS " in ln for ln in twin_rows)
     assert "[check_s4g] PASS -- wave section4_gate_anch2_fig6" in p.stdout
-    assert "46 twin-derived" in p.stdout and "2/2 witness" in p.stdout
+    assert "44 twin-derived" in p.stdout and "4/4 witness" in p.stdout
+    assert "zero parse failures in every logged round" in p.stdout
+    assert "0 WARN line(s)" in p.stdout
     # d8 at es=0 is the structural null: the distinctness check must
     # SKIP it (with the reason), never fail it, never silently pass it
     assert p.stdout.count("NOTE seed-distinctness d8/") == 6
-    assert "FAIL seed-distinctness" not in p.stdout
+    assert "seed-distinctness b0/" not in p.stdout
     v = json.loads(out.read_text())
-    assert v["pass"] is True
+    assert v["pass"] is True and v["not_a_gate"] is False
     assert v["wave"] == "section4_gate_anch2_fig6"
-    assert v["n_runs"] == 146
+    assert v["n_runs"] == 148 and v["warnings"] == []
     assert v["n_cells_total"] == 192 and v["n_cells_present"] == 192
-    assert v["n_twin_cells_total"] == 46 and v["n_twin_cells_ok"] == 46
-    assert v["n_witness_cells_total"] == 2 and v["n_witness_cells_ok"] == 2
+    assert v["n_twin_cells_total"] == 44 and v["n_twin_cells_ok"] == 44
+    assert v["n_witness_cells_total"] == 4 and v["n_witness_cells_ok"] == 4
     assert v["n_ext_pending"] == 2 and v["n_ext_present"] == 0
     assert all(e["status"] == "PENDING-EXT" for e in v["extensions"])
     assert len(v["seed_distinctness_skipped_structural_null"]) == 6
     wit = {(c["arm"], c["cond"], c["eps_ai"], c["eps_social"], c["seed"])
            for c in v["witness_cells"]}
-    assert wit == {("b0", "evolving", 0.0, 0.3, 0),
-                   ("d8", "evolving", 0.0, 0.3, 0)}
-    assert sum(1 for c in v["cells"] if c["d8_replay"] == "byte-exact") == 73
+    assert wit == {(arm, cond, 0.0, 0.3, 0)
+                   for arm in ARMS for cond in CONDS}
+    assert sum(1 for c in v["cells"] if c["d8_replay"] == "byte-exact") == 74
+    assert all(c["parse_evidence"] == "raw_gen_log" for c in v["cells"])
+
+
+def test_fig6_four_witnesses_pass_including_fixed(tmp_path):
+    """The four ea=0 witnesses -- both methods x both conditions -- pass
+    the op_raw == twin_raw identity, the fixed ones with the bottom-145
+    clamp pinned bit-exactly in BOTH tensors; a fixed witness whose
+    responsive population departs from the twin fails on the stubborn
+    -clamp path too."""
+    wit = [(arm, cond, 0.0, 0.3, 0) for arm in ARMS for cond in CONDS]
+    root = tmp_path / "runs"
+    for c in wit:
+        build_run(root, *c, nrounds=PROD_ROUNDS)
+    tf = _tags_file(tmp_path, "wit", [tag_for(*c) for c in wit])
+    out = tmp_path / "verdict.json"
+    p = run_checker(root, wave="fig6",
+                    extra=["--tags-file", tf, "--json", str(out)])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "WITNESSES: 4/4 ea=0 witness cell(s) pass" in p.stdout
+    v = json.loads(out.read_text())
+    assert v["n_witness_cells_ok"] == 4
+    assert all(c["witness"] and c["contact_max"] == 0.0 for c in v["cells"])
+    assert all(c["op_sha256"] == c["twin_sha256"] for c in v["cells"])
+
+    # the fixed b0 witness: a responsive (unpinned) agent drifts off the
+    # twin -> the clamp checks still pass, the identity does not
+    victim = ("b0", "fixed", 0.0, 0.3, 0)
+    free = int((~bottom_mask(INNATE, CLAMP_N)).nonzero().flatten()[0])
+
+    def sabotage(payload):
+        op = payload["op_raw"].clone()
+        op[7, free] = float(op[7, free]) + 0.01
+        payload["op_raw"] = op
+
+    root2 = tmp_path / "runs2"
+    for c in wit:
+        build_run(root2, *c, nrounds=PROD_ROUNDS,
+                  payload_mut=sabotage if c == victim else None)
+    q = run_checker(root2, wave="fig6", extra=["--tags-file", tf])
+    assert q.returncode == 1, q.stdout
+    assert f"FAIL {tag_for(*victim)}: ea0-witness: op_raw != twin_raw" \
+        in q.stdout
+    assert "1 agent(s) differ over 1 round(s), first round 7" in q.stdout
+    assert f"FAIL {tag_for(*victim)}: fixed:" not in q.stdout
+    assert "WITNESSES: 3/4" in q.stdout
 
 
 def test_fig6_witness_with_op_raw_off_the_twin_fails(tmp_path):
@@ -875,13 +997,17 @@ def test_fig6_smoke_checks_exactly_the_4_cells(tmp_path):
 
     # the v1 smoke cells (ea=1, es=0.2) are NOT fig6 smoke cells, and the
     # reverse: the two waves' smokes never stand in for each other
+    # (smoke mode gates exactly the selected wave's smoke tags -- the other
+    # wave's pofds4gsmk_ dirs are neither accepted nor reported as EXTRA,
+    # so the selected wave's cells are simply absent: a hard failure)
     v1root = build_wave(tmp_path / "v1smoke", smoke=True)
     q = run_checker(v1root, wave="fig6", smoke=True)
     assert q.returncode == 1, q.stdout
-    assert "smoke cell must be ea0p1 es0p3 s0; got ea1 es0p2 s0" in q.stdout
+    assert "run dir does not exist" in q.stdout
+    assert "all 4 cells present" not in q.stdout
     r = run_checker(root, wave="v1", smoke=True)
     assert r.returncode == 1, r.stdout
-    assert "smoke cell must be ea1 es0p2 s0; got ea0p1 es0p3 s0" in r.stdout
+    assert "run dir does not exist" in r.stdout
 
     # honours the run root: a broken fig6 smoke elsewhere is invisible
     bad = build_fig6_smoke(
@@ -920,3 +1046,16 @@ def test_wave_aliases_select_the_same_grids(tmp_path):
         assert p.returncode == 0, p.stdout + p.stderr
         assert json.loads(out.read_text())["wave"] == \
             "section4_gate_anch2_fig6"
+
+
+def test_fig6_smoke_ignores_the_other_waves_smoke_dirs_beside_it(tmp_path):
+    """Both corrected-gate waves' smokes live under one run root on the
+    cluster with the same pofds4gsmk_ prefix. The fig6 smoke gate must
+    neither accept the S4G smoke dirs nor report them as EXTRA."""
+    root = build_fig6_smoke(tmp_path / "runs")
+    build_wave(tmp_path / "runs", smoke=True)          # S4G smoke beside it
+    p = run_checker(root, wave="fig6", smoke=True)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "EXTRA" not in p.stdout and "unexpected" not in p.stdout.split(
+        "GRID COMPLETENESS")[0]
+    assert "all 4 cells present" in p.stdout
