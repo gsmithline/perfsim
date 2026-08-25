@@ -452,7 +452,11 @@ def test_f4r_env_uses_the_offline_cache(generated):
 # the submit script forbids co-submitting the two keys, so whichever runs
 # first makes the other's copy an idempotent no-op.
 FIG6_KEYS = {"configs_pofd_section4_gate_anch2_fig6_fixed.txt",
-             "configs_pofd_section4_gate_anch2_fig6_evo.txt"}
+             "configs_pofd_section4_gate_anch2_fig6_evo.txt",
+             "configs_pofd_section4_gate_anch2_fig6_s0_fixed.txt",
+             "configs_pofd_section4_gate_anch2_fig6_s0_evo.txt",
+             "configs_pofd_section4_gate_anch2_fig6_s42_43_fixed.txt",
+             "configs_pofd_section4_gate_anch2_fig6_s42_43_evo.txt"}
 
 
 def test_no_new_tag_collides_with_any_other_generated_tag(generated):

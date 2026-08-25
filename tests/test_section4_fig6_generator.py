@@ -213,9 +213,15 @@ def test_exactly_the_24_expected_tags_are_shared_with_the_unrun_key(generated):
             for r in text.splitlines():
                 if r.strip():
                     everywhere.setdefault(r.split(",")[0].strip(), set()).add(name)
+    # (the seed-staged keys _s0 / _s42_43 re-queue the SAME rows by design;
+    # they are the only other files allowed to name them)
+    staged = {CFG_FIXED.replace(f"{KEY}_", f"{KEY}_s0_"),
+              CFG_FIXED.replace(f"{KEY}_", f"{KEY}_s42_43_"),
+              CFG_EVO.replace(f"{KEY}_", f"{KEY}_s0_"),
+              CFG_EVO.replace(f"{KEY}_", f"{KEY}_s42_43_")}
     for t in set(mine) - shared:
-        assert everywhere[t] == {CFG_FIXED} or everywhere[t] == {CFG_EVO}, \
-            (t, everywhere[t])
+        where = everywhere[t] - staged
+        assert where == {CFG_FIXED} or where == {CFG_EVO}, (t, everywhere[t])
 
 
 def test_subs_pin_the_corrected_gate_and_the_clamp_split(generated):
@@ -273,7 +279,8 @@ def test_submit_script_routes_all_fig6_keys():
     for k in ("section4_gate_anch2_fig6)", "section4_gate_anch2_fig6_smoke)",
               "section4_gate_anch2_fig6_ext)"):
         assert k in s, k
-    assert s.count("section4_gate_anch2_fig6[_smoke|_ext][_fixed|_evo]") == 3
+    assert s.count("section4_gate_anch2_fig6[_smoke|_ext|_s0|_s42_43][_fixed|_evo]") == 3
+    assert "section4_gate_anch2_fig6_s0)" in s and "section4_gate_anch2_fig6_s42_43)" in s
 
 
 def test_old_section4_configs_are_byte_unchanged(generated):
@@ -283,3 +290,24 @@ def test_old_section4_configs_are_byte_unchanged(generated):
                  "configs_pofd_section4_gate_anch2_smoke_evo.txt"):
         with open(os.path.join(CONDOR, name)) as fh:
             assert generated[name] == fh.read(), name
+
+
+def test_seed_staged_keys_partition_the_148_rows_byte_identically(generated, gen):
+    """section4_gate_anch2_fig6_s0 (seed 0: 26 per condition = 24 GPU +
+    2 witnesses) and _s42_43 (48 per condition) are an exact partition of
+    the full key's rows, with identical tags and an identical sub env."""
+    for cond, cfg in (("fixed", CFG_FIXED), ("evolving", CFG_EVO)):
+        full = _rows(generated, cfg)
+        s0 = _rows(generated, cfg.replace(f"{KEY}_", f"{KEY}_s0_"))
+        rest = _rows(generated, cfg.replace(f"{KEY}_", f"{KEY}_s42_43_"))
+        assert len(s0) == 26 and len(rest) == 48 and len(full) == 74
+        assert sorted(s0 + rest) == sorted(full)
+        assert all(r.split(",")[0].strip().endswith("_s0") for r in s0)
+        assert all(r.split(",")[0].strip().rsplit("_s", 1)[1] in ("42", "43")
+                   for r in rest)
+        env = lambda k: next(l for l in gen.s4g2_sub(cond, k).splitlines()
+                             if l.startswith("environment"))
+        assert env("s0") == env("main") == env("rest")
+    submit = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    assert 'section4_gate_anch2_fig6_s0)     TARGETS="section4_gate_anch2_fig6_s0_fixed section4_gate_anch2_fig6_s0_evo" ;;' in submit
+    assert 'section4_gate_anch2_fig6_s42_43) TARGETS="section4_gate_anch2_fig6_s42_43_fixed section4_gate_anch2_fig6_s42_43_evo" ;;' in submit

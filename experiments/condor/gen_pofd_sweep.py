@@ -9322,6 +9322,20 @@ S4G2_SMOKE_EVO_KEY = S4G2_SMOKE_KEY + "_evo"
 S4G2_EXT_KEY = S4G2_KEY + "_ext"
 S4G2_EXT_FIXED_KEY = S4G2_EXT_KEY + "_fixed"
 S4G2_EXT_EVO_KEY = S4G2_EXT_KEY + "_evo"
+# SEED-STAGED RELEASE (2026-08-25): the same 148 rows, byte-identical tags
+# and env, partitioned by replication seed so seed 0 (24 GPU cells per
+# condition + the 2 ea=0 witnesses = 26 per condition, 52 jobs) can run
+# and be gated first (check_section4_gate.py --wave fig6 --seeds 0) and
+# seeds {42, 43} (48 per condition, 96 jobs) follow.  The full key still
+# names every row; the idempotent wrapper skips any already-complete tag.
+S4G2_S0_KEY = S4G2_KEY + "_s0"
+S4G2_S0_FIXED_KEY = S4G2_S0_KEY + "_fixed"
+S4G2_S0_EVO_KEY = S4G2_S0_KEY + "_evo"
+S4G2_REST_KEY = S4G2_KEY + "_s42_43"
+S4G2_REST_FIXED_KEY = S4G2_REST_KEY + "_fixed"
+S4G2_REST_EVO_KEY = S4G2_REST_KEY + "_evo"
+S4G2_S0_SEEDS = (0,)
+S4G2_REST_SEEDS = (42, 43)
 S4G2_EXT_REQUEST_PATH = os.path.join(
     HERE, "section4_fig6_extension_request.json")
 S4G2_EXT_ROUNDS_OK = (60, 100)
@@ -9370,10 +9384,13 @@ def s4g2_cells():
     return out
 
 
-def s4g2_rows(cond):
+def s4g2_rows(cond, seeds=None):
+    """Production rows of one condition; `seeds` restricts to a seed
+    subset (the staged release) without changing any row."""
     return [s4g_row(arm, cond, ea, es, seed)
             for (arm, c, ea, es, seed, kind) in s4g2_cells()
-            if c == cond and kind in ("gpu", "witness")]
+            if c == cond and kind in ("gpu", "witness")
+            and (seeds is None or seed in seeds)]
 
 
 def s4g2_smoke_rows(cond):
@@ -9422,12 +9439,23 @@ def s4g2_sub(cond, kind="main"):
            ("fixed", "smoke"): S4G2_SMOKE_FIXED_KEY,
            ("evolving", "smoke"): S4G2_SMOKE_EVO_KEY,
            ("fixed", "ext"): S4G2_EXT_FIXED_KEY,
-           ("evolving", "ext"): S4G2_EXT_EVO_KEY}[(cond, kind)]
+           ("evolving", "ext"): S4G2_EXT_EVO_KEY,
+           ("fixed", "s0"): S4G2_S0_FIXED_KEY,
+           ("evolving", "s0"): S4G2_S0_EVO_KEY,
+           ("fixed", "rest"): S4G2_REST_FIXED_KEY,
+           ("evolving", "rest"): S4G2_REST_EVO_KEY}[(cond, kind)]
     rows = {"main": s4g2_rows, "smoke": s4g2_smoke_rows,
-            "ext": s4g2_ext_rows}[kind](cond)
+            "ext": s4g2_ext_rows,
+            "s0": lambda c: s4g2_rows(c, seeds=S4G2_S0_SEEDS),
+            "rest": lambda c: s4g2_rows(c, seeds=S4G2_REST_SEEDS)}[kind](cond)
     what = {"main": ("FIGURE-6 GRID PRODUCTION -- ea {.1,.3,1} x es "
                      "{0,.1,.3,1} x 2 arms x 3 seeds + the ea=0 witness "
                      "cells (the other ea=0 cells are twin-derived)"),
+            "s0": ("FIGURE-6 GRID PRODUCTION, SEED 0 ONLY (staged release: "
+                   "24 GPU cells + 2 ea=0 witnesses per condition; gate "
+                   "with --seeds 0 before releasing seeds 42,43)"),
+            "rest": ("FIGURE-6 GRID PRODUCTION, SEEDS 42 AND 43 (staged "
+                     "release, after the seed-0 gate)"),
             "smoke": ("3-ROUND SMOKE (seed 0, ea0p1 es0p3, both arms, "
                       "production configuration; a genuinely NEW cell)"),
             "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, matched "
@@ -13173,6 +13201,33 @@ def main():
         files[p] = s4g2_rows(_cond)
         expected[p] = len(files[p])      # 74 fixed + 74 evolving (4 witnesses)
         cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = s4g2_sub(_cond)
+    # seed-staged release: an exact partition of the production rows
+    for _cond in S4G2_CONDS:
+        _full = s4g2_rows(_cond)
+        _s0 = s4g2_rows(_cond, seeds=S4G2_S0_SEEDS)
+        _rest = s4g2_rows(_cond, seeds=S4G2_REST_SEEDS)
+        assert len(_s0) == 26 and len(_rest) == 48, (len(_s0), len(_rest))
+        assert sorted(_s0 + _rest) == sorted(_full)
+        assert not (set(_s0) & set(_rest))
+        assert all(f"_s{S4G2_S0_SEEDS[0]}" == "_s" + r.split(",")[0]
+                   .rsplit("_s", 1)[1] for r in _s0)
+        for _kind, _key, _rows in (("s0", {"fixed": S4G2_S0_FIXED_KEY,
+                                           "evolving": S4G2_S0_EVO_KEY}[_cond],
+                                    _s0),
+                                   ("rest", {"fixed": S4G2_REST_FIXED_KEY,
+                                             "evolving": S4G2_REST_EVO_KEY}[_cond],
+                                    _rest)):
+            _ssub = s4g2_sub(_cond, _kind)
+            _senv = next(l for l in _ssub.splitlines()
+                         if l.startswith("environment"))
+            _menv = next(l for l in s4g2_sub(_cond).splitlines()
+                         if l.startswith("environment"))
+            assert _senv == _menv, ("staged sub env must equal the full "
+                                    "sub env", _kind, _cond)
+            p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+            files[p] = _rows
+            expected[p] = len(_rows)
+            cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _ssub
     for _cond, _key in (("fixed", S4G2_SMOKE_FIXED_KEY),
                         ("evolving", S4G2_SMOKE_EVO_KEY)):
         _rows = s4g2_smoke_rows(_cond)

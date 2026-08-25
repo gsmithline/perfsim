@@ -256,6 +256,9 @@ WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, "v1", "fig6")
 
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
+# mirror of HFCausalLMModel._parse_strict's regex (never import
+# transformers on the login node); tests pin the two to agree
+_WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
 # scan prefixes carry the separator: "pofds4gsmk_..." also startswith
 # "pofds4g", so a bare-prefix scan in production mode would silently
 # swallow the smokes.
@@ -1278,6 +1281,38 @@ def check_one(run_dir, wave, smoke, inspect_archived=False):
         if short:
             bad(f"round {short[0].get('round')} parsed "
                 f"{len(short[0].get('parsed') or [])} of {N} agents")
+        # WELL-FORMED generations (2026-08-25, after the Section-3 wave):
+        # parse_fail_frac only counts digit-free strings. The legacy parser
+        # read Mistral-7B's ".64 (" as 64 -> clamp 1.0 and "58 (58" as 1.0
+        # with NO failure flagged. Every raw string must therefore START
+        # with a well-formed number in [0,1] (leading-dot allowed), and the
+        # value the run served (parsed[i]) must equal that number.
+        malformed, mismatched, total = [], [], 0
+        for r in rows:
+            raws, parsed = r.get("raw") or [], r.get("parsed") or []
+            if len(raws) != len(parsed):
+                bad(f"round {r.get('round')} logs {len(raws)} raw strings "
+                    f"but {len(parsed)} parsed values")
+                continue
+            for i, (txt, pv) in enumerate(zip(raws, parsed)):
+                total += 1
+                m = _WELL_FORMED_RE.match(txt or "")
+                v = float(m.group(1)) if m else None
+                if v is None or not 0.0 <= v <= 1.0:
+                    malformed.append((r.get("round"), i, str(txt)[:20]))
+                elif abs(float(pv) - v) > 1e-6:
+                    mismatched.append((r.get("round"), i, str(txt)[:20],
+                                       float(pv)))
+        rec["generations"] = {"total": total, "malformed": len(malformed),
+                              "mismatched": len(mismatched)}
+        if malformed:
+            bad(f"{len(malformed)}/{total} generation(s) are not a "
+                f"well-formed number in [0,1] at the start of the string, "
+                f"e.g. {malformed[:3]} -- the served value is not what the "
+                f"model wrote")
+        if mismatched:
+            bad(f"{len(mismatched)}/{total} served value(s) differ from the "
+                f"number the model wrote, e.g. {mismatched[:3]}")
 
     del d, op, pr, tw, inn
     return rec
@@ -1309,6 +1344,13 @@ def main(argv=None):
                          f"selected wave (4 jobs: both arms x both "
                          f"conditions at the wave's smoke gate, seed 0) "
                          f"under --run-root")
+    ap.add_argument("--seeds", default=None,
+                    help="comma-separated replication seeds: gate ONLY "
+                         "those seeds' cells (the seed-staged release, e.g. "
+                         "--seeds 0 before seeds 42,43 are submitted). Twin-"
+                         "derived and extension cells are restricted the "
+                         "same way; other seeds' run dirs are ignored, not "
+                         "EXTRA. Not a full-wave verdict.")
     ap.add_argument("--tags-file", default=None,
                     help="file of tags (one per line, # comments allowed) to "
                          "gate INSTEAD of the full product; coverage is then "
@@ -1373,6 +1415,15 @@ def main(argv=None):
         run_keys = [c + (None,) for c in wave.run_cells()]
         twin_keys = [c + (None,) for c in wave.twin_cells()]
         ext_keys = list(wave.ext_requests)
+    seed_subset = None
+    if args.seeds:
+        seed_subset = sorted({int(x) for x in args.seeds.split(",") if x})
+        run_keys = [k for k in run_keys if k[4] in seed_subset]
+        twin_keys = [k for k in twin_keys if k[4] in seed_subset]
+        ext_keys = [k for k in ext_keys if k[4] in seed_subset]
+        if not run_keys:
+            ap.error(f"--seeds {args.seeds}: no cells of this wave use "
+                     f"those seeds")
     out = []
     if args.tags_file:
         try:
@@ -1404,7 +1455,14 @@ def main(argv=None):
         ext_keys = [k for k in ext_keys if k in keep]
         twin_keys = []
         run_dirs = [str(root / t) for t in keep_tags]
-    elif args.smoke:
+    elif args.smoke or seed_subset is not None:
+        # Smoke: the two corrected-gate waves share the pofds4gsmk_ prefix
+        # (the S4G smoke at ea=1/es=0.2 sits beside the fig6 smoke at
+        # ea=0.1/es=0.3 under the same run root). Seed subset: the other
+        # seeds' dirs may exist. Either way a prefix scan would report
+        # foreign dirs as EXTRA, so gate exactly the selected tags: an
+        # absent one is a FAIL, a foreign one is ignored. Full production
+        # mode keeps the prefix scan (pofds4g_ never matches pofds4gsmk_).
         # The two corrected-gate waves share the pofds4gsmk_ prefix (the
         # S4G smoke at ea=1/es=0.2 sits beside the fig6 smoke at
         # ea=0.1/es=0.3 under the same run root), so a prefix scan would
@@ -1412,9 +1470,9 @@ def main(argv=None):
         # exactly the selected wave's smoke tags: an absent one is a FAIL,
         # a foreign one is ignored. Production mode keeps the prefix scan
         # (pofds4g_ never matches pofds4gsmk_).
-        run_dirs = sorted(str(root / wave.render_tag(*k[:5], smoke=True,
+        run_dirs = sorted(str(root / wave.render_tag(*k[:5], smoke=args.smoke,
                                                      rounds=k[5]))
-                          for k in run_keys)
+                          for k in run_keys + ext_keys)
     else:
         run_dirs = sorted(str(p) for p in root.iterdir()
                           if p.is_dir() and p.name.startswith(scan))
@@ -1813,6 +1871,7 @@ def main(argv=None):
 
     verdict = {
         "wave": wave.name,
+        "seed_subset": seed_subset,
         "generator": gen_path,
         "smoke": bool(args.smoke),
         "run_root": str(root),

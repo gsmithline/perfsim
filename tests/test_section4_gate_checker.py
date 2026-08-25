@@ -246,7 +246,8 @@ def build_run(root, arm, cond, ea, es, seed, nrounds, smoke=False,
                        compresslevel=1) as fh:
             for t in range(nrounds):
                 fh.write(json.dumps({
-                    "round": t, "parse_fail_frac": 0.0, "raw": [],
+                    "round": t, "parse_fail_frac": 0.0,
+                    "raw": ["0.55"] * N,       # what the model wrote
                     "parsed": [0.55] * N}) + "\n")
     if int(cfg.get("icl_days") or 0) > 0:
         rows = days_rows(payload["innate"], list(payload["op_raw"]))
@@ -1059,3 +1060,94 @@ def test_fig6_smoke_ignores_the_other_waves_smoke_dirs_beside_it(tmp_path):
     assert "EXTRA" not in p.stdout and "unexpected" not in p.stdout.split(
         "GRID COMPLETENESS")[0]
     assert "all 4 cells present" in p.stdout
+
+
+def test_fig6_gate_fails_a_silent_legacy_misparse(tmp_path):
+    """After the Section-3 wave: Mistral-7B wrote '.64 (' and the legacy
+    parser served 1.0 with parse_fail_frac == 0. Every raw generation must
+    start with a well-formed number in [0,1] and equal the served value."""
+    import gzip
+    root = build_fig6_smoke(tmp_path / "runs")
+    p = run_checker(root, wave="fig6", smoke=True)
+    assert p.returncode == 0, p.stdout + p.stderr
+    cell = os.path.join(root, tag_for("b0", "fixed", 0.1, 0.3, 0, smoke=True))
+    gz = os.path.join(cell, "raw_gen_log.json.gz")
+    rows = [json.loads(l) for l in gzip.open(gz, "rt") if l.strip()]
+    rows[1]["raw"] = [".64 (\n"] * 723
+    rows[1]["parsed"] = [1.0] * 723            # what legacy _parse served
+    with gzip.open(gz, "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    q = run_checker(root, wave="fig6", smoke=True)
+    assert q.returncode == 1, q.stdout
+    assert "served value(s) differ from the number the model wrote" in q.stdout
+    # a bare-integer run clamped to 1.0 is malformed even with parse_fail 0
+    rows[1]["raw"] = ["58 (58"] * 723
+    with gzip.open(gz, "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    r_ = run_checker(root, wave="fig6", smoke=True)
+    assert r_.returncode == 1 and "not a well-formed number" in r_.stdout
+    # the checker's regex agrees with the wrapper's strict parser
+    import re as _re
+    os.environ.setdefault("USE_TF", "0")
+    from perfsim.models.hf_causal_lm import HFCausalLMModel as H
+    wf = _re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
+    for t in (".64 (\n", "0.64", "58 (58", "0 (0 (0", "1.2", "", ".5", " 0.35\n"):
+        m = wf.match(t); v = float(m.group(1)) if m else None
+        ok = v is not None and 0 <= v <= 1
+        assert ok == H._parse_strict(t)[1], t
+
+
+def test_fig6_seeds_flag_gates_a_seed_subset_without_a_full_wave_verdict(tmp_path):
+    """--seeds 0 gates exactly seed 0's cells (24 GPU + 2 witness per
+    condition = 52 runs, plus seed 0's twin-derived cells); seeds 42/43
+    are neither required nor reported as EXTRA."""
+    skip = {c[:5] for c in fig6_cells() if c[4] != 0}
+    root = build_fig6_wave(tmp_path / "runs", skip=skip)
+    p = run_checker(root, wave="fig6", extra=["--seeds", "0", "--json",
+                                              str(tmp_path / "v.json")])
+    assert p.returncode == 0, p.stdout + p.stderr
+    v = json.loads((tmp_path / "v.json").read_text())
+    assert v["seed_subset"] == [0] and v["n_runs"] == 52
+    assert all(c["tag"].endswith("_s0") for c in v["cells"])
+    # the same root without --seeds is an incomplete wave, not a pass
+    q = run_checker(root, wave="fig6")
+    assert q.returncode == 1, q.stdout
+    # asking for a seed that has no runs fails on absence
+    r = run_checker(root, wave="fig6", extra=["--seeds", "42"])
+    assert r.returncode == 1 and "run dir does not exist" in r.stdout
+
+
+def test_fig6_gate_fails_a_silent_legacy_misparse(tmp_path):
+    """After the Section-3 wave: Mistral-7B wrote '.64 (' and the legacy
+    parser served 1.0 with parse_fail_frac == 0. Every raw generation must
+    start with a well-formed number in [0,1] and equal the served value."""
+    import gzip
+    root = build_fig6_smoke(tmp_path / "runs")
+    p = run_checker(root, wave="fig6", smoke=True)
+    assert p.returncode == 0, p.stdout + p.stderr
+    cell = os.path.join(root, tag_for("b0", "fixed", 0.1, 0.3, 0, smoke=True))
+    gz = os.path.join(cell, "raw_gen_log.json.gz")
+    rows = [json.loads(l) for l in gzip.open(gz, "rt") if l.strip()]
+    rows[1]["raw"] = [".64 (\n"] * 723
+    rows[1]["parsed"] = [1.0] * 723            # what legacy _parse served
+    with gzip.open(gz, "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    q = run_checker(root, wave="fig6", smoke=True)
+    assert q.returncode == 1, q.stdout
+    assert "served value(s) differ from the number the model wrote" in q.stdout
+    rows[1]["raw"] = ["58 (58"] * 723           # bare-integer run, clamped
+    with gzip.open(gz, "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    r_ = run_checker(root, wave="fig6", smoke=True)
+    assert r_.returncode == 1 and "not a well-formed number" in r_.stdout
+    import re as _re
+    os.environ.setdefault("USE_TF", "0")
+    from perfsim.models.hf_causal_lm import HFCausalLMModel as H
+    wf = _re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
+    for t in (".64 (\n", "0.64", "58 (58", "0 (0 (0", "1.2", "", ".5", " 0.35\n"):
+        m = wf.match(t); v = float(m.group(1)) if m else None
+        assert (v is not None and 0 <= v <= 1) == H._parse_strict(t)[1], t
