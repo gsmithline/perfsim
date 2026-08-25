@@ -1,11 +1,30 @@
 #!/usr/bin/env python3
-"""Gate for the SECTION-4 CORRECTED-GATE wave (pofds4g_, 2026-08-24).
+"""Gate for the SECTION-4 CORRECTED-GATE waves (pofds4g_).
 
-The wave re-runs the completed Mistral bottom-20% FIXED-vs-EVOLVING
+ONE checker, TWO waves, selected by --wave:
+
+  section4_gate_anch2       (alias v1)   the original 72-cell wave
+                                         (2026-08-24): ea {0.2, 1} x
+                                         es {0, 0.2, 1} x 2 arms x 2
+                                         conditions x 3 seeds. DEFAULT.
+  section4_gate_anch2_fig6  (alias fig6) the Figure-6 grid (2026-08-25):
+                                         ea, es in {0, .1, .3, 1} -> 192
+                                         cells = 144 GPU + 2 ea=0 WITNESS
+                                         + 46 TWIN-DERIVED, plus optional
+                                         _r60/_r100 horizon EXTENSIONS.
+
+THE GRID IS READ FROM THE GENERATOR (experiments/condor/gen_pofd_sweep.py,
+loaded via importlib exactly as check_fig3_full_loop.py does it), never
+restated here: S4G_* / S4G2_* constants, s4g2_cells(), S4G2_EA0_WITNESS,
+s4g_smoke_rows / s4g2_smoke_rows, s4g2_ext_requests() and s4g_tag() are
+the single source of truth, and this file's parser is self-tested
+against s4g_tag() on every expected cell before anything is opened.
+
+Both waves re-run the completed Mistral bottom-20% FIXED-vs-EVOLVING
 Section-4 experiment under the CORRECTED AI gate:
 
-    |m - x'| <= eps_AI   with x' = k*innate + (1-k)*x   (the ANCHORED
-                                                         opinion)
+    |m - x'| < eps_AI   with x' = k*innate + (1-k)*x   (the ANCHORED
+                                                        opinion)
 
 instead of the raw start-of-round opinion x0. In the runner that is
 AI_GATE_REFERENCE=anchor, which makes
@@ -22,9 +41,10 @@ this file.
 
 WHAT IS CHECKED (each item HARD-FAILS; nothing in this file warns):
   1. GRAMMAR + COVERAGE -- every present run dir parses under the pinned
-     tag grammar, and the parsed (arm, cond, ea, es, seed) set equals the
-     full 72-cell product. Missing cells are listed explicitly and are a
-     hard failure; a short grid never looks like a complete result.
+     tag grammar, and the parsed (arm, cond, ea, es, seed[, horizon]) set
+     equals the selected wave's expected product. Missing cells are
+     listed explicitly and are a hard failure; a short grid never looks
+     like a complete result.
   2. OPERATOR -- population_update == nested_ai_anchored_then_social_v2
      AND ai_gate_reference == "anchor". v1 fails by name.
   3. GRID FIELDS, TAG vs CONFIG IN BOTH DIRECTIONS -- eps_ai, eps
@@ -45,8 +65,8 @@ WHAT IS CHECKED (each item HARD-FAILS; nothing in this file warns):
                  every recorded round.
        evolving: the config carries NO innate_clamp_* key at all and the
                  trajectory carries no clamp artifact.
-  5. COHORT PAIRING -- for each (arm, ea, es, seed) the fixed and
-     evolving members of the pair must share the innate vector
+  5. COHORT PAIRING -- for each (arm, ea, es, seed[, horizon]) the fixed
+     and evolving members of the pair must share the innate vector
      BIT-EXACTLY, hence the same reconstructed bottom-145 cohort. The
      whole wave must in fact sit on ONE innate vector: with
      PROFILE_SHUFFLE_P=0 and no routing treatment, load_movielens_setup
@@ -58,16 +78,34 @@ WHAT IS CHECKED (each item HARD-FAILS; nothing in this file warns):
      about the world depends on the seed, config["seed"] is the ONLY
      per-run evidence that a seed reached the runner, and that field is
      written from the environment rather than observed from behaviour.
-     So within each (arm, cond, ea, es) cell, no two seeds may produce a
-     BIT-IDENTICAL op_raw. Two identical trajectories mean the seed never
-     reached the training/serving stream: invisible in every per-run
-     field, and it would silently collapse the three-seed confidence
-     intervals to a single observation. Compared by sha256 over op_raw,
-     so no two runs' tensors are ever resident at once. A missing third
-     seed is a COVERAGE failure (already fatal), not a pass here.
-  6. TWIN present, correctly shaped, finite, in [0,1] and non-degenerate.
+     So within each (arm, cond, ea, es[, horizon]) cell, no two seeds
+     may produce a BIT-IDENTICAL op_raw. Two identical trajectories mean
+     the seed never reached the training/serving stream: invisible in
+     every per-run field, and it would silently collapse the three-seed
+     confidence intervals to a single observation. Compared by sha256
+     over op_raw, so no two runs' tensors are ever resident at once. A
+     missing third seed is a COVERAGE failure (already fatal), not a pass
+     here.
+       EXEMPTION, STATED AND PRINTED: d8 at eps_social = 0 is the
+     STRUCTURAL NULL (analyze_section4_gate.build_null_rows): frozen
+     weights, greedy decoding, own-history prompts and an inert
+     strict-< peer step mean NO random draw reaches the population, so
+     three seeds of a d8/es=0 cell are EXPECTED to be bit-identical.
+     Those groups are skipped with a NOTE naming the reason; requiring
+     distinctness there would fail a correct wave.
+       TWIN SEED-DISTINCTNESS (the extension the twin-derived cells
+     need): the twin is advanced by its own seeded generator, so within
+     each (cond, es > 0[, horizon]) no two seeds may share twin_raw.
+     es = 0 is excluded for the same strict-< reason (no accepted pair,
+     the twin is RNG-free and seed-invariant there).
+  6. TWIN present, correctly shaped, finite, in [0,1] and non-degenerate;
+     and TWIN AGREEMENT: the twin is a pure function of (cond, es,
+     seed) -- the served vector never enters ab_x_cf -- so every run at
+     one (cond, es, seed) must carry a BIT-IDENTICAL twin_raw over the
+     base horizon, whatever its arm or eps_AI (and extension runs must
+     agree with the base cells over the first S4G_ROUNDS rows).
   7. ZERO PARSE FAILURES -- read from raw_gen_log.json.gz when that
-     artifact exists. IT DOES NOT EXIST FOR THIS WAVE: the S4G sub
+     artifact exists. IT DOES NOT EXIST FOR THESE WAVES: the S4G sub
      templates in gen_pofd_sweep.py do not set SAVE_RAW_GEN=1, and the
      runner writes raw_gen_log.json.gz (the only place parse_fail_frac is
      recorded) only under SAVE_RAW_GEN=1. So the default behaviour is:
@@ -82,11 +120,40 @@ WHAT IS CHECKED (each item HARD-FAILS; nothing in this file warns):
        * raw log absent while config says save_raw_gen -> hard failure.
      --require-raw-gen makes the absence itself a hard failure.
   8. len(trajectory) >= n_rounds, with op_raw/pred_raw/twin_raw shaped
-     [n_rounds, 723].
-  9. --smoke gates the 3-round pofds4gsmk_ cells (4 of them: both arms x
-     both conditions at ea=1, es=0.2, seed 0) and HONOURS THE RUN ROOT IT
-     IS PASSED. (check_section3.py --smoke has a bug where the run dir it
-     is given is ignored; that bug is deliberately not copied.)
+     [n_rounds, 723] (n_rounds = the horizon for an extension run).
+  9. --smoke gates the 3-round pofds4gsmk_ cells of the selected wave
+     (4 of them: both arms x both conditions at the wave's smoke gate --
+     v1: ea=1 es=0.2; fig6: ea=0.1 es=0.3 -- seed 0) and HONOURS THE RUN
+     ROOT IT IS PASSED. (check_section3.py --smoke has a bug where the
+     run dir it is given is ignored; that bug is deliberately not
+     copied.)
+ 10. d8 PERSONAL-HISTORY LOCALITY (both waves, both conditions) -- the
+     rendered contexts in icl_days_log.json.gz are REPLAYED BYTE-EXACTLY
+     from (innate, op_raw): agent i's round-t sentence must be exactly
+     the last icl_days entries of [innate_i, op_raw[0,i], ...,
+     op_raw[t-1,i]] rendered as "%.2f", oldest to newest. Byte-equality
+     simultaneously proves that every value is one of that SAME agent's
+     own previous post-peer opinions, that no more than icl_days (8)
+     values are rendered, and that nothing from another agent entered
+     the context. The first mismatch is classified (foreign value /
+     another agent's sentence / too many values / wrong window) in the
+     failure line. MIRRORS check_pofd_sanity.check_run's d8 replay (the
+     `hist_cl` loop of its "-- 1j CLAMP" block and the `hist_e` loop of
+     its `if is_evo:` block), which is the runner's own rendering.
+ 11. ea0-witness (any run at eps_AI = 0; in fig6 the two
+     S4G2_EA0_WITNESS cells) -- op_raw == twin_raw BIT-EXACTLY over every
+     round AND every telemetry.json row's `contact` (the AI-gate open
+     fraction) == 0 exactly. gp.ai_gate is strict-<, so |m - x'| < 0
+     never opens: eps_AI = 0 IS the twin, and this is the empirical
+     proof that lets the other ea=0 cells be twin-derived.
+ 12. TWIN-DERIVED cells (fig6: ea = 0, non-witness; no run dir) -- drawn
+     from twin_raw of the runs at the same (cond, es, seed). Hard-fail
+     when no run exists there at all, or when those runs disagree on
+     twin_raw (check 6). Reported as their own rows.
+ 13. EXTENSIONS (fig6; s4g2_ext_requests() from the committed manifest)
+     -- a present _r60/_r100 run gets the full cell checks at its
+     horizon; an absent one is PENDING-EXT (non-failing); a present
+     extension whose fixed/evolving partner is absent is a FAILURE.
 
 The clamp logic is not re-invented here: the cohort reconstruction, the
 "bit-exact in population AND twin" assertion, the stubborn-peer
@@ -99,13 +166,16 @@ its source in a comment.
 --------------------------------------------------------------------
 Usage
 --------------------------------------------------------------------
-  # the production wave, on the cluster login node (threads are pinned
-  # inside this module, before torch is imported)
+  # the original 72-cell wave (default --wave), on the cluster login
+  # node (threads are pinned inside this module, before torch is
+  # imported)
   python check_section4_gate.py \\
       --run-root /home/gsmithline/perfsim/runs/pokec_gated_lm
 
-  # the 4-job 3-round smoke
-  python check_section4_gate.py --smoke \\
+  # the Figure-6 grid: 4-job 3-round smoke, then the full gate
+  python check_section4_gate.py --wave fig6 --smoke \\
+      --run-root /home/gsmithline/perfsim/runs/pokec_gated_lm
+  python check_section4_gate.py --wave fig6 \\
       --run-root /home/gsmithline/perfsim/runs/pokec_gated_lm
 
   # gate exactly the tags in a file (a deliberately partial pull)
@@ -160,6 +230,17 @@ LOG = "[check_s4g]"
 # ---------------------------------------------------------------- design
 DEFAULT_RUN_ROOT = "/home/gsmithline/perfsim/runs/pokec_gated_lm"
 
+# the generator is the single definition of both grids; searched for
+# relative to this file first (the checkout layout), then the cwd and
+# its ancestors (the ssh-stdin capture, where __file__ is unset)
+GEN_REL = os.path.join("experiments", "condor", "gen_pofd_sweep.py")
+
+WAVE_V1 = "section4_gate_anch2"
+WAVE_FIG6 = "section4_gate_anch2_fig6"
+WAVE_ALIASES = {WAVE_V1: WAVE_V1, "v1": WAVE_V1,
+                WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6}
+WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, "v1", "fig6")
+
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
 # scan prefixes carry the separator: "pofds4gsmk_..." also startswith
@@ -175,28 +256,22 @@ OLD_MARKER = "nested_ai_then_social_v1"
 WANT_GATE_REF = "anchor"
 
 N = 723
-PROD_ROUNDS = 30
-SMOKE_ROUNDS = 3
 BASE_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 MODEL_SLUG = "mistral7b"
 
-ARMS = ("b0", "d8")
-CONDS = ("fixed", "evolving")
 COND_TOK = {"fixed": "fixb20", "evolving": "evoall"}
 TOK_COND = {v: k for k, v in COND_TOK.items()}
-EAS = (0.2, 1.0)
-ESS = (0.0, 0.2, 1.0)
-SEEDS = (0, 42, 43)
 W_PLAT = 0.5                       # the paper's beta
 INNATE_LAMBDA = 0.2                # the paper's gamma / innate anchor k
 GAMMA_BIAS = 0.0                   # homophily selection bias: always 0
 CLAMP_FRAC = 0.2
 CLAMP_COUNT = 145                  # round(0.2 * 723)
-SMOKE_EA, SMOKE_ES, SMOKE_SEED = 1.0, 0.2, 0
-N_TOTAL = len(ARMS) * len(CONDS) * len(EAS) * len(ESS) * len(SEEDS)   # 72
 
 # TAG GRAMMAR (pinned). PARSED, never table-looked-up: a new dose or seed
 # must fail as a GRID error naming the value, not as a "malformed tag".
+# The trailing horizon token is OPTIONAL in the grammar and admitted
+# ONLY by a wave that declares extension horizons (fig6 _r60/_r100);
+# base cells never carry one.
 TAG_RE = re.compile(
     r"^(?P<pre>pofds4gsmk|pofds4g)"
     r"_(?P<slug>[a-z0-9]+)"
@@ -207,12 +282,13 @@ TAG_RE = re.compile(
     r"_w(?P<w>[0-9p]+)"
     r"_l(?P<l>[0-9p]+)"
     r"_es(?P<es>[0-9p]+)"
-    r"_s(?P<seed>\d+)$")
+    r"_s(?P<seed>\d+)"
+    r"(?:_r(?P<r>\d+))?$")
 
-# Everything HELD FIXED across all 72 cells, byte-matched to the
-# completed Section-4 surface. Values that are true by construction of
-# the sub template's env are pinned here anyway: "true by construction"
-# is a claim about the generator, and this file gates the ARTIFACT.
+# Everything HELD FIXED across all cells, byte-matched to the completed
+# Section-4 surface. Values that are true by construction of the sub
+# template's env are pinned here anyway: "true by construction" is a
+# claim about the generator, and this file gates the ARTIFACT.
 PINS = {
     "base_model": BASE_MODEL,
     "dataset": "movielens",
@@ -269,6 +345,13 @@ CLAMP_TRAJ_KEYS = ("innate_clamp_mask", "innate_clamp_count",
                    "innate_clamp_seed", "innate_clamp_hash",
                    "innate_clamp_peer_mode", "clamp_fr_touch_raw")
 
+# the personal-history sentence, byte-for-byte as run_pokec_gated_lm
+# renders it (`"This user's own opinion of " f"{ML_TARGET} movies over "
+# f"the most recent days (oldest to newest): {days}."`, days =
+# ", ".join(f"{v:.2f}" ...)) and as check_pofd_sanity replays it
+DAYS_PREFIX = ("This user's own opinion of {target} movies over the most "
+               "recent days (oldest to newest): ")
+
 
 # ------------------------------------------------------------- grammar
 def _num(v):
@@ -282,29 +365,179 @@ def _unnum(tok):
     return float(tok.replace("p", "."))
 
 
-def render_tag(arm, cond, ea, es, seed, smoke=False):
-    pre = SMOKE_PREFIX if smoke else PROD_PREFIX
-    return (f"{pre}_{MODEL_SLUG}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}"
-            f"_ea{_num(ea)}_w{_num(W_PLAT)}_l{_num(INNATE_LAMBDA)}"
-            f"_es{_num(es)}_s{int(seed)}")
+def _raw_parse(tag):
+    """(arm, cond, ea, es, seed, horizon) straight off the grammar, no
+    wave validation. None when the tag is not in the grammar at all."""
+    m = TAG_RE.match(tag)
+    if m is None:
+        return None
+    r = m.group("r")
+    return (m.group("arm"), TOK_COND[m.group("cond")], _unnum(m.group("ea")),
+            _unnum(m.group("es")), int(m.group("seed")),
+            None if r is None else int(r))
 
 
-def expected_cells(smoke):
-    """The conceptual grid: 72 production cells, or the 4-cell smoke."""
-    if smoke:
-        return [(arm, cond, SMOKE_EA, SMOKE_ES, SMOKE_SEED)
-                for arm in ARMS for cond in CONDS]
-    return [(arm, cond, ea, es, seed)
-            for seed in SEEDS for arm in ARMS for cond in CONDS
-            for ea in EAS for es in ESS]
+# ------------------------------------------------------------ generator
+def find_generator(explicit=None):
+    """Path of gen_pofd_sweep.py, or None. Checkout-relative first, then
+    the cwd and its ancestors."""
+    if explicit:
+        return explicit if os.path.exists(explicit) else None
+    cands = [os.path.join(HERE, "..", "..", "..", GEN_REL)]
+    cur = os.getcwd()
+    while True:
+        cands.append(os.path.join(cur, GEN_REL))
+        nxt = os.path.dirname(cur)
+        if nxt == cur:
+            break
+        cur = nxt
+    for c in cands:
+        if os.path.exists(c):
+            return os.path.abspath(c)
+    return None
 
 
-def parse_tag(tag, smoke):
+def load_generator(path):
+    """Load gen_pofd_sweep.py via importlib (the check_fig3_full_loop
+    pattern). The module only defines constants/functions at import;
+    main() is guarded."""
+    spec = importlib.util.spec_from_file_location("_gen_s4g", str(path))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_gen_s4g"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class Wave:
+    """The per-wave grid object: every value that used to be a module
+    constant (EAS/ESS/SEEDS/smoke cell/round counts) lives here and is
+    READ from the generator, so parse_tag, coverage and reporting all use
+    the selected wave's values."""
+
+    def __init__(self, name, gen, ext_manifest=None):
+        self.name = WAVE_ALIASES[name]
+        self.fig6 = self.name == WAVE_FIG6
+        self.gen = gen
+        if self.fig6:
+            self.key = gen.S4G2_KEY
+            self.arms = tuple(gen.S4G2_ARMS)
+            self.conds = tuple(gen.S4G2_CONDS)
+            self.gates = tuple(float(v) for v in gen.S4G2_GATES)
+            self.ess = tuple(float(v) for v in gen.S4G2_ESS)
+            self.seeds = tuple(int(s) for s in gen.S4G2_SEEDS)
+            self.cells6 = [(a, c, float(ea), float(es), int(sd), k)
+                           for (a, c, ea, es, sd, k) in gen.s4g2_cells()]
+            self.witness = {(a, c, float(es), int(sd))
+                            for (a, c, es, sd) in gen.S4G2_EA0_WITNESS}
+            self.horizons_ok = tuple(int(r) for r in gen.S4G2_EXT_ROUNDS_OK)
+            if ext_manifest is not None:
+                gen.S4G2_EXT_REQUEST_PATH = str(ext_manifest)
+            self.ext_manifest = gen.S4G2_EXT_REQUEST_PATH
+            self.ext_requests = [(a, c, float(ea), float(es), int(sd), int(r))
+                                 for (a, c, ea, es, sd, r)
+                                 in gen.s4g2_ext_requests()]
+            smoke_rows = gen.s4g2_smoke_rows
+            # the generator's own declared counts must describe its cells
+            kinds = [k for *_, k in self.cells6]
+            declared = (gen.S4G2_N_CELLS, gen.S4G2_N_GPU,
+                        gen.S4G2_N_WITNESS, gen.S4G2_N_TWIN)
+            got = (len(kinds), kinds.count("gpu"), kinds.count("witness"),
+                   kinds.count("twin"))
+            if declared != got:
+                raise ValueError(
+                    f"generator declares (cells, gpu, witness, twin)="
+                    f"{declared} but s4g2_cells() yields {got}")
+        else:
+            self.key = gen.S4G_KEY
+            self.arms = tuple(gen.S4G_ARMS)
+            self.conds = tuple(gen.S4G_CONDS)
+            self.gates = tuple(float(v) for v in gen.S4G_GATES)
+            self.ess = tuple(float(v) for v in gen.S4G_ESS)
+            self.seeds = tuple(int(s) for s in gen.S4G_SEEDS)
+            # the original report order: seed-major
+            self.cells6 = [(arm, cond, ea, es, seed, "gpu")
+                           for seed in self.seeds for arm in self.arms
+                           for cond in self.conds for ea in self.gates
+                           for es in self.ess]
+            self.witness = set()
+            self.horizons_ok = ()
+            self.ext_manifest = None
+            self.ext_requests = []
+            smoke_rows = gen.s4g_smoke_rows
+            if len(self.cells6) != gen.S4G_N_TOTAL:
+                raise ValueError(f"generator declares S4G_N_TOTAL="
+                                 f"{gen.S4G_N_TOTAL} but the product has "
+                                 f"{len(self.cells6)} cells")
+        self.rounds = int(gen.S4G_ROUNDS)
+        self.smoke_rounds = int(gen.S4G_SMOKE_ROUNDS)
+        # the smoke cells, parsed out of the generator's own smoke rows
+        # (first CSV column is the tag)
+        self.smoke_cells = []
+        for cond in self.conds:
+            for row in smoke_rows(cond):
+                tag = row.split(",")[0].strip()
+                p = _raw_parse(tag)
+                if p is None or not tag.startswith(SMOKE_SCAN) or \
+                        p[5] is not None:
+                    raise ValueError(f"generator smoke tag {tag!r} is not in "
+                                     f"this checker's smoke grammar")
+                self.smoke_cells.append(p[:5])
+        self.smoke_set = set(self.smoke_cells)
+        self.smoke_gates = sorted({(c[2], c[3], c[4])
+                                   for c in self.smoke_cells})
+
+    # -- the conceptual grid ------------------------------------------
+    def run_cells(self):
+        """Cells that require a run dir (kind gpu or witness)."""
+        return [c[:5] for c in self.cells6 if c[5] in ("gpu", "witness")]
+
+    def twin_cells(self):
+        """Cells with NO run dir, satisfied by twin_raw of the runs at
+        the same (cond, es, seed)."""
+        return [c[:5] for c in self.cells6 if c[5] == "twin"]
+
+    def kind_of(self, cell):
+        for c in self.cells6:
+            if c[:5] == tuple(cell):
+                return c[5]
+        return None
+
+    def is_witness(self, arm, cond, ea, es, seed):
+        return float(ea) == 0.0 and (arm, cond, float(es), int(seed)) \
+            in self.witness
+
+    def render_tag(self, arm, cond, ea, es, seed, smoke=False, rounds=None):
+        """THE generator's tag -- never a local re-implementation."""
+        return self.gen.s4g_tag(arm, cond, float(ea), float(es), int(seed),
+                                prefix=SMOKE_PREFIX if smoke else PROD_PREFIX,
+                                rounds=rounds)
+
+    def self_test_grammar(self, smoke):
+        """parse(render(cell)) must round-trip for every expected cell:
+        a checker grammar that disagrees with s4g_tag would report a
+        complete wave as absent, or an absent one as complete."""
+        bad = []
+        if smoke:
+            todo = [(c, None) for c in self.smoke_cells]
+        else:
+            todo = [(c, None) for c in self.run_cells()]
+            todo += [(c, None) for c in self.twin_cells()]
+            todo += [(e[:5], e[5]) for e in self.ext_requests]
+        for cell, r in todo:
+            tag = self.render_tag(*cell, smoke=smoke, rounds=r)
+            info, errs = parse_tag(tag, smoke, self)
+            if info is None or errs or info["key"] != tuple(cell) + (r,):
+                bad.append((tag, errs or ["unparseable"]))
+        return bad
+
+
+def parse_tag(tag, smoke, wave):
     """(info, errs). info is None when nothing downstream can be trusted.
 
     Every value is PARSED out of the tag and then required to round-trip
     back through the same grammar, so a token that parses to the right
     float in the wrong spelling ('ea0p20', 'es1p0', 's042') is caught.
+    Grid membership is checked against the SELECTED WAVE's values.
     """
     errs = []
     # THE operator token, checked before anything else so its absence is
@@ -317,12 +550,14 @@ def parse_tag(tag, smoke):
     if m is None:
         return None, [f"tag is not in the pofds4g grammar "
                       f"{PROD_PREFIX}_{MODEL_SLUG}_<b0|d8>_<fixb20|evoall>"
-                      f"_{OP_TOKEN}_ea<EA>_w0p5_l0p2_es<ES>_s<SEED>"]
+                      f"_{OP_TOKEN}_ea<EA>_w0p5_l0p2_es<ES>_s<SEED>"
+                      f"[_r<HORIZON>]"]
     pre, slug = m.group("pre"), m.group("slug")
     arm, cond = m.group("arm"), TOK_COND[m.group("cond")]
     ea, es = _unnum(m.group("ea")), _unnum(m.group("es"))
     w, lam = _unnum(m.group("w")), _unnum(m.group("l"))
     seed = int(m.group("seed"))
+    horizon = None if m.group("r") is None else int(m.group("r"))
     if (pre == SMOKE_PREFIX) != bool(smoke):
         errs.append(f"smoke/production prefix mismatch: prefix {pre!r} with "
                     f"--smoke={bool(smoke)}; a smoke cell can never stand in "
@@ -330,7 +565,8 @@ def parse_tag(tag, smoke):
     if slug != MODEL_SLUG:
         errs.append(f"model slug {slug!r}; this wave is {MODEL_SLUG}-only")
     rebuilt = (f"{pre}_{slug}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}_ea{_num(ea)}"
-               f"_w{_num(w)}_l{_num(lam)}_es{_num(es)}_s{seed}")
+               f"_w{_num(w)}_l{_num(lam)}_es{_num(es)}_s{seed}"
+               + ("" if horizon is None else f"_r{horizon}"))
     if rebuilt != tag:
         errs.append(f"tag numbers do not round-trip through the pinned "
                     f"grammar (would be spelled {rebuilt!r}) -- two "
@@ -341,20 +577,37 @@ def parse_tag(tag, smoke):
     if lam != INNATE_LAMBDA:
         errs.append(f"tag says l{m.group('l')} (= {lam:g}); the wave is "
                     f"INNATE_LAMBDA={INNATE_LAMBDA:g}")
+    if horizon is not None:
+        if smoke:
+            errs.append(f"smoke tag carries a horizon token _r{horizon}; "
+                        f"smoke cells never do")
+        elif not wave.horizons_ok:
+            errs.append(f"tag carries a horizon token _r{horizon}, which is "
+                        f"not part of the {wave.name} grammar (base cells "
+                        f"never carry one; only the Figure-6 extensions do)")
+        elif horizon not in wave.horizons_ok:
+            errs.append(f"horizon _r{horizon} is not an allowed extension "
+                        f"horizon {list(wave.horizons_ok)}")
     if smoke:
-        if ea != SMOKE_EA or es != SMOKE_ES or seed != SMOKE_SEED:
-            errs.append(f"smoke cell must be ea{_num(SMOKE_EA)} "
-                        f"es{_num(SMOKE_ES)} s{SMOKE_SEED}; got ea{_num(ea)} "
+        if (arm, cond, ea, es, seed) not in wave.smoke_set:
+            want = " or ".join(f"ea{_num(g[0])} es{_num(g[1])} s{g[2]}"
+                               for g in wave.smoke_gates)
+            errs.append(f"smoke cell must be {want}; got ea{_num(ea)} "
                         f"es{_num(es)} s{seed}")
     else:
-        if ea not in EAS:
-            errs.append(f"eps_ai {ea:g} is not in the grid {list(EAS)}")
-        if es not in ESS:
-            errs.append(f"eps_social {es:g} is not in the grid {list(ESS)}")
-        if seed not in SEEDS:
-            errs.append(f"seed {seed} is not in the grid {list(SEEDS)}")
+        if ea not in wave.gates:
+            errs.append(f"eps_ai {ea:g} is not in the {wave.name} grid "
+                        f"{list(wave.gates)}")
+        if es not in wave.ess:
+            errs.append(f"eps_social {es:g} is not in the {wave.name} grid "
+                        f"{list(wave.ess)}")
+        if seed not in wave.seeds:
+            errs.append(f"seed {seed} is not in the {wave.name} grid "
+                        f"{list(wave.seeds)}")
+    cell = (arm, cond, ea, es, seed)
     info = {"pre": pre, "arm": arm, "cond": cond, "ea": ea, "es": es,
-            "seed": seed, "cell": (arm, cond, ea, es, seed)}
+            "seed": seed, "horizon": horizon, "cell": cell,
+            "key": cell + (horizon,)}
     return info, errs
 
 
@@ -390,30 +643,120 @@ def _bit_eq_rows(block, vec):
     return bool((block == vec.unsqueeze(0)).all())
 
 
+# ------------------------------------------------ d8 personal history
+def _render_days(target, vals):
+    return DAYS_PREFIX.format(target=target) + \
+        ", ".join(f"{v:.2f}" for v in vals) + "."
+
+
+def replay_personal_history(innate, op, rows, icl_days, target):
+    """BYTE-EXACT replay of icl_days_log.json.gz from (innate, op_raw).
+
+    MIRRORS check_pofd_sanity.check_run's d8 PERSONAL-HISTORY replay --
+    the `hist_cl` loop of its "-- 1j CLAMP" block and the `hist_e` loop
+    of its `if is_evo:` block -- which is the runner's own rendering
+    (run_pokec_gated_lm: hist starts as [innate], op_raw[t] is appended
+    after round t, and the prompt carries hist[-icl_days:] as "%.2f",
+    oldest to newest).
+
+    Schema (inspected on notes/pofd/cluster/pofdqwu_qwen7b_d8_*_r100):
+    one JSON line per round, {"round": t, "ctx": [n strings]}, ctx[i]
+    the exact sentence agent i's prompt carried.
+
+    Returns None when every sentence of every round replays exactly, else
+    a (round, agent, reason) triple where `reason` CLASSIFIES the first
+    mismatch: a value that is not one of the agent's own previous
+    opinions (and whether the sentence is ANOTHER agent's), more than
+    icl_days values, or the agent's own values in the wrong window/order.
+    """
+    n = int(innate.numel())
+    hist = [innate.tolist()]
+    for t, row in enumerate(rows):
+        ctxs = row.get("ctx")
+        if not isinstance(ctxs, list) or len(ctxs) != n:
+            return (t, None, f"{len(ctxs) if isinstance(ctxs, list) else 0} "
+                             f"contexts (want {n})")
+        win = hist[-icl_days:]
+        for i in range(n):
+            want = _render_days(target, [h[i] for h in win])
+            got = ctxs[i]
+            if got == want:
+                continue
+            # classify the first mismatch
+            prefix = DAYS_PREFIX.format(target=target)
+            if not isinstance(got, str) or not got.startswith(prefix) \
+                    or not got.endswith("."):
+                reason = "not a personal-history sentence"
+            else:
+                vals = got[len(prefix):-1].split(", ")
+                own = {f"{h[i]:.2f}" for h in hist}
+                foreign = [v for v in vals if v not in own]
+                if len(vals) > icl_days:
+                    reason = (f"{len(vals)} values rendered > icl_days "
+                              f"{icl_days}")
+                elif foreign:
+                    others = [j for j in range(n) if j != i and
+                              _render_days(target, [h[j] for h in win])
+                              == got]
+                    reason = (f"value(s) {foreign} are NOT among agent {i}'s "
+                              f"own previous opinions")
+                    if others:
+                        reason += (f" -- the sentence is agent {others[0]}'s "
+                                   f"context (ANOTHER agent's history)")
+                else:
+                    reason = ("own values but the wrong window/order "
+                              "(want the last %d of innate + op_raw, oldest "
+                              "to newest)" % icl_days)
+            return (t, i, f"{reason}; got {str(got)[:90]!r} want "
+                          f"{want[:90]!r}")
+        if t < op.shape[0]:
+            hist.append(op[t].tolist())
+    return None
+
+
+def _read_jsonl(path, gz=False):
+    opener = gzip.open if gz else open
+    with opener(path, "rt") as fh:
+        return [json.loads(line) for line in fh if line.strip()]
+
+
+def _empty_rec(run_dir, tag):
+    return {"run_dir": run_dir, "tag": tag, "cell": None, "horizon": None,
+            "witness": False, "errs": [], "notes": [],
+            "parse_evidence": None, "innate_sha256": None,
+            "cohort_sha256": None, "n_rounds": None, "pop_final_mean": None,
+            "pop_final_sd": None, "op_twin_l1": None, "op_sha256": None,
+            "twin_sha256": None, "twin_base_sha256": None,
+            "twin_final_mean": None, "twin_final_sd": None,
+            "contact_max": None, "gpu_name": None, "d8_replay": None}
+
+
 # ------------------------------------------------------------ one cell
-def check_one(run_dir, smoke, require_raw_gen):
+def check_one(run_dir, wave, smoke, require_raw_gen):
     """Gate ONE run dir. Returns a record of scalars/hashes only: no
     tensor outlives this call, so the gate holds at most one run's
     trajectory in memory at a time (login-node budget)."""
     run_dir = str(run_dir).rstrip("/")
     tag = os.path.basename(run_dir)
-    rec = {"run_dir": run_dir, "tag": tag, "cell": None, "errs": [],
-           "notes": [], "parse_evidence": None, "innate_sha256": None,
-           "cohort_sha256": None, "n_rounds": None, "pop_final_mean": None,
-           "pop_final_sd": None, "op_twin_l1": None,
-           "op_sha256": None}
+    rec = _empty_rec(run_dir, tag)
     errs = rec["errs"]
 
     def bad(msg):
         errs.append(msg)
 
-    info, terrs = parse_tag(tag, smoke)
+    info, terrs = parse_tag(tag, smoke, wave)
     errs.extend(terrs)
     if info is None:
         return rec
     rec["cell"] = info["cell"]
+    rec["horizon"] = info["horizon"]
     arm, cond = info["arm"], info["cond"]
-    want_rounds = SMOKE_ROUNDS if smoke else PROD_ROUNDS
+    if smoke:
+        want_rounds = wave.smoke_rounds
+    else:
+        want_rounds = info["horizon"] or wave.rounds
+    is_ea0 = (not smoke) and info["ea"] == 0.0
+    rec["witness"] = bool(is_ea0 and wave.is_witness(*info["cell"]))
 
     tp = os.path.join(run_dir, "trajectory.pt")
     if not os.path.exists(tp):
@@ -427,6 +770,8 @@ def check_one(run_dir, smoke, require_raw_gen):
         bad("trajectory.pt carries no config dict")
         del d
         return rec
+    hw = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
+    rec["gpu_name"] = hw.get("gpu_name")
 
     # --- 2. THE OPERATOR. The most important gate in this file. --------
     pu = cfg.get("population_update", "<absent>")
@@ -459,6 +804,8 @@ def check_one(run_dir, smoke, require_raw_gen):
             if k in cj and cj.get(k) != cfg.get(k):
                 bad(f"config.json {k}={cj.get(k)!r} disagrees with "
                     f"trajectory.pt {k}={cfg.get(k)!r}")
+        if rec["gpu_name"] is None and isinstance(cj.get("hardware"), dict):
+            rec["gpu_name"] = cj["hardware"].get("gpu_name")
 
     # --- 3. GRID FIELDS, TAG vs CONFIG in BOTH directions -------------
     # forward: the config value must equal what the tag says
@@ -477,7 +824,9 @@ def check_one(run_dir, smoke, require_raw_gen):
     if int(cfg.get("seed", -1)) != info["seed"]:
         bad(f"seed={cfg.get('seed')!r} but the tag says s{info['seed']}")
     if int(cfg.get("n_rounds", -1)) != want_rounds:
-        bad(f"n_rounds={cfg.get('n_rounds')!r}, expected {want_rounds}")
+        bad(f"n_rounds={cfg.get('n_rounds')!r}, expected {want_rounds}"
+            + (f" (the _r{info['horizon']} horizon of this extension)"
+               if info["horizon"] else ""))
     for key, want in PINS.items():
         got = cfg.get(key, "<absent>")
         if isinstance(want, bool):
@@ -577,11 +926,81 @@ def check_one(run_dir, smoke, require_raw_gen):
             f"cannot be constant)")
     rec["op_twin_l1"] = float((op - tw).abs().mean())
     # the deployed trajectory's fingerprint, for the wave-level
-    # SEED-DISTINCTNESS check. Hashed here and the tensor dropped, so
-    # two runs are never resident at once.
+    # SEED-DISTINCTNESS check, and the twin's for TWIN AGREEMENT / the
+    # twin-derived cells. Hashed here and the tensors dropped, so two runs
+    # are never resident at once. twin_base is the twin over the base
+    # horizon, so an extension run is comparable to its base cell.
     rec["op_sha256"] = _sha_t(op)
+    rec["twin_sha256"] = _sha_t(tw)
+    rec["twin_base_sha256"] = _sha_t(tw[:min(wave.rounds, int(tw.shape[0]))])
     rec["pop_final_mean"] = float(op[-1].mean())
     rec["pop_final_sd"] = float(op[-1].std())
+    rec["twin_final_mean"] = float(tw[-1].mean())
+    rec["twin_final_sd"] = float(tw[-1].std())
+
+    # --- 11. ea0-witness ----------------------------------------------
+    # gp.ai_gate is a STRICT inequality |m - x'| < eps_AI, so at eps_AI=0
+    # the gate is closed for every agent in every round: the served
+    # vector never enters, and the deployed population IS the matched
+    # no-AI twin (same anchor step, same peer sweep, mirrored generator).
+    # Two things must hold, both BIT-EXACT: op_raw == twin_raw over every
+    # round, and the recorded AI-gate open fraction is 0 in every round.
+    if is_ea0:
+        label = "ea0-witness" + ("" if rec["witness"] else " (ea=0 run)")
+        if not torch.equal(op, tw):
+            diff = (op != tw)
+            nag = int(diff.any(dim=0).sum())
+            nrd = int(diff.any(dim=1).sum())
+            first = torch.nonzero(diff.any(dim=1)).flatten()
+            bad(f"{label}: op_raw != twin_raw -- {nag} agent(s) differ over "
+                f"{nrd} round(s), first round "
+                f"{int(first[0]) if first.numel() else -1}, max |diff| "
+                f"{float((op - tw).abs().max()):.2e}. At eps_AI=0 the "
+                f"strict-< gate never opens, so the deployed population "
+                f"must BE the twin bit-exactly; a difference means the "
+                f"served vector reached the population and the ea=0 "
+                f"cells cannot be twin-derived")
+        telp = os.path.join(run_dir, "telemetry.json")
+        if not os.path.exists(telp):
+            bad(f"{label}: telemetry.json missing -- the per-round AI-gate "
+                f"open fraction (contact) is the second half of the ea=0 "
+                f"proof and is recorded there")
+        else:
+            try:
+                tel = _read_jsonl(telp)
+            except (OSError, ValueError) as e:
+                bad(f"{label}: telemetry.json unreadable: {e}")
+                tel = []
+            got_rounds = [r.get("round") for r in tel]
+            if got_rounds != list(range(want_rounds)):
+                bad(f"{label}: telemetry.json holds rounds {got_rounds[:5]}"
+                    f"... (want 0..{want_rounds - 1}; the runner truncates "
+                    f"it at launch and appends one row per round)")
+            nonzero, cmax = [], 0.0
+            for r in tel:
+                c = r.get("contact", None)
+                if not isinstance(c, (int, float)) or isinstance(c, bool):
+                    nonzero.append((r.get("round"), c))
+                    continue
+                cmax = max(cmax, abs(float(c))) if c == c else float("inf")
+                if float(c) != 0.0:
+                    nonzero.append((r.get("round"), c))
+            rec["contact_max"] = cmax
+            if nonzero:
+                bad(f"{label}: telemetry contact (AI-gate open fraction) is "
+                    f"not exactly 0 in {len(nonzero)} round(s), e.g. round "
+                    f"{nonzero[0][0]} contact={nonzero[0][1]!r} -- at "
+                    f"eps_AI=0 the strict-< gate must never open")
+        # the trajectory rows carry the same scalar (run_pokec_gated_lm
+        # writes row["contact"] alongside tel_row["contact"])
+        tnz = [(r.get("round"), r.get("contact")) for r in traj
+               if isinstance(r, dict) and "contact" in r
+               and (not isinstance(r.get("contact"), (int, float))
+                    or float(r.get("contact")) != 0.0)]
+        if tnz:
+            bad(f"{label}: trajectory.pt rows record contact != 0 in "
+                f"{len(tnz)} round(s), e.g. round {tnz[0][0]} contact="
+                f"{tnz[0][1]!r}")
 
     # --- 5. the innate vector and the reconstructed cohort ------------
     rec["innate_sha256"] = _sha_t(inn)
@@ -593,6 +1012,7 @@ def check_one(run_dir, smoke, require_raw_gen):
     rec["cohort_sha256"] = gp.innate_clamp_hash(rec_mask)
 
     # --- 4. CONDITION INTEGRITY ---------------------------------------
+    cm_valid = None
     if cond == "fixed":
         # MIRRORS check_pofd_sanity.check_run's "-- 1j CLAMP" block.
         cl_mode = cfg.get("innate_clamp_mode", "<absent>")
@@ -622,6 +1042,7 @@ def check_one(run_dir, smoke, require_raw_gen):
                 f"{tuple(cm.shape)} (want bool [{N}])")
         else:
             cm = cm.bool()
+            cm_valid = cm
             got_frozen = int(cm.sum())
             if got_frozen != CLAMP_COUNT:
                 bad(f"fixed: mask pins {got_frozen} agents, expected exactly "
@@ -711,13 +1132,15 @@ def check_one(run_dir, smoke, require_raw_gen):
                 bad(f"evolving: trajectory carries clamp artifact {k} -- a "
                     f"fully-evolving run must not carry one")
 
-    # --- d8 personal-history artifacts (both conditions) --------------
-    # MIRRORS the "d8 PERSONAL-HISTORY replay" preamble of
-    # check_pofd_sanity's CLAMP/EVO sections: ICL_K=0 means NO cross-user
-    # exemplar may exist, and the rendered personal histories are a
-    # mandatory artifact. The byte-level replay of the rendered sentence
-    # is left to check_pofd_sanity, which owns it.
-    if int(cfg.get("icl_days") or 0) > 0:
+    # --- 10. d8 personal-history LOCALITY (both conditions) -----------
+    # MIRRORS the d8 PERSONAL-HISTORY replay of check_pofd_sanity's
+    # CLAMP/EVO sections (see replay_personal_history): ICL_K=0 means NO
+    # cross-user exemplar may exist, the rendered personal histories are
+    # a mandatory artifact, and every sentence must replay BYTE-EXACTLY
+    # from (innate, op_raw) -- which proves locality (own values only,
+    # <= icl_days of them, nothing from another agent) in one stroke.
+    icl_days = int(cfg.get("icl_days") or 0)
+    if icl_days > 0:
         if int(cfg.get("icl_k") or 0) != 0:
             bad("d8: icl_k>0 -- cross-user exemplars are forbidden in the "
                 "personal-history arm")
@@ -729,17 +1152,51 @@ def check_one(run_dir, smoke, require_raw_gen):
         if os.path.exists(os.path.join(run_dir, "icl_ctx_log.json.gz")):
             bad("d8: icl_ctx_log.json.gz present -- no cross-user context "
                 "may be rendered")
-        if not os.path.exists(os.path.join(run_dir, "icl_days_log.json.gz")):
+        dlp = os.path.join(run_dir, "icl_days_log.json.gz")
+        if not os.path.exists(dlp):
             bad("d8: icl_days_log.json.gz missing -- the rendered "
                 "personal-history contexts are mandatory")
+        else:
+            try:
+                dl_rows = _read_jsonl(dlp, gz=True)
+            except (OSError, ValueError) as e:
+                bad(f"d8: icl_days_log.json.gz unreadable: {e}")
+                dl_rows = None
+            if dl_rows is not None:
+                got_rounds = [r.get("round") for r in dl_rows]
+                if got_rounds != list(range(want_rounds)):
+                    bad(f"d8: icl_days_log holds rounds {got_rounds[:5]}... "
+                        f"(want 0..{want_rounds - 1})")
+                else:
+                    target = cfg.get("ml_target") or "Action"
+                    fail = replay_personal_history(inn, op, dl_rows,
+                                                   icl_days, target)
+                    if fail is not None:
+                        bad(f"d8 locality: personal-history context is OFF "
+                            f"the byte-exact (innate, op_raw) replay at "
+                            f"round {fail[0]} agent {fail[1]}: {fail[2]}")
+                    else:
+                        rec["d8_replay"] = "byte-exact"
+                        # fixed agents: nothing but their own innate,
+                        # stated directly on the final rendered round
+                        # (check_pofd_sanity's CLAMP d8 tail check)
+                        if cm_valid is not None:
+                            for i in cm_valid.nonzero().flatten().tolist():
+                                iv = f"{float(inn[i]):.2f}"
+                                seq_s = dl_rows[-1]["ctx"][i] \
+                                    .rsplit(": ", 1)[1].rstrip(".")
+                                if any(v != iv for v in seq_s.split(", ")):
+                                    bad(f"d8 locality: fixed agent {i} "
+                                        f"history is not pure innate "
+                                        f"repetition ({seq_s!r} vs {iv})")
+                                    break
 
     # --- 7. ZERO PARSE FAILURES ---------------------------------------
     gz = os.path.join(run_dir, "raw_gen_log.json.gz")
     if os.path.exists(gz):
         rec["parse_evidence"] = "raw_gen_log"
         try:
-            with gzip.open(gz, "rt") as fh:
-                rows = [json.loads(line) for line in fh if line.strip()]
+            rows = _read_jsonl(gz, gz=True)
         except (OSError, ValueError) as e:
             bad(f"raw_gen_log.json.gz unreadable: {e}")
             rows = []
@@ -787,17 +1244,31 @@ def check_one(run_dir, smoke, require_raw_gen):
 
 
 # ------------------------------------------------------------------ main
+def _fmt_cell(k):
+    """(arm, cond, ea, es, seed[, horizon]) -> 'b0/fixed/ea0p1/es0p3/s0'."""
+    s = f"{k[0]}/{k[1]}/ea{_num(k[2])}/es{_num(k[3])}/s{k[4]}"
+    if len(k) > 5 and k[5] is not None:
+        s += f"/r{k[5]}"
+    return s
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Section-4 corrected-gate wave (pofds4g_) gate; CPU only")
+        description="Section-4 corrected-gate waves (pofds4g_) gate; CPU only")
+    ap.add_argument("--wave", default=WAVE_V1, choices=WAVE_CHOICES,
+                    help=f"which wave's grid to gate: {WAVE_V1} (alias v1; "
+                         f"the original 72-cell wave, DEFAULT) or "
+                         f"{WAVE_FIG6} (alias fig6; the 192-cell Figure-6 "
+                         f"grid with twin-derived ea=0 cells, witnesses and "
+                         f"_r60/_r100 extensions)")
     ap.add_argument("--run-root", default=DEFAULT_RUN_ROOT,
                     help=f"directory holding the run dirs (default the "
                          f"cluster path {DEFAULT_RUN_ROOT})")
     ap.add_argument("--smoke", action="store_true",
-                    help=f"gate the {SMOKE_ROUNDS}-round {SMOKE_PREFIX}_ "
-                         f"cells (4 jobs: both arms x both conditions at "
-                         f"ea{_num(SMOKE_EA)} es{_num(SMOKE_ES)} "
-                         f"s{SMOKE_SEED}) under --run-root")
+                    help=f"gate the 3-round {SMOKE_PREFIX}_ cells of the "
+                         f"selected wave (4 jobs: both arms x both "
+                         f"conditions at the wave's smoke gate, seed 0) "
+                         f"under --run-root")
     ap.add_argument("--tags-file", default=None,
                     help="file of tags (one per line, # comments allowed) to "
                          "gate INSTEAD of the full product; coverage is then "
@@ -806,6 +1277,13 @@ def main(argv=None):
                     help="treat a missing raw_gen_log.json.gz as a hard "
                          "failure instead of falling back to the pred_raw "
                          "NaN evidence (this wave does not set SAVE_RAW_GEN)")
+    ap.add_argument("--gen", default=None,
+                    help="path of gen_pofd_sweep.py (default: found relative "
+                         "to this file, then the cwd and its ancestors)")
+    ap.add_argument("--ext-manifest", default=None,
+                    help="fig6 only: override the committed "
+                         "section4_fig6_extension_request.json the "
+                         "generator's s4g2_ext_requests() reads")
     ap.add_argument("--json", dest="json_out", default=None,
                     help="write the machine-readable verdict here")
     args = ap.parse_args(argv)
@@ -817,9 +1295,40 @@ def main(argv=None):
         return 2
     scan = SMOKE_SCAN if args.smoke else PROD_SCAN
 
-    # ---- what we EXPECT ------------------------------------------------
-    cells = expected_cells(args.smoke)
-    tag_of_cell = {c: render_tag(*c, smoke=args.smoke) for c in cells}
+    # ---- the wave, READ FROM THE GENERATOR -----------------------------
+    gen_path = find_generator(args.gen)
+    if gen_path is None:
+        print(f"{LOG} usage error: gen_pofd_sweep.py not found "
+              f"({'--gen ' + repr(args.gen) if args.gen else GEN_REL + ' relative to this file / the cwd'}); "
+              f"the grid is READ from the generator, never restated here",
+              file=sys.stderr)
+        return 2
+    try:
+        gen = load_generator(gen_path)
+        wave = Wave(args.wave, gen, ext_manifest=args.ext_manifest)
+    except Exception as e:                      # noqa: BLE001
+        print(f"{LOG} usage error: cannot build the {args.wave!r} grid from "
+              f"{gen_path}: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    if args.ext_manifest and not wave.fig6:
+        print(f"{LOG} usage error: --ext-manifest applies to --wave fig6 "
+              f"only", file=sys.stderr)
+        return 2
+    gbad = wave.self_test_grammar(args.smoke)
+    if gbad:
+        print(f"{LOG} usage error: this checker's tag grammar disagrees with "
+              f"gen_pofd_sweep.s4g_tag on {len(gbad)} expected cell(s), e.g. "
+              f"{gbad[0][0]!r}: {gbad[0][1][0]}", file=sys.stderr)
+        return 2
+
+    # ---- what we EXPECT (keys are (arm, cond, ea, es, seed, horizon)) -----
+    if args.smoke:
+        run_keys = [c + (None,) for c in wave.smoke_cells]
+        twin_keys, ext_keys = [], []
+    else:
+        run_keys = [c + (None,) for c in wave.run_cells()]
+        twin_keys = [c + (None,) for c in wave.twin_cells()]
+        ext_keys = list(wave.ext_requests)
     out = []
     if args.tags_file:
         try:
@@ -834,20 +1343,22 @@ def main(argv=None):
             print(f"{LOG} usage error: --tags-file {args.tags_file!r} holds "
                   f"no tags. Nothing to gate is NOT a pass.", file=sys.stderr)
             return 2
-        keep, keep_tags = [], []
+        keep, keep_tags = set(), []
         for t in wanted:
-            info, terrs = parse_tag(t, args.smoke)
+            info, terrs = parse_tag(t, args.smoke, wave)
             if info is None or terrs:
                 for e in (terrs or ["unparseable"]):
                     out.append(f"FAIL --tags-file {t}: {e}")
                 continue
-            keep.append(info["cell"])
+            keep.add(info["key"])
             keep_tags.append(t)
         # the tags file REPLACES the product as the coverage target, so a
-        # deliberately partial pull can be gated without the 72-cell
-        # completeness check turning every absent cell into noise
-        cells = [c for c in expected_cells(args.smoke) if c in set(keep)]
-        tag_of_cell = {c: render_tag(*c, smoke=args.smoke) for c in cells}
+        # deliberately partial pull can be gated without the full-grid
+        # completeness check turning every absent cell into noise; a
+        # tags file names run dirs, so no twin-derived cell is expected
+        run_keys = [k for k in run_keys if k in keep]
+        ext_keys = [k for k in ext_keys if k in keep]
+        twin_keys = []
         run_dirs = [str(root / t) for t in keep_tags]
     else:
         run_dirs = sorted(str(p) for p in root.iterdir()
@@ -862,6 +1373,11 @@ def main(argv=None):
         print(f"{LOG} usage error: no {scan}* run dirs under {root}. "
               f"Nothing to gate is NOT a pass.", file=sys.stderr)
         return 2
+    tag_of_key = {}
+    for k in run_keys + twin_keys + ext_keys:
+        tag_of_key[k] = wave.render_tag(*k[:5], smoke=args.smoke, rounds=k[5])
+    expected = set(run_keys) | set(ext_keys)
+    witness_keys = [k for k in run_keys if wave.is_witness(*k[:5])]
 
     # ---- gate each run, one trajectory in memory at a time -------------
     recs = []
@@ -869,15 +1385,11 @@ def main(argv=None):
         if not os.path.isdir(rd):
             out.append(f"FAIL {os.path.basename(rd)}: no such run dir under "
                        f"{root}")
-            recs.append({"run_dir": rd, "tag": os.path.basename(rd),
-                         "cell": None, "errs": ["run dir does not exist"],
-                         "notes": [], "parse_evidence": None,
-                         "innate_sha256": None, "cohort_sha256": None,
-                         "n_rounds": None, "pop_final_mean": None,
-                         "pop_final_sd": None, "op_twin_l1": None,
-                         "op_sha256": None})
+            r = _empty_rec(rd, os.path.basename(rd))
+            r["errs"].append("run dir does not exist")
+            recs.append(r)
             continue
-        recs.append(check_one(rd, args.smoke, args.require_raw_gen))
+        recs.append(check_one(rd, wave, args.smoke, args.require_raw_gen))
     for r in recs:
         for e in r["errs"]:
             out.append(f"FAIL {r['tag']}: {e}")
@@ -885,37 +1397,62 @@ def main(argv=None):
             out.append(f"NOTE {r['tag']}: {n}")
 
     # ---- 1. coverage ---------------------------------------------------
-    by_cell, dupes = {}, []
+    by_key, dupes = {}, []
     for r in recs:
-        c = r["cell"]
-        if c is None:
+        if r["cell"] is None:
             continue
-        if c in by_cell:
-            dupes.append((c, by_cell[c]["tag"], r["tag"]))
-        by_cell[c] = r
-    for c, a, b in dupes:
+        k = tuple(r["cell"]) + (r["horizon"],)
+        if k in by_key:
+            dupes.append((k, by_key[k]["tag"], r["tag"]))
+        by_key[k] = r
+    for k, a, b in dupes:
         out.append(f"FAIL wave: two run dirs claim the same conceptual cell "
-                   f"{c}: {a} and {b}")
-    extra = sorted(c for c in by_cell if c not in set(cells))
-    for c in extra:
-        out.append(f"FAIL wave: {by_cell[c]['tag']} parses to cell {c}, which "
-                   f"is NOT in the expected grid")
-    missing = [c for c in cells if c not in by_cell]
-    present = len(cells) - len(missing)
+                   f"{_fmt_cell(k)}: {a} and {b}")
+    extra = sorted(k for k in by_key if k not in expected)
+    for k in extra:
+        why = ("an ea=0 cell that is TWIN-DERIVED in this wave (no run is "
+               "expected there)" if k in set(twin_keys) else
+               "an extension the committed manifest does not request"
+               if k[5] is not None else "NOT in the expected grid")
+        out.append(f"FAIL wave: {by_key[k]['tag']} parses to cell "
+                   f"{_fmt_cell(k)}, which is {why}")
+    missing = [k for k in run_keys if k not in by_key]
+    n_run_present = len(run_keys) - len(missing)
+
+    # ---- 13. extensions -------------------------------------------------
+    ext_pending = [k for k in ext_keys if k not in by_key]
+    ext_present = [k for k in ext_keys if k in by_key]
+    ext_fail = 0
+    for k in ext_present:
+        other = [c for c in wave.conds if c != k[1]]
+        partner = (k[0], other[0], k[2], k[3], k[4], k[5]) if other else None
+        if partner is not None and partner not in by_key:
+            ptag = wave.render_tag(*partner[:5], smoke=args.smoke,
+                                   rounds=partner[5])
+            out.append(f"FAIL ext {by_key[k]['tag']}: its {other[0]} partner "
+                       f"{ptag} is absent -- extensions come as matched "
+                       f"fixed/evolving pairs (the paired-seed T_a must stay "
+                       f"paired)")
+            ext_fail += 1
+    for k in ext_pending:
+        out.append(f"NOTE ext {tag_of_key[k]}: PENDING-EXT (requested at "
+                   f"{k[5]} rounds, not yet run; non-failing)")
 
     # ---- 5. cohort pairing + one-world ---------------------------------
     pair_fail = 0
-    pairs = sorted({(c[0], c[2], c[3], c[4]) for c in cells})
-    for arm, ea, es, seed in pairs:
-        fx = by_cell.get((arm, "fixed", ea, es, seed))
-        ev = by_cell.get((arm, "evolving", ea, es, seed))
+    pairs = sorted({(k[0], k[2], k[3], k[4], k[5]) for k in run_keys + ext_keys},
+                   key=lambda p: (p[0], p[1], p[2], p[3], p[4] or 0))
+    for arm, ea, es, seed, hz in pairs:
+        fx = by_key.get((arm, "fixed", ea, es, seed, hz))
+        ev = by_key.get((arm, "evolving", ea, es, seed, hz))
         if fx is None or ev is None:
             continue                      # already a coverage failure
         if fx["innate_sha256"] is None or ev["innate_sha256"] is None:
             continue                      # already a per-cell failure
+        pname = _fmt_cell((arm, "*", ea, es, seed, hz)).replace("/*", "")
         if fx["innate_sha256"] != ev["innate_sha256"]:
             out.append(
-                f"FAIL pair {arm}/ea{_num(ea)}/es{_num(es)}/s{seed}: the "
+                f"FAIL pair {pname}: the "
                 f"fixed and evolving members sit on DIFFERENT innate vectors "
                 f"({fx['innate_sha256'][:16]}... vs "
                 f"{ev['innate_sha256'][:16]}...) -- {fx['tag']} vs "
@@ -925,7 +1462,7 @@ def main(argv=None):
             pair_fail += 1
         elif fx["cohort_sha256"] != ev["cohort_sha256"]:
             out.append(
-                f"FAIL pair {arm}/ea{_num(ea)}/es{_num(es)}/s{seed}: same "
+                f"FAIL pair {pname}: same "
                 f"innate but DIFFERENT reconstructed bottom-{CLAMP_COUNT} "
                 f"cohort ({fx['cohort_sha256'][:16]}... vs "
                 f"{ev['cohort_sha256'][:16]}...)")
@@ -943,6 +1480,69 @@ def main(argv=None):
             if r["innate_sha256"]:
                 out.append(f"     {r['tag']}: {r['innate_sha256'][:16]}...")
 
+    # ---- 6. TWIN AGREEMENT + 12. twin-derived cells ---------------------
+    # The twin (ab_x_cf) is advanced by the anchor step and the peer sweep
+    # under its own mirrored generator; the served vector never enters
+    # it. So every run at one (cond, es, seed) -- any arm, any eps_AI, any
+    # horizon over the first S4G_ROUNDS rows -- must carry a BIT-IDENTICAL
+    # twin_raw, and that identity is what lets an ea=0 cell be drawn from
+    # its neighbours' twin_raw without a run of its own.
+    twin_fail = 0
+    tw_base, tw_full = {}, {}
+    for r in recs:
+        if r["cell"] is None or r["twin_base_sha256"] is None:
+            continue
+        c = r["cell"]
+        tw_base.setdefault((c[1], c[3], c[4]), {}).setdefault(
+            r["twin_base_sha256"], []).append(r)
+        tw_full.setdefault((c[1], c[3], c[4], r["horizon"]), {}).setdefault(
+            r["twin_sha256"], []).append(r)
+    twin_bad_groups = set()
+
+    def _twin_disagree(g, by_sha, what):
+        nonlocal twin_fail
+        twin_fail += 1
+        twin_bad_groups.add(g[:3])
+        members = "; ".join(
+            f"{sha[:12]}...: " + ", ".join(
+                f"{m['tag']}" + (f" [{m['gpu_name']}]" if m['gpu_name'] else "")
+                for m in ms) for sha, ms in sorted(by_sha.items()))
+        out.append(
+            f"FAIL twin {g[0]}/es{_num(g[1])}/s{g[2]}"
+            f"{'' if len(g) < 4 or g[3] is None else '/r' + str(g[3])}: "
+            f"{len(by_sha)} distinct twin_raw ({what}) among the runs at "
+            f"this (cond, es, seed) -- {members}. The twin is a pure "
+            f"function of (cond, es, seed): the AI channel cannot reach it, "
+            f"so a disagreement means the runs did not share one world (or "
+            f"one generator), and no ea=0 cell can be drawn from them")
+
+    for g, by_sha in sorted(tw_base.items(), key=str):
+        if len(by_sha) > 1:
+            _twin_disagree(g, by_sha, f"over the first {wave.rounds} rounds")
+    for g, by_sha in sorted(tw_full.items(), key=str):
+        if g[3] is None or len(by_sha) < 2:
+            continue
+        _twin_disagree(g, by_sha, f"over all {g[3]} rounds")
+    twin_rows = []                        # (key, ok, reason, sample rec)
+    for k in twin_keys:
+        g = (k[1], k[3], k[4])
+        by_sha = tw_base.get(g)
+        if not by_sha:
+            twin_rows.append((k, False, "no run exists at this (cond, es, "
+                              "seed) -- the twin-derived cell cannot be "
+                              "drawn", None))
+        elif g in twin_bad_groups or len(by_sha) > 1:
+            twin_rows.append((k, False, "the runs at this (cond, es, seed) "
+                              "disagree on twin_raw (see FAIL twin above)",
+                              None))
+        else:
+            twin_rows.append((k, True, None, next(iter(by_sha.values()))[0]))
+    twin_cell_fail = sum(1 for t in twin_rows if not t[1])
+    for k, ok, why, _ in twin_rows:
+        if not ok:
+            out.append(f"FAIL twin-derived {tag_of_key[k]}: {why}")
+    n_twin_ok = len(twin_rows) - twin_cell_fail
+
     # ---- 5b. SEED-DISTINCTNESS ------------------------------------------
     # innate, the 10-NN graph and the bottom-145 cohort are SEED-INVARIANT
     # for movielens (load_movielens_setup takes no seed;
@@ -952,17 +1552,36 @@ def main(argv=None):
     # BEHAVIOURAL evidence is that two seeds of one cell must not produce
     # the same trajectory. Compared by the op_raw sha256 taken in
     # check_one, so no two runs' tensors are ever resident at once.
+    #   EXEMPT: d8 at es=0, the structural null -- frozen weights, greedy
+    # decoding, own-history prompts and an inert strict-< peer step leave
+    # NO random draw on the path to the population, so identical
+    # trajectories across seeds are EXPECTED there (see
+    # analyze_section4_gate.build_null_rows).
     seed_fail = 0
+    seed_skipped = []
     seed_groups = {}
-    for c, r in by_cell.items():
+    for k, r in by_key.items():
         if r.get("op_sha256") is None:
             continue                      # already a per-cell failure
-        seed_groups.setdefault((c[0], c[1], c[2], c[3]), []).append(
-            (c[4], r["tag"], r["op_sha256"]))
-    for g, members in sorted(seed_groups.items()):
+        seed_groups.setdefault((k[0], k[1], k[2], k[3], k[5]), []).append(
+            (k[4], r["tag"], r["op_sha256"]))
+    for g, members in sorted(seed_groups.items(), key=str):
         if len(members) < 2:
             # a missing seed is COVERAGE (already fatal above), not a pass
             # or a failure of this check
+            continue
+        gname = (f"{g[0]}/{g[1]}/ea{_num(g[2])}/es{_num(g[3])}"
+                 + ("" if g[4] is None else f"/r{g[4]}"))
+        if g[0] == "d8" and g[3] == 0.0:
+            seed_skipped.append(gname)
+            out.append(
+                f"NOTE seed-distinctness {gname}: skipped -- d8 at "
+                f"eps_social=0 is the STRUCTURAL NULL (frozen weights, "
+                f"greedy decoding, own-history prompts, strict-< peer gate "
+                f"never opens): no random draw reaches the population, so "
+                f"seeds {[m[0] for m in sorted(members)]} are expected to "
+                f"coincide up to GPU nondeterminism and identical op_raw is "
+                f"not evidence of a lost seed here")
             continue
         by_sha = {}
         for seed, tag, sha in sorted(members):
@@ -971,9 +1590,8 @@ def main(argv=None):
             if len(hits) < 2:
                 continue
             out.append(
-                f"FAIL seed-distinctness {g[0]}/{g[1]}/ea{_num(g[2])}/"
-                f"es{_num(g[3])}: seeds {[h[0] for h in hits]} produced a "
-                f"BIT-IDENTICAL op_raw (sha256 {sha[:16]}...) -- "
+                f"FAIL seed-distinctness {gname}: seeds {[h[0] for h in hits]} "
+                f"produced a BIT-IDENTICAL op_raw (sha256 {sha[:16]}...) -- "
                 f"{', '.join(h[1] for h in hits)}. Nothing about this world "
                 f"depends on the seed (innate, the 10-NN graph and the "
                 f"cohort are seed-invariant), so config['seed'] -- written "
@@ -983,6 +1601,37 @@ def main(argv=None):
                 f"collapses the three-seed intervals to ONE observation "
                 f"while every per-run field still looks correct.")
             seed_fail += 1
+    # the TWIN'S seed-distinctness: the twin-derived cells' "op_raw" IS
+    # the group twin, and the twin is advanced by a seeded generator, so
+    # within each (cond, es > 0[, horizon]) no two seeds may share
+    # twin_raw. es = 0 is excluded: the strict-< peer gate accepts no pair
+    # there, the twin is RNG-free and seed-invariant by construction.
+    twin_seed_groups = {}
+    for k, r in by_key.items():
+        if r.get("twin_sha256") is None or k[3] == 0.0:
+            continue
+        twin_seed_groups.setdefault((k[1], k[3], k[5]), {}).setdefault(
+            k[4], set()).add(r["twin_sha256"])
+    for g, per_seed in sorted(twin_seed_groups.items(), key=str):
+        if len(per_seed) < 2:
+            continue
+        seen = {}
+        for seed, shas in sorted(per_seed.items()):
+            for sha in shas:
+                seen.setdefault(sha, []).append(seed)
+        for sha, seeds in seen.items():
+            seeds = sorted(set(seeds))
+            if len(seeds) < 2:
+                continue
+            out.append(
+                f"FAIL seed-distinctness(twin) {g[0]}/es{_num(g[1])}"
+                f"{'' if g[2] is None else '/r' + str(g[2])}: seeds {seeds} "
+                f"share a BIT-IDENTICAL twin_raw (sha256 {sha[:16]}...) -- "
+                f"the twin's peer sweep draws from a generator seeded by the "
+                f"run seed, so identical twins mean the seed never reached "
+                f"the population generator, and the twin-derived ea=0 cells "
+                f"of these seeds would be ONE observation")
+            seed_fail += 1
 
     # ---- print ---------------------------------------------------------
     for line in out:
@@ -991,27 +1640,51 @@ def main(argv=None):
     hdr = (f"{'cell':<66} {'verdict':>7} {'rounds':>6} {'popMean':>8} "
            f"{'popSD':>7} {'opTwinL1':>9} {'parse':>13}")
     print("\n" + "=" * len(hdr))
-    print(f"PER-CELL REPORT -- {'SMOKE' if args.smoke else 'PRODUCTION'} "
-          f"grid, {present}/{len(cells)} cells present")
+    n_total = len(run_keys) + len(twin_keys)
+    n_present = n_run_present + n_twin_ok
+    print(f"PER-CELL REPORT -- wave {wave.name}, "
+          f"{'SMOKE' if args.smoke else 'PRODUCTION'} grid, "
+          f"{n_present}/{n_total} cells present")
     print("=" * len(hdr))
     print(hdr)
     print("-" * len(hdr))
-    for c in cells:
-        r = by_cell.get(c)
-        name = tag_of_cell[c]
-        if r is None:
-            print(f"{name:<66} {'ABSENT':>7} {'-':>6} {'-':>8} {'-':>7} "
-                  f"{'-':>9} {'-':>13}")
-            continue
-        print(f"{r['tag']:<66} "
-              f"{'PASS' if not r['errs'] else 'FAIL':>7} "
+
+    def _row(r, verdict):
+        print(f"{r['tag']:<66} {verdict:>7} "
               f"{(r['n_rounds'] if r['n_rounds'] is not None else -1):>6} "
               f"{(r['pop_final_mean'] if r['pop_final_mean'] is not None else float('nan')):>8.4f} "
               f"{(r['pop_final_sd'] if r['pop_final_sd'] is not None else float('nan')):>7.4f} "
               f"{(r['op_twin_l1'] if r['op_twin_l1'] is not None else float('nan')):>9.4f} "
               f"{str(r['parse_evidence']):>13}")
-    for c in extra:
-        r = by_cell[c]
+
+    for k in run_keys:
+        r = by_key.get(k)
+        name = tag_of_key[k]
+        if r is None:
+            print(f"{name:<66} {'ABSENT':>7} {'-':>6} {'-':>8} {'-':>7} "
+                  f"{'-':>9} {'-':>13}")
+            continue
+        _row(r, "PASS" if not r["errs"] else "FAIL")
+    for k, ok, why, src in twin_rows:
+        name = tag_of_key[k]
+        if src is None:
+            print(f"{name:<66} {'FAIL':>7} {'-':>6} {'-':>8} {'-':>7} "
+                  f"{'-':>9} {'twin-derived':>13}")
+        else:
+            print(f"{name:<66} {'PASS' if ok else 'FAIL':>7} "
+                  f"{wave.rounds:>6} {src['twin_final_mean']:>8.4f} "
+                  f"{src['twin_final_sd']:>7.4f} {0.0:>9.4f} "
+                  f"{'twin-derived':>13}")
+    for k in ext_keys:
+        r = by_key.get(k)
+        name = tag_of_key[k]
+        if r is None:
+            print(f"{name:<66} {'PENDING':>7} {k[5]:>6} {'-':>8} {'-':>7} "
+                  f"{'-':>9} {'PENDING-EXT':>13}")
+            continue
+        _row(r, "PASS" if not r["errs"] else "FAIL")
+    for k in extra:
+        r = by_key[k]
         print(f"{r['tag']:<66} {'EXTRA':>7} {'-':>6} {'-':>8} {'-':>7} "
               f"{'-':>9} {str(r['parse_evidence']):>13}")
 
@@ -1026,47 +1699,96 @@ def main(argv=None):
               f"Pass --require-raw-gen to make the absence itself fatal.")
 
     print("\n" + "=" * len(hdr))
-    if missing:
-        print(f"GRID COMPLETENESS: {present} of {len(cells)} cells present -- "
-              f"{len(missing)} ABSENT. A silently short grid must not look "
-              f"like a complete result.")
-        for c in missing:
-            print(f"  ABSENT  arm={c[0]:<3} cond={c[1]:<8} ea={c[2]:<4g} "
-                  f"es={c[3]:<4g} seed={c[4]:<3} expected tag "
-                  f"{tag_of_cell[c]}")
+    twin_missing = [k for k, ok, _, _ in twin_rows if not ok]
+    if missing or twin_missing:
+        print(f"GRID COMPLETENESS: {n_present} of {n_total} cells present -- "
+              f"{len(missing) + len(twin_missing)} ABSENT. A silently short "
+              f"grid must not look like a complete result.")
+        for k in missing:
+            print(f"  ABSENT  arm={k[0]:<3} cond={k[1]:<8} ea={k[2]:<4g} "
+                  f"es={k[3]:<4g} seed={k[4]:<3} expected tag "
+                  f"{tag_of_key[k]}")
+        for k in twin_missing:
+            print(f"  ABSENT  arm={k[0]:<3} cond={k[1]:<8} ea={k[2]:<4g} "
+                  f"es={k[3]:<4g} seed={k[4]:<3} twin-derived cell "
+                  f"{tag_of_key[k]} (undrawable)")
     else:
-        print(f"GRID COMPLETENESS: all {len(cells)} cells present")
+        print(f"GRID COMPLETENESS: all {n_total} cells present"
+              + (f" ({len(run_keys)} run + {len(twin_keys)} twin-derived)"
+                 if twin_keys else ""))
+    if wave.fig6 and not args.smoke:
+        n_w_ok = sum(1 for k in witness_keys
+                     if k in by_key and not by_key[k]["errs"])
+        print(f"WITNESSES: {n_w_ok}/{len(witness_keys)} ea=0 witness cell(s) "
+              f"pass (op_raw == twin_raw bit-exact, contact 0 every round)")
+        print(f"EXTENSIONS: {len(ext_present)} present, {len(ext_pending)} "
+              f"PENDING-EXT, {ext_fail} unpaired"
+              + (f" (manifest {wave.ext_manifest})"
+                 if ext_keys else " (no extension manifest / no requests)"))
     print("=" * len(hdr))
 
     n_fail_cells = sum(1 for r in recs if r["errs"])
     allok = (n_fail_cells == 0 and not missing and not dupes and not extra
-             and seed_fail == 0
-             and pair_fail == 0 and len(inn_shas) <= 1
+             and seed_fail == 0 and pair_fail == 0 and len(inn_shas) <= 1
+             and twin_fail == 0 and twin_cell_fail == 0 and ext_fail == 0
              and not any(l.startswith("FAIL") for l in out))
+    n_witness_ok = sum(1 for k in witness_keys
+                       if k in by_key and not by_key[k]["errs"])
+
+    def _cell_json(k):
+        return {"arm": k[0], "cond": k[1], "eps_ai": k[2],
+                "eps_social": k[3], "seed": k[4], "horizon": k[5],
+                "tag": tag_of_key.get(k)}
+
     verdict = {
-        "wave": "section4_gate_anch2",
+        "wave": wave.name,
+        "generator": gen_path,
         "smoke": bool(args.smoke),
         "run_root": str(root),
         "operator_required": WANT_MARKER,
         "ai_gate_reference_required": WANT_GATE_REF,
         "n_runs": len(recs),
-        "n_cells_present": present,
-        "n_cells_total": len(cells),
+        "n_cells_present": n_present,
+        "n_cells_total": n_total,
+        "n_run_cells_present": n_run_present,
+        "n_run_cells_total": len(run_keys),
         "n_cells_failed": n_fail_cells,
         "n_pair_failures": pair_fail,
         "n_seed_distinctness_failures": seed_fail,
-        "missing": [{"arm": c[0], "cond": c[1], "eps_ai": c[2],
-                     "eps_social": c[3], "seed": c[4],
-                     "expected_tag": tag_of_cell[c]} for c in missing],
-        "duplicate_cells": [{"cell": list(c), "tags": [a, b]}
-                            for c, a, b in dupes],
-        "unexpected_cells": [{"cell": list(c), "tag": by_cell[c]["tag"]}
-                             for c in extra],
+        "seed_distinctness_skipped_structural_null": seed_skipped,
+        "n_twin_agreement_failures": twin_fail,
+        "n_twin_cells_total": len(twin_keys),
+        "n_twin_cells_ok": n_twin_ok,
+        "twin_cells": [dict(_cell_json(k), ok=ok, reason=why,
+                            twin_sha256=(src["twin_base_sha256"]
+                                         if src else None))
+                       for k, ok, why, src in twin_rows],
+        "n_witness_cells_total": len(witness_keys),
+        "n_witness_cells_ok": n_witness_ok,
+        "witness_cells": [dict(_cell_json(k),
+                               ok=(k in by_key and not by_key[k]["errs"]),
+                               present=k in by_key) for k in witness_keys],
+        "extensions": [dict(_cell_json(k), rounds=k[5],
+                            status=("PENDING-EXT" if k not in by_key else
+                                    "PASS" if not by_key[k]["errs"]
+                                    else "FAIL")) for k in ext_keys],
+        "n_ext_present": len(ext_present),
+        "n_ext_pending": len(ext_pending),
+        "n_ext_unpaired": ext_fail,
+        "missing": [{"arm": k[0], "cond": k[1], "eps_ai": k[2],
+                     "eps_social": k[3], "seed": k[4],
+                     "expected_tag": tag_of_key[k]} for k in missing],
+        "duplicate_cells": [{"cell": list(k), "tags": [a, b]}
+                            for k, a, b in dupes],
+        "unexpected_cells": [{"cell": list(k), "tag": by_key[k]["tag"]}
+                             for k in extra],
         "innate_sha256_distinct": sorted(inn_shas),
         "parse_evidence_fallback": fallbacks,
         "pass": bool(allok),
         "cells": [{"tag": r["tag"], "run_dir": r["run_dir"],
                    "cell": list(r["cell"]) if r["cell"] else None,
+                   "horizon": r["horizon"],
+                   "witness": r["witness"],
                    "ok": not r["errs"], "errors": r["errs"],
                    "notes": r["notes"],
                    "parse_evidence": r["parse_evidence"],
@@ -1076,7 +1798,12 @@ def main(argv=None):
                    "pop_final_mean": r["pop_final_mean"],
                    "pop_final_sd": r["pop_final_sd"],
                    "op_twin_l1": r["op_twin_l1"],
-                   "op_sha256": r["op_sha256"]} for r in recs],
+                   "op_sha256": r["op_sha256"],
+                   "twin_sha256": r["twin_sha256"],
+                   "twin_base_sha256": r["twin_base_sha256"],
+                   "contact_max": r["contact_max"],
+                   "gpu_name": r["gpu_name"],
+                   "d8_replay": r["d8_replay"]} for r in recs],
     }
     if args.json_out:
         Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
@@ -1084,22 +1811,34 @@ def main(argv=None):
         print(f"{LOG} verdict -> {args.json_out}")
 
     if allok:
-        print(f"{LOG} PASS -- {len(recs)} run(s), {present}/{len(cells)} "
-              f"cells: every tag carries {OP_INFIX!r} and every config the "
+        fig6_bit = ""
+        if wave.fig6 and not args.smoke:
+            fig6_bit = (f" ({n_run_present} run + {n_twin_ok} twin-derived; "
+                        f"{n_witness_ok}/{len(witness_keys)} witness cell(s) "
+                        f"op_raw == twin_raw bit-exact with contact 0 every "
+                        f"round; {len(ext_present)} extension(s) present, "
+                        f"{len(ext_pending)} PENDING-EXT)")
+        print(f"{LOG} PASS -- wave {wave.name}: {len(recs)} run(s), "
+              f"{n_present}/{n_total} cells{fig6_bit}: every tag carries "
+              f"{OP_INFIX!r} and every config the "
               f"{WANT_MARKER} operator at ai_gate_reference=anchor; grid "
               f"fields agree with the tags in both directions; the "
               f"bottom-{CLAMP_COUNT} cohort reconstructs and is bit-exact in "
               f"population and twin on every fixed cell; every evolving cell "
               f"is clamp-free; each fixed/evolving pair shares one innate "
               f"vector and one cohort; no two seeds of a cell share a "
-              f"trajectory (seed-distinctness); twins are "
+              f"trajectory (seed-distinctness); the twin agrees bit-exactly "
+              f"across every run of a (cond, es, seed); d8 personal "
+              f"histories replay byte-exactly (locality); twins are "
               f"non-degenerate; zero parse failures.")
         return 0
-    print(f"{LOG} FAILED -- {n_fail_cells} of {len(recs)} run(s) failed, "
-          f"{len(missing)} cell(s) absent, {len(dupes)} duplicate, "
-          f"{len(extra)} unexpected, {pair_fail} pair mismatch(es), "
-          f"{seed_fail} seed-distinctness collision(s). See the FAIL "
-          f"lines above.")
+    print(f"{LOG} FAILED -- wave {wave.name}: {n_fail_cells} of {len(recs)} "
+          f"run(s) failed, {len(missing)} cell(s) absent, {len(dupes)} "
+          f"duplicate, {len(extra)} unexpected, {pair_fail} pair "
+          f"mismatch(es), {seed_fail} seed-distinctness collision(s), "
+          f"{twin_fail} twin disagreement(s), {twin_cell_fail} undrawable "
+          f"twin-derived cell(s), {ext_fail} unpaired extension(s). See the "
+          f"FAIL lines above.")
     return 1
 
 

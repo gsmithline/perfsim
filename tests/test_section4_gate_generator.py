@@ -442,18 +442,41 @@ def test_f4r_env_uses_the_offline_cache(generated):
 
 
 # ====================================================== collisions and reuse
+# The Figure-6 grid (2026-08-25) deliberately names the SAME tags as
+# this wave for the 24 cells both grids contain (ea=1, es in {0,1}): same
+# grammar, same cell. The generator asserts those rows byte-identical and
+# the submit script forbids co-submitting the two keys, so whichever runs
+# first makes the other's copy an idempotent no-op.
+FIG6_KEYS = {"configs_pofd_section4_gate_anch2_fig6_fixed.txt",
+             "configs_pofd_section4_gate_anch2_fig6_evo.txt"}
+
+
 def test_no_new_tag_collides_with_any_other_generated_tag(generated):
     tags = _all_tags(generated)
     new_keys = {f"configs_pofd_{k}.txt" for k in
                 (S4G_FIXED_KEY, S4G_EVO_KEY, S4G_SMOKE_FIXED_KEY,
                  S4G_SMOKE_EVO_KEY, F4R_KEY)}
+    shared = 0
     for tag, where in tags.items():
         mine = [w for w in where if w in new_keys]
         if not mine:
             continue
+        others = [w for w in where if w not in new_keys]
+        if others and all(w in FIG6_KEYS for w in others):
+            # the documented fig6 overlap: allowed ONLY for ea=1 cells at
+            # es in {0, 1}, and the rows must be byte-identical
+            assert "_ea1_" in tag and ("_es0_" in tag or "_es1_" in tag), tag
+            rows = {generated[w] for w in where}
+            mine_row = [r for r in generated[mine[0]].splitlines()
+                        if r.startswith(tag + ",")]
+            for w in others:
+                assert mine_row[0] in generated[w].splitlines(), tag
+            shared += 1
+            continue
         assert len(where) == 1, (
             f"{tag} is queued by {where}: a double-queue into one run dir "
             f"is a WRITE RACE, not an idempotent no-op")
+    assert shared == 24, shared
 
 
 def test_new_tags_never_land_in_an_archived_family(generated):

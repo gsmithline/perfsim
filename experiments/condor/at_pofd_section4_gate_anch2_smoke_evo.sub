@@ -18,8 +18,8 @@
 # reconstructed from the SAME seed-determined innate vector its FIXED
 # partner clamps, so every fixed/evolving pair shares a cohort.
 # ICL_DAYS rides queue col 24 (8 on d8, 0 on b0). W=0.5, lam=0.2,
-# gamma=0, greedy serving, movielens Action, ea {0.2, 1} x es
-# {0, 0.2, 1}, SEEDS 0/42/43.
+# gamma=0, greedy serving, movielens Action, ea {0.2, 1} x es {0, 0.2, 1},
+# SEEDS 0/42/43.
 # GATE every pull with check_section4_gate.py (operator, grid, no-clamp
 # integrity, fixed/evolving cohort pairing) -- that is the wave's own
 # checker and the one to run. check_pofd_sanity has no pofds4g_ prefix

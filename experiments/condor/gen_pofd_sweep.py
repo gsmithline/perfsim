@@ -8261,14 +8261,19 @@ S4G_N_PER_COND = 36             # 2 ea x 3 es x 2 arms x 3 seeds
 S4G_N_TOTAL = 72
 
 
-def s4g_tag(arm, cond, gate, es, seed, prefix="pofds4g"):
+def s4g_tag(arm, cond, gate, es, seed, prefix="pofds4g", rounds=None):
+    """rounds=None -> the base 30-round tag (byte-identical to the
+    2026-08-24 grammar). A horizon is appended ONLY for the Figure-6
+    extension rows (_r60/_r100), so an extension can never be mistaken
+    for, or overwrite, its base cell."""
+    suffix = "" if rounds is None else f"_r{rounds}"
     return (f"{prefix}_mistral7b_{arm}_{S4G_COND_TOK[cond]}"
             f"_{S4G_OP_TOKEN}_ea{_num(gate)}_{w_tok()}"
-            f"_es{_num(es)}_s{seed}")
+            f"_es{_num(es)}_s{seed}{suffix}")
 
 
 def s4g_row(arm, cond, gate, es, seed, nrounds=S4G_ROUNDS,
-            prefix="pofds4g"):
+            prefix="pofds4g", tag_rounds=None):
     """One config row. The FIXED rows use the completed bottom-20 wave's
     26-col schema (ROW_B20) and the EVOLVING rows the pofdevo 24-col one
     (ROW_EVO) -- the same builders the archived Section-4 cells used, so
@@ -8277,7 +8282,7 @@ def s4g_row(arm, cond, gate, es, seed, nrounds=S4G_ROUNDS,
     assert cond in S4G_CONDS, cond
     a = REACH_ARM_COLS[arm]
     common = dict(
-        tag=s4g_tag(arm, cond, gate, es, seed, prefix),
+        tag=s4g_tag(arm, cond, gate, es, seed, prefix, rounds=tag_rounds),
         style=a["style"], beta=a["beta"], seed=seed, es=f"{es:g}",
         eps_ai=f"{gate:g}", iclk=a["iclk"], snap=a["snap"],
         uselora=a["uselora"], fresh=a["fresh"], ansk=a["ansk"],
@@ -8307,18 +8312,29 @@ def s4g_smoke_rows(cond):
             for arm in S4G_ARMS]
 
 
-def s4g_sub(cond, smoke=False):
-    key = {("fixed", False): S4G_FIXED_KEY,
-           ("fixed", True): S4G_SMOKE_FIXED_KEY,
-           ("evolving", False): S4G_EVO_KEY,
-           ("evolving", True): S4G_SMOKE_EVO_KEY}[(cond, smoke)]
-    rows = (s4g_smoke_rows(cond) if smoke else s4g_rows(cond))
-    kind = ("3-ROUND SMOKE (seed 0, ea1 es0p2, both arms, production "
-            "configuration)" if smoke else
-            "PRODUCTION -- 2 ea x 3 es x 2 arms x 3 seeds")
+S4G_GRID_TXT = "ea {0.2, 1} x es {0, 0.2, 1}"
+
+
+def s4g_sub(cond, smoke=False, key=None, rows=None, kind=None,
+            grid=S4G_GRID_TXT):
+    """The two Section-4 sub templates, rendered for ANY key that shares
+    the corrected-gate environment (the original 72-cell wave, the
+    Figure-6 grid, and its extensions). Defaults reproduce the original
+    wave byte-for-byte."""
+    if key is None:
+        key = {("fixed", False): S4G_FIXED_KEY,
+               ("fixed", True): S4G_SMOKE_FIXED_KEY,
+               ("evolving", False): S4G_EVO_KEY,
+               ("evolving", True): S4G_SMOKE_EVO_KEY}[(cond, smoke)]
+    if rows is None:
+        rows = (s4g_smoke_rows(cond) if smoke else s4g_rows(cond))
+    if kind is None:
+        kind = ("3-ROUND SMOKE (seed 0, ea1 es0p2, both arms, production "
+                "configuration)" if smoke else
+                "PRODUCTION -- 2 ea x 3 es x 2 arms x 3 seeds")
     tmpl = (S4G_FIXED_SUB_TEMPLATE if cond == "fixed"
             else S4G_EVO_SUB_TEMPLATE)
-    return tmpl.format(key=key, n_jobs=len(rows), kind=kind,
+    return tmpl.format(key=key, n_jobs=len(rows), kind=kind, grid=grid,
                        **REACH_MODELS["mistral7b"])
 
 
@@ -8343,7 +8359,7 @@ S4G_FIXED_SUB_TEMPLATE = """\
 # personal-history ICL (ICL_K=0, ICL_DAYS=8, icl_days_log.json.gz for
 # the byte-exact replay). ICL_DAYS rides queue col 25, the exclusion
 # flag col 26 (always 0). W=0.5, lam=0.2, gamma=0, greedy serving,
-# WITH_TWIN=1, movielens Action, ea {{0.2, 1}} x es {{0, 0.2, 1}},
+# WITH_TWIN=1, movielens Action, {grid},
 # SEEDS 0/42/43.
 # GATE every pull with check_section4_gate.py (operator, grid, clamp
 # reconstruction, fixed/evolving cohort pairing) -- that is the wave's
@@ -8400,8 +8416,8 @@ S4G_EVO_SUB_TEMPLATE = """\
 # reconstructed from the SAME seed-determined innate vector its FIXED
 # partner clamps, so every fixed/evolving pair shares a cohort.
 # ICL_DAYS rides queue col 24 (8 on d8, 0 on b0). W=0.5, lam=0.2,
-# gamma=0, greedy serving, movielens Action, ea {{0.2, 1}} x es
-# {{0, 0.2, 1}}, SEEDS 0/42/43.
+# gamma=0, greedy serving, movielens Action, {grid},
+# SEEDS 0/42/43.
 # GATE every pull with check_section4_gate.py (operator, grid, no-clamp
 # integrity, fixed/evolving cohort pairing) -- that is the wave's own
 # checker and the one to run. check_pofd_sanity has no pofds4g_ prefix
@@ -9077,6 +9093,172 @@ periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - Entere
 queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, accum, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
 """
 
+
+
+# section4_gate_anch2_fig6[_smoke|_ext] (2026-08-25). THE FIGURE-6 GRID.
+#
+# The production replacement for the Figure-6 mockup: the corrected-gate
+# Section-4 experiment (S4G block above -- SAME environment, SAME
+# templates, SAME tag grammar) on the MATCHED gate grid
+#     eps_AI, eps_social in {0, .1, .3, 1}
+# 2 methods (b0 SFT, d8 personal-history ICL) x 2 source conditions
+# (A fixed, A evolving) x 4 x 4 gates x 3 seeds = 192 REQUIRED CELLS.
+#
+# REUSE AUDIT (2026-08-25, cluster). Reuse is allowed ONLY for exact
+# corrected-gate matches (anch2 operator, this environment, this grid).
+# The 72-cell section4_gate_anch2 wave was NEVER SUBMITTED (zero
+# pofds4g_ production dirs exist; only its 4 smoke cells ran), and every
+# archived pofdclamp_/pofdevo_ Section-4 cell carries the OLD v1 gate.
+# => REUSED = 0. Every GPU cell here is new.
+#
+# eps_AI = 0 IS STRUCTURALLY THE TWIN. gp.ai_gate is a STRICT
+# inequality, |m - x'| < eps_AI, so at eps_AI = 0 the gate is closed for
+# every agent in every round: the served vector never enters, the
+# METHOD drops out, and the population is exactly the matched no-AI twin
+# (mirrored RNG) that every run already carries as twin_raw. Running
+# 48 GPU jobs to recompute twin_raw would be waste, so by default the
+# eps_AI = 0 cells are TWIN-DERIVED (0 jobs) except for TWO WITNESS
+# RUNS -- one per method, evolving, es=.3, seed 0 -- that the checker
+# hard-verifies against op_raw == twin_raw bit-exactly and telemetry
+# contact == 0 every round. If that identity ever fails, the dedup is
+# wrong and S4G2_RUN_ALL_EA0 = True turns all 48 into real jobs.
+#
+# COUNTS (asserted in main(), never forced):
+#   192 cells = 144 GPU (ea in {.1,.3,1}) + 2 witness GPU (ea=0)
+#             + 46 twin-derived (ea=0, 0 jobs)          -> 146 jobs
+#   + 4 smoke: both methods x both conditions at (ea=.1, es=.3), seed
+#     0, 3 rounds -- a genuinely NEW cell (neither gate value exists in
+#     any archived run).
+#
+# SHARED TAGS WITH THE UNRUN 72-CELL KEY. The 24 cells at ea=1, es in
+# {0, 1} carry the SAME tags in section4_gate_anch2 and here (same
+# grammar, same cell). That is deliberate and asserted byte-identical:
+# whichever key runs first makes the other's copy an idempotent no-op.
+# NEVER co-submit the two keys (a double queue into one run dir is a
+# write race, not a no-op).
+#
+# EXTENSIONS. The analyzer refuses to call an unsettled pair an
+# equilibrium and writes section4_fig6_extension_request.json (both
+# members of every unsettled matched pair, so pairing is preserved);
+# committed to experiments/condor/, it drives the _ext key at 60/100
+# rounds under _r60/_r100 tags.
+S4G2_KEY = "section4_gate_anch2_fig6"
+S4G2_FIXED_KEY = S4G2_KEY + "_fixed"
+S4G2_EVO_KEY = S4G2_KEY + "_evo"
+S4G2_SMOKE_KEY = S4G2_KEY + "_smoke"
+S4G2_SMOKE_FIXED_KEY = S4G2_SMOKE_KEY + "_fixed"
+S4G2_SMOKE_EVO_KEY = S4G2_SMOKE_KEY + "_evo"
+S4G2_EXT_KEY = S4G2_KEY + "_ext"
+S4G2_EXT_FIXED_KEY = S4G2_EXT_KEY + "_fixed"
+S4G2_EXT_EVO_KEY = S4G2_EXT_KEY + "_evo"
+S4G2_EXT_REQUEST_PATH = os.path.join(
+    HERE, "section4_fig6_extension_request.json")
+S4G2_EXT_ROUNDS_OK = (60, 100)
+S4G2_GATES = [0.0, 0.1, 0.3, 1.0]
+S4G2_ESS = [0.0, 0.1, 0.3, 1.0]
+S4G2_SEEDS = S4G_SEEDS
+S4G2_ARMS = S4G_ARMS
+S4G2_CONDS = S4G_CONDS
+S4G2_SMOKE_EA, S4G2_SMOKE_ES = 0.1, 0.3
+S4G2_RUN_ALL_EA0 = False
+# (arm, cond, es, seed) run at ea = 0 as structural witnesses
+S4G2_EA0_WITNESS = [("b0", "evolving", 0.3, 0), ("d8", "evolving", 0.3, 0)]
+S4G2_GRID_TXT = "ea {0, .1, .3, 1} x es {0, .1, .3, 1}"
+
+
+def S4G2_COND_TOK_OK(cond, tag):
+    return f"_{S4G_COND_TOK[cond]}_" in tag
+S4G2_N_CELLS = 192
+S4G2_N_GPU = 144
+S4G2_N_WITNESS = 2
+S4G2_N_TWIN = 46
+S4G2_N_REUSED = 0
+
+
+def s4g2_cells():
+    """Every required cell as (arm, cond, ea, es, seed, kind), kind in
+    {'gpu', 'witness', 'twin'}. The SINGLE definition of the Figure-6
+    grid: generator, checker, analyzer and tests all read it here."""
+    out = []
+    for arm in S4G2_ARMS:
+        for cond in S4G2_CONDS:
+            for ea in S4G2_GATES:
+                for es in S4G2_ESS:
+                    for seed in S4G2_SEEDS:
+                        if ea == 0.0 and not S4G2_RUN_ALL_EA0:
+                            kind = ("witness"
+                                    if (arm, cond, es, seed)
+                                    in S4G2_EA0_WITNESS else "twin")
+                        else:
+                            kind = "gpu"
+                        out.append((arm, cond, ea, es, seed, kind))
+    return out
+
+
+def s4g2_rows(cond):
+    return [s4g_row(arm, cond, ea, es, seed)
+            for (arm, c, ea, es, seed, kind) in s4g2_cells()
+            if c == cond and kind in ("gpu", "witness")]
+
+
+def s4g2_smoke_rows(cond):
+    return [s4g_row(arm, cond, S4G2_SMOKE_EA, S4G2_SMOKE_ES, 0,
+                    nrounds=S4G_SMOKE_ROUNDS, prefix="pofds4gsmk")
+            for arm in S4G2_ARMS]
+
+
+def s4g2_ext_requests():
+    """[(arm, cond, ea, es, seed, rounds)] from the committed manifest;
+    [] when absent. Validated against the grid HERE; extensions must
+    come in matched fixed/evolving PAIRS so the paired-seed T_a stays
+    paired."""
+    if not os.path.exists(S4G2_EXT_REQUEST_PATH):
+        return []
+    req = json.load(open(S4G2_EXT_REQUEST_PATH))
+    cells = {(a, c, ea, es, sd) for (a, c, ea, es, sd, k) in s4g2_cells()
+             if k in ("gpu", "witness")}
+    out = []
+    for e in req["cells"]:
+        key = (e["arm"], e["cond"], float(e["eps_ai"]),
+               float(e["eps_social"]), int(e["seed"]))
+        rounds = int(e["rounds"])
+        assert rounds in S4G2_EXT_ROUNDS_OK, e
+        assert key in cells, f"extension names a non-GPU or off-grid cell: {e}"
+        out.append(key + (rounds,))
+    assert len(set(out)) == len(out), "duplicate extension requests"
+    # pairing: every (arm, ea, es, seed, rounds) must appear for BOTH conds
+    by_pair = {}
+    for (a, c, ea, es, sd, r) in out:
+        by_pair.setdefault((a, ea, es, sd, r), set()).add(c)
+    unpaired = [k for k, v in by_pair.items() if v != set(S4G2_CONDS)]
+    assert not unpaired, f"extensions must be matched pairs: {unpaired}"
+    return out
+
+
+def s4g2_ext_rows(cond):
+    return [s4g_row(a, c, ea, es, sd, nrounds=r, tag_rounds=r)
+            for (a, c, ea, es, sd, r) in sorted(s4g2_ext_requests())
+            if c == cond]
+
+
+def s4g2_sub(cond, kind="main"):
+    key = {("fixed", "main"): S4G2_FIXED_KEY,
+           ("evolving", "main"): S4G2_EVO_KEY,
+           ("fixed", "smoke"): S4G2_SMOKE_FIXED_KEY,
+           ("evolving", "smoke"): S4G2_SMOKE_EVO_KEY,
+           ("fixed", "ext"): S4G2_EXT_FIXED_KEY,
+           ("evolving", "ext"): S4G2_EXT_EVO_KEY}[(cond, kind)]
+    rows = {"main": s4g2_rows, "smoke": s4g2_smoke_rows,
+            "ext": s4g2_ext_rows}[kind](cond)
+    what = {"main": ("FIGURE-6 GRID PRODUCTION -- ea {.1,.3,1} x es "
+                     "{0,.1,.3,1} x 2 arms x 3 seeds + the ea=0 witness "
+                     "cells (the other ea=0 cells are twin-derived)"),
+            "smoke": ("3-ROUND SMOKE (seed 0, ea0p1 es0p3, both arms, "
+                      "production configuration; a genuinely NEW cell)"),
+            "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, matched "
+                    "pairs, driven by section4_fig6_extension_request"
+                    ".json)")}[kind]
+    return s4g_sub(cond, key=key, rows=rows, kind=what, grid=S4G2_GRID_TXT)
 
 
 def main():
@@ -12642,6 +12824,96 @@ def main():
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{UD_SMOKE_KEY}.sub")] = \
         ud_sub(smoke=True)
+
+    # ---- Figure-6 grid (S4G2): the corrected-gate Section 4 on the ----
+    # ---- matched 4 x 4 gate grid; reuse audit = 0, ea=0 twin-derived ----
+    _g2 = s4g2_cells()
+    assert len(_g2) == S4G2_N_CELLS == 192 and len(set(_g2)) == 192
+    _g2k = {}
+    for *_c, _k in _g2:
+        _g2k[_k] = _g2k.get(_k, 0) + 1
+    assert _g2k == {"gpu": S4G2_N_GPU, "witness": S4G2_N_WITNESS,
+                    "twin": S4G2_N_TWIN}, _g2k
+    assert {(a, c, ea, es, sd) for (a, c, ea, es, sd, _k) in _g2} == \
+        {(a, c, ea, es, sd) for a in S4G2_ARMS for c in S4G2_CONDS
+         for ea in S4G2_GATES for es in S4G2_ESS for sd in S4G2_SEEDS}
+    # ea = 0 never queues except the two witnesses
+    assert all(ea > 0.0 for (_a, _c, ea, _es, _sd, k) in _g2 if k == "gpu")
+    assert [(a, c, es, sd) for (a, c, ea, es, sd, k) in _g2
+            if k == "witness"] == S4G2_EA0_WITNESS
+    _g2_tags_all = set()
+    for _cond, _ncols in (("fixed", 26), ("evolving", 24)):
+        _rows = s4g2_rows(_cond)
+        _want_n = sum(1 for (_a, c, _ea, _es, _sd, k) in _g2
+                      if c == _cond and k in ("gpu", "witness"))
+        assert len(_rows) == _want_n, (_cond, len(_rows), _want_n)
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert len(_c) == _ncols, (_cond, len(_c), _r)
+            assert _c[0].startswith("pofds4g_mistral7b_") and \
+                f"_{S4G_OP_TOKEN}_" in _c[0] and S4G2_COND_TOK_OK(_cond, _c[0])
+            assert float(_c[14]) in S4G2_GATES and float(_c[9]) in S4G2_ESS
+            assert _c[15] == "threshold" and _c[11] == "0.5" and \
+                _c[10] == "0.0" and _c[22] == str(S4G_ROUNDS), _r
+            assert _c[0].endswith(f"_s{_c[3]}"), ("base tags carry no "
+                                                  "horizon suffix", _r)
+        _g2_tags_all |= {r.split(",")[0].strip() for r in _rows}
+        _sub = s4g2_sub(_cond)
+        _env = next(l for l in _sub.splitlines() if l.startswith("environment"))
+        assert "AI_GATE_REFERENCE=anchor" in _env and "WITH_TWIN=1" in _env
+        assert ("INNATE_CLAMP_PEER_MODE=stubborn" in _env) == (_cond == "fixed")
+        assert "ea {0, .1, .3, 1} x es {0, .1, .3, 1}" in _sub
+    assert len(_g2_tags_all) == S4G2_N_GPU + S4G2_N_WITNESS == 146
+    # the ONLY tags shared with any other key are the 24 cells the unrun
+    # 72-cell wave also names (ea=1, es in {0,1}); asserted byte-identical
+    _prior_g2 = {r.split(",")[0]: r for rows in files.values() for r in rows}
+    _shared = {t for t in _g2_tags_all if t in _prior_g2}
+    _want_shared = {s4g_tag(a, c, 1.0, es, sd) for a in S4G2_ARMS
+                    for c in S4G2_CONDS for es in (0.0, 1.0)
+                    for sd in S4G2_SEEDS}
+    assert _shared == _want_shared, _shared ^ _want_shared
+    assert len(_shared) == 24
+    for _cond in S4G2_CONDS:
+        for _r in s4g2_rows(_cond):
+            _t = _r.split(",")[0].strip()
+            if _t in _shared:
+                assert _prior_g2[_t] == _r, ("shared tag differs between "
+                                             "the two keys", _t)
+    assert S4G2_N_REUSED == 0     # the 2026-08-25 audit: nothing on disk
+    for _cond, _key in (("fixed", S4G2_FIXED_KEY), ("evolving", S4G2_EVO_KEY)):
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = s4g2_rows(_cond)
+        expected[p] = len(files[p])      # 72 fixed + 74 evolving (2 witnesses)
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = s4g2_sub(_cond)
+    for _cond, _key in (("fixed", S4G2_SMOKE_FIXED_KEY),
+                        ("evolving", S4G2_SMOKE_EVO_KEY)):
+        _rows = s4g2_smoke_rows(_cond)
+        assert len(_rows) == 2
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert _c[0].startswith("pofds4gsmk_") and "_ea0p1_" in _c[0] \
+                and "_es0p3_" in _c[0] and _c[22] == str(S4G_SMOKE_ROUNDS)
+            assert _c[0] not in _prior_g2 and _c[0] not in _g2_tags_all
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = 2
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
+            s4g2_sub(_cond, "smoke")
+    # extensions, manifest-driven, matched pairs only
+    for _cond, _key in (("fixed", S4G2_EXT_FIXED_KEY),
+                        ("evolving", S4G2_EXT_EVO_KEY)):
+        _rows = s4g2_ext_rows(_cond)
+        if not _rows:
+            continue
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert _c[0].endswith(("_r60", "_r100")) and _c[22] in ("60", "100")
+            assert _c[0] not in _g2_tags_all and _c[0] not in _prior_g2
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = len(_rows)
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
+            s4g2_sub(_cond, "ext")
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
-"""SECTION-4 CORRECTED-GATE analyzer (key ``section4_gate_anch2``, 72 GPU
-cells, 2026-08-24).
+"""SECTION-4 CORRECTED-GATE analyzer -- ONE analyzer for TWO waves:
+
+  --wave section4_gate_anch2       (alias v1)   the original 72-cell wave,
+                                                 2026-08-24; DEFAULT, its
+                                                 behaviour is unchanged
+  --wave section4_gate_anch2_fig6  (alias fig6) the Figure-6 grid, 192
+                                                 cells, 2026-08-25
+
+Both grids are READ FROM THE GENERATOR (experiments/condor/gen_pofd_sweep
+.py, importlib-loaded the way check_fig3_full_loop.py does it): the
+original from S4G_GATES / S4G_ESS / S4G_SEEDS, the Figure-6 grid from
+s4g2_cells() -> (arm, cond, ea, es, seed, kind).  Nothing about either grid
+is hard-coded here; see "FIGURE-6 MODE" below for what the second wave
+adds.  The paragraphs that follow describe the original wave.
 
 WHAT THIS WAVE IS. The published Section-4 experiment -- Mistral-7B,
 movielens Action, 723 agents, bottom-20% FIXED source cohort vs a fully
@@ -182,11 +194,104 @@ torch.set_num_threads(1) after, matplotlib is forced to "Agg", and at most
 ONE run's tensors are ever resident -- each trajectory is reduced to
 scalars and dropped before the next is opened.
 
+====================================================================
+FIGURE-6 MODE  (--wave section4_gate_anch2_fig6, alias fig6)
+====================================================================
+GRID -- 192 cells from gen_pofd_sweep.s4g2_cells():
+  arms {b0, d8} x conds {fixed, evolving} x eps_ai {0, .1, .3, 1}
+  x eps_social {0, .1, .3, 1} x seeds {0, 42, 43}, each cell tagged
+  kind in {gpu, witness, twin}: 144 gpu + 2 witness + 46 twin-derived.
+  Tags come from gen_pofd_sweep.s4g_tag(arm, cond, gate, es, seed,
+  prefix='pofds4g', rounds=None); rounds=60/100 appends _r60/_r100 (the
+  horizon-extension artifacts).  For every cell with a run the LONGEST
+  available horizon is analysed: _r100 > _r60 > base tag.
+
+eps_AI = 0 IS THE TWIN.  gp.ai_gate is a STRICT inequality |m - x'| <
+eps_AI, so at eps_AI = 0 the gate is closed for every agent in every
+round: the served vector never enters, the METHOD drops out, and the
+population IS the matched no-AI twin the runner already simulated as
+twin_raw.  Hence
+  * 'twin' cells have NO run dir.  Their population is twin_raw of ANY
+    base-horizon run at the same (cond, eps_social, seed); every base run
+    at that (cond, es, seed) must carry a bit-identical twin_raw (sha256,
+    HARD FAIL otherwise), and the same cohort-B late-window statistics
+    are computed on it.  b0 and d8 at eps_AI = 0 therefore share ONE
+    value (method collapse) -- by construction, and asserted.
+  * 'witness' cells (b0 and d8, evolving, es = .3, seed 0, actually run
+    at eps_AI = 0) are analysed from op_raw normally and HARD FAIL unless
+    op_raw is bit-identical to twin_raw (torch.equal).
+  * a run that exists for a 'twin' cell is treated as a witness (same
+    identity check) and noted.
+
+THE FIGURE-6 QUANTITY.  T_a = mu_B^eq(A evolving) - mu_B^eq(A fixed),
+column ``t_a_evolving_minus_fixed_*`` -- EVOLVING MINUS FIXED, the
+published Section-4 analyzer's sign; a POSITIVE T_a means a fully
+adaptive cohort A left the responsive majority HIGHER than a pinned
+cohort A did.  In fig6 mode T_a is the PRIMARY column everywhere (CSV,
+printed table, JSON) and the inherited ``delta_mu_b`` (fixed minus
+evolving, = -T_a) is carried beside it.  It is formed PER PAIRED SEED
+(fixed and evolving at the same seed), then the three-seed mean and the
+95% PAIRED Student-t interval (n = 3, df = 2, T_CRIT_DF2) over the
+per-seed differences.  Equilibrium = the FINAL FIVE post-peer rounds of
+the analysed artifact: op_raw indices n-5..n-1, i.e. LATE = range(25, 30)
+= rounds 26-30 (1-indexed) for the 30-round base tag (VERIFIED at import:
+late_window(30) == list(LATE) == [25, 26, 27, 28, 29]), 56-60 for _r60,
+96-100 for _r100.
+
+SETTLED / UNSETTLED.  Per CELL the late window is half-split (2 vs 3,
+LATE_H1 / LATE_H2) and drift = mean_B(second half) - mean_B(first half);
+a cell is settled when |drift| <= --drift-tol.  A PAIR is unsettled when
+EITHER member fails.  An unsettled pair is NEVER called an equilibrium:
+its outcome is 'extend_to_60' (base horizon analysed) or 'extend_to_100'
+(a _r60 artifact analysed), and ``section4_fig6_extension_request.json``
+is written into --out-dir with BOTH members of every unsettled pair as
+{arm, cond, eps_ai, eps_social, seed, rounds, reason} (the generator's
+s4g2_ext_requests() requires matched pairs).  An unsettled pair whose
+member is twin-derived has no GPU run to extend; it is listed under
+``twin_derived_unsettled`` (outside "cells", so the generator ignores it)
+and reported.  A pair still unsettled at 100 rounds is 'unsettled_at_100'.
+
+SERVED-VALUE CARDINALITY.  For every cell with a run, over the late
+window: ``served_distinct`` = number of distinct values in pred_raw
+(pooled over the window's rounds and agents, finite values), and
+``served_top_share`` = the fraction equal to the single most common
+value.  Twin-derived cells carry 'n/a (gate closed)'.  These are printed
+NEXT TO T_a so a quantized served map (Qwen's binary 0.25/0.65 is the
+cautionary tale) can never masquerade as a null effect.
+
+HARD FAIL (exit 1, NOTHING written) in fig6 mode on: any required cell
+absent (a gpu/witness run missing at every horizon, or a twin cell with
+no base run to derive from), --gate-json absent or not reporting a
+passing verdict (--allow-ungated is REJECTED in fig6 mode), an unpaired
+seed / a horizon mismatch inside a pair, twin disagreement, a witness
+failing op_raw == twin_raw, a run without twin_raw, or any inherited
+structural violation.  Partial output is NOT allowed in fig6 mode.
+
+FIG6 EXIT CODES
+  0  complete and every pair settled
+  1  HARD FAIL (nothing written)
+  2  outputs written, but >= 1 pair unsettled: the extension request
+     carries the cells to extend
+  3  outputs written, but the d8/eps_social=0 structural null failed
+
+FIG6 OUTPUTS (--out-dir, stem section4_fig6_)
+  section4_fig6_per_round.csv / _cells.csv / _source_effect.csv /
+  _dispersion.csv / _null_probe.csv / _coverage.csv / _captions.txt
+  section4_fig6_summary.json          always written
+  section4_fig6_extension_request.json always written (cells may be [])
+  section4_fig6_source_effect.pdf/.png, _dispersion.pdf/.png  NO TITLES
+  (the compact Figure-6 candidate is drawn by plot_section4_fig6.py from
+  the CSV/JSON above, never from trajectories)
+
 USAGE
   OMP_NUM_THREADS=1 python analyze_section4_gate.py \\
       --run-root /home/gsmithline/perfsim/runs/pokec_gated_lm \\
       --out-dir  /home/gsmithline/perfsim/runs/analysis/section4_gate_anch2 \\
       [--no-figs] [--json OUT.json] [--drift-tol 0.002]
+  OMP_NUM_THREADS=1 python analyze_section4_gate.py --wave fig6 \\
+      --run-root /home/gsmithline/perfsim/runs/pokec_gated_lm \\
+      --gate-json /home/gsmithline/perfsim/runs/analysis/s4g_fig6_gate.json \\
+      --out-dir  /home/gsmithline/perfsim/runs/analysis/section4_gate_anch2_fig6
 """
 from __future__ import annotations
 
@@ -203,6 +308,7 @@ os.environ.setdefault("USE_TF", "0")
 import argparse
 import csv
 import hashlib
+import importlib.util
 import json
 import math
 import re
@@ -222,26 +328,145 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 # ---------------------------------------------------------------- the grid
-KEY = "section4_gate_anch2"
+# BOTH grids are read from the generator so this file can never disagree
+# with the cells that were submitted.  The generator is importlib-loaded
+# from its path (check_fig3_full_loop._load_gen does the same); its main()
+# is guarded, so the load has no side effects.
+GEN_PATH = os.path.join(REPO, "experiments", "condor", "gen_pofd_sweep.py")
+
+
+def _load_gen():
+    spec = importlib.util.spec_from_file_location("_gen_s4gate", GEN_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_gen_s4gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+GEN = _load_gen()
+
+KEY = GEN.S4G_KEY                       # "section4_gate_anch2"
+KEY_FIG6 = GEN.S4G2_KEY                 # "section4_gate_anch2_fig6"
+WAVE_ALIASES = {"v1": KEY, KEY: KEY, "fig6": KEY_FIG6, KEY_FIG6: KEY_FIG6}
 TAG_PREFIX = "pofds4g"
 MODEL_SLUG = "mistral7b"
-ARMS = ["b0", "d8"]
 ARM_LABEL = {"b0": "ordinary SFT",
              "d8": "frozen personal-history ICL (8 days)"}
-CONDS = ["fixed", "evolving"]
-COND_TOK = {"fixed": "fixb20", "evolving": "evoall"}
+COND_TOK = dict(GEN.S4G_COND_TOK)       # {"fixed": "fixb20", "evolving": "evoall"}
 TOK_COND = {v: k for k, v in COND_TOK.items()}
-EAS = [0.2, 1.0]
-ESS = [0.0, 0.2, 1.0]
-SEEDS = [0, 42, 43]
-W_PLAT = 0.5
-INNATE_LAMBDA = 0.2          # k, the anchor weight
-N_ROUNDS = 30
-N_CELLS = len(ARMS) * len(CONDS) * len(EAS) * len(ESS) * len(SEEDS)  # 72
+W_PLAT = float(GEN.W_WPLAT)             # 0.5
+INNATE_LAMBDA = float(GEN.W_LAMBDA)     # 0.2, k, the anchor weight
+N_ROUNDS = int(GEN.S4G_ROUNDS)          # 30
+CELL_KINDS = ("gpu", "witness", "twin")
+
+
+class WaveGrid:
+    """One wave's grid, as the generator declares it.
+
+    cells   [(arm, cond, ea, es, seed, kind)], kind in CELL_KINDS
+    tag()   gen_pofd_sweep.s4g_tag, with rounds=None -> the base tag and
+            rounds=60/100 -> the _r60/_r100 extension tag (fig6 only)
+    """
+
+    def __init__(self, key, cells, gates, ess, seeds, arms, conds, fig6,
+                 stem, ext_rounds_ok=()):
+        self.key = key
+        self.cells = list(cells)
+        self.gates = list(gates)
+        self.ess = list(ess)
+        self.seeds = list(seeds)
+        self.arms = list(arms)
+        self.conds = list(conds)
+        self.fig6 = bool(fig6)
+        self.stem = stem
+        self.ext_rounds_ok = tuple(int(r) for r in ext_rounds_ok)
+        self.kind_of = {c[:5]: c[5] for c in self.cells}
+        self.keys = [c[:5] for c in self.cells]
+        self.n_cells = len(self.cells)
+        assert len(set(self.keys)) == self.n_cells, "duplicate cells"
+        self.n_kind = {k: sum(1 for c in self.cells if c[5] == k)
+                       for k in CELL_KINDS}
+
+    def tag(self, arm, cond, ea, es, seed, rounds=None):
+        return GEN.s4g_tag(arm, cond, ea, es, seed, prefix=TAG_PREFIX,
+                           rounds=rounds)
+
+    def horizons(self):
+        """Artifact horizons to look for, LONGEST FIRST; None = base tag."""
+        if not self.fig6:
+            return [None]
+        return sorted(self.ext_rounds_ok, reverse=True) + [None]
+
+    def __repr__(self):
+        return (f"WaveGrid({self.key}: {self.n_cells} cells, "
+                f"ea={self.gates}, es={self.ess}, seeds={self.seeds})")
+
+
+def load_grids():
+    v1 = WaveGrid(
+        key=GEN.S4G_KEY,
+        cells=[(arm, cond, ea, es, seed, "gpu")
+               for arm in GEN.S4G_ARMS for cond in GEN.S4G_CONDS
+               for ea in GEN.S4G_GATES for es in GEN.S4G_ESS
+               for seed in GEN.S4G_SEEDS],
+        gates=GEN.S4G_GATES, ess=GEN.S4G_ESS, seeds=GEN.S4G_SEEDS,
+        arms=GEN.S4G_ARMS, conds=GEN.S4G_CONDS, fig6=False,
+        stem="section4_gate")
+    fig6 = WaveGrid(
+        key=GEN.S4G2_KEY, cells=GEN.s4g2_cells(),
+        gates=GEN.S4G2_GATES, ess=GEN.S4G2_ESS, seeds=GEN.S4G2_SEEDS,
+        arms=GEN.S4G2_ARMS, conds=GEN.S4G2_CONDS, fig6=True,
+        stem="section4_fig6", ext_rounds_ok=GEN.S4G2_EXT_ROUNDS_OK)
+    assert v1.n_cells == GEN.S4G_N_TOTAL == 72, v1.n_cells
+    assert fig6.n_cells == GEN.S4G2_N_CELLS == 192, fig6.n_cells
+    assert fig6.n_kind == {"gpu": GEN.S4G2_N_GPU,
+                           "witness": GEN.S4G2_N_WITNESS,
+                           "twin": GEN.S4G2_N_TWIN}, fig6.n_kind
+    # the seed set, arms and conditions are WAVE-WIDE (the fig6 grid
+    # declares S4G2_SEEDS = S4G_SEEDS); the per-seed helpers rely on it
+    assert fig6.seeds == v1.seeds and fig6.arms == v1.arms \
+        and fig6.conds == v1.conds
+    return {v1.key: v1, fig6.key: fig6}
+
+
+GRIDS = load_grids()
+GRID_V1 = GRIDS[KEY]
+GRID_FIG6 = GRIDS[KEY_FIG6]
+
+# The DEFAULT wave's grid under the historical names.  Every function
+# below takes an explicit ``grid`` (None -> GRID_V1), so these are the
+# original wave's values -- read from the generator, not typed here.
+ARMS = GRID_V1.arms
+CONDS = GRID_V1.conds
+EAS = GRID_V1.gates
+ESS = GRID_V1.ess
+SEEDS = GRID_V1.seeds
+N_CELLS = GRID_V1.n_cells                                            # 72
+
+
+def _grid(grid):
+    return GRID_V1 if grid is None else grid
 
 # ------------------------------------------- inherited numeric conventions
 LATE = range(25, 30)         # analyze_bottom20_section4_3seed.py, verbatim
 LATE_IDX = list(LATE)
+N_LATE = len(LATE_IDX)       # the FINAL FIVE post-peer rounds
+
+
+def late_window(n_rounds):
+    """op_raw indices of the final five post-peer rounds of an n-round
+    artifact: n-5..n-1.  For the 30-round base tag this IS the inherited
+    LATE = range(25, 30) = rounds 26-30 in the runner's 1-based numbering
+    (asserted below); for a _r60 / _r100 extension it is 55..59 / 95..99
+    (rounds 56-60 / 96-100)."""
+    n_rounds = int(n_rounds)
+    if n_rounds < N_LATE:
+        raise ValueError(f"{n_rounds} rounds < {N_LATE} needed")
+    return list(range(n_rounds - N_LATE, n_rounds))
+
+
+assert late_window(N_ROUNDS) == LATE_IDX == [25, 26, 27, 28, 29]
+assert [t + 1 for t in late_window(N_ROUNDS)] == [26, 27, 28, 29, 30]
 # 95% two-sided Student-t critical value at df = 2 (three seeds).
 # LITERAL, equal to scipy.stats.t.ppf(0.975, 2); no scipy on the login node.
 T_CRIT_DF2 = 4.302652729911275
@@ -278,27 +503,37 @@ def _unnum(tok):
     return float(tok.replace("p", "."))
 
 
-def cell_tag(arm, cond, ea, es, seed):
-    """The pinned tag for one cell of this wave."""
-    return (f"{TAG_PREFIX}_{MODEL_SLUG}_{arm}_{COND_TOK[cond]}_anch2"
-            f"_ea{_num(ea)}_w{_num(W_PLAT)}_l{_num(INNATE_LAMBDA)}"
-            f"_es{_num(es)}_s{seed}")
+def cell_tag(arm, cond, ea, es, seed, rounds=None):
+    """The pinned tag for one cell -- gen_pofd_sweep.s4g_tag, so the
+    grammar lives in exactly one place.  rounds=None -> the base tag;
+    rounds=60/100 -> the _r60/_r100 horizon-extension tag."""
+    return GEN.s4g_tag(arm, cond, ea, es, seed, prefix=TAG_PREFIX,
+                       rounds=rounds)
 
+
+# the grammar is pinned by the generator and cross-checked here at import
+assert cell_tag("b0", "fixed", 0.2, 0.0, 42) == (
+    "pofds4g_mistral7b_b0_fixb20_anch2_ea0p2_w0p5_l0p2_es0_s42")
+assert cell_tag("d8", "evolving", 0.1, 0.3, 0, rounds=60) == (
+    "pofds4g_mistral7b_d8_evoall_anch2_ea0p1_w0p5_l0p2_es0p3_s0_r60")
 
 _TAG_RE = re.compile(
     r"^" + TAG_PREFIX + r"_(?P<model>[a-z0-9_]+?)"
     r"_(?P<arm>b0|d8)_(?P<cond_tok>fixb20|evoall)_anch2"
     r"_ea(?P<ea>[0-9p]+)_w(?P<w>[0-9p]+)_l(?P<l>[0-9p]+)"
-    r"_es(?P<es>[0-9p]+)_s(?P<seed>[0-9]+)$")
+    r"_es(?P<es>[0-9p]+)_s(?P<seed>[0-9]+)(?:_r(?P<rounds>[0-9]+))?$")
 
 
-def parse_tag(tag):
+def parse_tag(tag, grid=None):
     """Parse a wave tag -> dict, or None if it is not one of ours.
 
     Returns model / arm / cond / eps_ai / w_plat / innate_lambda /
-    eps_social / seed, and in_grid: whether the parsed cell is one of the
-    72 the wave declares.  Round-trips with cell_tag for in-grid cells.
+    eps_social / seed / rounds (None for a base tag, 60/100 for an
+    extension) and in_grid: whether the parsed cell is one the given wave
+    declares (default: the original 72-cell wave, where an extension tag
+    is never in grid).  Round-trips with cell_tag for in-grid cells.
     """
+    g = _grid(grid)
     m = _TAG_RE.match(tag)
     if m is None:
         return None
@@ -310,18 +545,22 @@ def parse_tag(tag):
            "w_plat": _unnum(m.group("w")),
            "innate_lambda": _unnum(m.group("l")),
            "eps_social": _unnum(m.group("es")),
-           "seed": int(m.group("seed"))}
+           "seed": int(m.group("seed")),
+           "rounds": (int(m.group("rounds")) if m.group("rounds")
+                      else None)}
+    key = (out["arm"], out["cond"], out["eps_ai"], out["eps_social"],
+           out["seed"])
+    out["kind"] = g.kind_of.get(key)
     out["in_grid"] = (out["model"] == MODEL_SLUG
-                      and out["arm"] in ARMS
-                      and out["eps_ai"] in EAS
-                      and out["eps_social"] in ESS
-                      and out["seed"] in SEEDS
+                      and key in g.kind_of
                       and out["w_plat"] == W_PLAT
-                      and out["innate_lambda"] == INNATE_LAMBDA)
+                      and out["innate_lambda"] == INNATE_LAMBDA
+                      and (out["rounds"] is None
+                           or out["rounds"] in g.ext_rounds_ok))
     return out
 
 
-def scan_run_root(run_root):
+def scan_run_root(run_root, grid=None):
     """Every pofds4g_ tag physically present under run_root (a run counts
     only when it has a trajectory.pt), parsed.  Used to report tags that
     exist but are NOT in the declared grid -- a grammar drift in the
@@ -335,7 +574,7 @@ def scan_run_root(run_root):
         if not os.path.exists(os.path.join(run_root, name,
                                            "trajectory.pt")):
             continue
-        p = parse_tag(name)
+        p = parse_tag(name, grid)
         found.append(p if p is not None else {"tag": name, "in_grid": False,
                                               "unparsed": True})
     return found
@@ -369,6 +608,72 @@ def gpu_arch(run_dir):
         if arch in name:
             return arch
     return name or "unknown"
+
+
+def has_real_twin(d):
+    """Does the artifact carry a saved twin_raw shaped like op_raw?"""
+    tw = d.get("twin_raw")
+    return (tw is not None and torch.is_tensor(tw) and tw.numel() > 0
+            and tuple(tw.shape) == tuple(d["op_raw"].shape))
+
+
+def twin_sha(d):
+    """sha256 of twin_raw's bytes (float32) -- lets every base run at one
+    (cond, eps_social, seed) be asserted twin-identical without holding
+    two runs in memory.  None when the run carries no real twin."""
+    if not has_real_twin(d):
+        return None
+    t = d["twin_raw"].detach().cpu().float().contiguous()
+    return hashlib.sha256(t.numpy().tobytes()).hexdigest()
+
+
+def twin_derived_artifact(d, ea=0.0):
+    """The eps_AI = 0 cell DERIVED from a run at the same (cond,
+    eps_social, seed): a trajectory-shaped dict whose population IS the
+    run's twin_raw (the matched no-AI process; at eps_AI = 0 the strict
+    gate |m - x'| < 0 is closed for everyone, so the served vector never
+    enters and the method drops out).  pred_raw is None: nothing was
+    served.  The config is the source run's with eps_ai rewritten to 0,
+    and a fixed run's clamp mask is carried so the inherited structural
+    checks (clamp held, mask == bottom cohort) run on the twin too."""
+    if not has_real_twin(d):
+        raise ValueError("no real twin_raw to derive from")
+    cfg = dict(d.get("config") or {})
+    cfg["eps_ai"] = float(ea)
+    cfg["derived_from_run_tag"] = cfg.get("run_tag")
+    out = {"config": cfg, "op_raw": d["twin_raw"], "twin_raw": d["twin_raw"],
+           "pred_raw": None, "innate": d["innate"]}
+    for k in ("innate_clamp_mask", "innate_clamp_count", "innate_clamp_mode",
+              "innate_clamp_frac", "innate_clamp_seed",
+              "innate_clamp_peer_mode"):
+        if k in d:
+            out[k] = d[k]
+    return out
+
+
+SERVED_NA = "n/a (gate closed)"
+
+
+def served_cardinality(pred, late_idx):
+    """Late-window served-value cardinality: the number of DISTINCT values
+    in pred_raw pooled over the window's rounds and agents (finite values
+    only), the share held by the single most common value, and that
+    value.  A served map with 1-3 distinct values cannot carry a graded
+    effect, so these are printed next to T_a."""
+    vals = pred[late_idx].reshape(-1).float()
+    finite = vals[torch.isfinite(vals)]
+    n_nan = int(vals.numel() - finite.numel())
+    if finite.numel() == 0:
+        return {"served_distinct": 0, "served_top_share": None,
+                "served_top_value": None, "served_n_finite": 0,
+                "served_n_nan": n_nan}
+    uniq, counts = torch.unique(finite, return_counts=True)
+    i = int(counts.argmax())
+    return {"served_distinct": int(uniq.numel()),
+            "served_top_share": float(counts[i]) / float(finite.numel()),
+            "served_top_value": float(uniq[i]),
+            "served_n_finite": int(finite.numel()),
+            "served_n_nan": n_nan}
 
 
 def twin_of(d):
@@ -454,27 +759,45 @@ LATE_H1, LATE_H2 = half_split(LATE_IDX)
 
 
 # ==================================================== per-cell reduction
-def reduce_cell(d, mask_a):
+def reduce_cell(d, mask_a, late_idx=None):
     """Reduce ONE trajectory to (per-round rows, late-window scalars).
 
     Every tensor touched here is local, so the caller can drop the whole
     trajectory before opening the next one.  op_raw[t] is the END-OF-ROUND
     POST-PEER state; nothing else is read.
+
+    late_idx: the equilibrium window (default the inherited LATE_IDX =
+    25..29 of a 30-round run; fig6 passes late_window(n_rounds) so a
+    _r60/_r100 extension is read on ITS final five rounds).  The halves
+    are half_split(late_idx) (2 vs 3).  pred_raw may be None (a
+    twin-derived eps_AI = 0 cell: nothing was served) -- then every served
+    column is None / SERVED_NA.
     """
+    late_idx = LATE_IDX if late_idx is None else list(late_idx)
+    h1, h2 = half_split(late_idx)
     op = d["op_raw"].float()
     tw, twin_source = twin_of(d)
-    pred = d["pred_raw"].float()
+    pred = d.get("pred_raw")
+    pred = None if pred is None else pred.float()
     innate = d["innate"].float()
     a, b = mask_a, ~mask_a
     n_r = int(op.shape[0])
+    if late_idx[-1] >= n_r:
+        raise ValueError(f"late window {late_idx} outside {n_r} rounds")
 
     rounds = []
     for t in range(n_r):
         x, xt = op[t], tw[t]
-        served = pred[t].clamp(0.0, 1.0)
+        if pred is not None:
+            served = pred[t].clamp(0.0, 1.0)
+            served_mean = float(torch.nanmean(served))
+            pred_mean_raw = float(torch.nanmean(pred[t]))
+        else:
+            served_mean, pred_mean_raw = None, None
         rounds.append({
             "round": t,                       # op_raw index (late window)
             "round_1based": t + 1,            # the runner's round number
+            "in_late_window": t in late_idx,
             "pop_mean": float(x.mean()),
             "pop_sd": float(x.std()),
             "a_mean": float(x[a].mean()),
@@ -483,12 +806,14 @@ def reduce_cell(d, mask_a):
             "b_sd": float(x[b].std()),
             "w1_twin_pop": w1(x, xt),
             "w1_twin_b": w1(x[b], xt[b]),
-            "served_mean": float(torch.nanmean(served)),
-            "pred_mean_raw": float(torch.nanmean(pred[t])),
+            "served_mean": served_mean,
+            "pred_mean_raw": pred_mean_raw,
             "twin_source": twin_source,
         })
 
     def wmean(idx, key):
+        if any(rounds[t][key] is None for t in idx):
+            return None
         return sum(rounds[t][key] for t in idx) / len(idx)
 
     # twin-referenced dispersion ratio, inherited: mean over the window of
@@ -503,6 +828,8 @@ def reduce_cell(d, mask_a):
 
     late = {
         "n_rounds": n_r,
+        "late_rounds_op_raw": f"{late_idx[0]}-{late_idx[-1]}",
+        "late_rounds_1based": f"{late_idx[0] + 1}-{late_idx[-1] + 1}",
         "twin_source": twin_source,
         "n_a": int(a.sum()), "n_b": int(b.sum()),
         "innate_mean": float(innate.mean()),
@@ -510,46 +837,69 @@ def reduce_cell(d, mask_a):
         "innate_a_mean": float(innate[a].mean()),
         "innate_b_mean": float(innate[b].mean()),
         "innate_b_sd": float(innate[b].std()),
-        "mu_pop_eq": wmean(LATE_IDX, "pop_mean"),
-        "mu_a_eq": wmean(LATE_IDX, "a_mean"),
-        "mu_b_eq": wmean(LATE_IDX, "b_mean"),
-        "sd_pop_late": wmean(LATE_IDX, "pop_sd"),
-        "sd_a_late": wmean(LATE_IDX, "a_sd"),
-        "sd_b_late": wmean(LATE_IDX, "b_sd"),
-        "w1_twin_pop_late": wmean(LATE_IDX, "w1_twin_pop"),
-        "w1_twin_b_late": wmean(LATE_IDX, "w1_twin_b"),
-        "served_mean_late": wmean(LATE_IDX, "served_mean"),
-        "sd_ratio_late": twin_ratio(LATE_IDX, b),       # inherited name
-        "sd_ratio_pop_twin_late": twin_ratio(LATE_IDX, slice(None)),
+        "mu_pop_eq": wmean(late_idx, "pop_mean"),
+        "mu_a_eq": wmean(late_idx, "a_mean"),
+        "mu_b_eq": wmean(late_idx, "b_mean"),
+        "sd_pop_late": wmean(late_idx, "pop_sd"),
+        "sd_a_late": wmean(late_idx, "a_sd"),
+        "sd_b_late": wmean(late_idx, "b_sd"),
+        "w1_twin_pop_late": wmean(late_idx, "w1_twin_pop"),
+        "w1_twin_b_late": wmean(late_idx, "w1_twin_b"),
+        "served_mean_late": wmean(late_idx, "served_mean"),
+        "sd_ratio_late": twin_ratio(late_idx, b),       # inherited name
+        "sd_ratio_pop_twin_late": twin_ratio(late_idx, slice(None)),
         # half-window values, for the drift / robustness flag
-        "mu_b_h1": wmean(LATE_H1, "b_mean"),
-        "mu_b_h2": wmean(LATE_H2, "b_mean"),
-        "mu_pop_h1": wmean(LATE_H1, "pop_mean"),
-        "mu_pop_h2": wmean(LATE_H2, "pop_mean"),
-        "sd_b_h1": wmean(LATE_H1, "b_sd"),
-        "sd_b_h2": wmean(LATE_H2, "b_sd"),
-        "sd_pop_h1": wmean(LATE_H1, "pop_sd"),
-        "sd_pop_h2": wmean(LATE_H2, "pop_sd"),
+        "mu_b_h1": wmean(h1, "b_mean"),
+        "mu_b_h2": wmean(h2, "b_mean"),
+        "mu_pop_h1": wmean(h1, "pop_mean"),
+        "mu_pop_h2": wmean(h2, "pop_mean"),
+        "sd_b_h1": wmean(h1, "b_sd"),
+        "sd_b_h2": wmean(h2, "b_sd"),
+        "sd_pop_h1": wmean(h1, "pop_sd"),
+        "sd_pop_h2": wmean(h2, "pop_sd"),
         "innate_sha256": innate_sha(innate),
     }
+    # per-CELL late-window drift (second half minus first half of the
+    # cohort-B mean); the settled verdict against --drift-tol is applied
+    # by the caller, which knows the tolerance
+    late["mu_b_drift"] = late["mu_b_h2"] - late["mu_b_h1"]
+    if pred is not None:
+        late.update(served_cardinality(pred, late_idx))
+    else:
+        late.update({"served_distinct": SERVED_NA,
+                     "served_top_share": SERVED_NA,
+                     "served_top_value": None, "served_n_finite": None,
+                     "served_n_nan": None})
     return rounds, late
 
 
-def structural_checks(d, key, mask_a, ref_sha):
+def structural_checks(d, key, mask_a, ref_sha, tag=None, horizon=None):
     """FATAL structural problems with one cell, as a list of strings.
 
     Empty list == the cell can take part in the fixed/evolving contrast.
+    horizon: when given (fig6), the artifact must hold EXACTLY that many
+    rounds (and config n_rounds, if present, must agree) -- an extension
+    tag that is not the extension it claims to be is a lie.
     """
     arm, cond, ea, es, seed = key
-    tag = cell_tag(*key)
+    tag = tag or cell_tag(*key)
     bad = []
     cfg = d.get("config") or {}
     op = d["op_raw"]
     innate = d["innate"]
 
-    if int(op.shape[0]) < max(LATE_IDX) + 1:
-        bad.append(f"{tag}: {int(op.shape[0])} rounds < "
-                   f"{max(LATE_IDX) + 1} needed for the late window")
+    if horizon is None:
+        if int(op.shape[0]) < max(LATE_IDX) + 1:
+            bad.append(f"{tag}: {int(op.shape[0])} rounds < "
+                       f"{max(LATE_IDX) + 1} needed for the late window")
+    else:
+        if int(op.shape[0]) != int(horizon):
+            bad.append(f"{tag}: op_raw holds {int(op.shape[0])} rounds, the "
+                       f"tag's horizon is {horizon}")
+        nr = cfg.get("n_rounds")
+        if nr is not None and int(nr) != int(horizon):
+            bad.append(f"{tag}: config n_rounds={nr!r} != tag horizon "
+                       f"{horizon}")
     if int(innate.numel()) != int(op.shape[1]):
         bad.append(f"{tag}: innate has {int(innate.numel())} agents, "
                    f"op_raw has {int(op.shape[1])}")
@@ -699,22 +1049,89 @@ def _ci_half(row, prefix):
     return abs(hi - lo) / 2.0
 
 
-def build_source_rows(cells, drift_tol):
-    """B. SOURCE EFFECT: fixed minus evolving on the late window, per
-    (arm, eps_ai, eps_social), aggregated over the three seeds."""
+T_A_COL = "t_a_evolving_minus_fixed"
+T_A_SIGN = ("t_a_evolving_minus_fixed = mu_B^eq(A evolving) - mu_B^eq(A "
+            "fixed): EVOLVING MINUS FIXED (the published Section-4 "
+            "analyzer's sign); positive = a fully adaptive cohort A left "
+            "the responsive majority HIGHER than a pinned cohort A did. "
+            "delta_mu_b = -t_a (fixed minus evolving).")
+
+
+def source_effect_block(d_b, primary_t_a):
+    """The paired source-effect columns from the per-seed differences
+    d_b = {seed: mu_b_eq(fixed) - mu_b_eq(evolving)}.
+
+    Both signs are always written.  primary_t_a=False (original wave):
+    delta_mu_b is the full block and t_a carries the prior analyzer's
+    sign beside it, exactly as before.  primary_t_a=True (fig6): T_a =
+    evolving - fixed is the full PRIMARY block (per seed, three-seed mean,
+    sd, paired 95% t interval, excludes-zero) and delta_mu_b follows.
+    Formed on the negated per-seed differences, so T_a's interval is the
+    same paired interval mirrored (lo/hi swap), never a re-estimate.
+    """
+    delta = agg_block("delta_mu_b", d_b, 0.0, "zero")
+    ta = agg_block(T_A_COL, {s: -v for s, v in d_b.items()}, 0.0, "zero")
+    if primary_t_a:
+        out = dict(ta)
+        out.update(delta)
+        return out
+    out = dict(delta)
+    for s in SEEDS:
+        out[f"{T_A_COL}_s{s}"] = ta[f"{T_A_COL}_s{s}"]
+    for suffix in ("mean", "ci_lo", "ci_hi"):
+        out[f"{T_A_COL}_{suffix}"] = ta[f"{T_A_COL}_{suffix}"]
+    return out
+
+
+def pair_outcome(f, e, grid):
+    """Settled verdict + outcome for ONE fixed/evolving pair at one seed
+    (fig6).  Unsettled = EITHER member failed the drift tolerance.  The
+    outcome names the next horizon the generator can run (extend_to_60 /
+    extend_to_100); a pair with a twin-derived member has no GPU run to
+    extend; a pair unsettled at the last allowed horizon is reported as
+    such.  An unsettled pair is NEVER 'equilibrium'."""
+    settled = bool(f.get("settled")) and bool(e.get("settled"))
+    if settled:
+        return True, "equilibrium"
+    if f.get("analysed_from") == "twin_raw" or \
+            e.get("analysed_from") == "twin_raw":
+        return False, "unsettled_twin_derived"
+    h = int(f.get("horizon") or N_ROUNDS)
+    nxt = [r for r in sorted(grid.ext_rounds_ok) if r > h]
+    if nxt:
+        return False, f"extend_to_{nxt[0]}"
+    return False, f"unsettled_at_{h}"
+
+
+def _served_summary(cells_by_seed, key):
+    vals = [cells_by_seed[s].get(key) for s in SEEDS if s in cells_by_seed]
+    nums = [v for v in vals if isinstance(v, (int, float))
+            and not isinstance(v, bool)]
+    return vals, nums
+
+
+def build_source_rows(cells, drift_tol, grid=None):
+    """B. SOURCE EFFECT per (arm, eps_ai, eps_social), aggregated over the
+    three PAIRED seeds.  Original wave: delta_mu_b = fixed - evolving is
+    primary.  fig6: T_a = evolving - fixed is primary, and every row also
+    carries the per-pair settled verdicts / outcomes / horizons and the
+    late-window served-value cardinality of both members."""
+    g = _grid(grid)
     rows = []
-    for arm in ARMS:
-        for ea in EAS:
-            for es in ESS:
+    for arm in g.arms:
+        for ea in g.gates:
+            for es in g.ess:
                 paired = [s for s in SEEDS
                           if (arm, "fixed", ea, es, s) in cells
                           and (arm, "evolving", ea, es, s) in cells]
                 complete = len(paired) == len(SEEDS)
                 d_b, d_pop, d_b_h1, d_b_h2 = {}, {}, {}, {}
                 gpu_pair, sha_ok = {}, {}
+                fx, ev = {}, {}
                 for s in paired:
                     f = cells[(arm, "fixed", ea, es, s)]
                     e = cells[(arm, "evolving", ea, es, s)]
+                    fx[s], ev[s] = f, e
                     d_b[s] = f["mu_b_eq"] - e["mu_b_eq"]
                     d_pop[s] = f["mu_pop_eq"] - e["mu_pop_eq"]
                     d_b_h1[s] = f["mu_b_h1"] - e["mu_b_h1"]
@@ -726,26 +1143,57 @@ def build_source_rows(cells, drift_tol):
                        "n_seeds_paired": len(paired),
                        "seeds_paired": "|".join(str(s) for s in paired),
                        "status": "complete" if complete else "incomplete"}
-                row.update(agg_block("delta_mu_b", d_b, 0.0, "zero"))
+                if g.fig6:
+                    # settled verdict FIRST, so the outcome sits beside T_a
+                    outcomes = {}
+                    for s in paired:
+                        outcomes[s] = pair_outcome(fx[s], ev[s], g)
+                    n_settled = sum(1 for v in outcomes.values() if v[0])
+                    unsettled = sorted({v[1] for v in outcomes.values()
+                                        if not v[0]})
+                    row["settled"] = (complete and n_settled == len(SEEDS))
+                    row["outcome"] = ("equilibrium" if row["settled"]
+                                      else "|".join(unsettled) or
+                                      "incomplete")
+                    row["n_pairs_settled"] = n_settled
+                    hs = sorted({int(fx[s].get("horizon") or 0)
+                                 for s in paired})
+                    row["horizon"] = "|".join(str(h) for h in hs)
+                row.update(source_effect_block(d_b, primary_t_a=g.fig6))
                 row.update(agg_block("delta_mu_pop", d_pop, 0.0, "zero"))
-                # the prior analyzer's sign, so the corrected-gate numbers
-                # sit next to the published ones without a mental flip
-                for s in SEEDS:
-                    v = d_b.get(s)
-                    row[f"t_a_evolving_minus_fixed_s{s}"] = (
-                        None if v is None else -v)
-                for suffix in ("mean", "ci_lo", "ci_hi"):
-                    v = row.get(f"delta_mu_b_{suffix}")
-                    row[f"t_a_evolving_minus_fixed_{suffix}"] = (
-                        None if v is None else -v)
-                if row["t_a_evolving_minus_fixed_ci_lo"] is not None:
-                    row["t_a_evolving_minus_fixed_ci_lo"], \
-                        row["t_a_evolving_minus_fixed_ci_hi"] = (
-                            row["t_a_evolving_minus_fixed_ci_hi"],
-                            row["t_a_evolving_minus_fixed_ci_lo"])
                 row.update(drift_block("delta_mu_b", d_b_h1, d_b_h2,
                                        drift_tol,
                                        _ci_half(row, "delta_mu_b")))
+                if g.fig6:
+                    for s in SEEDS:
+                        oc = outcomes.get(s)
+                        row[f"pair_settled_s{s}"] = (None if oc is None
+                                                     else oc[0])
+                        row[f"pair_outcome_s{s}"] = (None if oc is None
+                                                     else oc[1])
+                        row[f"pair_horizon_s{s}"] = (
+                            fx[s].get("horizon") if s in fx else None)
+                        row[f"mu_b_drift_fixed_s{s}"] = (
+                            fx[s].get("mu_b_drift") if s in fx else None)
+                        row[f"mu_b_drift_evolving_s{s}"] = (
+                            ev[s].get("mu_b_drift") if s in ev else None)
+                    row["drift_tol"] = drift_tol
+                    for cond, src in (("fixed", fx), ("evolving", ev)):
+                        vals, nums = _served_summary(src, "served_distinct")
+                        row[f"served_distinct_{cond}"] = "|".join(
+                            str(v) for v in vals)
+                        vals, tops = _served_summary(src, "served_top_share")
+                        row[f"served_top_share_{cond}"] = "|".join(
+                            (f"{v:.3f}" if isinstance(v, float) else str(v))
+                            for v in vals)
+                        row[f"served_distinct_{cond}_min"] = (
+                            min(nums) if nums else None)
+                        row[f"served_top_share_{cond}_max"] = (
+                            max(tops) if tops else None)
+                    row["kind_fixed"] = "|".join(
+                        str(fx[s].get("kind")) for s in paired)
+                    row["kind_evolving"] = "|".join(
+                        str(ev[s].get("kind")) for s in paired)
                 row.update({f"gpu_pair_s{s}": gpu_pair.get(s)
                             for s in SEEDS})
                 row["n_seeds_hardware_matched"] = sum(
@@ -758,13 +1206,71 @@ def build_source_rows(cells, drift_tol):
     return rows
 
 
-def build_dispersion_rows(cells, drift_tol):
+def build_extension_request(source_rows, grid, drift_tol, run_root):
+    """The section4_fig6_extension_request.json payload: BOTH members of
+    every unsettled pair (matched, as gen_pofd_sweep.s4g2_ext_requests
+    demands), each as {arm, cond, eps_ai, eps_social, seed, rounds,
+    reason}.  Pairs whose member is twin-derived cannot be extended by a
+    GPU job and are listed separately, OUTSIDE "cells"."""
+    req, twin_unsettled = [], []
+    for row in source_rows:
+        arm, ea, es = row["arm"], row["eps_ai"], row["eps_social"]
+        for s in SEEDS:
+            oc = row.get(f"pair_outcome_s{s}")
+            if oc is None or oc == "equilibrium":
+                continue
+            df = row.get(f"mu_b_drift_fixed_s{s}")
+            de = row.get(f"mu_b_drift_evolving_s{s}")
+            h = row.get(f"pair_horizon_s{s}")
+
+            def _fmt(v):
+                return "NA" if v is None else f"{v:+.5f}"
+            failing = [c for c, v in (("fixed", df), ("evolving", de))
+                       if v is None or abs(v) > drift_tol]
+            reason = (f"late-window drift (final five post-peer rounds of "
+                      f"the {h}-round artifact, second half minus first "
+                      f"half, 2 vs 3): fixed {_fmt(df)}, evolving "
+                      f"{_fmt(de)}; |drift| > tol {drift_tol:g} for "
+                      f"{'+'.join(failing)}; pair outcome {oc}")
+            if oc.startswith("extend_to_"):
+                rounds = int(oc.rsplit("_", 1)[1])
+                for cond in grid.conds:
+                    req.append({"arm": arm, "cond": cond, "eps_ai": ea,
+                                "eps_social": es, "seed": s,
+                                "rounds": rounds, "reason": reason})
+            else:
+                twin_unsettled.append({"arm": arm, "eps_ai": ea,
+                                       "eps_social": es, "seed": s,
+                                       "outcome": oc, "reason": reason})
+    return {
+        "key": grid.key,
+        "generated_by": "analyze_section4_gate.py --wave fig6",
+        "run_root": run_root,
+        "drift_tol": drift_tol,
+        "settled_rule": ("a cell is settled when |mean_B(second half) - "
+                         "mean_B(first half)| <= drift_tol on the final "
+                         "five post-peer rounds (2 vs 3 split); a pair is "
+                         "unsettled when EITHER member fails"),
+        "pairing": ("both members of every unsettled pair are listed; "
+                    "gen_pofd_sweep.s4g2_ext_requests() rejects an "
+                    "unpaired request"),
+        "n_cells": len(req),
+        "cells": req,
+        "twin_derived_unsettled": twin_unsettled,
+        "note": ("twin_derived_unsettled pairs have an eps_AI = 0 member "
+                 "derived from twin_raw (no GPU run to extend); they are "
+                 "NOT in 'cells' and are never called an equilibrium"),
+    }
+
+
+def build_dispersion_rows(cells, drift_tol, grid=None):
     """C. DISPERSION: fixed vs evolving population SD and cohort-B SD on the
     same late window, with the paired fixed/evolving SD ratio."""
+    g = _grid(grid)
     rows = []
-    for arm in ARMS:
-        for ea in EAS:
-            for es in ESS:
+    for arm in g.arms:
+        for ea in g.gates:
+            for es in g.ess:
                 paired = [s for s in SEEDS
                           if (arm, "fixed", ea, es, s) in cells
                           and (arm, "evolving", ea, es, s) in cells]
@@ -829,7 +1335,7 @@ def build_dispersion_rows(cells, drift_tol):
     return rows
 
 
-def build_null_rows(cells):
+def build_null_rows(cells, grid=None):
     """The d8 / eps_social = 0 STRUCTURAL NULL, inherited from
     analyze_bottom20_section4_3seed.py: frozen weights + own-history
     prompts + no peer step means NO cohort-A opinion can reach a cohort-B
@@ -842,8 +1348,9 @@ def build_null_rows(cells):
     measured residue IS this wave's greedy-generation nondeterminism floor
     and only fails above NULL_TOL_XHW.
     """
+    g = _grid(grid)
     rows = []
-    for ea in EAS:
+    for ea in g.gates:
         for s in SEEDS:
             kf, ke = ("d8", "fixed", ea, 0.0, s), ("d8", "evolving", ea, 0.0, s)
             if kf not in cells or ke not in cells:
@@ -874,12 +1381,25 @@ def _pick(rows, arm, ea, es):
     return None
 
 
-def _series(rows, arm, ea, prefix):
+def _flag_of(r, prefix):
+    """The dagger flag for one series row: the inherited half-window
+    drift flag of the statistic, OR (fig6 rows) a pair outcome that is
+    not 'equilibrium' -- an unsettled series is never drawn as a level
+    without the mark."""
+    fl = bool(r.get(f"{prefix}_drift_flag"))
+    oc = r.get("outcome")
+    if oc is not None:
+        fl = fl or (oc != "equilibrium")
+    return fl
+
+
+def _series(rows, arm, ea, prefix, grid=None):
     """(x positions, y, yerr_lo, yerr_hi, flagged) for one arm at one
     eps_ai.  Incomplete series are DROPPED, never plotted as if they were
     three-seed results."""
+    g = _grid(grid)
     xs, ys, lo, hi, flag = [], [], [], [], []
-    for j, es in enumerate(ESS):
+    for j, es in enumerate(g.ess):
         r = _pick(rows, arm, ea, es)
         if r is None or r["status"] != "complete":
             continue
@@ -890,14 +1410,15 @@ def _series(rows, arm, ea, prefix):
         ys.append(m)
         lo.append(m - r[f"{prefix}_ci_lo"])
         hi.append(r[f"{prefix}_ci_hi"] - m)
-        flag.append(bool(r.get(f"{prefix}_drift_flag")))
+        flag.append(_flag_of(r, prefix))
     return xs, ys, lo, hi, flag
 
 
-def _style_panel(ax, ylabel=None, xlabel=True):
-    ax.set_xlim(-0.45, len(ESS) - 0.55)
-    ax.set_xticks(range(len(ESS)))
-    ax.set_xticklabels([f"{e:g}" for e in ESS])
+def _style_panel(ax, ylabel=None, xlabel=True, grid=None):
+    g = _grid(grid)
+    ax.set_xlim(-0.45, len(g.ess) - 0.55)
+    ax.set_xticks(range(len(g.ess)))
+    ax.set_xticklabels([f"{e:g}" for e in g.ess])
     ax.grid(axis="y", color=GRID_GREY, lw=0.55, alpha=0.8)
     ax.set_axisbelow(True)
     for sp in ("top", "right"):
@@ -918,13 +1439,14 @@ def _panel_tag(ax, text):
 
 
 def _plot_series(ax, rows, ea, prefix, dodge=0.09, lw=1.4, ls="-",
-                 label_suffix=""):
+                 label_suffix="", grid=None):
     """Draw both arms at one eps_AI. Returns True if any drift flag was
     marked, and the number of series actually drawn."""
+    g = _grid(grid)
     drew_flag, drew = False, 0
-    for arm in ARMS:
+    for arm in g.arms:
         off = -dodge if arm == "b0" else dodge
-        xs, ys, lo, hi, flag = _series(rows, arm, ea, prefix)
+        xs, ys, lo, hi, flag = _series(rows, arm, ea, prefix, g)
         if not xs:
             continue
         xs = [x + off for x in xs]
@@ -977,24 +1499,32 @@ def _save(fig, out_dir, stem):
     return paths
 
 
-def figure_source(rows, out_dir, cover_note, drift_tol):
+def figure_source(rows, out_dir, cover_note, drift_tol, grid=None):
+    g = _grid(grid)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     _rc()
-    fig, axes = plt.subplots(1, len(EAS), figsize=(7.2, 3.0), sharey=True,
-                             squeeze=False)
+    n_p = len(g.gates)
+    fig, axes = plt.subplots(1, n_p, figsize=(1.8 * n_p + 3.6, 3.0),
+                             sharey=True, squeeze=False)
     flagged, n_drawn = False, 0
-    for i, ea in enumerate(EAS):
+    if g.fig6:
+        prefix = T_A_COL
+        ylab = (r"$T_a=\mu_B^{\mathrm{eq}}(\mathrm{A\ evolving})"
+                r"-\mu_B^{\mathrm{eq}}(\mathrm{A\ fixed})$")
+    else:
+        prefix = "delta_mu_b"
+        ylab = (r"$\mu_B^{\mathrm{late}}(\mathrm{fixed})"
+                r"-\mu_B^{\mathrm{late}}"
+                r"(\mathrm{evolving})$")
+    for i, ea in enumerate(g.gates):
         ax = axes[0][i]
         ax.axhline(0.0, color=INK, lw=0.7, ls=(0, (4, 3)), zorder=1)
-        fl, nd = _plot_series(ax, rows, ea, "delta_mu_b")
+        fl, nd = _plot_series(ax, rows, ea, prefix, grid=g)
         flagged |= fl
         n_drawn += nd
-        _style_panel(ax, ylabel=(r"$\mu_B^{\mathrm{late}}(\mathrm{fixed})"
-                                r"-\mu_B^{\mathrm{late}}"
-                                r"(\mathrm{evolving})$")
-                     if i == 0 else None)
+        _style_panel(ax, ylabel=ylab if i == 0 else None, grid=g)
         _panel_tag(ax, r"$\varepsilon_{\mathrm{AI}}=%g$" % ea)
     if n_drawn:
         axes[0][0].legend(frameon=False, fontsize=8.2, loc="best")
@@ -1002,38 +1532,46 @@ def figure_source(rows, out_dir, cover_note, drift_tol):
         axes[0][0].annotate("no complete series", xy=(0.5, 0.5),
                             xycoords="axes fraction", ha="center",
                             va="center", fontsize=9, color="0.45")
-    foot = (f"post-peer late window = op_raw rounds "
+    foot = (f"post-peer late window = the final five rounds of each "
+            f"artifact (op_raw {LATE_IDX[0]}-{LATE_IDX[-1]} at 30 rounds); "
+            f"error bars = 95% paired Student-t interval over seeds "
+            f"{', '.join(str(s) for s in SEEDS)} (df=2); {cover_note}"
+            if g.fig6 else
+            f"post-peer late window = op_raw rounds "
             f"{LATE_IDX[0]}-{LATE_IDX[-1]}; error bars = 95% Student-t "
             f"interval over seeds {', '.join(str(s) for s in SEEDS)} "
             f"(df=2); {cover_note}")
     if flagged:
         foot += (f"; \u2020 = half-window drift exceeds {drift_tol:g} "
+                 f"{'or the pair is unsettled ' if g.fig6 else ''}"
                  f"(see the CSV)")
     fig.tight_layout()
     _foot(fig, foot, -0.035)
-    return _save(fig, out_dir, "section4_gate_source_effect")
+    return _save(fig, out_dir, f"{g.stem}_source_effect")
 
 
-def figure_dispersion(rows, out_dir, cover_note, drift_tol):
+def figure_dispersion(rows, out_dir, cover_note, drift_tol, grid=None):
+    g = _grid(grid)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     _rc()
-    fig, axes = plt.subplots(2, len(EAS), figsize=(7.2, 5.2), sharey="row",
-                            sharex=True, squeeze=False)
+    n_p = len(g.gates)
+    fig, axes = plt.subplots(2, n_p, figsize=(1.8 * n_p + 3.6, 5.2),
+                             sharey="row", sharex=True, squeeze=False)
     flagged, n_drawn = False, 0
     specs = [("sd_ratio_b", r"SD$_B$(fixed) / SD$_B$(evolving)"),
              ("sd_ratio_pop", r"SD$_{\mathrm{pop}}$(fixed) / "
                               r"SD$_{\mathrm{pop}}$(evolving)")]
     for r_i, (prefix, ylab) in enumerate(specs):
-        for i, ea in enumerate(EAS):
+        for i, ea in enumerate(g.gates):
             ax = axes[r_i][i]
             ax.axhline(1.0, color=INK, lw=0.7, ls=(0, (4, 3)), zorder=1)
-            fl, nd = _plot_series(ax, rows, ea, prefix)
+            fl, nd = _plot_series(ax, rows, ea, prefix, grid=g)
             flagged |= fl
             n_drawn += nd
             _style_panel(ax, ylabel=ylab if i == 0 else None,
-                         xlabel=(r_i == len(specs) - 1))
+                         xlabel=(r_i == len(specs) - 1), grid=g)
             if r_i == 0:
                 _panel_tag(ax, r"$\varepsilon_{\mathrm{AI}}=%g$" % ea)
     if n_drawn:
@@ -1050,7 +1588,7 @@ def figure_dispersion(rows, out_dir, cover_note, drift_tol):
         foot += f"; \u2020 = half-window drift exceeds {drift_tol:g}"
     fig.tight_layout()
     _foot(fig, foot, -0.018)
-    return _save(fig, out_dir, "section4_gate_dispersion")
+    return _save(fig, out_dir, f"{g.stem}_dispersion")
 
 
 # =============================================================== captions
@@ -1097,13 +1635,97 @@ def caption_source(source_rows, cover_note, drift_tol, partial, shape):
     ]
 
 
-def caption_dispersion(disp_rows, cover_note, drift_tol, partial, shape):
+def caption_fig6_source(source_rows, cover_note, drift_tol, shape, grid,
+                        gate_info):
+    """The fig6 caption block: T_a with its sign convention stated, the
+    eps_AI = 0 twin derivation, the settled rule, every unsettled pair by
+    name, and the served-value cardinality summary."""
+    n_done = sum(1 for r in source_rows if r["status"] == "complete")
+    n_sig = sum(1 for r in source_rows if r["status"] == "complete"
+                and r.get(f"{T_A_COL}_ci_excludes_zero"))
+    unsettled = [r for r in source_rows if r.get("outcome") != "equilibrium"]
+    # eps_AI = 0 is exempt: the witness runs did generate, but the closed
+    # gate let nothing served enter the population
+    quantized = [r for r in source_rows
+                 if r["eps_ai"] != 0.0
+                 and any(isinstance(r.get(f"served_distinct_{c}_min"), int)
+                         and r[f"served_distinct_{c}_min"] <= 3
+                         for c in grid.conds)]
+    lines = [
+        f"CAPTION -- {grid.stem}_source_effect.pdf/.png "
+        "(the figure carries no title text)",
+        "",
+        "Figure-6 quantity: T_a = mu_B^eq(A evolving) - mu_B^eq(A fixed),",
+        "EVOLVING MINUS FIXED. A positive T_a means a fully adaptive",
+        "cohort A left the responsive majority (cohort B) HIGHER than a",
+        "pinned cohort A did; the inherited delta_mu_b = -T_a is in the CSV.",
+        f"Mistral-7B on movielens Action, {shape['n_agents']} agents, "
+        f"W=0.5, k=0.2,",
+        "homophily gamma=0, corrected AI gate on the anchored opinion",
+        f"x' = k*innate + (1-k)*x (population_update = {POP_UPDATE_V2}).",
+        f"Cohort A = the {shape['n_a']} lowest-innate agents (pinned in "
+        f"the FIXED",
+        "condition, an ANALYSIS MASK in the EVOLVING one); cohort B = the",
+        f"other {shape['n_b']} agents.",
+        "Equilibrium = the FINAL FIVE end-of-round post-peer states of the",
+        "analysed artifact (op_raw rounds 25-29 = rounds 26-30 of a",
+        "30-round run; 56-60 of a _r60 extension; 96-100 of a _r100).",
+        "T_a is formed PER PAIRED SEED, then the three-seed mean and the",
+        f"95% paired Student-t interval (df=2, t={T_CRIT_DF2:.4f}) over "
+        f"the",
+        "per-seed differences are the point and the error bar.",
+        "eps_AI = 0 is the matched no-AI twin: the strict gate |m - x'| <",
+        "eps_AI is closed for everyone, the method drops out, and the",
+        "population is twin_raw of the runs at the same (condition,",
+        "eps_social, seed) -- verified bit-identical across those runs and",
+        "against the two witness runs (op_raw == twin_raw). The eps_AI = 0",
+        "value is therefore IDENTICAL for both methods (pure peer",
+        "transmission baseline).",
+        f"Panels are the {len(grid.gates)} AI gates "
+        f"({', '.join(f'{e:g}' for e in grid.gates)}); x is eps_social "
+        f"({', '.join(f'{e:g}' for e in grid.ess)});",
+        "series are the two methods.",
+        f"{n_sig} of {n_done} complete series have an interval excluding 0.",
+        "A pair is SETTLED when both members' late-window half-to-half",
+        f"drift (2 vs 3 rounds) is within {drift_tol:g} opinion units; "
+        f"an unsettled",
+        "pair is never called an equilibrium and is marked \u2020.",
+    ]
+    if unsettled:
+        lines.append(f"UNSETTLED series ({len(unsettled)}): " + "; ".join(
+            f"{r['arm']} ea={r['eps_ai']:g} es={r['eps_social']:g} "
+            f"[{r['outcome']}]" for r in unsettled))
+        lines.append("Extension requests for these pairs are in "
+                     f"{grid.stem}_extension_request.json.")
+    else:
+        lines.append("Every pair is settled at the analysed horizon.")
+    if quantized:
+        lines.append(
+            f"SERVED-VALUE QUANTIZATION: {len(quantized)} series have a "
+            f"member whose late-window served map holds <= 3 distinct "
+            f"values (served_distinct / served_top_share in the CSV): a "
+            f"null T_a there may be quantization, not absence of effect.")
+    else:
+        lines.append("No series has a member with <= 3 distinct served "
+                     "values in the late window (served_distinct / "
+                     "served_top_share in the CSV).")
+    lines += [
+        f"Gate verdict: {gate_info}.",
+        f"Coverage: {cover_note}.",
+        "Exploratory: one wave, three seeds, one model, one dataset.",
+    ]
+    return lines
+
+
+def caption_dispersion(disp_rows, cover_note, drift_tol, partial, shape,
+                       grid=None):
+    g = _grid(grid)
     n_sig = sum(1 for r in disp_rows
                 if r["status"] == "complete"
                 and r.get("sd_ratio_b_ci_excludes_one"))
     n_done = sum(1 for r in disp_rows if r["status"] == "complete")
     return [
-        "CAPTION -- section4_gate_dispersion.pdf/.png "
+        f"CAPTION -- {g.stem}_dispersion.pdf/.png "
         "(the figure carries no title text)",
         "",
         "Dispersion under a fixed versus an evolving source cohort, same",
@@ -1120,7 +1742,10 @@ def caption_dispersion(disp_rows, cover_note, drift_tol, partial, shape):
         "are pinned at innate by construction, which by itself changes the",
         "population SD. Cohort B is the honest dispersion channel.",
         f"Late window = op_raw rounds {LATE_IDX[0]}-{LATE_IDX[-1]} (the last",
-        "five end-of-round post-peer states). Panels are the two AI gates,",
+        "five end-of-round post-peer states"
+        + (" of a 30-round artifact; the final five of an extension)."
+           if g.fig6 else ")."),
+        f"Panels are the {len(g.gates)} AI gates,",
         "series the two arms, error bars 95% Student-t intervals over the",
         f"three seeds (df=2, t={T_CRIT_DF2:.4f}). Dashed line: ratio = 1.",
         f"{n_sig} of {n_done} complete cells have a cohort-B SD-ratio",
@@ -1129,7 +1754,7 @@ def caption_dispersion(disp_rows, cover_note, drift_tol, partial, shape):
         f"{drift_tol:g}.",
         "The twin-referenced dispersion of the published Section 4 --",
         "SD(B platform)/SD(B matched no-platform twin), per condition --",
-        "is in section4_gate_dispersion.csv rather than this figure.",
+        f"is in {g.stem}_dispersion.csv rather than this figure.",
         f"Coverage: {cover_note}."
         + (" RESULTS ARE PARTIAL." if partial else ""),
         "Exploratory: one wave, three seeds, one model, one dataset.",
@@ -1137,12 +1762,39 @@ def caption_dispersion(disp_rows, cover_note, drift_tol, partial, shape):
 
 
 # =================================================================== main
-def default_out_dir(run_root):
+def default_out_dir(run_root, grid=None):
     """A runs-ADJACENT analysis directory: a sibling of the run root, never
     inside it (so a tag scan cannot trip over the analysis) and NEVER under
     paper/."""
     parent = os.path.dirname(os.path.abspath(run_root.rstrip(os.sep)))
-    return os.path.join(parent, "analysis", KEY)
+    return os.path.join(parent, "analysis", _grid(grid).key)
+
+
+def read_gate_verdict(path):
+    """(ok, info) from a check_section4_gate.py --json verdict.  The
+    checker writes the top-level verdict as ``pass`` (and ``ok`` per
+    cell); both spellings are accepted at the top level.  ok is False
+    for a missing / unreadable / verdict-less file."""
+    if path is None:
+        return None, "no --gate-json given"
+    if not os.path.exists(path):
+        return False, f"--gate-json {path!r} does not exist"
+    try:
+        with open(path) as fh:
+            js = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        return False, f"--gate-json {path!r} unreadable: {e}"
+    if not isinstance(js, dict):
+        return False, f"--gate-json {path!r} is not a JSON object"
+    v = js.get("ok", js.get("pass"))
+    if v is None:
+        return False, (f"--gate-json {path!r} carries neither 'ok' nor "
+                       f"'pass'")
+    info = (f"{'ok' if v else 'FAILED'} (wave={js.get('wave')!r}, "
+            f"cells present {js.get('n_cells_present')}/"
+            f"{js.get('n_cells_total')}, failed {js.get('n_cells_failed')}, "
+            f"{os.path.basename(path)})")
+    return bool(v), info
 
 
 def refuse_paper_dir(out_dir):
@@ -1153,13 +1805,15 @@ def refuse_paper_dir(out_dir):
         sys.exit(1)
 
 
-def print_table(rows, title, mean_key, mark_key, fmt="%+.4f"):
+def print_table(rows, title, mean_key, mark_key, fmt="%+.4f", grid=None):
+    g = _grid(grid)
+    prefix = mean_key[:-5]
     print(f"\n== {title} ==")
-    print("   " + " ".join(f"{'es=' + f'{e:g}':>12}" for e in ESS))
-    for arm in ARMS:
-        for ea in EAS:
+    print("   " + " ".join(f"{'es=' + f'{e:g}':>12}" for e in g.ess))
+    for arm in g.arms:
+        for ea in g.gates:
             cellstr = []
-            for es in ESS:
+            for es in g.ess:
                 r = _pick(rows, arm, ea, es)
                 if r is None or r["status"] != "complete" \
                         or r.get(mean_key) is None:
@@ -1167,19 +1821,151 @@ def print_table(rows, title, mean_key, mark_key, fmt="%+.4f"):
                     continue
                 s = fmt % r[mean_key]
                 s += "*" if r.get(mark_key) else " "
-                s += "\u2020" if r.get(
-                    f"{mean_key[:-5]}_drift_flag") else " "
+                s += "\u2020" if _flag_of(r, prefix) else " "
                 cellstr.append(f"{s:>12}")
             print(f"  {arm:<3} ea={ea:<4g}" + " ".join(cellstr))
     print("  (* = 95% CI excludes the reference; \u2020 = half-window "
-          "drift exceeds the tolerance)")
+          "drift exceeds the tolerance"
+          + (" or the pair is unsettled)" if g.fig6 else ")"))
+
+
+def print_fig6_detail(rows, grid):
+    """T_a per series NEXT TO the settled verdict and the served-value
+    cardinality of both members, so a quantized served map can never
+    masquerade as a null effect."""
+    print(f"\n== FIG6 detail: {T_A_COL} (mean [95% paired CI]) with the "
+          f"settled verdict and late-window served cardinality ==")
+    print(f"  {T_A_SIGN}")
+    hdr = (f"  {'arm':<3} {'ea':>4} {'es':>4} {'T_a':>9} "
+           f"{'[ci_lo, ci_hi]':>22} {'outcome':>22} {'hz':>6} "
+           f"{'distinct f|e':>16} {'top-share f|e':>18}")
+    print(hdr)
+    warn = []
+    for arm in grid.arms:
+        for ea in grid.gates:
+            for es in grid.ess:
+                r = _pick(rows, arm, ea, es)
+                if r is None:
+                    continue
+                m = r.get(f"{T_A_COL}_mean")
+                if m is None:
+                    t_s, ci_s = "--", "--"
+                else:
+                    t_s = f"{m:+.4f}"
+                    ci_s = (f"[{r[f'{T_A_COL}_ci_lo']:+.4f}, "
+                            f"{r[f'{T_A_COL}_ci_hi']:+.4f}]")
+                oc = r.get("outcome") or "--"
+                dist = (f"{r.get('served_distinct_fixed', '')}|"
+                        f"{r.get('served_distinct_evolving', '')}")
+                top = (f"{r.get('served_top_share_fixed', '')}|"
+                       f"{r.get('served_top_share_evolving', '')}")
+                dist = dist.replace(SERVED_NA, "n/a")
+                top = top.replace(SERVED_NA, "n/a")
+                print(f"  {arm:<3} {ea:>4g} {es:>4g} {t_s:>9} {ci_s:>22} "
+                      f"{oc:>22} {r.get('horizon', ''):>6} {dist:>16} "
+                      f"{top:>18}")
+                mins = [r.get(f"served_distinct_{c}_min")
+                        for c in grid.conds]
+                mins = [v for v in mins if isinstance(v, int)]
+                if ea != 0.0 and mins and min(mins) <= 3:
+                    warn.append(f"{arm} ea={ea:g} es={es:g} "
+                                f"(min distinct {min(mins)})")
+    print("  distinct = number of distinct pred_raw values pooled over the "
+          "late window (per seed, f|e = fixed|evolving); top-share = "
+          "fraction at the single most common value; n/a = eps_AI=0 "
+          "twin-derived (gate closed, nothing served; a witness run's map "
+          "is reported but exempt from the warning below)")
+    if warn:
+        print(f"  ***** SERVED MAP QUANTIZED (<= 3 distinct values) in "
+              f"{len(warn)} series: " + "; ".join(warn)
+              + " -- a null T_a there may be quantization *****")
+
+
+def locate_cells(run_root, grid):
+    """Existence pass (no tensors).  Returns (located, missing, coverage,
+    base_runs).
+
+    located[key] = {run_dir, tag, horizon, kind, analysed_from,
+                    derived_from}; for a gpu/witness cell the LONGEST
+    available horizon (_r100 > _r60 > base) is chosen; a twin cell with
+    no run is resolved to analysed_from='twin_raw' from ANY base-horizon
+    run at the same (cond, eps_social, seed); a twin cell that does have
+    a run is analysed from it as a witness (noted).
+    base_runs[(cond, es, seed)] = [(key, run_dir, tag)] of the base-tag
+    artifacts, which feed the twin derivation and the twin-agreement
+    check even when the cell itself is analysed at a longer horizon.
+    """
+    located, missing, coverage, base_runs = {}, [], [], {}
+    for (arm, cond, ea, es, seed, kind) in grid.cells:
+        key = (arm, cond, ea, es, seed)
+        base_tag = grid.tag(arm, cond, ea, es, seed)
+        base_rd = find_run(run_root, base_tag)
+        if base_rd is not None:
+            base_runs.setdefault((cond, es, seed), []).append(
+                (key, base_rd, base_tag))
+        found = None
+        if kind == "twin":
+            if base_rd is not None:
+                found = {"run_dir": base_rd, "tag": base_tag,
+                         "horizon": N_ROUNDS, "kind": kind,
+                         "analysed_from": "op_raw", "derived_from": None,
+                         "note": "twin cell WITH a run: verified as a "
+                                 "witness"}
+        else:
+            for r in grid.horizons():
+                tag = base_tag if r is None else grid.tag(arm, cond, ea, es,
+                                                          seed, rounds=r)
+                rd = base_rd if r is None else find_run(run_root, tag)
+                if rd is not None:
+                    found = {"run_dir": rd, "tag": tag,
+                             "horizon": N_ROUNDS if r is None else int(r),
+                             "kind": kind, "analysed_from": "op_raw",
+                             "derived_from": None, "note": None}
+                    break
+            if found is None:
+                missing.append(base_tag)
+        if found is not None:
+            located[key] = found
+    # twin-derived cells: any base run at the same (cond, es, seed)
+    for (arm, cond, ea, es, seed, kind) in grid.cells:
+        key = (arm, cond, ea, es, seed)
+        if kind != "twin" or key in located:
+            continue
+        srcs = base_runs.get((cond, es, seed), [])
+        tag = grid.tag(arm, cond, ea, es, seed)
+        if not srcs:
+            missing.append(f"{tag} [twin-derived: no base run at "
+                           f"({cond}, es={es:g}, seed={seed})]")
+            continue
+        located[key] = {"run_dir": None, "tag": tag, "horizon": N_ROUNDS,
+                        "kind": kind, "analysed_from": "twin_raw",
+                        "derived_from": srcs[0][2], "note": None}
+    for (arm, cond, ea, es, seed, kind) in grid.cells:
+        key = (arm, cond, ea, es, seed)
+        loc = located.get(key)
+        coverage.append({
+            "arm": arm, "cond": cond, "eps_ai": ea, "eps_social": es,
+            "seed": seed, "kind": kind,
+            "run_tag": loc["tag"] if loc else grid.tag(arm, cond, ea, es,
+                                                       seed),
+            "present": loc is not None,
+            "horizon": loc["horizon"] if loc else None,
+            "analysed_from": loc["analysed_from"] if loc else None,
+            "run_dir": loc["run_dir"] if loc else None,
+            "derived_from": loc["derived_from"] if loc else None,
+            "note": loc["note"] if loc else None})
+    return located, missing, coverage, base_runs
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Section-4 corrected-gate (section4_gate_anch2) "
-                    "analyzer: fixed vs evolving source cohort under the "
-                    "anchored AI gate.")
+        description="Section-4 corrected-gate analyzer: fixed vs evolving "
+                    "source cohort under the anchored AI gate, for the "
+                    "original 72-cell wave (default) or the Figure-6 grid "
+                    "(--wave fig6).")
+    ap.add_argument("--wave", default=KEY, choices=sorted(WAVE_ALIASES),
+                    help=f"which wave's grid to analyse (default {KEY}; "
+                         f"aliases v1 / fig6)")
     ap.add_argument("--run-root",
                     default=os.path.join(REPO, "runs", "pokec_gated_lm"),
                     help="directory holding <tag>/trajectory.pt "
@@ -1191,97 +1977,309 @@ def main(argv=None):
     ap.add_argument("--no-figs", action="store_true",
                     help="CSVs, captions and report only")
     ap.add_argument("--json", default=None,
-                    help="write a machine-readable summary here")
+                    help="write a machine-readable summary here (fig6 "
+                         "mode always also writes <out-dir>/"
+                         "section4_fig6_summary.json)")
     ap.add_argument("--drift-tol", type=float, default=DEFAULT_DRIFT_TOL,
                     help=f"half-window drift tolerance in opinion units "
                          f"(default {DEFAULT_DRIFT_TOL:g})")
+    ap.add_argument("--gate-json", default=None,
+                    help="check_section4_gate.py --json verdict; REQUIRED "
+                         "and must pass in fig6 mode, optional otherwise")
+    ap.add_argument("--allow-ungated", action="store_true",
+                    help="original wave only: go on when --gate-json "
+                         "reports a failed verdict (REJECTED in fig6 mode)")
     args = ap.parse_args(argv)
 
+    g = GRIDS[WAVE_ALIASES[args.wave]]
+    stem = g.stem
     run_root = os.path.abspath(args.run_root)
     out_dir = os.path.abspath(args.out_dir if args.out_dir
-                              else default_out_dir(run_root))
+                              else default_out_dir(run_root, g))
     refuse_paper_dir(out_dir)
-    print(f"[s4g] key      : {KEY}")
+    print(f"[s4g] key      : {g.key}  ({g.n_cells} cells: "
+          + ", ".join(f"{g.n_kind[k]} {k}" for k in CELL_KINDS
+                      if g.n_kind[k]) + ")")
+    print(f"[s4g] grid     : ea {g.gates} x es {g.ess} x seeds {g.seeds} "
+          f"(read from gen_pofd_sweep.py)")
     print(f"[s4g] run-root : {run_root}")
     print(f"[s4g] out-dir  : {out_dir}")
     print(f"[s4g] window   : op_raw rounds {LATE_IDX[0]}-{LATE_IDX[-1]} "
           f"(END-OF-ROUND POST-PEER states; LATE = range(25, 30), "
-          f"inherited from analyze_bottom20_section4_3seed.py)")
+          f"inherited from analyze_bottom20_section4_3seed.py"
+          + ("; = rounds 26-30 1-indexed; an extension artifact is read "
+             "on ITS final five rounds)" if g.fig6 else ")"))
     print(f"[s4g] t crit   : {T_CRIT_SOURCE}")
+    if g.fig6:
+        print(f"[s4g] SIGN     : {T_A_SIGN}")
+
+    # ---- 0. the gate verdict
+    if g.fig6 and args.allow_ungated:
+        print("[s4g] HARD FAIL: --allow-ungated is not accepted in fig6 "
+              "mode -- the Figure-6 numbers are never computed on an "
+              "ungated wave", file=sys.stderr)
+        return 1
+    gate_ok, gate_info = read_gate_verdict(args.gate_json)
+    if g.fig6:
+        if args.gate_json is None:
+            print("[s4g] HARD FAIL: fig6 mode requires --gate-json (the "
+                  "check_section4_gate.py verdict) and it must pass",
+                  file=sys.stderr)
+            return 1
+        print(f"[s4g] gate     : {gate_info}")
+        if not gate_ok:
+            print(f"[s4g] HARD FAIL: the gate verdict is not a pass -- "
+                  f"nothing is written ({gate_info})", file=sys.stderr)
+            return 1
+    else:
+        if args.gate_json is None:
+            print("[s4g] gate     : none given (the original wave accepts "
+                  "an ungated run; pass --gate-json to pin it)")
+        else:
+            print(f"[s4g] gate     : {gate_info}")
+            if not gate_ok and not args.allow_ungated:
+                print(f"[s4g] HARD FAIL: the gate verdict is not a pass "
+                      f"({gate_info}); use --allow-ungated to override "
+                      f"in the original wave", file=sys.stderr)
+                return 1
+            if not gate_ok:
+                print("[s4g] ***** --allow-ungated: proceeding on a FAILED "
+                      "gate verdict; the numbers are suspect *****")
 
     # ---- 1. locate every required cell (existence only; no tensors yet)
-    grid = [(arm, cond, ea, es, seed)
-            for arm in ARMS for cond in CONDS
-            for ea in EAS for es in ESS for seed in SEEDS]
-    assert len(grid) == N_CELLS, (len(grid), N_CELLS)
-    located, missing, coverage = {}, [], []
-    for key in grid:
-        tag = cell_tag(*key)
-        rd = find_run(run_root, tag)
-        coverage.append({
-            "arm": key[0], "cond": key[1], "eps_ai": key[2],
-            "eps_social": key[3], "seed": key[4], "run_tag": tag,
-            "present": rd is not None,
-            "run_dir": rd if rd is not None else None})
-        if rd is None:
-            missing.append(tag)
-        else:
-            located[key] = rd
+    located, missing, coverage, base_runs = locate_cells(run_root, g)
     partial = bool(missing)
-    print(f"[s4g] located  : {len(located)}/{N_CELLS} trajectories")
+    n_from_run = sum(1 for v in located.values()
+                     if v["analysed_from"] == "op_raw")
+    n_from_twin = len(located) - n_from_run
+    n_ext = sum(1 for v in located.values() if v["horizon"] != N_ROUNDS)
+    print(f"[s4g] located  : {len(located)}/{g.n_cells} cells "
+          f"({n_from_run} from a run, {n_from_twin} twin-derived, "
+          f"{n_ext} at an extended horizon)")
     for tag in missing:
         print(f"  MISSING {tag}")
+    for key in g.keys:
+        loc = located.get(key)
+        if loc and loc.get("note"):
+            print(f"  NOTE {loc['tag']}: {loc['note']}")
 
     # tags that exist on disk but are not in the declared grid
-    stray = [f["tag"] for f in scan_run_root(run_root)
+    stray = [f["tag"] for f in scan_run_root(run_root, g)
              if not f.get("in_grid")]
     if stray:
         print(f"[s4g] NOTE: {len(stray)} {TAG_PREFIX}_ run(s) under the run "
-              f"root are NOT in the declared 72-cell grid (grammar drift "
-              f"or a smoke wave?):")
+              f"root are NOT in the declared {g.n_cells}-cell grid "
+              f"(grammar drift or a smoke wave?):")
         for t in stray[:20]:
             print(f"  UNEXPECTED {t}")
 
+    if g.fig6 and missing:
+        print(f"\n[s4g] HARD FAIL: {len(missing)} required cell(s) absent "
+              f"-- fig6 mode allows NO partial output", file=sys.stderr)
+        for tag in missing:
+            print(f"  {tag}", file=sys.stderr)
+        return 1
     if not located:
-        print(f"[s4g] HARD FAIL: no cell of {KEY} found under {run_root} -- "
-              f"nothing to analyse", file=sys.stderr)
+        print(f"[s4g] HARD FAIL: no cell of {g.key} found under {run_root} "
+              f"-- nothing to analyse", file=sys.stderr)
         return 1
 
     # ---- 2. one pass, ONE run's tensors resident at a time
     per_round_rows, cells, fatal = [], {}, []
-    ref_sha, mask_a = None, None
-    for key in grid:
-        if key not in located:
+    state = {"ref_sha": None, "mask_a": None}
+    twin_shas = {}          # (cond, es, seed) -> {tag: sha256(twin_raw)}
+    derived = {}            # (cond, es, seed) -> (rounds, late, tag, arch)
+    twin_needed = {(k[1], k[3], k[4]) for k, v in located.items()
+                   if v["analysed_from"] == "twin_raw"}
+
+    def init_ref(d, tag):
+        state["mask_a"] = cohort_a_mask(d["innate"])
+        state["ref_sha"] = innate_sha(d["innate"])
+        n_ag, n_a = int(d["innate"].numel()), int(state["mask_a"].sum())
+        print(f"[s4g] cohort A : {n_a} of {n_ag} agents "
+              f"(bottom {CLAMP_FRAC:g} by the innate-then-id ranking; "
+              f"reference run {tag})")
+        if n_ag != EXPECTED_N_AGENTS or n_a != EXPECTED_N_CLAMP:
+            print(f"[s4g] NOTE: this wave is specified at "
+                  f"{EXPECTED_N_AGENTS} agents / {EXPECTED_N_CLAMP} "
+                  f"clamped; this run has {n_ag} / {n_a}")
+
+    def note_twin(d, key, tag, run_dir):
+        """Record a BASE-horizon run's twin sha; derive the eps_AI = 0
+        cells at its (cond, es, seed) from its twin_raw if not yet done."""
+        cse = (key[1], key[3], key[4])
+        sha = twin_sha(d)
+        if sha is None:
+            fatal.append(f"{tag}: no twin_raw shaped like op_raw -- fig6 "
+                         f"needs the matched no-AI twin on every run "
+                         f"(the eps_AI = 0 cells are derived from it)")
+            return
+        twin_shas.setdefault(cse, {})[tag] = sha
+        if cse in twin_needed and cse not in derived:
+            tkey = next(k for k, v in located.items()
+                        if v["analysed_from"] == "twin_raw"
+                        and (k[1], k[3], k[4]) == cse)
+            dd = twin_derived_artifact(d)
+            dtag = f"{g.tag(*tkey)} [twin-derived from {tag}]"
+            bad = structural_checks(dd, tkey, state["mask_a"],
+                                    state["ref_sha"], tag=dtag,
+                                    horizon=N_ROUNDS)
+            if bad:
+                fatal.extend(bad)
+                return
+            rounds, late = reduce_cell(dd, state["mask_a"],
+                                       late_window(N_ROUNDS))
+            derived[cse] = (rounds, late, tag, gpu_arch(run_dir), sha)
+
+    for key in g.keys:
+        loc = located.get(key)
+        if loc is None or loc["analysed_from"] != "op_raw":
             continue
-        rd = located[key]
+        rd, tag, horizon = loc["run_dir"], loc["tag"], loc["horizon"]
+        arm, cond, ea, es, seed = key
+        cse = (cond, es, seed)
+        # the BASE artifact of an extended cell still feeds the twin
+        # derivation and the twin-agreement check
+        if g.fig6 and horizon != N_ROUNDS:
+            base = [b for b in base_runs.get(cse, []) if b[0] == key]
+            if base:
+                _, brd, btag = base[0]
+                db = load(brd)
+                if state["mask_a"] is None:
+                    init_ref(db, btag)
+                bad = structural_checks(db, key, state["mask_a"],
+                                        state["ref_sha"], tag=btag,
+                                        horizon=N_ROUNDS)
+                if bad:
+                    fatal.extend(bad)
+                else:
+                    note_twin(db, key, btag, brd)
+                del db
         d = load(rd)
-        if mask_a is None:
-            mask_a = cohort_a_mask(d["innate"])
-            ref_sha = innate_sha(d["innate"])
-            n_ag, n_a = int(d["innate"].numel()), int(mask_a.sum())
-            print(f"[s4g] cohort A : {n_a} of {n_ag} agents "
-                  f"(bottom {CLAMP_FRAC:g} by the innate-then-id ranking; "
-                  f"reference run {cell_tag(*key)})")
-            if n_ag != EXPECTED_N_AGENTS or n_a != EXPECTED_N_CLAMP:
-                print(f"[s4g] NOTE: this wave is specified at "
-                      f"{EXPECTED_N_AGENTS} agents / {EXPECTED_N_CLAMP} "
-                      f"clamped; this run has {n_ag} / {n_a}")
-        bad = structural_checks(d, key, mask_a, ref_sha)
+        if state["mask_a"] is None:
+            init_ref(d, tag)
+        bad = structural_checks(d, key, state["mask_a"], state["ref_sha"],
+                                tag=tag, horizon=(horizon if g.fig6
+                                                  else None))
+        if g.fig6 and not has_real_twin(d):
+            bad.append(f"{tag}: no twin_raw shaped like op_raw -- fig6 "
+                       f"needs the matched no-AI twin on every run")
+        if g.fig6 and ea == 0.0 and has_real_twin(d):
+            # a run at eps_AI = 0 is a WITNESS: the strict gate is closed,
+            # so the population must BE the twin, bit for bit
+            op_, tw_ = d["op_raw"].float(), d["twin_raw"].float()
+            if not torch.equal(op_, tw_):
+                worst = float((op_ - tw_).abs().max())
+                bad.append(f"{tag}: eps_AI = 0 WITNESS but op_raw != "
+                           f"twin_raw (max |diff| = {worst:.3e}) -- the "
+                           f"gate did not close, so the eps_AI = 0 "
+                           f"twin derivation is WRONG for this wave")
+            del op_, tw_
         if bad:
             fatal.extend(bad)
             del d
             continue
-        rounds, late = reduce_cell(d, mask_a)
+        t_sha = twin_sha(d)
+        if g.fig6 and horizon == N_ROUNDS:
+            note_twin(d, key, tag, rd)
+        late_idx = late_window(horizon) if g.fig6 else LATE_IDX
+        rounds, late = reduce_cell(d, state["mask_a"], late_idx)
         del d                                  # drop before the next open
-        arm, cond, ea, es, seed = key
         for r in rounds:
             per_round_rows.append({
                 "arm": arm, "cond": cond, "eps_ai": ea, "eps_social": es,
-                "seed": seed, "run_tag": cell_tag(*key), **r})
+                "seed": seed, "run_tag": tag, **r})
         late.update({"arm": arm, "cond": cond, "eps_ai": ea,
-                     "eps_social": es, "seed": seed,
-                     "run_tag": cell_tag(*key), "gpu_arch": gpu_arch(rd)})
+                     "eps_social": es, "seed": seed, "run_tag": tag,
+                     "gpu_arch": gpu_arch(rd)})
+        if g.fig6:
+            late.update({"kind": loc["kind"], "horizon": horizon,
+                         "analysed_from": "op_raw", "derived_from": None,
+                         "drift_tol": args.drift_tol,
+                         "settled": bool(abs(late["mu_b_drift"])
+                                         <= args.drift_tol),
+                         "twin_sha256": t_sha})
         cells[key] = late
+
+    if g.fig6:
+        # fill the twin-derived cells (method collapse BY CONSTRUCTION:
+        # every arm at one (cond, es, seed) gets the same derived stats)
+        for key in g.keys:
+            loc = located.get(key)
+            if loc is None or loc["analysed_from"] != "twin_raw":
+                continue
+            arm, cond, ea, es, seed = key
+            got = derived.get((cond, es, seed))
+            if got is None:
+                if not any(m.startswith(loc["derived_from"]) for m in fatal):
+                    fatal.append(f"{loc['tag']}: twin-derived cell could "
+                                 f"not be derived (no base run at "
+                                 f"({cond}, es={es:g}, seed={seed}) "
+                                 f"passed the checks)")
+                continue
+            rounds, late0, src_tag, arch, sha = got
+            tag = loc["tag"]
+            for r in rounds:
+                per_round_rows.append({
+                    "arm": arm, "cond": cond, "eps_ai": ea,
+                    "eps_social": es, "seed": seed,
+                    "run_tag": f"{tag} [twin-derived from {src_tag}]",
+                    **r})
+            late = dict(late0)
+            late.update({"arm": arm, "cond": cond, "eps_ai": ea,
+                         "eps_social": es, "seed": seed, "run_tag": tag,
+                         "gpu_arch": arch, "kind": "twin",
+                         "horizon": N_ROUNDS, "analysed_from": "twin_raw",
+                         "derived_from": src_tag,
+                         "drift_tol": args.drift_tol,
+                         "settled": bool(abs(late["mu_b_drift"])
+                                         <= args.drift_tol),
+                         "twin_sha256": sha})
+            cells[key] = late
+        # twin agreement across every base run at one (cond, es, seed)
+        for cse in sorted(twin_shas):
+            shas = twin_shas[cse]
+            if len(set(shas.values())) > 1:
+                fatal.append(
+                    f"twin_raw DISAGREES across the base runs at "
+                    f"(cond={cse[0]}, es={cse[1]:g}, seed={cse[2]}): "
+                    + ", ".join(f"{t}={s[:10]}" for t, s in sorted(
+                        shas.items()))
+                    + " -- the eps_AI = 0 derivation is not well-defined")
+        # method collapse at eps_AI = 0, asserted numerically: every
+        # eps_AI = 0 cell at one (cond, es, seed) -- twin-derived or
+        # witness -- must carry the same late-window cohort-B mean
+        by_cse = {}
+        for key, c in cells.items():
+            if key[2] == 0.0:
+                by_cse.setdefault((key[1], key[3], key[4]), []).append(
+                    (key, c["mu_b_eq"]))
+        for cse, items in sorted(by_cse.items()):
+            vals = [v for _, v in items]
+            if max(vals) - min(vals) > 1e-12:
+                fatal.append(
+                    f"eps_AI = 0 METHOD COLLAPSE violated at (cond={cse[0]}"
+                    f", es={cse[1]:g}, seed={cse[2]}): mu_b_eq = "
+                    + ", ".join(f"{k[0]}={v:.6f}" for k, v in items))
+        # pairing: both members present at the SAME horizon
+        for arm in g.arms:
+            for ea in g.gates:
+                for es in g.ess:
+                    for s in SEEDS:
+                        kf = (arm, "fixed", ea, es, s)
+                        ke = (arm, "evolving", ea, es, s)
+                        if kf in cells and ke in cells:
+                            hf, he = cells[kf]["horizon"], cells[ke]["horizon"]
+                            if hf != he:
+                                fatal.append(
+                                    f"UNPAIRED horizon at {arm} ea={ea:g} "
+                                    f"es={es:g} seed={s}: fixed analysed "
+                                    f"at {hf} rounds, evolving at {he} -- "
+                                    f"extensions must come in matched "
+                                    f"pairs")
+                        elif (kf in cells) != (ke in cells) and not fatal:
+                            fatal.append(f"UNPAIRED seed at {arm} ea={ea:g} "
+                                         f"es={es:g} seed={s}")
 
     if fatal:
         print(f"\n[s4g] HARD FAIL: {len(fatal)} structural violation(s) -- "
@@ -1292,15 +2290,18 @@ def main(argv=None):
         return 1
 
     # ---- 3. aggregate
-    source_rows = build_source_rows(cells, args.drift_tol)
-    disp_rows = build_dispersion_rows(cells, args.drift_tol)
-    null_rows = build_null_rows(cells)
+    source_rows = build_source_rows(cells, args.drift_tol, g)
+    disp_rows = build_dispersion_rows(cells, args.drift_tol, g)
+    null_rows = build_null_rows(cells, g)
 
     n_complete = sum(1 for r in source_rows if r["status"] == "complete")
-    cover_note = (f"{len(located)}/{N_CELLS} cells present, "
+    cover_note = (f"{len(located)}/{g.n_cells} cells present, "
                   f"{n_complete}/{len(source_rows)} (arm, "
                   f"eps_AI, eps_social) series complete over all "
                   f"{len(SEEDS)} seeds")
+    if g.fig6:
+        cover_note += (f"; {n_from_twin} eps_AI=0 cells twin-derived, "
+                       f"{n_ext} cells at an extended horizon")
     if partial:
         print(f"\n[s4g] ***** PARTIAL COVERAGE ***** {cover_note}. "
               f"Incomplete series are written with status=incomplete and NA "
@@ -1329,41 +2330,71 @@ def main(argv=None):
 
     # ---- 5. write
     os.makedirs(out_dir, exist_ok=True)
-    write_csv(out_dir, "section4_gate_per_round.csv", per_round_rows)
-    write_csv(out_dir, "section4_gate_cells.csv",
-              [cells[k] for k in grid if k in cells])
-    write_csv(out_dir, "section4_gate_source_effect.csv", source_rows)
-    write_csv(out_dir, "section4_gate_dispersion.csv", disp_rows)
-    write_csv(out_dir, "section4_gate_null_probe.csv", null_rows)
-    write_csv(out_dir, "section4_gate_coverage.csv", coverage)
+    write_csv(out_dir, f"{stem}_per_round.csv", per_round_rows)
+    write_csv(out_dir, f"{stem}_cells.csv",
+              [cells[k] for k in g.keys if k in cells])
+    write_csv(out_dir, f"{stem}_source_effect.csv", source_rows)
+    write_csv(out_dir, f"{stem}_dispersion.csv", disp_rows)
+    write_csv(out_dir, f"{stem}_null_probe.csv", null_rows)
+    write_csv(out_dir, f"{stem}_coverage.csv", coverage)
 
-    print_table(source_rows,
-                "three-seed source effect  mu_B(fixed) - mu_B(evolving)",
-                "delta_mu_b_mean", "delta_mu_b_ci_excludes_zero")
+    ext_req, n_unsettled = None, 0
+    if g.fig6:
+        ext_req = build_extension_request(source_rows, g, args.drift_tol,
+                                          run_root)
+        ext_path = os.path.join(out_dir, f"{stem}_extension_request.json")
+        with open(ext_path, "w") as fh:
+            json.dump(ext_req, fh, indent=2)
+        n_unsettled = sum(1 for r in source_rows for s in SEEDS
+                          if r.get(f"pair_outcome_s{s}") not in
+                          (None, "equilibrium"))
+        print(f"[s4g] wrote {stem}_extension_request.json "
+              f"({ext_req['n_cells']} cells = "
+              f"{ext_req['n_cells'] // 2} matched pairs to extend; "
+              f"{len(ext_req['twin_derived_unsettled'])} twin-derived "
+              f"unsettled pair(s) listed outside 'cells')")
+        print_table(source_rows,
+                    f"three-seed T_a = mu_B^eq(evolving) - mu_B^eq(fixed) "
+                    f"[{T_A_COL}]",
+                    f"{T_A_COL}_mean", f"{T_A_COL}_ci_excludes_zero",
+                    grid=g)
+        print_fig6_detail(source_rows, g)
+    else:
+        print_table(source_rows,
+                    "three-seed source effect  mu_B(fixed) - mu_B(evolving)",
+                    "delta_mu_b_mean", "delta_mu_b_ci_excludes_zero",
+                    grid=g)
     print_table(disp_rows,
                 "three-seed cohort-B SD ratio  SD_B(fixed) / SD_B(evolving)",
-                "sd_ratio_b_mean", "sd_ratio_b_ci_excludes_one", "%.4f")
+                "sd_ratio_b_mean", "sd_ratio_b_ci_excludes_one", "%.4f",
+                grid=g)
 
     any_cell = next(iter(cells.values()))
     shape = {"n_agents": any_cell["n_a"] + any_cell["n_b"],
              "n_a": any_cell["n_a"], "n_b": any_cell["n_b"],
              "n_rounds": any_cell["n_rounds"]}
-    caps = [caption_source(source_rows, cover_note, args.drift_tol, partial,
-                           shape),
-            caption_dispersion(disp_rows, cover_note, args.drift_tol,
-                               partial, shape)]
+    if g.fig6:
+        caps = [caption_fig6_source(source_rows, cover_note, args.drift_tol,
+                                    shape, g, gate_info),
+                caption_dispersion(disp_rows, cover_note, args.drift_tol,
+                                   partial, shape, g)]
+    else:
+        caps = [caption_source(source_rows, cover_note, args.drift_tol,
+                               partial, shape),
+                caption_dispersion(disp_rows, cover_note, args.drift_tol,
+                                   partial, shape)]
     figs = []
     if not args.no_figs:
         figs += figure_source(source_rows, out_dir, cover_note,
-                              args.drift_tol)
+                              args.drift_tol, g)
         figs += figure_dispersion(disp_rows, out_dir, cover_note,
-                                  args.drift_tol)
-    cap_path = os.path.join(out_dir, "section4_gate_captions.txt")
+                                  args.drift_tol, g)
+    cap_path = os.path.join(out_dir, f"{stem}_captions.txt")
     with open(cap_path, "w") as fh:
         for block in caps:
             print("\n" + "\n".join(block))
             fh.write("\n".join(block) + "\n\n")
-    print("\n[s4g] wrote section4_gate_captions.txt")
+    print(f"\n[s4g] wrote {stem}_captions.txt")
 
     if n_fail:
         marker = os.path.join(out_dir, "SUSPECT_NULL_VIOLATION.txt")
@@ -1382,17 +2413,26 @@ def main(argv=None):
               f"*****", file=sys.stderr)
 
     summary = {
-        "key": KEY, "run_root": run_root, "out_dir": out_dir,
-        "n_cells_expected": N_CELLS, "n_cells_located": len(located),
+        "key": g.key, "wave": g.key, "mode": "fig6" if g.fig6 else "v1",
+        "run_root": run_root, "out_dir": out_dir,
+        "grid": {"arms": g.arms, "conds": g.conds, "eps_ai": g.gates,
+                 "eps_social": g.ess, "seeds": g.seeds,
+                 "grid_source": "experiments/condor/gen_pofd_sweep.py"},
+        "n_cells_expected": g.n_cells, "n_cells_located": len(located),
         "missing_tags": missing, "unexpected_tags": stray,
         "partial": partial, "coverage_note": cover_note,
         "late_window_op_raw_rounds": [LATE_IDX[0], LATE_IDX[-1]],
         "late_window_halves": [LATE_H1, LATE_H2],
+        "late_window_rule": ("the final five post-peer rounds of the "
+                             "analysed artifact; = op_raw 25-29 = rounds "
+                             "26-30 (1-indexed) at 30 rounds"),
         "op_raw_semantics": "END-OF-ROUND POST-PEER population state",
         "t_crit_df2": T_CRIT_DF2, "t_crit_source": T_CRIT_SOURCE,
         "drift_tol": args.drift_tol,
         "population_update_required": POP_UPDATE_V2,
         "inherited_from": "analyze_bottom20_section4_3seed.py",
+        "gate_json": args.gate_json, "gate_ok": gate_ok,
+        "gate_info": gate_info,
         "n_series_complete": n_complete,
         "n_series": len(source_rows),
         "null_probe_failures": n_fail,
@@ -1400,6 +2440,30 @@ def main(argv=None):
         "source_effect": source_rows, "dispersion": disp_rows,
         "null_probe": null_rows,
     }
+    if g.fig6:
+        summary.update({
+            "primary_column": T_A_COL,
+            "t_a_sign": T_A_SIGN,
+            "n_cells_from_run": n_from_run,
+            "n_cells_twin_derived": n_from_twin,
+            "n_cells_extended_horizon": n_ext,
+            "n_pairs_unsettled": n_unsettled,
+            "n_series_settled": sum(1 for r in source_rows
+                                    if r.get("settled")),
+            "extension_request": {
+                "path": ext_path, "n_cells": ext_req["n_cells"],
+                "n_twin_derived_unsettled": len(
+                    ext_req["twin_derived_unsettled"])},
+            "twin_sha256_by_cond_es_seed": {
+                f"{c}|{es:g}|{s}": sorted(set(v.values()))
+                for (c, es, s), v in sorted(twin_shas.items())},
+            "cells": [cells[k] for k in g.keys if k in cells],
+            "coverage": coverage,
+        })
+        js_path = os.path.join(out_dir, f"{stem}_summary.json")
+        with open(js_path, "w") as fh:
+            json.dump(summary, fh, indent=2, default=str)
+        print(f"[s4g] wrote {stem}_summary.json")
     if args.json:
         with open(args.json, "w") as fh:
             json.dump(summary, fh, indent=2, default=str)
@@ -1407,6 +2471,13 @@ def main(argv=None):
 
     if n_fail:
         return 3
+    if g.fig6:
+        if n_unsettled:
+            print(f"\n[s4g] ***** {n_unsettled} pair(s) UNSETTLED at the "
+                  f"analysed horizon: NOT an equilibrium; extension "
+                  f"request written *****")
+            return 2
+        return 0
     if partial:
         return 2
     return 0

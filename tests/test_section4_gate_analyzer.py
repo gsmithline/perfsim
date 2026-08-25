@@ -932,3 +932,699 @@ def test_header_states_what_was_inherited():
     assert "range(25, 30)" in doc
     assert "4.302652729911275" in doc
     assert AN.POP_UPDATE_V2 in doc
+
+
+# ======================================================================
+# FIGURE-6 MODE (--wave section4_gate_anch2_fig6, alias fig6)
+# ======================================================================
+# A synthetic 192-cell grid: runs for the 144 gpu + 2 witness cells,
+# NO run for the 46 twin cells (they are derived from twin_raw), one
+# drifting pair, served maps with 1-3 distinct values, and a passing gate
+# verdict.  The whole thing is pure torch in tmp_path.
+FIG6 = AN.GRID_FIG6
+PLOT = _load("_plot_s4fig6", os.path.join(PIPE, "plot_section4_fig6.py"))
+
+
+def _twin_off(cond, es, seed):
+    """Cohort-B offset of the matched no-AI twin at (cond, es, seed): a
+    function of (cond, eps_social, seed) ONLY -- the mirrored-RNG twin is
+    the same for every arm and every eps_AI -- and 0 at es=0 (no peer
+    step: the twin sits at innate)."""
+    if es == 0.0:
+        return 0.0
+    return (0.006 * (1.0 + es) * (1.0 if cond == "evolving" else 0.6)
+            + 0.0004 * AN.SEEDS.index(seed))
+
+
+def _served_values(arm, ea):
+    """Late-window served map: d8 serves ONE value, b0 at ea=.1 THREE
+    (equal shares), b0 elsewhere TWO (0.65 holds two thirds)."""
+    if arm == "d8":
+        return [0.6]
+    if ea == 0.1:
+        return [0.25, 0.45, 0.65]
+    return [0.25, 0.65, 0.65]
+
+
+# the series with a KNOWN cohort-B gap: evolving sits 0.030/0.031/0.032
+# above fixed at seeds 0/42/43, so T_a = +gap by construction
+GAP_SERIES = ("b0", 0.3, 0.1)
+GAP = {0: 0.030, 42: 0.031, 43: 0.032}
+# the drifting pair (fixed member drifts 0.01/round in the late window)
+DRIFT_PAIR = ("b0", 1.0, 0.3, 42)
+
+
+def build_fig6_cell(root, arm, cond, ea, es, seed, kind, rounds=T,
+                    tag_rounds=None, drift=0.0, off=None, scale=None):
+    """One fig6 run: a build_cell whose twin_raw is the (cond, es, seed)
+    twin (identical across arms and eps_AI), whose pred_raw carries the
+    cell's served map, and -- for a witness -- whose op_raw IS twin_raw."""
+    innate = INNATE
+    mask = AN.cohort_a_mask(innate)
+    b = ~mask
+    toff = _twin_off(cond, es, seed)
+    vals = _served_values(arm, ea)
+    n = int(innate.numel())
+
+    def post(d):
+        tw = []
+        for t in range(rounds):
+            x = innate.clone()
+            x[b] = innate[b] + toff
+            if cond == "evolving":
+                x[mask] = innate[mask] + 0.01     # the responsive twin moves
+            tw.append(x)
+        d["twin_raw"] = torch.stack(tw)
+        pred = torch.stack([torch.tensor([vals[(i + t) % len(vals)]
+                                          for i in range(n)])
+                            for t in range(rounds)])
+        d["pred_raw"] = pred
+        if kind == "witness":
+            d["op_raw"] = d["twin_raw"].clone()
+        d["config"]["n_rounds"] = rounds
+
+    tag = AN.cell_tag(arm, cond, ea, es, seed, rounds=tag_rounds)
+    return build_cell(root, arm, cond, ea, es, seed, rounds=rounds, tag=tag,
+                      post=post, drift=drift, off=off, scale=scale)
+
+
+def build_fig6_grid(root):
+    for (arm, cond, ea, es, seed, kind) in FIG6.cells:
+        if kind == "twin":
+            continue
+        kw = {}
+        if (arm, ea, es) == GAP_SERIES:
+            kw["scale"] = 1.0
+            kw["off"] = 0.10 if cond == "fixed" else 0.10 + GAP[seed]
+        if (arm, ea, es, seed) == DRIFT_PAIR and cond == "fixed":
+            kw["drift"] = 0.01
+        build_fig6_cell(root, arm, cond, ea, es, seed, kind, **kw)
+    return root
+
+
+def _gate_json(path, ok=True):
+    with open(path, "w") as fh:
+        json.dump({"wave": "section4_gate_anch2", "pass": ok,
+                   "n_cells_present": 146, "n_cells_total": 146,
+                   "n_cells_failed": 0 if ok else 3}, fh)
+    return path
+
+
+@pytest.fixture(scope="module")
+def fig6_root(tmp_path_factory):
+    root = tmp_path_factory.mktemp("runs_s4fig6")
+    build_fig6_grid(root)
+    return str(root)
+
+
+@pytest.fixture(scope="module")
+def fig6_gate(tmp_path_factory):
+    return _gate_json(str(tmp_path_factory.mktemp("gate") / "gate.json"))
+
+
+@pytest.fixture(scope="module")
+def fig6_run(fig6_root, fig6_gate, tmp_path_factory):
+    out = str(tmp_path_factory.mktemp("out_s4fig6"))
+    rc = AN.main(["--wave", "fig6", "--run-root", fig6_root,
+                  "--out-dir", out, "--gate-json", fig6_gate])
+    with open(os.path.join(out, "section4_fig6_summary.json")) as fh:
+        summary = json.load(fh)
+    return rc, out, summary
+
+
+def _fig6_main(root, out, gate, extra=()):
+    return AN.main(["--wave", "fig6", "--run-root", root, "--out-dir", out,
+                    "--no-figs"] + (["--gate-json", gate] if gate else [])
+                   + list(extra))
+
+
+def _expect_fig6_fatal(root, tmp_path, name, gate, extra=()):
+    out = os.path.join(str(tmp_path), "out_" + name)
+    rc = _fig6_main(root, out, gate, extra)
+    assert rc == 1, f"{name} must be a hard failure"
+    assert not os.path.exists(out) or not os.listdir(out), \
+        f"{name} must write NOTHING (partial output is not allowed)"
+
+
+def _row(rows, arm, ea, es):
+    return [r for r in rows if r["arm"] == arm
+            and float(r["eps_ai"]) == ea and float(r["eps_social"]) == es][0]
+
+
+# --------------------------------------------------------------- the grid
+def test_fig6_grid_is_read_from_the_generator():
+    gen = _load("_gen_for_tests", os.path.join(REPO, "experiments", "condor",
+                                               "gen_pofd_sweep.py"))
+    assert FIG6.cells == gen.s4g2_cells()
+    assert FIG6.n_cells == 192
+    assert FIG6.n_kind == {"gpu": 144, "witness": 2, "twin": 46}
+    assert FIG6.gates == gen.S4G2_GATES == [0.0, 0.1, 0.3, 1.0]
+    assert FIG6.ess == gen.S4G2_ESS == [0.0, 0.1, 0.3, 1.0]
+    assert FIG6.seeds == gen.S4G2_SEEDS == AN.SEEDS
+    assert FIG6.ext_rounds_ok == (60, 100)
+    # the original wave's grid is the generator's too, and unchanged
+    assert AN.GRID_V1.gates == gen.S4G_GATES == [0.2, 1.0]
+    assert AN.GRID_V1.ess == gen.S4G_ESS == [0.0, 0.2, 1.0]
+    assert AN.EAS is AN.GRID_V1.gates and AN.ESS is AN.GRID_V1.ess
+    assert AN.N_CELLS == 72
+    assert AN.WAVE_ALIASES["v1"] == AN.KEY == "section4_gate_anch2"
+    assert AN.WAVE_ALIASES["fig6"] == AN.KEY_FIG6 == \
+        "section4_gate_anch2_fig6"
+    # tags come from the generator's s4g_tag, including the horizon suffix
+    assert AN.cell_tag("d8", "fixed", 0.1, 0.3, 42, rounds=100) == \
+        gen.s4g_tag("d8", "fixed", 0.1, 0.3, 42, rounds=100)
+    assert AN.cell_tag("d8", "fixed", 0.1, 0.3, 42, rounds=100).endswith(
+        "_es0p3_s42_r100")
+
+
+def test_late_window_is_rounds_26_to_30_and_the_final_five_of_an_extension():
+    assert AN.late_window(30) == AN.LATE_IDX == list(AN.LATE) == \
+        [25, 26, 27, 28, 29]
+    assert [t + 1 for t in AN.late_window(30)] == [26, 27, 28, 29, 30]
+    assert AN.late_window(60) == [55, 56, 57, 58, 59]
+    assert AN.late_window(100) == [95, 96, 97, 98, 99]
+    assert AN.half_split(AN.late_window(60)) == ([55, 56], [57, 58, 59])
+    with pytest.raises(ValueError):
+        AN.late_window(4)
+
+
+def test_extension_tags_parse_and_are_in_grid_only_for_fig6():
+    tag = AN.cell_tag("b0", "evolving", 0.1, 0.3, 0, rounds=60)
+    p = AN.parse_tag(tag)                       # default: original wave
+    assert p is not None and p["rounds"] == 60 and p["in_grid"] is False
+    p6 = AN.parse_tag(tag, FIG6)
+    assert p6["in_grid"] is True and p6["kind"] == "gpu"
+    # a horizon the generator does not allow is never in grid
+    bad = AN.cell_tag("b0", "evolving", 0.1, 0.3, 0, rounds=45)
+    assert AN.parse_tag(bad, FIG6)["in_grid"] is False
+    # an ea=0.2 cell is the ORIGINAL wave's, not fig6's
+    v1 = AN.cell_tag("b0", "evolving", 0.2, 0.2, 0)
+    assert AN.parse_tag(v1)["in_grid"] is True
+    assert AN.parse_tag(v1, FIG6)["in_grid"] is False
+    assert AN.parse_tag(AN.cell_tag("b0", "evolving", 0.0, 0.3, 0),
+                        FIG6)["kind"] == "witness"
+
+
+def test_fig6_default_out_dir_is_the_fig6_key():
+    d = AN.default_out_dir("/home/gsmithline/perfsim/runs/pokec_gated_lm",
+                           FIG6)
+    assert d == ("/home/gsmithline/perfsim/runs/analysis/"
+                 "section4_gate_anch2_fig6")
+
+
+# ------------------------------------------------------------- end to end
+def test_fig6_full_grid_runs_and_writes_everything(fig6_run):
+    rc, out, summary = fig6_run
+    # one pair drifts, so the honest verdict is "written, but unsettled"
+    assert rc == 2
+    for name in ("section4_fig6_per_round.csv", "section4_fig6_cells.csv",
+                 "section4_fig6_source_effect.csv",
+                 "section4_fig6_dispersion.csv",
+                 "section4_fig6_null_probe.csv",
+                 "section4_fig6_coverage.csv",
+                 "section4_fig6_captions.txt",
+                 "section4_fig6_summary.json",
+                 "section4_fig6_extension_request.json",
+                 "section4_fig6_source_effect.pdf",
+                 "section4_fig6_source_effect.png",
+                 "section4_fig6_dispersion.pdf"):
+        p = os.path.join(out, name)
+        assert os.path.exists(p) and os.path.getsize(p) > 0, name
+    assert not os.path.exists(os.path.join(out, "SUSPECT_NULL_VIOLATION.txt"))
+    assert summary["mode"] == "fig6"
+    assert summary["key"] == "section4_gate_anch2_fig6"
+    assert summary["n_cells_expected"] == 192 == summary["n_cells_located"]
+    assert summary["n_cells_from_run"] == 146
+    assert summary["n_cells_twin_derived"] == 46
+    assert summary["missing_tags"] == [] and summary["partial"] is False
+    assert summary["null_probe_failures"] == 0
+    assert summary["n_series"] == 32
+    assert summary["n_series_complete"] == 32
+    assert summary["n_series_settled"] == 31
+    assert summary["n_pairs_unsettled"] == 1
+    assert summary["primary_column"] == "t_a_evolving_minus_fixed"
+    assert "EVOLVING MINUS FIXED" in summary["t_a_sign"]
+    assert "26-30" in summary["late_window_rule"]
+    assert summary["gate_ok"] is True
+    cov = read_csv(os.path.join(out, "section4_fig6_coverage.csv"))
+    assert len(cov) == 192 and all(r["present"] == "True" for r in cov)
+    assert sum(1 for r in cov if r["analysed_from"] == "twin_raw") == 46
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    assert len(cells) == 192
+    assert {r["kind"] for r in cells} == {"gpu", "witness", "twin"}
+    assert all(r["late_rounds_1based"] == "26-30" for r in cells)
+    per_round = read_csv(os.path.join(out, "section4_fig6_per_round.csv"))
+    assert len(per_round) == 192 * T
+
+
+def test_fig6_t_a_sign_is_evolving_minus_fixed(fig6_run):
+    """Fixed and evolving built with a KNOWN cohort-B gap: evolving sits
+    +gap above fixed, so t_a_evolving_minus_fixed must be +gap, per seed
+    and in the mean; delta_mu_b is the same number with the other sign."""
+    _, out, summary = fig6_run
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    r = _row(rows, *GAP_SERIES)
+    assert r["status"] == "complete" and r["settled"] == "True"
+    for s, gap in GAP.items():
+        assert float(r[f"t_a_evolving_minus_fixed_s{s}"]) == pytest.approx(
+            +gap, abs=1e-6)
+        assert float(r[f"delta_mu_b_s{s}"]) == pytest.approx(-gap, abs=1e-6)
+    m, sd, lo, hi = AN.tci3([GAP[s] for s in AN.SEEDS])
+    assert float(r["t_a_evolving_minus_fixed_mean"]) == pytest.approx(
+        m, abs=1e-6)
+    assert m > 0
+    assert float(r["delta_mu_b_mean"]) == pytest.approx(-m, abs=1e-6)
+    # T_a is the PRIMARY column in fig6 mode: it precedes delta_mu_b
+    with open(os.path.join(out, "section4_fig6_source_effect.csv")) as fh:
+        header = fh.readline().strip().split(",")
+    assert header.index("t_a_evolving_minus_fixed_mean") < \
+        header.index("delta_mu_b_mean")
+    assert header.index("settled") < header.index(
+        "t_a_evolving_minus_fixed_mean")
+    # the JSON carries the same primary numbers
+    js = [x for x in summary["source_effect"]
+          if (x["arm"], x["eps_ai"], x["eps_social"]) == GAP_SERIES][0]
+    assert js["t_a_evolving_minus_fixed_mean"] == pytest.approx(m, abs=1e-6)
+
+
+def test_fig6_paired_ci_is_the_df2_t_interval_over_per_seed_differences(
+        fig6_run):
+    _, out, _ = fig6_run
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    n_checked = 0
+    for r in rows:
+        if r["status"] != "complete":
+            continue
+        per_seed = [float(r[f"t_a_evolving_minus_fixed_s{s}"])
+                    for s in AN.SEEDS]
+        m, sd, lo, hi = AN.tci3(per_seed)
+        half = AN.T_CRIT_DF2 * sd / math.sqrt(3)
+        assert float(r["t_a_evolving_minus_fixed_mean"]) == pytest.approx(m)
+        assert float(r["t_a_evolving_minus_fixed_sd"]) == pytest.approx(
+            sd, abs=1e-9)
+        assert float(r["t_a_evolving_minus_fixed_ci_lo"]) == pytest.approx(
+            m - half, abs=1e-9)
+        assert float(r["t_a_evolving_minus_fixed_ci_hi"]) == pytest.approx(
+            m + half, abs=1e-9)
+        assert r["t_a_evolving_minus_fixed_ci_excludes_zero"] == str(
+            AN.excludes(m - half, m + half, 0.0))
+        # and the closed form of the fixture for the gpu cells
+        arm, ea, es = r["arm"], float(r["eps_ai"]), float(r["eps_social"])
+        if ea > 0 and (arm, ea, es) != GAP_SERIES \
+                and (arm, ea, es) != DRIFT_PAIR[:3]:
+            want = [_off(arm, "evolving", ea, es, s)
+                    - _off(arm, "fixed", ea, es, s) for s in AN.SEEDS]
+            assert per_seed == pytest.approx(want, abs=1e-6)
+        n_checked += 1
+    assert n_checked == 32
+
+
+def test_fig6_ea0_cells_are_twin_derived_and_the_method_collapses(fig6_run):
+    """At eps_AI = 0 the gate is closed: the population IS twin_raw of
+    the runs at the same (cond, es, seed), so b0 and d8 share one value
+    and T_a(ea=0) is the pure peer-transmission effect."""
+    _, out, _ = fig6_run
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    ea0 = [r for r in cells if float(r["eps_ai"]) == 0.0]
+    assert len(ea0) == 48
+    twins = [r for r in ea0 if r["kind"] == "twin"]
+    wits = [r for r in ea0 if r["kind"] == "witness"]
+    assert len(twins) == 46 and len(wits) == 2
+    for r in twins:
+        assert r["analysed_from"] == "twin_raw"
+        assert r["derived_from"].startswith("pofds4g_")
+        assert r["served_distinct"] == "n/a (gate closed)"
+        assert r["served_top_share"] == "n/a (gate closed)"
+        assert r["served_mean_late"] == "NA"
+        want = MU0_B + _twin_off(r["cond"], float(r["eps_social"]),
+                                 int(r["seed"]))
+        assert float(r["mu_b_eq"]) == pytest.approx(want, abs=1e-6)
+    for r in wits:
+        assert r["analysed_from"] == "op_raw" and r["cond"] == "evolving"
+        assert float(r["eps_social"]) == 0.3 and r["seed"] == "0"
+        assert r["served_distinct"] != "n/a (gate closed)"
+    # method collapse: b0 and d8 identical at every (cond, es, seed)
+    by = {}
+    for r in ea0:
+        by.setdefault((r["cond"], r["eps_social"], r["seed"]), {})[
+            r["arm"]] = float(r["mu_b_eq"])
+    assert len(by) == 24
+    for k, v in by.items():
+        assert v["b0"] == v["d8"], k
+    # the witness pair (b0/d8, evolving, es=.3, seed 0) equals the twin
+    assert by[("evolving", "0.3", "0")]["b0"] == pytest.approx(
+        MU0_B + _twin_off("evolving", 0.3, 0), abs=1e-6)
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    for es in FIG6.ess:
+        b0, d8 = _row(rows, "b0", 0.0, es), _row(rows, "d8", 0.0, es)
+        assert b0["t_a_evolving_minus_fixed_mean"] == \
+            d8["t_a_evolving_minus_fixed_mean"]
+        for s in AN.SEEDS:
+            want = _twin_off("evolving", es, s) - _twin_off("fixed", es, s)
+            assert float(b0[f"t_a_evolving_minus_fixed_s{s}"]) == \
+                pytest.approx(want, abs=1e-6)
+        assert b0["kind_fixed"] == "twin|twin|twin"
+        if es == 0.3:
+            assert b0["kind_evolving"].startswith("witness|")
+    # the twin sha is one value per (cond, es, seed)
+    _, _, summary = fig6_run
+    assert all(len(v) == 1 for v in
+               summary["twin_sha256_by_cond_es_seed"].values())
+    assert len(summary["twin_sha256_by_cond_es_seed"]) == 24
+
+
+def test_fig6_served_cardinality_columns(fig6_run, capsys):
+    _, out, _ = fig6_run
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    n_pool = N * len(AN.LATE_IDX)                       # 300 pooled values
+    for r in cells:
+        if r["kind"] == "twin":
+            continue
+        arm, ea = r["arm"], float(r["eps_ai"])
+        vals = _served_values(arm, ea)
+        assert int(r["served_distinct"]) == len(set(vals)), r["run_tag"]
+        assert int(r["served_n_finite"]) == n_pool
+        top = max(vals.count(v) for v in set(vals)) / len(vals)
+        assert float(r["served_top_share"]) == pytest.approx(top, abs=1e-9)
+        if arm == "d8":
+            assert int(r["served_distinct"]) == 1
+            assert float(r["served_top_share"]) == 1.0
+            assert float(r["served_top_value"]) == pytest.approx(0.6)
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    r = _row(rows, "d8", 1.0, 1.0)
+    assert r["served_distinct_fixed"] == "1|1|1"
+    assert r["served_distinct_evolving"] == "1|1|1"
+    assert r["served_distinct_fixed_min"] == "1"
+    assert r["served_top_share_fixed"] == "1.000|1.000|1.000"
+    r = _row(rows, "b0", 0.1, 0.0)
+    assert r["served_distinct_fixed"] == "3|3|3"
+    assert float(r["served_top_share_evolving_max"]) == pytest.approx(1 / 3)
+    r = _row(rows, "b0", 0.0, 0.1)
+    assert r["served_distinct_fixed"] == "n/a (gate closed)|" * 2 + \
+        "n/a (gate closed)"
+    assert r["served_distinct_fixed_min"] == "NA"
+
+
+def test_fig6_printed_report_puts_cardinality_next_to_t_a(fig6_root,
+                                                          fig6_gate,
+                                                          tmp_path, capsys):
+    out = os.path.join(str(tmp_path), "out")
+    rc = _fig6_main(fig6_root, out, fig6_gate)
+    assert rc == 2
+    printed = capsys.readouterr().out
+    assert "EVOLVING MINUS FIXED" in printed
+    assert "rounds 26-30" in printed
+    assert "t_a_evolving_minus_fixed" in printed
+    assert "FIG6 detail" in printed
+    assert "distinct f|e" in printed
+    assert "SERVED MAP QUANTIZED" in printed
+    assert "UNSETTLED" in printed
+    assert "extend_to_60" in printed
+    assert printed.count("CAPTION --") == 2
+    assert "twin-derived" in printed.lower() or "twin" in printed
+    # the caption names the unsettled series and the sign convention
+    text = open(os.path.join(out, "section4_fig6_captions.txt")).read()
+    assert "EVOLVING MINUS FIXED" in text
+    assert "UNSETTLED series (1): b0 ea=1 es=0.3 [extend_to_60]" in text
+    assert "SERVED-VALUE QUANTIZATION" in text
+    assert "IDENTICAL for both methods" in text
+
+
+# ------------------------------------------------------- settled / extension
+def test_fig6_unsettled_pair_is_never_an_equilibrium_and_is_requested(
+        fig6_run, monkeypatch):
+    rc, out, summary = fig6_run
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    arm, ea, es, seed = DRIFT_PAIR
+    r = _row(rows, arm, ea, es)
+    assert r["settled"] == "False"
+    assert r["outcome"] == "extend_to_60"
+    assert r["n_pairs_settled"] == "2"
+    assert r[f"pair_outcome_s{seed}"] == "extend_to_60"
+    assert r[f"pair_settled_s{seed}"] == "False"
+    other = [s for s in AN.SEEDS if s != seed]
+    for s in other:
+        assert r[f"pair_outcome_s{s}"] == "equilibrium"
+        assert r[f"pair_settled_s{s}"] == "True"
+    # drift 0.01/round: half centres 25.5 and 28 -> 0.025 on the fixed
+    # member, ~0 on the evolving one
+    assert float(r[f"mu_b_drift_fixed_s{seed}"]) == pytest.approx(0.025,
+                                                                   abs=1e-5)
+    assert abs(float(r[f"mu_b_drift_evolving_s{seed}"])) < 1e-6
+    # the T_a is still reported (never hidden), just not as an equilibrium
+    assert r["t_a_evolving_minus_fixed_mean"] != "NA"
+    # every other series is settled
+    assert sum(1 for x in rows if x["outcome"] == "equilibrium") == 31
+    assert all(x["horizon"] == "30" for x in rows)
+
+    # the manifest: BOTH members, matched, rounds 60, with a reason
+    req = json.load(open(os.path.join(
+        out, "section4_fig6_extension_request.json")))
+    assert req["key"] == "section4_gate_anch2_fig6"
+    assert req["n_cells"] == 2 == len(req["cells"])
+    assert {c["cond"] for c in req["cells"]} == {"fixed", "evolving"}
+    for c in req["cells"]:
+        assert (c["arm"], c["eps_ai"], c["eps_social"], c["seed"],
+                c["rounds"]) == (arm, ea, es, seed, 60)
+        assert "fixed" in c["reason"] and "extend_to_60" in c["reason"]
+        assert f"tol {AN.DEFAULT_DRIFT_TOL:g}" in c["reason"]
+        assert set(c) >= {"arm", "cond", "eps_ai", "eps_social", "seed",
+                          "rounds", "reason"}
+    assert req["twin_derived_unsettled"] == []
+    assert summary["extension_request"]["n_cells"] == 2
+    # ... and the GENERATOR accepts it as a matched pair
+    monkeypatch.setattr(AN.GEN, "S4G2_EXT_REQUEST_PATH", os.path.join(
+        out, "section4_fig6_extension_request.json"))
+    got = AN.GEN.s4g2_ext_requests()
+    assert sorted(got) == sorted([(arm, "fixed", ea, es, seed, 60),
+                                  (arm, "evolving", ea, es, seed, 60)])
+
+
+def test_fig6_extension_artifacts_are_preferred_and_settle_the_pair(
+        fig6_root, fig6_gate, tmp_path):
+    root = copy_grid(fig6_root, tmp_path)
+    arm, ea, es, seed = DRIFT_PAIR
+    for cond in AN.CONDS:
+        build_fig6_cell(root, arm, cond, ea, es, seed, "gpu", rounds=60,
+                        tag_rounds=60)
+    out = os.path.join(str(tmp_path), "out")
+    rc = _fig6_main(root, out, fig6_gate)
+    assert rc == 0, "the extended pair settles, so the whole grid is settled"
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    r = _row(rows, arm, ea, es)
+    assert r["outcome"] == "equilibrium" and r["settled"] == "True"
+    assert r[f"pair_horizon_s{seed}"] == "60"
+    assert r["horizon"] == "30|60"
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    ext = [c for c in cells if c["run_tag"].endswith("_r60")]
+    assert len(ext) == 2
+    for c in ext:
+        assert c["horizon"] == "60" and c["n_rounds"] == "60"
+        assert c["late_rounds_op_raw"] == "55-59"
+        assert c["late_rounds_1based"] == "56-60"
+    cov = read_csv(os.path.join(out, "section4_fig6_coverage.csv"))
+    assert sum(1 for c in cov if c["horizon"] == "60") == 2
+    req = json.load(open(os.path.join(
+        out, "section4_fig6_extension_request.json")))
+    assert req["cells"] == [] and req["n_cells"] == 0
+    # the base artifacts still stand behind the twin checks: 24 twin keys
+    summary = json.load(open(os.path.join(out,
+                                          "section4_fig6_summary.json")))
+    assert summary["n_cells_extended_horizon"] == 2
+    assert summary["n_pairs_unsettled"] == 0
+
+
+def test_fig6_a_drifting_r60_pair_asks_for_100(fig6_root, fig6_gate,
+                                                tmp_path):
+    root = copy_grid(fig6_root, tmp_path)
+    arm, ea, es, seed = DRIFT_PAIR
+    for cond in AN.CONDS:
+        build_fig6_cell(root, arm, cond, ea, es, seed, "gpu", rounds=60,
+                        tag_rounds=60, drift=0.01 if cond == "fixed" else 0)
+    out = os.path.join(str(tmp_path), "out")
+    assert _fig6_main(root, out, fig6_gate) == 2
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    assert _row(rows, arm, ea, es)["outcome"] == "extend_to_100"
+    req = json.load(open(os.path.join(
+        out, "section4_fig6_extension_request.json")))
+    assert [c["rounds"] for c in req["cells"]] == [100, 100]
+
+
+def test_fig6_an_unpaired_horizon_is_fatal(fig6_root, fig6_gate, tmp_path):
+    """Only the fixed member has a _r60: the pair would compare a
+    60-round equilibrium with a 30-round one."""
+    root = copy_grid(fig6_root, tmp_path)
+    arm, ea, es, seed = DRIFT_PAIR
+    build_fig6_cell(root, arm, "fixed", ea, es, seed, "gpu", rounds=60,
+                    tag_rounds=60)
+    _expect_fig6_fatal(root, tmp_path, "unpaired_horizon", fig6_gate)
+
+
+def test_fig6_a_lying_extension_tag_is_fatal(fig6_root, fig6_gate, tmp_path):
+    """A _r60 tag whose artifact holds 30 rounds."""
+    root = copy_grid(fig6_root, tmp_path)
+    arm, ea, es, seed = DRIFT_PAIR
+    for cond in AN.CONDS:
+        build_fig6_cell(root, arm, cond, ea, es, seed, "gpu", rounds=30,
+                        tag_rounds=60)
+    _expect_fig6_fatal(root, tmp_path, "lying_r60", fig6_gate)
+
+
+# -------------------------------------------------------------- hard fails
+def test_fig6_a_missing_gpu_cell_is_fatal_with_no_output(fig6_root,
+                                                         fig6_gate,
+                                                         tmp_path, capsys):
+    root = copy_grid(fig6_root, tmp_path)
+    tag = AN.cell_tag("d8", "fixed", 0.3, 1.0, 43)
+    shutil.rmtree(os.path.join(root, tag))
+    _expect_fig6_fatal(root, tmp_path, "missing", fig6_gate)
+    err = capsys.readouterr()
+    assert f"MISSING {tag}" in err.out
+    assert "NO partial output" in err.err
+
+
+def test_fig6_a_twin_cell_with_no_base_run_is_fatal(fig6_root, fig6_gate,
+                                                    tmp_path, capsys):
+    """Every base run at (fixed, es=1, seed 43) gone: the eps_AI=0 twin
+    cells there cannot be derived."""
+    root = copy_grid(fig6_root, tmp_path)
+    for arm in AN.ARMS:
+        for ea in (0.1, 0.3, 1.0):
+            shutil.rmtree(os.path.join(root, AN.cell_tag(arm, "fixed", ea,
+                                                         1.0, 43)))
+    _expect_fig6_fatal(root, tmp_path, "notwin", fig6_gate)
+    out = capsys.readouterr().out
+    assert "twin-derived: no base run" in out
+
+
+def test_fig6_requires_a_passing_gate(fig6_root, tmp_path):
+    good = _gate_json(os.path.join(str(tmp_path), "good.json"), ok=True)
+    bad = _gate_json(os.path.join(str(tmp_path), "bad.json"), ok=False)
+    _expect_fig6_fatal(fig6_root, tmp_path, "nogate", None)
+    _expect_fig6_fatal(fig6_root, tmp_path, "failgate", bad)
+    _expect_fig6_fatal(fig6_root, tmp_path, "absentgate",
+                       os.path.join(str(tmp_path), "nope.json"))
+    _expect_fig6_fatal(fig6_root, tmp_path, "ungated", good,
+                       extra=["--allow-ungated"])
+    _expect_fig6_fatal(fig6_root, tmp_path, "ungated_bad", bad,
+                       extra=["--allow-ungated"])
+
+
+def test_fig6_witness_identity_is_enforced(fig6_root, fig6_gate, tmp_path,
+                                           capsys):
+    root = copy_grid(fig6_root, tmp_path)
+    tag = AN.cell_tag("d8", "evolving", 0.0, 0.3, 0)
+    p = os.path.join(root, tag, "trajectory.pt")
+    d = torch.load(p, map_location="cpu", weights_only=False)
+    op = d["op_raw"].clone()
+    op[27, int(torch.nonzero(~AN.cohort_a_mask(d["innate"]))[0])] += 1e-4
+    d["op_raw"] = op
+    torch.save(d, p)
+    _expect_fig6_fatal(root, tmp_path, "witness", fig6_gate)
+    assert "WITNESS but op_raw != twin_raw" in capsys.readouterr().err
+
+
+def test_fig6_twin_disagreement_is_fatal(fig6_root, fig6_gate, tmp_path,
+                                         capsys):
+    root = copy_grid(fig6_root, tmp_path)
+    tag = AN.cell_tag("b0", "evolving", 0.3, 0.1, 42)
+    p = os.path.join(root, tag, "trajectory.pt")
+    d = torch.load(p, map_location="cpu", weights_only=False)
+    tw = d["twin_raw"].clone()
+    tw[3, 5] += 1e-6
+    d["twin_raw"] = tw
+    torch.save(d, p)
+    _expect_fig6_fatal(root, tmp_path, "twin", fig6_gate)
+    assert "twin_raw DISAGREES" in capsys.readouterr().err
+
+
+def test_fig6_a_run_without_a_twin_is_fatal(fig6_root, fig6_gate, tmp_path):
+    root = copy_grid(fig6_root, tmp_path)
+    tag = AN.cell_tag("b0", "fixed", 1.0, 0.0, 0)
+    p = os.path.join(root, tag, "trajectory.pt")
+    d = torch.load(p, map_location="cpu", weights_only=False)
+    d.pop("twin_raw")
+    torch.save(d, p)
+    _expect_fig6_fatal(root, tmp_path, "notwinraw", fig6_gate)
+
+
+def test_fig6_inherited_structural_checks_still_apply(fig6_root, fig6_gate,
+                                                      tmp_path):
+    root = copy_grid(fig6_root, tmp_path)
+    tag = AN.cell_tag("d8", "fixed", 0.1, 1.0, 42)
+    p = os.path.join(root, tag, "trajectory.pt")
+    d = torch.load(p, map_location="cpu", weights_only=False)
+    d["config"]["population_update"] = "nested_ai_then_social_v1"
+    torch.save(d, p)
+    _expect_fig6_fatal(root, tmp_path, "v1gate6", fig6_gate)
+
+
+def test_fig6_a_twin_cell_with_a_run_is_verified_as_a_witness(
+        fig6_root, fig6_gate, tmp_path, capsys):
+    """S4G2_RUN_ALL_EA0 flipped, or a stray ea=0 run: it must satisfy the
+    identity and it changes no number."""
+    root = copy_grid(fig6_root, tmp_path)
+    build_fig6_cell(root, "b0", "fixed", 0.0, 0.1, 42, "witness")
+    out = os.path.join(str(tmp_path), "out")
+    assert _fig6_main(root, out, fig6_gate) == 2
+    printed = capsys.readouterr().out
+    assert "twin cell WITH a run" in printed
+    cells = read_csv(os.path.join(out, "section4_fig6_cells.csv"))
+    r = [c for c in cells if c["arm"] == "b0" and c["cond"] == "fixed"
+         and float(c["eps_ai"]) == 0.0 and float(c["eps_social"]) == 0.1
+         and c["seed"] == "42"][0]
+    assert r["analysed_from"] == "op_raw" and r["kind"] == "twin"
+    assert float(r["mu_b_eq"]) == pytest.approx(
+        MU0_B + _twin_off("fixed", 0.1, 42), abs=1e-6)
+    # a broken one is fatal
+    root2 = copy_grid(fig6_root, tmp_path / "second")
+    build_fig6_cell(root2, "b0", "fixed", 0.0, 0.1, 42, "gpu")   # op != twin
+    _expect_fig6_fatal(root2, tmp_path, "badextra", fig6_gate)
+
+
+# ----------------------------------------------------- the original wave
+def test_original_wave_is_the_default_and_unchanged(grid_root, tmp_path):
+    out = os.path.join(str(tmp_path), "out")
+    rc = AN.main(["--run-root", grid_root, "--out-dir", out, "--no-figs"])
+    assert rc == 0
+    assert os.path.exists(os.path.join(out, "section4_gate_source_effect.csv"))
+    assert not os.path.exists(os.path.join(out, "section4_fig6_summary.json"))
+    rows = read_csv(os.path.join(out, "section4_gate_source_effect.csv"))
+    assert len(rows) == 12
+    assert "settled" not in rows[0] and "outcome" not in rows[0]
+    with open(os.path.join(out, "section4_gate_source_effect.csv")) as fh:
+        header = fh.readline().strip().split(",")
+    assert header.index("delta_mu_b_mean") < header.index(
+        "t_a_evolving_minus_fixed_mean")
+    # --wave v1 is the same thing; an optional gate JSON is honoured
+    out2 = os.path.join(str(tmp_path), "out2")
+    bad = _gate_json(os.path.join(str(tmp_path), "bad.json"), ok=False)
+    assert AN.main(["--wave", "v1", "--run-root", grid_root, "--out-dir",
+                    out2, "--no-figs", "--gate-json", bad]) == 1
+    assert AN.main(["--wave", "v1", "--run-root", grid_root, "--out-dir",
+                    out2, "--no-figs", "--gate-json", bad,
+                    "--allow-ungated"]) == 0
+
+
+def test_fig6_header_states_the_semantics():
+    doc = AN.__doc__ or ""
+    for phrase in ("FIGURE-6 MODE", "EVOLVING MINUS FIXED", "twin_raw",
+                   "witness", "extend_to_60", "served_distinct",
+                   "served_top_share", "range(25, 30)", "26-30",
+                   "s4g2_cells", "analyze_bottom20_section4_3seed.py"):
+        assert phrase in doc, phrase
+
+
+def test_fig6_csv_feeds_the_plot_script(fig6_run):
+    """The plot reads ONLY the analyzer's CSV/JSON: its reader must accept
+    the real fig6 output as written."""
+    _, out, _ = fig6_run
+    rows = PLOT.read_rows(out)
+    assert len(rows) == 32
+    drawable, absent = PLOT.classify(rows)
+    assert len(drawable) == 32 and absent == []
+    assert sum(1 for r in drawable if not r["settled"]) == 1
+    assert all(r["served_min"] is None for r in rows
+               if r["eps_ai"] == 0.0) is False   # witness rows carry one
+    assert PLOT.read_summary(out)["primary_column"] == \
+        "t_a_evolving_minus_fixed"
