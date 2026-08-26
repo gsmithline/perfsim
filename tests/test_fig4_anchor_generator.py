@@ -173,7 +173,7 @@ def test_cells_are_80_with_the_exact_dedup_algebra(gen):
         ("qwen7b", "qwen3_8b"), (0.05, 0.2), (0.0, 0.25, 0.5, 0.75, 1.0),
         (1.0, 0.5, 0.2, 0.0))
     assert (gen.F4A_SEED, gen.F4A_ROUNDS, gen.F4A_SMOKE_ROUNDS, gen.F4A_SWEEPS,
-            gen.F4A_LAMBDA, gen.F4A_ALPHA) == (0, 30, 3, 1, 2.0, 0.5)
+            gen.F4A_LAMBDA, gen.F4A_ALPHA) == (0, 30, 3, 100, 2.0, 0.5)
 
 
 def test_tag_grammar_matches_the_contract(gen):
