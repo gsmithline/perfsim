@@ -8375,7 +8375,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3") && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) AI_GATE_REFERENCE=anchor ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 INNATE_CLAMP_MODE=$(cmode) INNATE_CLAMP_FRAC=0.2 INNATE_CLAMP_SEED=$(seed) INNATE_CLAMP_PEER_MODE=stubborn SFT_EXCLUDE_CLAMPED=$(sftexcl) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofds4g_fixed"
@@ -8431,7 +8431,7 @@ request_cpus      = 4
 request_memory    = {mem}
 request_disk      = {disk}
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3") && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action {extra_env}EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) AI_GATE_REFERENCE=anchor ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=$(icldays) ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward WITH_TWIN=1 INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 BASE_MODEL={base_model} SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH={ppl_batch} SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_mistral7b_pofds4g_evo"
@@ -13694,6 +13694,14 @@ def main():
     cube_subs[os.path.join(HERE, f"at_pofd_{UD_SMOKE_KEY}.sub")] = \
         ud_sub(smoke=True)
 
+    # H100 PIN (2026-08-26): the Section-4 corrected-gate templates only
+    # required >= 80 GB; B200 nodes (sm_100, undriveable by the opdyn torch)
+    # now match that and every fig6 seed-0 job landed on one and died at
+    # CUDA init. Every sub rendered from the two S4G templates pins the
+    # device name, like the S3M/F4A subs.
+    for _s4g_sub_text in (s4g_sub("fixed"), s4g_sub("evolving"),
+                          s4g_sub("fixed", smoke=True), s4g_sub("evolving", smoke=True)):
+        assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in _s4g_sub_text
     # ---- Figure-6 grid (S4G2): the corrected-gate Section 4 on the ----
     # ---- matched 4 x 4 gate grid; reuse audit = 0, ea=0 twin-derived ----
     _g2 = s4g2_cells()
