@@ -1,9 +1,11 @@
 """Tests for check_fig4_anchor.py -- the Figure-4 anchor trade-off gate.
 
 A synthetic wave (60 trained run dirs + 2 zero-shot priors, pure torch,
-no HF models) is built once per module at the production horizon; every
-hard gate is then exercised by rebuilding ONE run dir with a single
-defect and asserting the checker fails BY NAME, then restoring it.
+no HF models, every artifact recording the wave's single hardware class
+NVIDIA A100-SXM4-80GB) is built once per module at the production
+horizon; every hard gate is then exercised by rebuilding ONE run dir
+with a single defect and asserting the checker fails BY NAME, then
+restoring it.
 """
 from __future__ import annotations
 
@@ -28,6 +30,8 @@ CHECK = (ROOT / "experiments" / "scripts" / "cluster_pipelines" /
 N = 723
 VALS = torch.tensor([0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875])
 GIT = "0123abcd0123abcd0123abcd0123abcd0123abcd"
+GPU = "NVIDIA A100-SXM4-80GB"                 # the wave's ONE hardware class
+H100 = "NVIDIA H100 80GB HBM3"                # the class the wave left
 
 
 def _load(path, name):
@@ -44,17 +48,23 @@ def _sha_vec(t):
 
 @pytest.fixture(scope="module")
 def g():
-    """The real generator, with the zero-shot prior hashes re-pinned to
-    the SYNTHETIC vectors this module serves (the real pins name the
-    archived cluster artifacts, which the fixture cannot reproduce)."""
+    """The real generator, with the archived (WARN-only) zero-shot prior
+    hashes re-pinned to the SYNTHETIC vectors this module serves (the
+    real references name archived H100 cluster artifacts, which the
+    fixture cannot reproduce). The HARD pins stay None, the production
+    state until the A100 serves run."""
     mod = _load(GEN, "_gen_f4a_chk_test")
-    assert mod.F4A_ZSPRIOR_SHA["qwen3_8b"] == \
-        "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"
-    assert mod.F4A_ZSPRIOR_WARN_SHA["qwen7b"] == \
-        "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb"
-    mod.F4A_ZSPRIOR_SHA = {"qwen3_8b": _sha_vec(_zs_pred("qwen3_8b")[0]),
-                           "qwen7b": None}
-    mod.F4A_ZSPRIOR_WARN_SHA = {"qwen7b": _sha_vec(_zs_pred("qwen7b")[0])}
+    assert mod.F4A_GPU_NAME == GPU
+    assert mod.F4A_ZSPRIOR == {
+        "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0",
+        "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"}
+    assert mod.F4A_ZSPRIOR_SHA == {"qwen7b": None, "qwen3_8b": None}
+    assert mod.F4A_ZSPRIOR_WARN_SHA == {
+        "qwen7b": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+        "qwen3_8b": "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"}
+    mod.F4A_ZSPRIOR_SHA = {"qwen7b": None, "qwen3_8b": None}
+    mod.F4A_ZSPRIOR_WARN_SHA = {m: _sha_vec(_zs_pred(m)[0])
+                                for m in ("qwen7b", "qwen3_8b")}
     return mod
 
 
@@ -118,6 +128,13 @@ def _witness(model, **over):
     return w
 
 
+def _hardware(gpu_name=GPU):
+    """What the runner's _hardware_meta records in config.hardware."""
+    return {"hostname": "g181", "gpu_name": gpu_name, "gpu_cc": "8.0",
+            "cuda_version": "12.1", "torch_version": "2.5.1",
+            "transformers_version": "5.5.4"}
+
+
 def _config(g, model, es, beta, gamma, rounds, tag, git_sha):
     m = g.FAM_MODELS[model]
     cfg = {"run_tag": tag, "w_plat": beta, "innate_lambda": gamma, "eps": es,
@@ -134,7 +151,7 @@ def _config(g, model, es, beta, gamma, rounds, tag, git_sha):
            "save_raw_gen": True, "serve_eval_mode": True, "do_sample": False,
            "parse_mode": "strict", "train_witness": True, "witness_probe_n": 64,
            "gamma_bias": 0.0, "git_sha": git_sha, "seed_base_data": True,
-           "hardware": {"gpu_name": "NVIDIA H100 80GB HBM3"}}
+           "hardware": _hardware()}
     if model == "qwen3_8b":
         cfg["chat_thinking"] = False
     return cfg
@@ -151,7 +168,7 @@ def build_cell(root, g, model, es, beta, gamma, rounds, smoke=False,
                misparse=False, no_witness=False, witness=None,
                op_ne_twin=False, twin_shift=0, contact=1.0,
                peer_gate_mode="threshold", cfg=None, tag_rounds=None,
-               no_peer_fields=False):
+               no_peer_fields=False, gpu_name=None, no_hardware=False):
     """Write one synthetic trained run dir; keyword defects break exactly
     one gate each."""
     tag = tag or g.f4a_tag(model, es, beta, gamma,
@@ -181,6 +198,10 @@ def build_cell(root, g, model, es, beta, gamma, rounds, smoke=False,
         for row in traj:
             del row["peer_gate_mode"], row["peer_pairs"]
     config = _config(g, model, es, beta, gamma, rounds, tag, git_sha)
+    if gpu_name is not None:
+        config["hardware"] = _hardware(gpu_name)
+    if no_hardware:
+        del config["hardware"]
     if cfg:
         config.update(cfg)
     torch.save({"config": config, "op_raw": op, "twin_raw": tw,
@@ -214,10 +235,11 @@ def build_cell(root, g, model, es, beta, gamma, rounds, smoke=False,
     return tag
 
 
-def build_zsprior(root, g, model, tag=None, pred=None):
-    """An ARCHIVED-style zero-shot prior artifact: the v1 operator, no
-    serve_eval_mode / parse_mode / git_sha (exactly what the real Qwen3
-    artifact records) -- the wave's config pins must not apply here."""
+def build_zsprior(root, g, model, tag=None, pred=None, gpu_name=GPU):
+    """A zero-shot prior artifact in the REDUCED (archived-style) config
+    shape: the v1 operator, no serve_eval_mode / parse_mode / git_sha --
+    the wave's item-2 config pins must not apply here, only the reduced
+    zsprior pins plus the hardware class (config.hardware.gpu_name)."""
     tag = tag or g.F4A_ZSPRIOR[model]
     d = Path(root) / tag
     if d.exists():
@@ -230,7 +252,8 @@ def build_zsprior(root, g, model, tag=None, pred=None):
            "icl_days": 0, "dataset": "movielens", "ml_target": "Action",
            "seed": 0, "do_sample": False, "save_raw_gen": True, "n_rounds": 1,
            "eps": 0.0, "eps_ai": 0.0, "ai_gate_mode": "threshold",
-           "population_update": "nested_ai_then_social_v1"}
+           "population_update": "nested_ai_then_social_v1",
+           "hardware": _hardware(gpu_name)}
     if model == "qwen3_8b":
         cfg["chat_thinking"] = False
     torch.save({"config": cfg, "op_raw": innate.unsqueeze(0).clone(),
@@ -250,7 +273,8 @@ def build_wave(root, g, smoke=False, rounds=None):
         rounds = g.F4A_SMOKE_ROUNDS if rounds is None else rounds
         for (m, e, b, gm) in g.F4A_SMOKE_CELLS:
             build_cell(root, g, m, e, b, gm, rounds, smoke=True)
-        build_zsprior(root, g, "qwen7b")
+        for m in g.F4A_ZSPRIOR:                  # --smoke gates BOTH priors
+            build_zsprior(root, g, m)
     else:
         rounds = g.F4A_ROUNDS if rounds is None else rounds
         for (m, e, b, gm, kind, _s) in g.f4a_cells():
@@ -327,13 +351,18 @@ def test_complete_production_wave_passes(c, g, prod):
     for m, z in v["zsprior"].items():
         assert z["status"] == "PASS" and len(z["sha256_pred0"]) == 64
         assert z["tag"] == g.F4A_ZSPRIOR[m] and z["warnings"] == []
-    assert v["zsprior"]["qwen3_8b"]["sha256_pred0"] == g.F4A_ZSPRIOR_SHA["qwen3_8b"]
-    assert v["zsprior"]["qwen3_8b"]["expected_sha256"] == g.F4A_ZSPRIOR_SHA["qwen3_8b"]
-    assert v["zsprior"]["qwen7b"]["expected_sha256"] is None
-    assert v["zsprior"]["qwen7b"]["archived_sha256"] == g.F4A_ZSPRIOR_WARN_SHA["qwen7b"]
+        assert z["tag"].endswith("_es0_a100_s0")
+        assert z["expected_sha256"] is None and z["sha_pin"] == "unpinned"
+        assert z["archived_sha256"] == g.F4A_ZSPRIOR_WARN_SHA[m]
+        assert z["sha256_pred0"] == z["archived_sha256"]      # fixture re-pin
+        assert z["gpu_name"] == GPU
     assert v["warnings"] == []
     assert v["git_sha"] == [GIT] and len(v["innate_sha"]) == 1
+    # ONE hardware class across every artifact of the wave
+    assert v["hardware_class"] == GPU and v["gpu_names"] == [GPU]
+    assert all(r["gpu_name"] == GPU for r in v["cells"] if r["kind"] == "gpu")
     assert "PROVENANCE" in out and "[check_f4a] PASS" in out
+    assert f"one hardware class ({GPU})" in out
     assert "distinctServed" in out and "probeKL" in out
 
 
@@ -342,12 +371,31 @@ def test_smoke_wave_passes_under_smoke_only(c, g, tmp_path):
     rc, v, out = run_checker(c, root, "--smoke")
     assert rc == 0, out
     assert v["smoke"] is True and (v["n_cells"], v["n_trained"], v["n_dup"]) == (2, 2, 0)
-    assert set(v["zsprior"]) == {"qwen7b"}
+    assert set(v["zsprior"]) == {"qwen7b", "qwen3_8b"}          # BOTH priors
+    assert all(z["status"] == "PASS" for z in v["zsprior"].values())
+    assert v["gpu_names"] == [GPU] and f"one hardware class ({GPU})" in out
     assert all(r["rounds"] == 3 for r in v["cells"])
     assert all(r["witness"]["steps"] == 181 for r in v["cells"])
     # production mode on the smoke root is 60 absent cells, never a pass
     rc, v, _ = run_checker(c, root)
     assert rc == 1 and sum(r["status"] == "ABSENT" for r in v["cells"]) >= 60
+
+
+def test_smoke_requires_both_zero_shot_priors(c, g, tmp_path):
+    root = build_wave(tmp_path / "smoke2", g, smoke=True)
+    for m in g.F4A_ZSPRIOR:
+        tag = g.F4A_ZSPRIOR[m]
+        os.rename(root / tag, root / (tag + ".off"))
+        try:
+            rc, v, _ = run_checker(c, root, "--smoke")
+        finally:
+            os.rename(root / (tag + ".off"), root / tag)
+        assert rc == 1
+        assert v["zsprior"][m]["status"] == "ABSENT"
+        assert all(r["status"] == "PASS" for r in v["cells"])
+        assert v["n_failing"] == 1
+    rc, _, _ = run_checker(c, root, "--smoke")
+    assert rc == 0
 
 
 def test_production_gate_requires_the_30_round_horizon(c, g, tmp_path):
@@ -468,37 +516,135 @@ def test_rows_without_peer_fields_fail_naming_train_witness(c, g, prod):
     assert any("GATE-RUNTIME" in e and "TRAIN_WITNESS" in e for e in errs)
 
 
-def test_qwen3_zero_shot_prior_sha_is_a_hard_pin(c, g, prod):
-    other = _zs_pred("qwen3_8b").clone()
+def _other_vector(model):
+    other = _zs_pred(model).clone()
     other[0, 0] = 0.5 if float(other[0, 0]) != 0.5 else 0.25
-    build_zsprior(prod, g, "qwen3_8b", pred=other)
+    return other
+
+
+@pytest.mark.parametrize("model", ["qwen7b", "qwen3_8b"])
+def test_unpinned_zero_shot_prior_sha_only_warns(c, g, prod, model):
+    # F4A_ZSPRIOR_SHA[model] is None (the production state until the A100
+    # serve is pinned): no hard pin; a vector differing from the archived
+    # H100-served reference is a WARN, never a failure, and both shas print
+    assert g.F4A_ZSPRIOR_SHA[model] is None
+    build_zsprior(prod, g, model, pred=_other_vector(model))
     try:
         rc, v, out = run_checker(c, prod)
+    finally:
+        build_zsprior(prod, g, model)
+    assert rc == 0, out
+    z = v["zsprior"][model]
+    assert z["status"] == "PASS" and z["errors"] == []
+    assert z["sha_pin"] == "unpinned" and z["expected_sha256"] is None
+    assert len(z["warnings"]) == 1 and "archived" in z["warnings"][0]
+    assert z["sha256_pred0"] in z["warnings"][0]
+    assert g.F4A_ZSPRIOR_WARN_SHA[model] in z["warnings"][0]
+    assert z["sha256_pred0"] != g.F4A_ZSPRIOR_WARN_SHA[model]
+    assert GPU in z["warnings"][0]
+    assert v["warnings"] == z["warnings"] and v["ok"] is True
+    assert "WARN ZSPRIOR" in out and "1 WARN line(s)" in out
+    assert z["sha256_pred0"] in out and g.F4A_ZSPRIOR_WARN_SHA[model] in out
+    other_m = next(m for m in g.F4A_ZSPRIOR if m != model)
+    assert v["zsprior"][other_m]["warnings"] == []
+
+
+@pytest.mark.parametrize("model", ["qwen7b", "qwen3_8b"])
+def test_pinned_zero_shot_prior_sha_is_a_hard_pin(c, g, prod, model, monkeypatch):
+    # once the coordinator pins F4A_ZSPRIOR_SHA[model], the matching vector
+    # passes and a differing vector FAILS (the WARN line still prints)
+    pinned = dict(g.F4A_ZSPRIOR_SHA)
+    pinned[model] = _sha_vec(_zs_pred(model)[0])
+    monkeypatch.setattr(g, "F4A_ZSPRIOR_SHA", pinned)
+    rc, v, out = run_checker(c, prod)
+    assert rc == 0, out
+    z = v["zsprior"][model]
+    assert z["sha_pin"] == "match" and z["expected_sha256"] == pinned[model]
+    assert z["warnings"] == [] and z["errors"] == []
+    build_zsprior(prod, g, model, pred=_other_vector(model))
+    try:
+        rc, v, out = run_checker(c, prod)
+    finally:
+        build_zsprior(prod, g, model)
+    assert rc == 1
+    z = v["zsprior"][model]
+    assert z["status"] == "FAIL" and z["sha_pin"] == "MISMATCH"
+    assert any("sha256(pred_raw[0])" in e and "pinned" in e
+               and f"F4A_ZSPRIOR_SHA[{model}]" in e for e in z["errors"])
+    assert len(z["warnings"]) == 1
+    assert all(r["status"] == "PASS" for r in v["cells"])
+    other_m = next(m for m in g.F4A_ZSPRIOR if m != model)
+    assert v["zsprior"][other_m]["status"] == "PASS"
+    assert v["zsprior"][other_m]["sha_pin"] == "unpinned"
+
+
+# ============================================================= hardware
+def test_cell_on_the_h100_fails_naming_the_hardware_class(c, g, prod):
+    with defect(prod, g, CELL_A, gpu_name=H100) as tag:
+        rc, v, out = run_checker(c, prod)
+    assert rc == 1
+    status, errs = _cell_errors(v, tag)
+    assert status == "FAIL"
+    hw = [e for e in errs if e.startswith("HARDWARE")]
+    assert len(hw) == 1 and H100 in hw[0] and GPU in hw[0]
+    assert "single hardware class" in hw[0]
+    assert len([e for e in errs if not e.startswith("HARDWARE")]) == 0
+    # two gpu_names across the wave: a wave-level failure naming both
+    wave = [e for e in _wave_errors(v) if "distinct gpu_name" in e]
+    assert len(wave) == 1 and "2 distinct gpu_name" in wave[0]
+    assert H100 in wave[0] and GPU in wave[0] and tag in wave[0]
+    assert sorted(v["gpu_names"]) == sorted([GPU, H100])
+    assert v["hardware_class"] == GPU
+    assert "[check_f4a] PASS" not in out and "FAIL <hardware>" in out
+
+
+def test_two_gpu_names_across_the_wave_fail(c, g, prod):
+    # every run individually on SOME class is not enough: the wave must
+    # record ONE gpu_name (here 58 A100 cells + 2 cells on other classes)
+    other = ("qwen3_8b", 0.2, 0.25, 1.0)
+    t1 = build_cell(prod, g, *CELL_A, g.F4A_ROUNDS, gpu_name=H100)
+    t2 = build_cell(prod, g, *other, g.F4A_ROUNDS, gpu_name="NVIDIA B200")
+    try:
+        rc, v, _ = run_checker(c, prod)
+    finally:
+        build_cell(prod, g, *CELL_A, g.F4A_ROUNDS)
+        build_cell(prod, g, *other, g.F4A_ROUNDS)
+    assert rc == 1
+    wave = [e for e in _wave_errors(v) if "distinct gpu_name" in e]
+    assert len(wave) == 1 and "3 distinct gpu_name" in wave[0]
+    assert sorted(v["gpu_names"]) == sorted([GPU, H100, "NVIDIA B200"])
+    for t in (t1, t2):
+        assert any(e.startswith("HARDWARE") for e in _cell_errors(v, t)[1])
+    assert sum(1 for r in v["cells"] if r["kind"] == "gpu"
+               and r["status"] == "FAIL") == 2
+
+
+def test_prior_on_another_hardware_class_fails(c, g, prod):
+    build_zsprior(prod, g, "qwen3_8b", gpu_name=H100)
+    try:
+        rc, v, _ = run_checker(c, prod)
     finally:
         build_zsprior(prod, g, "qwen3_8b")
     assert rc == 1
     z = v["zsprior"]["qwen3_8b"]
-    assert z["status"] == "FAIL"
-    assert any("sha256(pred_raw[0])" in e and "pinned" in e for e in z["errors"])
+    assert z["status"] == "FAIL" and z["gpu_name"] == H100
+    assert any(e.startswith("HARDWARE") and GPU in e and H100 in e
+               for e in z["errors"])
+    assert any("2 distinct gpu_name" in e for e in _wave_errors(v))
     assert all(r["status"] == "PASS" for r in v["cells"])
+    assert v["zsprior"]["qwen7b"]["status"] == "PASS"
 
 
-def test_qwen7b_zero_shot_prior_sha_only_warns(c, g, prod):
-    other = _zs_pred("qwen7b").clone()
-    other[0, 0] = 0.5 if float(other[0, 0]) != 0.5 else 0.25
-    build_zsprior(prod, g, "qwen7b", pred=other)
-    try:
-        rc, v, out = run_checker(c, prod)
-    finally:
-        build_zsprior(prod, g, "qwen7b")
-    assert rc == 0, out
-    z = v["zsprior"]["qwen7b"]
-    assert z["status"] == "PASS" and z["errors"] == []
-    assert len(z["warnings"]) == 1 and "archived" in z["warnings"][0]
-    assert z["sha256_pred0"] in z["warnings"][0]
-    assert g.F4A_ZSPRIOR_WARN_SHA["qwen7b"] in z["warnings"][0]
-    assert v["warnings"] == z["warnings"] and v["ok"] is True
-    assert "WARN ZSPRIOR" in out and "1 WARN line(s)" in out
+def test_absent_hardware_record_fails(c, g, prod):
+    with defect(prod, g, CELL_A, no_hardware=True) as tag:
+        rc, v, _ = run_checker(c, prod)
+    assert rc == 1
+    errs = _cell_errors(v, tag)[1]
+    assert any(e.startswith("HARDWARE") and "None" in e and GPU in e
+               for e in errs)
+    # an absent record is not a second class: only the per-run gate fires
+    assert not any("distinct gpu_name" in e for e in _wave_errors(v))
+    assert v["gpu_names"] == [GPU]
 
 
 def test_zero_shot_prior_is_not_subject_to_the_wave_pins(c, g, prod):
@@ -620,6 +766,13 @@ def test_extensions_are_gated_at_their_horizon(c, g, prod, tmp_path):
         # without the manifest the same dir is EXTRA
         rc, v, _ = run_checker(c, prod, "--ext-manifest", str(tmp_path / "none.json"))
         assert rc == 1 and any("EXTRA run dir" in e for e in _wave_errors(v))
+        # an extension on another hardware class fails like any cell
+        build_cell(prod, g, *ext, 60, gpu_name=H100)
+        rc, v, _ = run_checker(c, prod, "--ext-manifest", str(manifest))
+        assert rc == 1
+        assert any(e.startswith("HARDWARE") and H100 in e
+                   for e in v["extensions"][0]["errors"])
+        assert any("2 distinct gpu_name" in e for e in _wave_errors(v))
     finally:
         shutil.rmtree(prod / tag)
 

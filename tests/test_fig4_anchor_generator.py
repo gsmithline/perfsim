@@ -9,7 +9,11 @@ Contract:
            qwen3_8b only (8 qwen7b dups, source (qwen3_8b, es, 0, gamma))
   rows     60 (ROW_PS, 29 cols): sft_kl, kl_beta 2, forward, seed 0, one
            sweep, 30 rounds, ICL_K 0, fresh r512 LoRA, homophily gamma 0
-  smoke    2 rows (pofdf4asmk_, 3 rounds) + 1 zsprior row on its own sub
+  smoke    2 rows (pofdf4asmk_, 3 rounds) + 2 zsprior rows (both models,
+           NEW _a100 tags) on their own sub
+  hardware ONE class for the whole wave (2026-08-26 H100 outage):
+           F4A_GPU_NAME = "NVIDIA A100-SXM4-80GB" pinned in every F4A sub
+           (main / smoke / ext / zsprior); no "H100" string in any of them
   env      all_open AI gate (strict-< form documented as "<"), threshold
            peer gate, AB_SWEEPS=$(sweeps), DEFFUANT_ALPHA=0.5,
            PARSE_MODE=strict SAVE_RAW_GEN=1 WITH_TWIN=1 TRAIN_WITNESS=1
@@ -252,6 +256,14 @@ def test_pofdf4a_is_a_new_family_and_nothing_else_moved(generated):
     zs = _rows(generated, "configs_pofd_zsprior_screen.txt")
     assert len(zs) == 4
     assert not any("_qwen7b_" in r for r in zs)
+    # the _a100 prior tags are NEW to every registered config, and the
+    # old H100-pinned qwen7b tag (it never produced a result) is nowhere
+    for t in ("pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0",
+              "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"):
+        assert everywhere[t] == {CFG_ZS}, (t, everywhere[t])
+    assert "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0" not in everywhere
+    assert everywhere["pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"] == \
+        {"configs_pofd_zsprior_screen.txt"}
     assert CFG_EXT not in generated and SUB_EXT not in generated
 
 
@@ -277,7 +289,10 @@ def test_sub_pins_the_surface_and_documents_a_strict_gate(generated):
     assert "<=" not in sub and "< eps_AI" in sub
     assert "60 jobs" in sub
     assert "check_fig4_anchor.py" in sub
-    assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in sub
+    req = next(l for l in sub.splitlines() if l.startswith("requirements"))
+    assert '(TARGET.CUDADeviceName == "NVIDIA A100-SXM4-80GB")' in req
+    assert "(TARGET.CUDAGlobalMemoryMb >= 80000)" in req
+    assert "H100" not in sub
     assert 'g106.internal' in sub and 'i104.internal' in sub
     cols = set(_cols(sub))
     for macro in re.findall(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", sub):
@@ -289,6 +304,9 @@ def test_sub_pins_the_surface_and_documents_a_strict_gate(generated):
     assert env_smoke == env
     assert "check_fig4_anchor.py --smoke" in generated[SUB_SMOKE]
     assert "<=" not in generated[SUB_SMOKE]
+    req_smoke = next(l for l in generated[SUB_SMOKE].splitlines()
+                     if l.startswith("requirements"))
+    assert req_smoke == req and "H100" not in generated[SUB_SMOKE]
 
 
 # ================================================================ smoke
@@ -317,27 +335,40 @@ def test_smoke_is_two_3_round_cells_of_a_trained_cell(generated, gen):
 
 
 # ============================================================== zsprior
-def test_qwen7b_zero_shot_prior_mirrors_the_qwen3_row_on_its_own_sub(generated, gen):
+def test_both_zero_shot_priors_mirror_the_archived_qwen3_row_on_their_own_sub(generated, gen):
     rows = _rows(generated, CFG_ZS)
-    assert len(rows) == 1
-    z = [x.strip() for x in rows[0].split(",")]
-    assert len(z) == 25
-    assert z[0] == "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0" == gen.F4A_ZSPRIOR["qwen7b"]
-    assert gen.F4A_ZSPRIOR["qwen3_8b"] == "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
+    assert len(rows) == 2
+    assert gen.F4A_ZSPRIOR == {
+        "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0",
+        "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"}
+    assert all(gen.f4a_zsprior_tag(m) == t for m, t in gen.F4A_ZSPRIOR.items())
     q3 = [x.strip() for x in
           next(r for r in _rows(generated, "configs_pofd_zsprior_screen.txt")
                if "_qwen3_8b_" in r).split(",")]
-    assert z[1:23] == q3[1:23]
-    assert z[1] == "frozen" and z[9] == "0" and z[22] == "1" and z[18] == "0"
-    assert z[23] == "Qwen/Qwen2.5-7B-Instruct" and z[24] == "default"
+    assert q3[0] == "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"     # archived (H100)
     assert q3[23] == "Qwen/Qwen3-8B" and q3[24] == "0"
+    want = {"qwen7b": ("Qwen/Qwen2.5-7B-Instruct", "default"),
+            "qwen3_8b": ("Qwen/Qwen3-8B", "0")}
+    seen = {}
+    for r in rows:
+        z = [x.strip() for x in r.split(",")]
+        assert len(z) == 25
+        model = next(m for m in gen.F4A_MODELS if z[0] == gen.F4A_ZSPRIOR[m])
+        assert z[0].endswith("_es0_a100_s0") and z[0] != q3[0]
+        assert z[1:23] == q3[1:23], "mirror the archived qwen3_8b row column for column"
+        assert z[1] == "frozen" and z[9] == "0" and z[22] == "1" and z[18] == "0"
+        assert (z[23], z[24]) == want[model]
+        seen[model] = z
+    assert set(seen) == {"qwen7b", "qwen3_8b"}
+    # the qwen3_8b prior is a NEW artifact: the archived row with only the
+    # tag changed
+    assert seen["qwen3_8b"][1:] == q3[1:]
     cols = _cols(generated[SUB_ZS])
     assert len(cols) == 25 and cols == _cols(generated["at_pofd_zsprior_screen.sub"])
     body = lambda s, k: [l for l in s.replace(f"configs_pofd_{k}.txt", "X")
                          .splitlines() if not l.startswith("#")]
     # env + queue identical to the archived zsprior template; the ONLY
-    # difference is the requirements line, which now pins the H100 (the
-    # 2026-08-26 attempt landed on a B200 the opdyn torch cannot drive)
+    # difference is the requirements line, which pins the wave's class
     def _lines(text, key):
         # body() already returns a list of non-comment lines
         return [l for l in body(text, key)
@@ -346,18 +377,46 @@ def test_qwen7b_zero_shot_prior_mirrors_the_qwen3_row_on_its_own_sub(generated, 
         _lines(generated["at_pofd_zsprior_screen.sub"], "zsprior_screen")
     req = next(l for l in generated[SUB_ZS].splitlines()
                if l.startswith("requirements"))
-    assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in req
-    assert "TARGET.CUDAGlobalMemoryMb >= 80000" in req
-    assert "1 job" in generated[SUB_ZS]
+    assert '(TARGET.CUDADeviceName == "NVIDIA A100-SXM4-80GB")' in req
+    assert "(TARGET.CUDAGlobalMemoryMb >= 80000)" in req
+    assert "(TARGET.Machine =!= MY.LastRemoteHost)" in req
+    assert "H100" not in generated[SUB_ZS]
+    assert "2 job" in generated[SUB_ZS]
     assert "<=" not in generated[SUB_ZS]
-    # the recorded prior hash: Qwen3 pinned to the replay record, Qwen2.5 open
-    assert gen.F4A_ZSPRIOR_SHA["qwen3_8b"] == gen.F3_FROZEN_SHA == \
-        "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"
-    assert gen.F4A_ZSPRIOR_SHA["qwen7b"] is None
-    # the archived Qwen2.5-7B prior is a WARN reference only, never a pin
+    # sha pins: BOTH unpinned until the A100 serves run (the coordinator
+    # pins them afterwards); the archived H100-served vectors are WARN
+    # references only, never pins
+    assert gen.F4A_ZSPRIOR_SHA == {"qwen7b": None, "qwen3_8b": None}
     assert gen.F4A_ZSPRIOR_WARN_SHA == {
-        "qwen7b": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb"}
-    assert "qwen7b" not in gen.F4A_ZSPRIOR_SHA or gen.F4A_ZSPRIOR_SHA["qwen7b"] is None
+        "qwen7b": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
+        "qwen3_8b": "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"}
+    assert gen.F4A_ZSPRIOR_WARN_SHA["qwen3_8b"] == gen.F3_FROZEN_SHA
+
+
+# ============================================================= hardware
+def test_hardware_class_is_exported_and_pinned_on_every_sub(generated, gen):
+    assert gen.F4A_GPU_NAME == "NVIDIA A100-SXM4-80GB"
+    assert not hasattr(gen, "F4A_H100")
+    pin = '(TARGET.CUDADeviceName == "NVIDIA A100-SXM4-80GB")'
+    reqs = {}
+    for name in (SUB, SUB_SMOKE, SUB_ZS):
+        req = next(l for l in generated[name].splitlines()
+                   if l.startswith("requirements"))
+        assert pin in req and "(TARGET.CUDAGlobalMemoryMb >= 80000)" in req, name
+        assert "H100" not in generated[name], name
+        assert gen.F4A_GPU_NAME in generated[name], name
+        reqs[name] = req
+    assert reqs[SUB] == reqs[SUB_SMOKE]
+    assert 'i101.internal' in reqs[SUB] and 'i101.internal' not in reqs[SUB_ZS]
+    assert "MY.LastRemoteHost" in reqs[SUB_ZS]
+    ext = gen.f4a_sub("ext")
+    assert next(l for l in ext.splitlines()
+                if l.startswith("requirements")) == reqs[SUB]
+    assert "H100" not in ext
+    with open(GEN) as fh:
+        src = fh.read()
+    assert "HARDWARE CLASS (2026-08-26)" in src
+    assert "comparability with the archived H100-served waves is NOT claimed" in src
 
 
 def test_reuse_audit_verdict_is_recorded(gen):
@@ -424,6 +483,11 @@ def test_extension_files_appear_only_with_a_manifest(tmp_path_factory, gen):
     env = [l for l in out[SUB].splitlines() if l.startswith("environment")][0]
     assert env_ext == env
     assert "2 jobs" in out[SUB_EXT]
+    req_ext = next(l for l in out[SUB_EXT].splitlines()
+                   if l.startswith("requirements"))
+    assert req_ext == next(l for l in out[SUB].splitlines()
+                           if l.startswith("requirements"))
+    assert '"NVIDIA A100-SXM4-80GB"' in req_ext and "H100" not in out[SUB_EXT]
     # the base files are unchanged by the manifest
     assert out[CFG] == "\n".join(gen.f4a_rows()) + "\n"
 

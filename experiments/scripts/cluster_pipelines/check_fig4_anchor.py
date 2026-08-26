@@ -5,8 +5,9 @@ transformers import).
 
 THE GRID IS READ FROM THE GENERATOR (experiments/condor/gen_pofd_sweep.py
 via importlib, exactly as check_fig3_full_loop does it): F4A_* constants,
-f4a_cells(), f4a_source(), f4a_tag(), F4A_SMOKE_CELLS, f4a_ext_requests()
-and F4A_ZSPRIOR / F4A_ZSPRIOR_SHA are the single source of truth.
+f4a_cells(), f4a_source(), f4a_tag(), F4A_SMOKE_CELLS, f4a_ext_requests(),
+F4A_ZSPRIOR / F4A_ZSPRIOR_SHA / F4A_ZSPRIOR_WARN_SHA and F4A_GPU_NAME (the
+wave's single hardware class) are the single source of truth.
 
 The wave: beta = W_PLAT {0,.25,.5,.75,1} x gamma = INNATE_LAMBDA
 {1,.5,.2,0} x es {.05,.2} x {Qwen2.5-7B, Qwen3-8B} = 80 nominal cells,
@@ -72,22 +73,28 @@ HARD-FAIL (exit 1) unless ALL of (each item fails by name, nothing warns):
      the served pred_raw[t] (served == written).
   8. GREEDY CARDINALITY -- informational only: distinct pred_raw values
      per round (min/median/max) and the final-round modal share.
-  9. ZERO-SHOT PRIORS (F4A_ZSPRIOR) -- both artifacts present under the
-     roots. NOT subjected to the item-2 pins (the archived Qwen3 artifact
-     records the v1 operator and no serve_eval_mode/git_sha/parse_mode,
-     all irrelevant to a frozen base model serving once). Pinned only:
+  9. ZERO-SHOT PRIORS (F4A_ZSPRIOR) -- both A100-served _a100 artifacts
+     present under the roots. NOT subjected to the item-2 pins (a frozen
+     base model serving once needs none of them). Pinned only:
      training_style frozen, use_lora False/0, icl_k 0, icl_days 0,
      do_sample False, movielens/Action, the model's base_model, Qwen3
-     chat_thinking False. Then pred_raw constant across its rounds, 723
-     finite values in [0,1], raw log present with parse_fail_frac 0 and
-     every raw string well-formed and equal to parsed; sha256 of
-     pred_raw[0].float().numpy().tobytes() recorded. Qwen3-8B's sha is a
-     HARD pin (F4A_ZSPRIOR_SHA: the vector the frozen replays were built
-     from); Qwen2.5-7B has no pin -- its sha is compared to the archived
-     Qwen2.5-7B prior (F4A_ZSPRIOR_WARN_SHA, 7 archived H100 runs agree)
-     as a WARN, never a FAIL, and both shas are printed.
+     chat_thinking False, and the item-10 hardware class. Then pred_raw
+     constant across its rounds, 723 finite values in [0,1], raw log
+     present with parse_fail_frac 0 and every raw string well-formed and
+     equal to parsed; sha256 of pred_raw[0].float().numpy().tobytes()
+     recorded. The sha is a HARD pin only where F4A_ZSPRIOR_SHA[model] is
+     not None (the coordinator pins it after the serve); it is ALWAYS
+     compared to the archived H100-served vector
+     F4A_ZSPRIOR_WARN_SHA[model] as a WARN, never a FAIL (an A100 serve
+     of the same checkpoint is expected to differ in a handful of
+     agents), and both shas are printed.
+ 10. ONE HARDWARE CLASS -- every run dir of the wave (all cells,
+     extensions and both priors) records config.hardware.gpu_name ==
+     F4A_GPU_NAME ("NVIDIA A100-SXM4-80GB": the H100 pool left the cluster
+     on 2026-08-26 and the wave was retargeted whole), and exactly ONE
+     gpu_name is seen across the wave. A mismatch fails naming the class.
 --smoke gates the two 3-round pofdf4asmk_ cells (witness_steps_requested
-is still 181 per round) plus the Qwen2.5-7B zero-shot prior only.
+is still 181 per round) plus BOTH zero-shot priors (4 artifacts).
 
 NOT GATED HERE: the lambda = inf (frozen) offline replays. The beta = 0
 replay is NOT bit-equal to the runner twin (CPU vs CUDA pair stream), so
@@ -248,6 +255,22 @@ def _eq(cfg, key, want, errs):
         ok = got == want
     if not ok:
         errs.append(f"CONFIG {key}={got!r} (want {want!r})")
+
+
+# --------------------------------------------------- 10. hardware class
+def check_hardware(cfg, g, errs):
+    """ONE hardware class: config.hardware.gpu_name (written by the
+    runner's _hardware_meta) must equal F4A_GPU_NAME on every artifact of
+    the wave -- cells, extensions and both priors. Returns the recorded
+    gpu_name (None when absent) so main() can prove ONE class wave-wide."""
+    hw = cfg.get("hardware")
+    gpu = hw.get("gpu_name") if isinstance(hw, dict) else None
+    want = g.F4A_GPU_NAME
+    if gpu != want:
+        errs.append(f"HARDWARE config.hardware.gpu_name={gpu!r} (want "
+                    f"{want!r}: the wave's single hardware class -- every "
+                    f"F4A artifact must run on {want})")
+    return gpu
 
 
 # ------------------------------------------------------------ 2. config
@@ -641,22 +664,25 @@ def greedy_cardinality(pred, rounds):
 
 # ------------------------------------------------- 9. zero-shot priors
 def check_zsprior(model, tag, g, roots):
-    """The zero-shot prior artifacts are NOT subjected to the wave's
-    config pins (the archived Qwen3 one records the v1 operator, no
-    serve_eval_mode/git_sha/parse_mode -- all irrelevant to a frozen base
-    model serving once with no LoRA and no context). Pinned: frozen, no
-    LoRA, icl_k 0, icl_days 0, greedy, MovieLens/Action, the right
-    checkpoint, Qwen3 thinking off. Then: pred_raw constant across its
-    rounds, 723 finite values in [0,1], raw log well-formed and equal to
-    the served vector, sha256(pred_raw[0]) recorded -- HARD-pinned where
-    F4A_ZSPRIOR_SHA names it (Qwen3-8B: the vector the frozen replays
-    were built from), WARN-only against F4A_ZSPRIOR_WARN_SHA (the
-    archived Qwen2.5-7B prior; a fresh serve may legitimately differ)."""
+    """The zero-shot prior artifacts (both served on the wave's hardware
+    class under the _a100 tags) are NOT subjected to the wave's config
+    pins -- a frozen base model serving once with no LoRA and no context
+    needs none of them. Pinned: frozen, no LoRA, icl_k 0, icl_days 0,
+    greedy, MovieLens/Action, the right checkpoint, Qwen3 thinking off,
+    and config.hardware.gpu_name == F4A_GPU_NAME. Then: pred_raw constant
+    across its rounds, 723 finite values in [0,1], raw log well-formed
+    and equal to the served vector, sha256(pred_raw[0]) recorded --
+    HARD-pinned only where F4A_ZSPRIOR_SHA[model] is not None (the
+    coordinator pins it after the serve), and ALWAYS compared to the
+    archived H100-served vector F4A_ZSPRIOR_WARN_SHA[model] as a WARN,
+    never a FAIL (an A100 serve is expected to differ in a handful of
+    agents); both shas are printed."""
     errs, warns = [], []
     rec = {"model": model, "tag": tag, "path": None, "status": "ABSENT",
            "errors": errs, "warnings": warns, "sha256_pred0": None,
            "expected_sha256": g.F4A_ZSPRIOR_SHA.get(model),
            "archived_sha256": getattr(g, "F4A_ZSPRIOR_WARN_SHA", {}).get(model),
+           "sha_pin": None, "gpu_name": None,
            "n_rounds": None, "distinct": None, "mean": None}
     path = _resolve(tag, roots)
     if path is None:
@@ -665,6 +691,7 @@ def check_zsprior(model, tag, g, roots):
     rec["path"] = str(path)
     d = torch.load(path / "trajectory.pt", map_location="cpu", weights_only=False)
     cfg = d.get("config", {}) or {}
+    rec["gpu_name"] = check_hardware(cfg, g, errs)
     for key, want in (("base_model", g.FAM_MODELS[model]["base_model"]),
                       ("training_style", "frozen"), ("icl_k", 0),
                       ("icl_days", 0), ("dataset", "movielens"),
@@ -701,16 +728,22 @@ def check_zsprior(model, tag, g, roots):
     sha0 = _sha_t(pred[0])
     rec["sha256_pred0"] = sha0
     want = g.F4A_ZSPRIOR_SHA.get(model)
-    if want is not None and sha0 != want:
+    if want is None:
+        rec["sha_pin"] = "unpinned"            # HARD pin skipped by design
+    elif sha0 != want:
+        rec["sha_pin"] = "MISMATCH"
         errs.append(f"ZSPRIOR sha256(pred_raw[0]) = {sha0} != the pinned "
-                    f"{want} (F4A_ZSPRIOR_SHA: the vector the frozen replays "
-                    f"were built from)")
+                    f"{want} (F4A_ZSPRIOR_SHA[{model}]: the vector the "
+                    f"frozen replays were built from)")
+    else:
+        rec["sha_pin"] = "match"
     archived = rec["archived_sha256"]
-    if want is None and archived is not None and sha0 != archived:
-        warns.append(f"ZSPRIOR sha256(pred_raw[0]) = {sha0} differs from the "
-                     f"archived {model} prior {archived} -- a fresh serve of "
-                     f"the same checkpoint may legitimately differ (hardware/"
-                     f"kernel provenance); review, never a failure")
+    if archived is not None and sha0 != archived:
+        warns.append(f"ZSPRIOR {model} sha256(pred_raw[0]) = {sha0} differs "
+                     f"from the archived H100-served prior {archived} "
+                     f"(F4A_ZSPRIOR_WARN_SHA) -- a serve of the same "
+                     f"checkpoint on {g.F4A_GPU_NAME} is expected to differ "
+                     f"in a handful of agents; review, never a failure")
     rec["distinct"] = int(torch.unique(pred[0]).numel())
     rec["mean"] = float(pred[0].mean())
     if "innate" in d:
@@ -734,7 +767,7 @@ def check_cell(model, es, beta, gamma, rounds, tag, g, roots, base_rounds):
            "op_sha": None, "pop_final_mean": None, "pop_final_sd": None,
            "twin_final_mean": None, "innate_mean": None,
            "greedy": None, "witness": None, "generations": None,
-           "accepted_mean": None}
+           "accepted_mean": None, "gpu_name": None}
     path = _resolve(tag, roots)
     if path is None:
         errs.append("trajectory.pt absent under the run roots")
@@ -743,6 +776,7 @@ def check_cell(model, es, beta, gamma, rounds, tag, g, roots, base_rounds):
     d = torch.load(path / "trajectory.pt", map_location="cpu", weights_only=False)
     cfg = d.get("config", {}) or {}
     rec["git_sha"] = cfg.get("git_sha")
+    rec["gpu_name"] = check_hardware(cfg, g, errs)
     check_config(cfg, model, es, beta, gamma, rounds, tag, g, errs)
     check_arrays(d, rounds, errs)
     if any(e.startswith("ARTIFACT") for e in errs):
@@ -808,8 +842,8 @@ def main(argv=None):
                     help="run-dir root (repeatable; default: the cluster "
                          "path, runs/pokec_gated_lm, notes/pofd/cluster)")
     ap.add_argument("--smoke", action="store_true",
-                    help="gate the two 3-round pofdf4asmk_ cells + the "
-                         "Qwen2.5-7B zero-shot prior")
+                    help="gate the two 3-round pofdf4asmk_ cells + BOTH "
+                         "zero-shot priors (4 artifacts)")
     ap.add_argument("--json", dest="json_out", default=None,
                     help="write the machine-readable verdict here")
     ap.add_argument("--gen", default=None,
@@ -834,7 +868,7 @@ def main(argv=None):
         cells = [(m, e, b, gm, rounds, g.f4a_tag(m, e, b, gm, rounds=rounds,
                                                   smoke=True))
                  for (m, e, b, gm) in g.F4A_SMOKE_CELLS]
-        dups, ext, zs_models = [], [], ["qwen7b"]
+        dups, ext, zs_models = [], [], sorted(g.F4A_ZSPRIOR)
         base_rounds = rounds
     else:
         rounds = base_rounds
@@ -932,6 +966,22 @@ def main(argv=None):
                                        f"the probe set must be shared by every "
                                        f"cell of a model"))
 
+    # ---- 10. ONE hardware class across the whole wave --------------------
+    # (a wrong or absent gpu_name is already a per-artifact HARDWARE
+    # failure; here DISAGREEMENT between artifacts fails the wave)
+    gpus = {}
+    for r in (trained + [x for x in ext_records if x["status"] != "ABSENT"]
+              + [z for z in zs_records.values() if z["status"] != "ABSENT"]):
+        if r.get("gpu_name") is not None:
+            gpus.setdefault(r["gpu_name"], []).append(r["tag"])
+    if len(gpus) > 1:
+        ex = {k: v[:2] for k, v in sorted(gpus.items())}
+        wave.append(_wave_fail("<hardware>",
+                               f"{len(gpus)} distinct gpu_name values across "
+                               f"the wave ({sorted(gpus)}); every artifact "
+                               f"must run on ONE hardware class, "
+                               f"{g.F4A_GPU_NAME}: {ex}"))
+
     # ---- 80-cell view: dups resolved through their source ---------------
     cell_rows = list(records)
     for (m, e, b, gm, src) in dups:
@@ -963,7 +1013,8 @@ def main(argv=None):
     print("=" * len(hdr))
     print(f"FIGURE-4 ANCHOR TRADE-OFF GATE -- {'SMOKE' if args.smoke else 'PRODUCTION'}"
           f": {len(records)} trained + {len(dups)} dup + {len(ext_records)} ext "
-          f"+ {len(zs_records)} zero-shot prior(s)")
+          f"+ {len(zs_records)} zero-shot prior(s); hardware class "
+          f"{g.F4A_GPU_NAME}")
     print("=" * len(hdr))
     print(hdr)
     for r in cell_rows + ext_records:
@@ -987,7 +1038,10 @@ def main(argv=None):
         sha = z.get("sha256_pred0")
         print(f"ZSPRIOR {m:<9} {z['status']:<8} {z['tag']}  sha256(pred_raw[0])="
               f"{sha if sha else '-'}  distinct={z.get('distinct')}  "
-              f"mean={_fmt(z.get('mean'))}")
+              f"mean={_fmt(z.get('mean'))}  gpu={z.get('gpu_name') or '-'}")
+        print(f"    sha pin={z.get('sha_pin') or '-'} "
+              f"(F4A_ZSPRIOR_SHA={z.get('expected_sha256') or 'None'})  "
+              f"archived_h100={z.get('archived_sha256') or '-'}")
         for e in z["errors"]:
             print(f"    !! {e}")
         for w in z.get("warnings") or []:
@@ -1002,6 +1056,7 @@ def main(argv=None):
     n_warn = sum(len(z.get("warnings") or []) for z in zs_records.values())
     print(f"PROVENANCE {len(trained)}/{len(records)} trained run(s) present "
           f"@ git {git_shas}; innate {[s[:12] for s in innate_shas]}; "
+          f"hardware {sorted(gpus)} (want [{g.F4A_GPU_NAME!r}]); "
           f"zero-shot priors {{{zs_bits}}}; "
           f"{len(ext_records)} extension(s); {n_fail} failing run(s); "
           f"{len(wave)} wave-level failure(s); {n_warn} WARN line(s) "
@@ -1026,6 +1081,8 @@ def main(argv=None):
         "warnings": [w for z in zs_records.values() for w in (z.get("warnings") or [])],
         "git_sha": git_shas,
         "innate_sha": innate_shas,
+        "hardware_class": g.F4A_GPU_NAME,
+        "gpu_names": sorted(gpus),
         "operator_required": WANT_OP,
     }
     if args.json_out:
@@ -1041,7 +1098,8 @@ def main(argv=None):
               f"probe KL > 0), served well-formed numbers with zero parse "
               f"failures, beta=0 populations equal their twins bit-exactly, "
               f"twins agree across models and betas, and the wave shares one "
-              f"provenance, one population and both zero-shot priors.")
+              f"provenance, one population, one hardware class "
+              f"({g.F4A_GPU_NAME}) and both zero-shot priors.")
         return 0
     print(f"{LOG} FAIL -- {verdict['n_failing']} failing record(s). See the "
           f"!! / FAIL lines above.")
