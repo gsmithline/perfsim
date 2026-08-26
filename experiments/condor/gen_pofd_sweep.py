@@ -9464,6 +9464,103 @@ def s4g2_sub(cond, kind="main"):
     return s4g_sub(cond, key=key, rows=rows, kind=what, grid=S4G2_GRID_TXT)
 
 
+# section4_gate_anch2_probe (2026-08-26). FIVE-ROUND SEED-0 CHANNEL
+# PROBE at beta=0.75: does the SFT-vs-personal-history-ICL story hold
+# when the platform blend is strong? Same corrected-gate machinery as
+# the S4G waves (mistral7b, anch2 operator, bottom-20 fixed vs evolving,
+# strict-< threshold gates, WITH_TWIN=1, movielens Action, 723 agents),
+# with exactly FOUR pinned departures, each visible in tag + config +
+# sub env:
+#   W_PLAT = 0.75            (queue col 11; tag token w0p75)
+#   EPS_AI = 0.7, ES {0, 1}  (ea0p7; es0 = peers closed, es1 = open)
+#   N_ROUNDS = 5, SEED 0     (a probe, not a production horizon)
+#   PARSE_MODE=strict + DEFFUANT_ALPHA=0.5 pinned in the env (the fig6
+#   seed-0 gate found 0.076% malformed Mistral generations under the
+#   legacy parser; strict counts them as failures and serves the 0.5
+#   default instead of a clamped misread, and both fields are recorded
+#   in config for the checker to pin)
+# gamma (INNATE_LAMBDA) stays 0.2 and alpha stays 0.5 -- the requested
+# values ARE the S4G surface values, now pinned explicitly.
+# GRID -- 8 jobs: 2 arms {b0 = ordinary SFT, d8 = personal-history ICL}
+# x 2 conds {fixed, evolving} x es {0, 1}, at ea=0.7, seed 0, 5 rounds.
+# REGISTERED QUESTION: the signed and absolute effect on cohort B (the
+# 578 responsive agents) vs the matched twin -- is ICL near zero with
+# peers closed (es=0) but stronger than SFT with peers open (es=1)?
+# TAGS: pofds4gp_ prefix -- disjoint from pofds4g_/pofds4gsmk_ under
+# the underscore-carrying prefix scans, so neither wave's checker can
+# see the other's dirs as EXTRA.
+# GATE: check_section4_gate.py --wave probe (the S4G checker's third
+# wave; no smoke -- the 5-round wave IS the probe).
+# ANALYZE: analyze_s4g_probe.py (cohort-B signed/absolute effect).
+S4GP_KEY = "section4_gate_anch2_probe"
+S4GP_FIXED_KEY = S4GP_KEY + "_fixed"
+S4GP_EVO_KEY = S4GP_KEY + "_evo"
+S4GP_PREFIX = "pofds4gp"
+S4GP_ARMS = S4G_ARMS
+S4GP_GATES = [0.7]
+S4GP_ESS = [0.0, 1.0]
+S4GP_SEEDS = [0]
+S4GP_ROUNDS = 5
+S4GP_W_PLAT = 0.75
+S4GP_N_PER_COND = 4              # 2 arms x 2 es
+S4GP_N_TOTAL = 8
+
+
+def s4gp_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
+    """The s4g grammar with the probe prefix and the beta=0.75 w token:
+    pofds4gp_mistral7b_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
+    _es{es}_s{seed}."""
+    t = s4g_tag(arm, cond, gate, es, seed,
+                prefix=S4GP_PREFIX if prefix is None else prefix,
+                rounds=rounds)
+    assert "_w0p5_" in t, t
+    return t.replace("_w0p5_", f"_w{_num(S4GP_W_PLAT)}_", 1)
+
+
+def s4gp_row(arm, cond, es, seed=0):
+    """One probe row: s4g_row's own output with the tag re-spelled by
+    s4gp_tag and W_PLAT (queue col 11) moved 0.5 -> 0.75. Everything
+    else IS the corrected-gate wave's row, by construction."""
+    row = s4g_row(arm, cond, S4GP_GATES[0], es, seed,
+                  nrounds=S4GP_ROUNDS, prefix=S4GP_PREFIX)
+    cols = [c.strip() for c in row.split(",")]
+    want_tag = s4g_tag(arm, cond, S4GP_GATES[0], es, seed,
+                       prefix=S4GP_PREFIX)
+    assert cols[0] == want_tag and cols[11] == "0.5", row
+    cols[0] = s4gp_tag(arm, cond, S4GP_GATES[0], es, seed)
+    cols[11] = f"{S4GP_W_PLAT:g}"
+    return ", ".join(cols)
+
+
+def s4gp_rows(cond, seeds=None):
+    seeds = S4GP_SEEDS if seeds is None else seeds
+    return [s4gp_row(arm, cond, es, seed)
+            for seed in seeds
+            for arm in S4GP_ARMS
+            for es in S4GP_ESS]
+
+
+def s4gp_sub(cond):
+    key = S4GP_FIXED_KEY if cond == "fixed" else S4GP_EVO_KEY
+    kind = ("FIVE-ROUND SEED-0 PROBE -- beta(W_PLAT)=0.75, gamma(k)=0.2, "
+            "alpha=0.5; ea 0.7 x es {0, 1} x arms {b0, d8}")
+    sub = s4g_sub(cond, key=key, rows=s4gp_rows(cond), kind=kind,
+                  grid="ea {0.7} x es {0, 1}")
+    # the probe departs from the S4G surface in exactly the pinned ways
+    # below; every substitution is asserted so a template drift cannot
+    # silently emit an unmarked sub
+    for old, new in (
+            ("W=0.5, lam=0.2", "W=0.75 (PROBE), lam=0.2"),
+            ("SEEDS 0/42/43", "SEED 0 ONLY, 5 ROUNDS"),
+            ("SAVE_RAW_GEN=1 ",
+             "SAVE_RAW_GEN=1 PARSE_MODE=strict DEFFUANT_ALPHA=0.5 "),
+            ("with check_section4_gate.py (",
+             "with check_section4_gate.py --wave probe (")):
+        assert sub.count(old) == 1, (cond, old)
+        sub = sub.replace(old, new)
+    return sub
+
+
 # fig4_anchor_tradeoff[_smoke|_ext|_zsprior] (2026-08-25).  FIGURE-4
 # ANCHOR TRADE-OFF: the corrected-operator (anch2) beta x gamma surface
 # under a SOCIAL THRESHOLD GATE, two entering models, ONE Deffuant sweep
@@ -13865,6 +13962,41 @@ def main():
         expected[p] = len(_rows)
         cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
             s4g2_sub(_cond, "ext")
+
+    # ---- Section-4 corrected-gate PROBE: 5 rounds, seed 0, beta=0.75 ----
+    _prior_pr = {r.split(",")[0].strip()
+                 for rows in files.values() for r in rows}
+    _pr_tags = set()
+    for _cond, _key in (("fixed", S4GP_FIXED_KEY),
+                        ("evolving", S4GP_EVO_KEY)):
+        _rows = s4gp_rows(_cond)
+        assert len(_rows) == S4GP_N_PER_COND, (_cond, len(_rows))
+        _ncols = 26 if _cond == "fixed" else 24
+        for _r in _rows:
+            _c = [x.strip() for x in _r.split(",")]
+            assert len(_c) == _ncols, (_cond, len(_c), _r)
+            assert _c[0].startswith(S4GP_PREFIX + "_mistral7b_") and \
+                f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] and \
+                "_w0p75_l0p2_" in _c[0], _c[0]
+            assert _c[11] == "0.75" and float(_c[14]) == S4GP_GATES[0], _r
+            assert float(_c[9]) in tuple(S4GP_ESS) and _c[3] == "0", _r
+            assert _c[22] == str(S4GP_ROUNDS) and _c[15] == "threshold" \
+                and _c[10] == "0.0", _r
+            assert _c[0] not in _prior_pr, ("probe tag collides", _c[0])
+            _pr_tags.add(_c[0])
+        _sub = s4gp_sub(_cond)
+        _env = next(l for l in _sub.splitlines()
+                    if l.startswith("environment"))
+        assert "AI_GATE_REFERENCE=anchor" in _env and \
+            "PARSE_MODE=strict" in _env and "DEFFUANT_ALPHA=0.5" in _env \
+            and "SAVE_RAW_GEN=1" in _env and "WITH_TWIN=1" in _env, _cond
+        assert ("INNATE_CLAMP_PEER_MODE=stubborn" in _env) == \
+            (_cond == "fixed"), _cond
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = S4GP_N_PER_COND
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    assert len(_pr_tags) == S4GP_N_TOTAL
 
     # ---- Figure-4 anchor trade-off (F4A): beta x gamma x es x 2 models ----
     # ---- under the threshold peer gate; 60 trained + 20 algebraic dups ----

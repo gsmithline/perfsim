@@ -250,12 +250,15 @@ GEN_REL = os.path.join("experiments", "condor", "gen_pofd_sweep.py")
 
 WAVE_V1 = "section4_gate_anch2"
 WAVE_FIG6 = "section4_gate_anch2_fig6"
+WAVE_PROBE = "section4_gate_anch2_probe"
 WAVE_ALIASES = {WAVE_V1: WAVE_V1, "v1": WAVE_V1,
-                WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6}
-WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, "v1", "fig6")
+                WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6,
+                WAVE_PROBE: WAVE_PROBE, "probe": WAVE_PROBE}
+WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, WAVE_PROBE, "v1", "fig6", "probe")
 
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
+PROBE_PREFIX = "pofds4gp"       # the 5-round beta=0.75 probe wave
 # mirror of HFCausalLMModel._parse_strict's regex (never import
 # transformers on the login node); tests pin the two to agree
 _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
@@ -264,6 +267,7 @@ _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
 # swallow the smokes.
 PROD_SCAN = PROD_PREFIX + "_"
 SMOKE_SCAN = SMOKE_PREFIX + "_"
+PROBE_SCAN = PROBE_PREFIX + "_"
 
 OP_TOKEN = "anch2"                 # <-> nested_ai_anchored_then_social_v2
 OP_INFIX = "_" + OP_TOKEN + "_"
@@ -289,7 +293,7 @@ CLAMP_COUNT = 145                  # round(0.2 * 723)
 # ONLY by a wave that declares extension horizons (fig6 _r60/_r100);
 # base cells never carry one.
 TAG_RE = re.compile(
-    r"^(?P<pre>pofds4gsmk|pofds4g)"
+    r"^(?P<pre>pofds4gsmk|pofds4gp|pofds4g)"
     r"_(?P<slug>[a-z0-9]+)"
     r"_(?P<arm>b0|d8)"
     r"_(?P<cond>fixb20|evoall)"
@@ -433,6 +437,7 @@ class Wave:
     def __init__(self, name, gen, ext_manifest=None):
         self.name = WAVE_ALIASES[name]
         self.fig6 = self.name == WAVE_FIG6
+        self.probe = self.name == WAVE_PROBE
         self.gen = gen
         if self.fig6:
             self.key = gen.S4G2_KEY
@@ -463,6 +468,29 @@ class Wave:
                 raise ValueError(
                     f"generator declares (cells, gpu, witness, twin)="
                     f"{declared} but s4g2_cells() yields {got}")
+        elif self.probe:
+            # the 5-round beta=0.75 probe: 2 arms x 2 conds x es {0, 1}
+            # at ea=0.7, seed 0 -- no smoke (the wave IS the probe), no
+            # twin-derived cells, no witnesses, no extensions
+            self.key = gen.S4GP_KEY
+            self.arms = tuple(gen.S4GP_ARMS)
+            self.conds = tuple(gen.S4G_CONDS)
+            self.gates = tuple(float(v) for v in gen.S4GP_GATES)
+            self.ess = tuple(float(v) for v in gen.S4GP_ESS)
+            self.seeds = tuple(int(s) for s in gen.S4GP_SEEDS)
+            self.cells6 = [(arm, cond, ea, es, seed, "gpu")
+                           for seed in self.seeds for arm in self.arms
+                           for cond in self.conds for ea in self.gates
+                           for es in self.ess]
+            self.witness = set()
+            self.horizons_ok = ()
+            self.ext_manifest = None
+            self.ext_requests = []
+            smoke_rows = lambda cond: []          # noqa: E731
+            if len(self.cells6) != gen.S4GP_N_TOTAL:
+                raise ValueError(f"generator declares S4GP_N_TOTAL="
+                                 f"{gen.S4GP_N_TOTAL} but the product has "
+                                 f"{len(self.cells6)} cells")
         else:
             self.key = gen.S4G_KEY
             self.arms = tuple(gen.S4G_ARMS)
@@ -484,8 +512,17 @@ class Wave:
                 raise ValueError(f"generator declares S4G_N_TOTAL="
                                  f"{gen.S4G_N_TOTAL} but the product has "
                                  f"{len(self.cells6)} cells")
-        self.rounds = int(gen.S4G_ROUNDS)
+        self.rounds = int(gen.S4GP_ROUNDS if self.probe
+                          else gen.S4G_ROUNDS)
         self.smoke_rounds = int(gen.S4G_SMOKE_ROUNDS)
+        self.prod_prefix = PROBE_PREFIX if self.probe else PROD_PREFIX
+        self.prod_scan = self.prod_prefix + "_"
+        self.tag_fn = gen.s4gp_tag if self.probe else gen.s4g_tag
+        self.w_plat = float(gen.S4GP_W_PLAT if self.probe else W_PLAT)
+        # config pins that hold ONLY on this wave's (fresh) runs: the
+        # probe pins the strict parser and the Deffuant alpha it runs
+        self.extra_pins = ({"parse_mode": "strict", "deffuant_alpha": 0.5}
+                           if self.probe else {})
         # the smoke cells, parsed out of the generator's own smoke rows
         # (first CSV column is the tag)
         self.smoke_cells = []
@@ -524,9 +561,10 @@ class Wave:
 
     def render_tag(self, arm, cond, ea, es, seed, smoke=False, rounds=None):
         """THE generator's tag -- never a local re-implementation."""
-        return self.gen.s4g_tag(arm, cond, float(ea), float(es), int(seed),
-                                prefix=SMOKE_PREFIX if smoke else PROD_PREFIX,
-                                rounds=rounds)
+        return self.tag_fn(arm, cond, float(ea), float(es), int(seed),
+                           prefix=SMOKE_PREFIX if smoke
+                           else self.prod_prefix,
+                           rounds=rounds)
 
     def self_test_grammar(self, smoke):
         """parse(render(cell)) must round-trip for every expected cell:
@@ -565,8 +603,9 @@ def parse_tag(tag, smoke, wave):
     m = TAG_RE.match(tag)
     if m is None:
         return None, [f"tag is not in the pofds4g grammar "
-                      f"{PROD_PREFIX}_{MODEL_SLUG}_<b0|d8>_<fixb20|evoall>"
-                      f"_{OP_TOKEN}_ea<EA>_w0p5_l0p2_es<ES>_s<SEED>"
+                      f"{wave.prod_prefix}_{MODEL_SLUG}_<b0|d8>"
+                      f"_<fixb20|evoall>_{OP_TOKEN}_ea<EA>"
+                      f"_w{_num(wave.w_plat)}_l0p2_es<ES>_s<SEED>"
                       f"[_r<HORIZON>]"]
     pre, slug = m.group("pre"), m.group("slug")
     arm, cond = m.group("arm"), TOK_COND[m.group("cond")]
@@ -578,6 +617,10 @@ def parse_tag(tag, smoke, wave):
         errs.append(f"smoke/production prefix mismatch: prefix {pre!r} with "
                     f"--smoke={bool(smoke)}; a smoke cell can never stand in "
                     f"for a production cell (or the reverse)")
+    elif not smoke and pre != wave.prod_prefix:
+        errs.append(f"tag prefix {pre!r} does not belong to the {wave.name} "
+                    f"wave (expected {wave.prod_prefix!r}) -- the probe and "
+                    f"S4G production waves are gated separately")
     if slug != MODEL_SLUG:
         errs.append(f"model slug {slug!r}; this wave is {MODEL_SLUG}-only")
     rebuilt = (f"{pre}_{slug}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}_ea{_num(ea)}"
@@ -587,9 +630,9 @@ def parse_tag(tag, smoke, wave):
         errs.append(f"tag numbers do not round-trip through the pinned "
                     f"grammar (would be spelled {rebuilt!r}) -- two "
                     f"spellings of one cell make coverage unprovable")
-    if w != W_PLAT:
-        errs.append(f"tag says w{m.group('w')} (= {w:g}); the wave is "
-                    f"W_PLAT={W_PLAT:g}")
+    if w != wave.w_plat:
+        errs.append(f"tag says w{m.group('w')} (= {w:g}); the {wave.name} "
+                    f"wave is W_PLAT={wave.w_plat:g}")
     if lam != INNATE_LAMBDA:
         errs.append(f"tag says l{m.group('l')} (= {lam:g}); the wave is "
                     f"INNATE_LAMBDA={INNATE_LAMBDA:g}")
@@ -849,7 +892,8 @@ def check_one(run_dir, wave, smoke, inspect_archived=False):
         bad(f"n_rounds={cfg.get('n_rounds')!r}, expected {want_rounds}"
             + (f" (the _r{info['horizon']} horizon of this extension)"
                if info["horizon"] else ""))
-    for key, want in PINS.items():
+    pins = dict(PINS, w_plat=wave.w_plat, **wave.extra_pins)
+    for key, want in pins.items():
         got = cfg.get(key, "<absent>")
         if isinstance(want, bool):
             if got == "<absent>" or bool(got) is not want:
@@ -1332,10 +1376,12 @@ def main(argv=None):
         description="Section-4 corrected-gate waves (pofds4g_) gate; CPU only")
     ap.add_argument("--wave", default=WAVE_V1, choices=WAVE_CHOICES,
                     help=f"which wave's grid to gate: {WAVE_V1} (alias v1; "
-                         f"the original 72-cell wave, DEFAULT) or "
+                         f"the original 72-cell wave, DEFAULT), "
                          f"{WAVE_FIG6} (alias fig6; the 192-cell Figure-6 "
                          f"grid with twin-derived ea=0 cells, witnesses and "
-                         f"_r60/_r100 extensions)")
+                         f"_r60/_r100 extensions) or {WAVE_PROBE} (alias "
+                         f"probe; the 8-cell 5-round beta=0.75 channel "
+                         f"probe, pofds4gp_ tags)")
     ap.add_argument("--run-root", default=DEFAULT_RUN_ROOT,
                     help=f"directory holding the run dirs (default the "
                          f"cluster path {DEFAULT_RUN_ROOT})")
@@ -1379,8 +1425,6 @@ def main(argv=None):
         print(f"{LOG} usage error: --run-root {args.run_root!r} is not a "
               f"directory", file=sys.stderr)
         return 2
-    scan = SMOKE_SCAN if args.smoke else PROD_SCAN
-
     # ---- the wave, READ FROM THE GENERATOR -----------------------------
     gen_path = find_generator(args.gen)
     if gen_path is None:
@@ -1399,6 +1443,11 @@ def main(argv=None):
     if args.ext_manifest and not wave.fig6:
         print(f"{LOG} usage error: --ext-manifest applies to --wave fig6 "
               f"only", file=sys.stderr)
+        return 2
+    scan = SMOKE_SCAN if args.smoke else wave.prod_scan
+    if args.smoke and not wave.smoke_cells:
+        print(f"{LOG} usage error: the {wave.name} wave defines no smoke "
+              f"cells (the 5-round probe IS the probe run)", file=sys.stderr)
         return 2
     gbad = wave.self_test_grammar(args.smoke)
     if gbad:
