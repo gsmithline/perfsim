@@ -9715,17 +9715,33 @@ def f4a_frozen_name(model, es, beta, gamma, rounds=F4A_ROUNDS):
             f"_sw{F4A_SWEEPS}_r{rounds}.pt")
 
 
+def f4a_rest_rows(first_groups=("prod0", "prod1", "prod2", "prod3")):
+    """SECOND-HALF KEY (2026-08-26 capacity move): the production rows whose
+    node groups are NOT in `first_groups` -- the cells still waiting for a
+    whole node while shared A100 hosts have free GPUs. Submitting it as
+    single-GPU jobs is safe ONLY after the corresponding idle node jobs are
+    removed (a cell must never run twice); the first-half cells, which may
+    be running inside node jobs, are deliberately excluded."""
+    groups = f4a_node_groups()
+    keep = {e["tag"] for g_, es_ in groups.items()
+            if g_ != "smoke0" and g_ not in first_groups for e in es_}
+    return [r for r in f4a_rows() if r.split(",")[0].strip() in keep]
+
+
 def f4a_sub(kind="main"):
-    """kind: 'main' | 'smoke' | 'ext'."""
-    key = {"main": F4A_KEY, "smoke": F4A_SMOKE_KEY, "ext": F4A_EXT_KEY}[kind]
+    """kind: 'main' | 'smoke' | 'ext' | 'rest' (second-half cells only)."""
+    key = {"main": F4A_KEY, "smoke": F4A_SMOKE_KEY, "ext": F4A_EXT_KEY,
+           "rest": F4A_KEY + "_rest"}[kind]
     rows = {"main": f4a_rows, "smoke": f4a_smoke_rows,
-            "ext": f4a_ext_rows}[kind]()
+            "ext": f4a_ext_rows, "rest": f4a_rest_rows}[kind]()
     what = {"main": "60 TRAINED CELLS (the 20 dups are algebraic, 0 jobs)",
             "smoke": "3-ROUND SMOKE (both models at es=.2 beta=.5 gamma=.5)",
             "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, driven by "
-                    "fig4_anchor_extension_request.json)")}[kind]
+                    "fig4_anchor_extension_request.json)"),
+            "rest": ("SECOND-HALF CELLS AS SINGLE-GPU JOBS (node groups prod4-7; "
+                     "submit ONLY after removing those idle node jobs)")}[kind]
     rounds = {"main": str(F4A_ROUNDS), "smoke": str(F4A_SMOKE_ROUNDS),
-              "ext": "60/100 (per-row nrounds)"}[kind]
+              "ext": "60/100 (per-row nrounds)", "rest": str(F4A_ROUNDS)}[kind]
     return F4A_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=F4A_GPU_NAME, bad=BAD_NODE_REQ,
         rounds=rounds, kind=what,
@@ -13968,6 +13984,11 @@ def main():
     files[p] = rows_f4a
     expected[p] = F4A_N_GPU - len(F4A_REUSED)
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _f4a_sub
+    _f4a_rest = f4a_rest_rows()
+    assert len(_f4a_rest) == 28 and set(r.split(",")[0].strip() for r in _f4a_rest) < set(_all_prod_tags_placeholder := [r.split(",")[0].strip() for r in rows_f4a])
+    p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_rest.txt")
+    files[p] = _f4a_rest; expected[p] = 28
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_rest.sub")] = f4a_sub("rest")
 
     rows_f4as = f4a_smoke_rows()
     assert len(rows_f4as) == 2 and len(F4A_SMOKE_CELLS) == 2
@@ -14142,6 +14163,11 @@ def main():
             p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}.txt")
             files[p] = _rows1; expected[p] = 60
             cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _sub1
+            _rest1 = f4a_rest_rows()
+            assert len(_rest1) == 28 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _rest1)
+            p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_rest.txt")
+            files[p] = _rest1; expected[p] = 28
+            cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_rest.sub")] = f4a_sub("rest")
             _rows1s = f4a_smoke_rows()
             assert len(_rows1s) == 2 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _rows1s)
             p = os.path.join(HERE, f"configs_pofd_{F4A_SMOKE_KEY}.txt")
