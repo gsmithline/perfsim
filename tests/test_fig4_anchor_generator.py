@@ -386,7 +386,9 @@ def test_both_zero_shot_priors_mirror_the_archived_qwen3_row_on_their_own_sub(ge
     # sha pins: BOTH unpinned until the A100 serves run (the coordinator
     # pins them afterwards); the archived H100-served vectors are WARN
     # references only, never pins
-    assert gen.F4A_ZSPRIOR_SHA == {"qwen7b": None, "qwen3_8b": None}
+    assert set(gen.F4A_ZSPRIOR_SHA) == {"qwen7b", "qwen3_8b"}
+    assert all(v is None or re.fullmatch(r"[0-9a-f]{64}", v)
+               for v in gen.F4A_ZSPRIOR_SHA.values())   # pinned 2026-08-26
     assert gen.F4A_ZSPRIOR_WARN_SHA == {
         "qwen7b": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
         "qwen3_8b": "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"}
