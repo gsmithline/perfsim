@@ -9507,13 +9507,29 @@ def s4g2_sub(cond, kind="main"):
 # 64-agent probe set).  The AI gate is the STRICT inequality
 # |m - x'| < eps_AI on the anchored opinion x'; all_open bypasses it.
 #
-# ZERO-SHOT PRIORS.  Qwen3-8B's pofdzsprior_ artifact exists (sha256 of
-# pred_raw[0] pinned in F4A_ZSPRIOR_SHA); Qwen2.5-7B's is queued with the
-# smoke on its own zsprior-template sub (fig4_anchor_tradeoff_zsprior --
-# the 25-column zsprior row cannot ride the 29-column F4A sub, and the
-# archived zsprior_screen config is never touched).  The lambda = inf
-# offline replays (CPU) are named by f4a_frozen_name; beta = 0 replays
-# are model-independent and carry the model slug "shared".
+# ZERO-SHOT PRIORS.  BOTH entering models are served once on the wave's
+# hardware class (F4A_GPU_NAME, below) under NEW tags
+# pofdzsprior_<slug>_w0p5_l0p2_es0_a100_s0, queued with the smoke on
+# their own zsprior-template sub (fig4_anchor_tradeoff_zsprior -- the
+# 25-column zsprior row cannot ride the 29-column F4A sub, and the
+# archived zsprior_screen config is never touched).  F4A_ZSPRIOR_SHA is
+# unpinned (None) until they run -- the coordinator pins sha256 of
+# pred_raw[0] afterwards; the archived H100-served vectors are WARN-only
+# references (F4A_ZSPRIOR_WARN_SHA).  The lambda = inf offline replays
+# (CPU) are named by f4a_frozen_name; beta = 0 replays are
+# model-independent and carry the model slug "shared".
+#
+# HARDWARE CLASS (2026-08-26).  Every H100 host left the pool on
+# 2026-08-26 (B200s appeared; the opdyn torch 2.5.1 cannot drive sm_100),
+# so the WHOLE wave is retargeted to the ~51 free NVIDIA A100-SXM4-80GB
+# GPUs (g141, g145, g180-g184; 2 TB RAM per node; CUDAGlobalMemoryMb
+# 81153) as ONE hardware class: the 60 trained cells, the smoke, every
+# extension and both zero-shot priors pin F4A_GPU_NAME, and the checker
+# refuses a wave that records more than one gpu_name.  Borderline greedy
+# generations flip across GPU architectures (the archived A100 frozen
+# Qwen2.5-7B cell differs from the H100 prior in 17 of 723 agents), so
+# comparability with the archived H100-served waves is NOT claimed: the
+# wave is internally consistent on its own class.
 #
 # EXTENSIONS.  experiments/condor/fig4_anchor_extension_request.json
 # (written by analyze_fig4_anchor.py: a JSON list of
@@ -9542,16 +9558,39 @@ F4A_REUSED = {}                 # (model, es, beta, gamma) -> archived tag; audi
 F4A_BETA0_MODEL = "qwen3_8b"
 F4A_EXT_REQUEST_PATH = os.path.join(HERE, "fig4_anchor_extension_request.json")
 F4A_EXT_ROUNDS_OK = (60, 100)
-F4A_H100 = S3_H100
+# the wave's SINGLE hardware class (HARDWARE CLASS above): pinned in the
+# requirements of every F4A sub and recorded as config.hardware.gpu_name
+# by every artifact the checker gates (cells, smoke, ext, both priors)
+F4A_GPU_NAME = "NVIDIA A100-SXM4-80GB"
+F4A_ZSPRIOR_HW_TOKEN = "a100"           # prior-tag token before the seed
 F4A_SMOKE_CELLS = (("qwen7b", 0.2, 0.5, 0.5), ("qwen3_8b", 0.2, 0.5, 0.5))
-F4A_ZSPRIOR = {"qwen3_8b": zsprior_tag("qwen3_8b"),
-               "qwen7b": zsprior_tag("qwen7b")}
-F4A_ZSPRIOR_SHA = {"qwen3_8b": F3_FROZEN_SHA,   # replay_frozen_offline record
-                   "qwen7b": None}               # unknown until it runs
-# the ARCHIVED Qwen2.5-7B frozen prior (7 archived H100 runs agree); the
-# checker WARNs (never fails) if the fresh qwen7b zsprior differs from it
-F4A_ZSPRIOR_WARN_SHA = {"qwen7b": ("1674ee5f8d833f46de672791d933e1d3"
-                                   "bdeefb07484c2d110dec84ce71da30bb")}
+
+
+def f4a_zsprior_tag(slug):
+    """pofdzsprior_<slug>_w0p5_l0p2_es0_a100_s0: the zsprior_screen tag
+    grammar with the hardware token before the seed -- a NEW artifact per
+    model, served on F4A_GPU_NAME (the archived H100-served
+    pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0 is NOT this wave's
+    entering-model vector)."""
+    return f"pofdzsprior_{slug}_{w_tok()}_es0_{F4A_ZSPRIOR_HW_TOKEN}_s0"
+
+
+F4A_ZSPRIOR = {m: f4a_zsprior_tag(m) for m in F4A_MODELS}
+# UNPINNED until the A100 serves run: the coordinator pins sha256 of
+# pred_raw[0] (float32 bytes, as check_fig4_anchor records it) per model
+# afterwards; None makes the checker's sha pin a no-op for that model
+F4A_ZSPRIOR_SHA = {"qwen7b": None, "qwen3_8b": None}
+# the ARCHIVED H100-served vectors -- WARN-only references in the checker,
+# never a pin: an A100 serve of the same checkpoint is expected to differ
+# in a handful of agents (qwen7b: 7 archived H100 k0 cells agree;
+# qwen3_8b: pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0, the vector the
+# Figure-3 frozen replays were built from)
+F4A_ZSPRIOR_WARN_SHA = {
+    "qwen7b": ("1674ee5f8d833f46de672791d933e1d3"
+               "bdeefb07484c2d110dec84ce71da30bb"),
+    "qwen3_8b": ("fdfdeab7466345159cd7ae16ee487d49"
+                 "82d686cfdb93287780ae4d109ccba3f7"),
+}
 F4A_N_CELLS = 80
 F4A_N_GPU = 60
 F4A_N_DUP = 20
@@ -9624,12 +9663,14 @@ def f4a_smoke_rows():
 
 
 def f4a_zsprior_rows():
-    """The Qwen2.5-7B zero-shot prior serve: the qwen3_8b zsprior_screen
-    row with slug / BASE_MODEL / CHAT_THINKING=default swapped."""
-    m = FAM_MODELS["qwen7b"]
-    return [ROW_ZSPRIOR.format(tag=F4A_ZSPRIOR["qwen7b"],
-                               basemodel=m["base_model"],
-                               chatthink=m["chatthink"])]
+    """Both zero-shot prior serves on the wave's hardware class, one row
+    per F4A model: the archived qwen3_8b zsprior_screen row column for
+    column with only tag / BASE_MODEL / CHAT_THINKING swapped (qwen7b:
+    Qwen2.5-7B-Instruct + default; qwen3_8b: Qwen3-8B + 0)."""
+    return [ROW_ZSPRIOR.format(tag=F4A_ZSPRIOR[m],
+                               basemodel=FAM_MODELS[m]["base_model"],
+                               chatthink=FAM_MODELS[m]["chatthink"])
+            for m in F4A_MODELS]
 
 
 def f4a_ext_requests(path=None):
@@ -9683,14 +9724,15 @@ def f4a_sub(kind="main"):
     rounds = {"main": str(F4A_ROUNDS), "smoke": str(F4A_SMOKE_ROUNDS),
               "ext": "60/100 (per-row nrounds)"}[kind]
     return F4A_SUB_TEMPLATE.format(
-        key=key, n_jobs=len(rows), gpu=F4A_H100, bad=BAD_NODE_REQ,
+        key=key, n_jobs=len(rows), gpu=F4A_GPU_NAME, bad=BAD_NODE_REQ,
         rounds=rounds, kind=what,
         gateflag=(" --smoke" if kind == "smoke" else ""))
 
 
 def f4a_zsprior_sub():
     return F4A_ZSPRIOR_SUB_TEMPLATE.format(key=F4A_ZSPRIOR_KEY,
-                                           n_jobs=len(f4a_zsprior_rows()))
+                                           n_jobs=len(f4a_zsprior_rows()),
+                                           gpu=F4A_GPU_NAME)
 
 
 F4A_SUB_TEMPLATE = """\
@@ -9713,6 +9755,12 @@ F4A_SUB_TEMPLATE = """\
 # raw_gen_log.json.gz), WITH_TWIN=1 (matched no-AI twin), TRAIN_WITNESS=1
 # (per-round witness_* telemetry incl. the probe KL to the frozen
 # reference on the shared 64-agent probe set).
+# HARDWARE CLASS (2026-08-26): the previous (Hopper) hosts all left the
+# pool and the B200s that replaced them (sm_100) cannot be driven by the
+# opdyn torch 2.5.1, so the WHOLE wave -- 60 cells, smoke, extensions and
+# both zero-shot priors -- is pinned to ONE class, {gpu}; the checker
+# refuses a wave recording more than one gpu_name. Comparability with
+# the archived waves served on the previous class is NOT claimed.
 # Gate: python experiments/scripts/cluster_pipelines/check_fig4_anchor.py{gateflag}
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
 universe          = vanilla
@@ -9742,23 +9790,30 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
-# The Qwen2.5-7B zero-shot prior rides the ARCHIVED zsprior_screen
-# template verbatim below the header (env and queue line asserted
-# identical in main()); only the header names this wave.
+# Both zero-shot priors ride the ARCHIVED zsprior_screen template
+# verbatim below the header (env and queue line asserted identical in
+# main()); only the header and the hardware pin in requirements name
+# this wave.
 F4A_ZSPRIOR_SUB_TEMPLATE = """\
-# HTCondor: FIGURE-4 ANCHOR TRADE-OFF -- Qwen2.5-7B-Instruct ZERO-SHOT
-# PRIOR, one 1-round frozen probe. GENERATED by gen_pofd_sweep.py from
-# the F4A block (zsprior template, env identical to zsprior_screen).
-# Never edit by hand: rerun the script. {n_jobs} job(s).
+# HTCondor: FIGURE-4 ANCHOR TRADE-OFF -- ZERO-SHOT PRIORS of BOTH entering
+# models (Qwen2.5-7B-Instruct, Qwen3-8B thinking-off), one 1-round frozen
+# probe each on the wave's hardware class {gpu}. GENERATED by
+# gen_pofd_sweep.py from the F4A block (zsprior template, env identical
+# to zsprior_screen). Never edit by hand: rerun the script. {n_jobs} job(s).
 # The paper's 723 MovieLens Action profiles, seed 0, greedy decoding,
 # frozen weights, no LoRA, no context, es=0, EPS_AI=0 under the
 # strict-< threshold gate: no agent is ever contacted, opinions cannot
 # update, and pred_raw[0] is the checkpoint's zero-shot prior -- the
-# entering-model overlay of every Qwen2.5-7B Figure-4 panel and the
+# entering-model overlay of every Figure-4 panel of that model and the
 # source vector of its lambda = inf offline replays.
+# NEW _a100 tags (2026-08-26): the archived
+# pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0 (served on the previous hardware
+# class) is NOT reused -- the wave's entering-model vectors must share its
+# own class, since greedy generations flip across GPU architectures; the
+# archived vectors are WARN-only references in the checker.
 # SAVE_RAW_GEN=1 writes raw_gen_log.json.gz (every raw decoded
 # response + parsed values); BASE_MODEL and CHAT_THINKING ride the
-# queue (CHAT_THINKING=default for Qwen2.5).
+# queue (CHAT_THINKING=default for Qwen2.5, 0 for Qwen3).
 # Gate: python experiments/scripts/cluster_pipelines/check_fig4_anchor.py --smoke
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
 #   (fig4_anchor_tradeoff_smoke queues this sub alongside the two smoke cells)
@@ -9770,11 +9825,13 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 60G
 request_gpus      = 1
-# H100 PIN (2026-08-26): the archived zsprior template only required >= 80 GB;
-# a B200 (sm_100, unsupported by the opdyn torch 2.5.1) now matches that and
-# killed the first attempt (i402, exit 1 at CUDA init). replay_frozen_offline
-# also refuses non-H100 sources, so the prior MUST be served on an H100.
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3") && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+# HARDWARE PIN (2026-08-26): the archived zsprior template only required
+# >= 80 GB, which a B200 (sm_100, unsupported by the opdyn torch 2.5.1) now
+# matches -- it killed the first attempt (i402, exit 1 at CUDA init). The
+# previous hardware class then left the cluster, so the priors are pinned
+# to the wave's single class; replay_frozen_offline refuses a source
+# served on any other class.
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}") && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_zsprior_screen"
@@ -13626,14 +13683,26 @@ def main():
     assert sum(1 for n in _f4_frz if "_shared_" in n) == 8
     assert all("_shared_" in f4a_frozen_name(m, e, 0.0, g)
                for m in F4A_MODELS for e in F4A_ES for g in F4A_GAMMAS)
+    # ONE hardware class for the whole wave (2026-08-26 retarget)
+    assert F4A_GPU_NAME == "NVIDIA A100-SXM4-80GB" == FE5_A100
+    assert F4A_GPU_NAME != S3_H100 and "H100" not in F4A_GPU_NAME
+    # both zero-shot priors are NEW A100-served artifacts
     assert F4A_ZSPRIOR == {
-        "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0",
-        "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0"}
-    assert F4A_ZSPRIOR_SHA["qwen3_8b"] == F3_FROZEN_SHA and \
-        len(F4A_ZSPRIOR_SHA["qwen3_8b"]) == 64 and \
-        F4A_ZSPRIOR_SHA["qwen7b"] is None
-    assert set(F4A_ZSPRIOR_WARN_SHA) == {"qwen7b"} and \
-        len(F4A_ZSPRIOR_WARN_SHA["qwen7b"]) == 64
+        "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0",
+        "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"}
+    assert set(F4A_ZSPRIOR) == set(F4A_ZSPRIOR_SHA) == \
+        set(F4A_ZSPRIOR_WARN_SHA) == set(F4A_MODELS)
+    for _m in F4A_MODELS:
+        assert F4A_ZSPRIOR[_m] == f4a_zsprior_tag(_m) != zsprior_tag(_m)
+        assert F4A_ZSPRIOR[_m].endswith(f"_es0_{F4A_ZSPRIOR_HW_TOKEN}_s0")
+        _sha = F4A_ZSPRIOR_SHA[_m]          # None until served, then 64 hex
+        assert _sha is None or (isinstance(_sha, str) and len(_sha) == 64
+                                and set(_sha) <= set("0123456789abcdef")), _m
+        _wsha = F4A_ZSPRIOR_WARN_SHA[_m]    # archived H100 vector, WARN only
+        assert isinstance(_wsha, str) and len(_wsha) == 64 \
+            and set(_wsha) <= set("0123456789abcdef"), _m
+    assert F4A_ZSPRIOR_WARN_SHA == {"qwen7b": QMECH_CANONICAL_PRED_SHA,
+                                    "qwen3_8b": F3_FROZEN_SHA}
 
     rows_f4a = f4a_rows()
     assert len(rows_f4a) == F4A_N_GPU - len(F4A_REUSED) == 60, len(rows_f4a)
@@ -13703,6 +13772,13 @@ def main():
     assert "<=" not in _f4a_sub and "< eps_AI" in _f4a_sub, \
         "the AI gate is a STRICT inequality; the header must say <"
     assert "check_fig4_anchor.py" in _f4a_sub and "60 jobs" in _f4a_sub
+    _f4a_req = next(l for l in _f4a_sub.splitlines()
+                    if l.startswith("requirements"))
+    assert f'(TARGET.CUDADeviceName == "{F4A_GPU_NAME}")' in _f4a_req \
+        and "(TARGET.CUDAGlobalMemoryMb >= 80000)" in _f4a_req \
+        and BAD_NODE_REQ in _f4a_req, _f4a_req
+    assert "H100" not in _f4a_sub and F4A_GPU_NAME in _f4a_sub, \
+        "every F4A sub pins the wave's single hardware class"
     _f4a_q = next(l for l in _f4a_sub.splitlines() if l.startswith("queue "))
     _f4a_cols = [c.strip() for c in
                  _f4a_q.split(" from ")[0][len("queue "):].split(",")]
@@ -13737,35 +13813,51 @@ def main():
     assert "check_fig4_anchor.py --smoke" in _f4as_sub
     assert next(l for l in _f4as_sub.splitlines()
                 if l.startswith("environment")) == _f4a_env
+    assert next(l for l in _f4as_sub.splitlines()
+                if l.startswith("requirements")) == _f4a_req
+    assert "H100" not in _f4as_sub
     p = os.path.join(HERE, f"configs_pofd_{F4A_SMOKE_KEY}.txt")
     files[p] = rows_f4as
     expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_SMOKE_KEY}.sub")] = _f4as_sub
 
-    # the Qwen2.5-7B zero-shot prior: ONE zsprior-template row on its own
-    # sub; the archived zsprior_screen file must not gain a row
+    # both zero-shot priors: TWO zsprior-template rows on their own sub
+    # under NEW _a100 tags; the archived zsprior_screen file must not
+    # gain a row and the wave must not reuse its H100-served qwen3_8b
+    # artifact
     rows_f4az = f4a_zsprior_rows()
-    assert len(rows_f4az) == 1
-    _z = [x.strip() for x in rows_f4az[0].split(",")]
-    assert len(_z) == 25 and _z[0] == F4A_ZSPRIOR["qwen7b"]
-    assert _z[0] not in _prior_f4a and _z[0] not in set(_f4a_tags)
-    assert F4A_ZSPRIOR["qwen3_8b"] in _prior_f4a, \
-        "the Qwen3-8B zero-shot prior must be a tag zsprior_screen generates"
+    assert len(rows_f4az) == 2 == len(F4A_MODELS)
     _zq3 = [x.strip() for x in
             next(r for r in zsprior_rows() if "_qwen3_8b_" in r).split(",")]
-    assert len(_zq3) == 25 and _zq3[0] == F4A_ZSPRIOR["qwen3_8b"]
-    assert _z[1:23] == _zq3[1:23], "mirror the qwen3_8b zsprior row exactly"
-    assert _z[1] == "frozen" and _z[9] == "0" and _z[22] == "1"
-    assert _z[23] == FAM_MODELS["qwen7b"]["base_model"] and _z[24] == "default"
+    assert len(_zq3) == 25 and _zq3[0] == zsprior_tag("qwen3_8b") == \
+        "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
+    assert _zq3[0] in _prior_f4a, \
+        "the archived Qwen3-8B zero-shot prior must stay a zsprior_screen tag"
     assert _zq3[23] == FAM_MODELS["qwen3_8b"]["base_model"] and _zq3[24] == "0"
+    for _r, _m in zip(rows_f4az, F4A_MODELS):
+        _z = [x.strip() for x in _r.split(",")]
+        assert len(_z) == 25 and _z[0] == F4A_ZSPRIOR[_m], _r
+        assert _z[0] not in _prior_f4a and _z[0] not in set(_f4a_tags), \
+            ("an _a100 prior tag must be NEW to every registered config", _z[0])
+        assert _z[0] != _zq3[0]
+        assert _z[1:23] == _zq3[1:23], "mirror the qwen3_8b zsprior row exactly"
+        assert _z[1] == "frozen" and _z[9] == "0" and _z[22] == "1"
+        assert _z[23] == FAM_MODELS[_m]["base_model"], _r
+        assert _z[24] == FAM_MODELS[_m]["chatthink"] == \
+            ("0" if _m == "qwen3_8b" else "default"), _r
+    assert len({r.split(",")[0].strip() for r in rows_f4az}) == 2
+    # the old H100-pinned qwen7b prior tag never produced a result and is
+    # OUT of every config: no key may generate it, no F4A constant names it
+    assert "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0" not in _prior_f4a
+    assert "pofdzsprior_qwen7b_w0p5_l0p2_es0_s0" not in F4A_ZSPRIOR.values()
     assert len(files[os.path.join(HERE, f"configs_pofd_{ZSPRIOR_KEY}.txt")]) \
         == ZSPRIOR_EXPECT_NEW == 4
     _f4az_sub = f4a_zsprior_sub()
 
     def _f4a_body(sub, key):
         # everything below the header EXCEPT the requirements line, which
-        # (2026-08-26) additionally pins the H100: the archived template's
-        # ">= 80 GB" now also matches B200 nodes the opdyn torch cannot drive
+        # pins the wave's hardware class: the archived template's
+        # ">= 80 GB" also matches B200 nodes the opdyn torch cannot drive
         return [l for l in sub.replace(f"configs_pofd_{key}.txt",
                                        "configs_pofd_KEY.txt").splitlines()
                 if not l.startswith("#") and not l.startswith("requirements")]
@@ -13774,14 +13866,15 @@ def main():
         "the zsprior sub must be the archived template below the header"
     _f4az_req = next(l for l in _f4az_sub.splitlines()
                      if l.startswith("requirements"))
-    assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in _f4az_req \
-        and "TARGET.CUDAGlobalMemoryMb >= 80000" in _f4az_req, _f4az_req
-    assert "<=" not in _f4az_sub
+    assert f'(TARGET.CUDADeviceName == "{F4A_GPU_NAME}")' in _f4az_req \
+        and "(TARGET.CUDAGlobalMemoryMb >= 80000)" in _f4az_req \
+        and "(TARGET.Machine =!= MY.LastRemoteHost)" in _f4az_req, _f4az_req
+    assert "<=" not in _f4az_sub and "H100" not in _f4az_sub, \
+        "the zero-shot priors are served on the wave's single hardware class"
+    assert "2 job(s)" in _f4az_sub
     p = os.path.join(HERE, f"configs_pofd_{F4A_ZSPRIOR_KEY}.txt")
     files[p] = rows_f4az
-    expected[p] = 1
-    assert 'CUDADeviceName == "NVIDIA H100 80GB HBM3"' in f4a_zsprior_sub(), \
-        "the zero-shot prior must be served on an H100 (B200 nodes match >= 80 GB)"
+    expected[p] = 2
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_ZSPRIOR_KEY}.sub")] = _f4az_sub
 
     # ---- targeted horizon extensions (F4A ext), manifest-driven ---------
@@ -13806,6 +13899,9 @@ def main():
         _f4ax_sub = f4a_sub("ext")
         assert next(l for l in _f4ax_sub.splitlines()
                     if l.startswith("environment")) == _f4a_env
+        assert next(l for l in _f4ax_sub.splitlines()
+                    if l.startswith("requirements")) == _f4a_req
+        assert "H100" not in _f4ax_sub
         p = os.path.join(HERE, f"configs_pofd_{F4A_EXT_KEY}.txt")
         files[p] = rows_f4ax
         expected[p] = len(rows_f4ax)

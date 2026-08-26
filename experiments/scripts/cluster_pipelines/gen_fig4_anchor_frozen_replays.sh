@@ -61,9 +61,13 @@ SEED=0
 ALPHA=0.5
 EPS_AI=1.0
 
-QWEN3_SRC="notes/pofd/cluster/pofdzsprior_qwen3_8b_w0p5_l0p2_es0_s0"
-QWEN3_SHA="fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"
-QWEN7B_SRC="notes/pofd/cluster/pofdzsprior_qwen7b_w0p5_l0p2_es0_s0"
+# HARDWARE CLASS (2026-08-26): the H100 pool vanished from the cluster, so the
+# whole Figure-4 anchor wave -- both zero-shot priors included -- runs on
+# A100-SXM4-80GB; replay_frozen_offline refuses a source served elsewhere.
+EXPECT_GPU="NVIDIA A100-SXM4-80GB"
+QWEN3_SRC="notes/pofd/cluster/pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"
+QWEN3_SHA=""        # fill from the F4A checker's zsprior verdict once the A100 prior is pulled
+QWEN7B_SRC="notes/pofd/cluster/pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0"
 QWEN7B_SHA=""       # fill from the F4A checker's zsprior verdict once pulled
 
 ES_LIST="0.05 0.2"
@@ -119,6 +123,7 @@ replay_one () {
   $RUN "$REPLAY" \
     --from-run "$d" \
     --expect-sha "$sha" \
+    --expect-gpu "$EXPECT_GPU" \
     --innate-k "$K" \
     --w-plat "$W" \
     --eps-social "$ES" \

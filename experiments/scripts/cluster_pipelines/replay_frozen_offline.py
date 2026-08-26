@@ -62,7 +62,8 @@ DEFAULT_OUT = REPO / "notes" / "pofd" / "frozen_replay"
 H100_MARKER = "H100"
 
 
-def load_frozen_vector(run_dir, expect_sha=None, require_h100=True):
+def load_frozen_vector(run_dir, expect_sha=None, require_h100=True,
+                       gpu_marker=None):
     """The constant served vector of an archived frozen K=D=0 run.
 
     Hard-fails unless the run is on an H100, its predictions are constant
@@ -72,12 +73,17 @@ def load_frozen_vector(run_dir, expect_sha=None, require_h100=True):
     import json
     cfg = json.load(open(run_dir / "config.json"))
     gpu = ((cfg.get("hardware") or {}).get("gpu_name") or "")
-    if require_h100 and H100_MARKER not in gpu:
+    # gpu_marker (2026-08-26): the hardware class the CALLER declares its
+    # wave runs on (e.g. "NVIDIA A100-SXM4-80GB" for the Figure-4 anchor
+    # wave while the H100 pool is down). Default keeps the H100 rule.
+    marker = gpu_marker or H100_MARKER
+    if require_h100 and marker not in gpu:
         raise SystemExit(
             f"[frozen] REFUSED: {run_dir.name} ran on {gpu or 'unknown GPU'}, "
-            f"not an {H100_MARKER}. Greedy decoding is bit-reproducible only "
+            f"not a {marker}. Greedy decoding is bit-reproducible only "
             f"within one GPU architecture and the archived A100 frozen cell "
-            f"differs from the H100 prior in 17 of 723 agents.")
+            f"differs from the H100 prior in 17 of 723 agents; a wave's "
+            f"prior must come from the wave's own hardware class.")
     if cfg.get("training_style") != "frozen" or cfg.get("icl_k") not in (0,) \
             or cfg.get("icl_days") not in (0,):
         raise SystemExit(
@@ -116,6 +122,11 @@ def main():
                     "prediction vector (CPU)")
     ap.add_argument("--from-run", required=True,
                     help="archived H100 frozen K=D=0 run directory")
+    ap.add_argument("--expect-gpu", default=None,
+                    help="hardware class the source run must have served on "
+                         "(substring of config.hardware.gpu_name); default "
+                         "H100. The Figure-4 anchor wave passes "
+                         "'NVIDIA A100-SXM4-80GB'.")
     ap.add_argument("--expect-sha", default=None,
                     help="canonical prediction sha256 (from the audit "
                          "manifest); mismatch is a hard failure")
@@ -153,7 +164,8 @@ def main():
         ap.error("--peer-gate-mode all_open with --eps-social 0 is "
                  "contradictory (eps_social=0 is the NO-PEER condition)")
 
-    vec, sha, src = load_frozen_vector(args.from_run, args.expect_sha)
+    vec, sha, src = load_frozen_vector(args.from_run, args.expect_sha,
+                                       gpu_marker=args.expect_gpu)
     setup = PP.extract_loader()(
         REPO / "experiments/data/movielens/ml-100k", "Action")
     if vec.shape[0] != int(setup["n"]):
@@ -163,6 +175,7 @@ def main():
     cfg = PP.build_config(args, setup)
     cfg.update({
         "platform": "frozen_offline_replay",
+        "expected_gpu": args.expect_gpu or H100_MARKER,
         "frozen_pred_sha256": sha,
         # the model name comes from the SOURCE RUN's config, never a
         # literal: the 2026-08-24 audit caught nine artifacts whose note
