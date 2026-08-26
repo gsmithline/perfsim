@@ -5,328 +5,328 @@
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0p5_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0_es0p05_anch2_s0_r30"
    }
   ],
   "prod1": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0p5_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w1_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w1_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0p2_es0p2_anch2_s0_r30"
    }
   ],
   "prod2": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p25_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p25_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p2_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0p2_es0p2_anch2_s0_r30"
    }
   ],
   "prod3": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p75_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p75_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w1_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w1_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0p5_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0p5_es0p05_anch2_s0_r30"
    }
   ],
   "prod4": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0p5_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0p5_es0p05_anch2_s0_r30"
    }
   ],
   "prod5": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0p2_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0p2_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w1_k1_es0p05_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_es0p05_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0p2_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k1_es0p2_anch2_s0_r30"
    }
   ],
   "prod6": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0p2_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k1_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p2_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k1_es0p2_anch2_s0_r30"
    }
   ],
   "prod7": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0p5_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0p5_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0p2_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0p2_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p75_k0_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p75_k0_es0p2_anch2_s0_r30"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff.sub",
-    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w1_k1_es0p2_anch2_s0_r30"
+    "tag": "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_es0p2_anch2_s0_r30"
    }
   ],
   "smoke0": [
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff_smoke.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff_smoke.sub",
-    "tag": "pofdf4asmk_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
+    "tag": "pofdf4asmk_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff_smoke.txt",
     "sub": "experiments/condor/at_pofd_fig4_anchor_tradeoff_smoke.sub",
-    "tag": "pofdf4asmk_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
+    "tag": "pofdf4asmk_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
    },
    {
     "configs": "experiments/condor/configs_pofd_fig4_anchor_tradeoff_zsprior.txt",

@@ -22,7 +22,7 @@
 #   in {1, .5, .2, 0}.
 #
 # 60 ARTIFACTS, named per gen_pofd_sweep.f4a_frozen_name:
-#   frozen_f4a_{model}_w{beta}_k{gamma}_es{es}_sw1_r30.pt
+#   frozen_f4a_{model}_w{beta}_k{gamma}_es{es}_sw100_r30.pt
 #   per es (30): per model 12 (beta in {.25,.5,.75} x 4 gammas) + 1
 #   (beta = 1, gamma = 1: z = served exactly, gamma drops out, so ONE
 #   artifact stands in for every gamma) + 4 SHARED beta = 0 cells
@@ -56,7 +56,7 @@ cd "$(dirname "$0")/../../.."
 
 OUT="notes/pofd/fig4_anchor/frozen"
 ROUNDS=30
-SWEEPS=1
+SWEEPS=100      # 2026-08-26: the wave runs 100 Deffuant sweeps per round
 SEED=0
 ALPHA=0.5
 EPS_AI=1.0

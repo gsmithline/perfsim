@@ -53,7 +53,7 @@ def test_build_cell_reproduces_the_single_gpu_env_and_args():
                 assert argv[1] == "frozen"
             else:
                 assert env["TRAIN_WITNESS"] == "1" and env["PARSE_MODE"] == "strict"
-                assert env["PEER_GATE_MODE"] == "threshold" and env["AB_SWEEPS"] == "1"
+                assert env["PEER_GATE_MODE"] == "threshold" and env["AB_SWEEPS"] == "100"
                 assert env["INNATE_LAMBDA"] == row["lam"] and argv[1] == "sft_kl"
     assert len(seen) == 64
 

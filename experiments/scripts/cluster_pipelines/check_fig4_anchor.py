@@ -31,7 +31,7 @@ HARD-FAIL (exit 1) unless ALL of (each item fails by name, nothing warns):
      horizon; no foreign pofdf4a_ run dir under the roots.
   2. CONFIG PINS per run -- w_plat, innate_lambda, eps (social), kl_beta=2,
      kl_direction=forward, training_style=sft_kl, kl_ref_adapter="",
-     ab_sweeps=1, deffuant_alpha=0.5, n_rounds, seed=0, dataset/ml_target,
+     ab_sweeps=100, deffuant_alpha=0.5, n_rounds, seed=0, dataset/ml_target,
      base_model, ai_gate_mode=all_open, peer_gate_mode=threshold,
      ai_gate_reference=anchor, population_update=...anchored..._v2,
      pop_model=ab, icl_k=0, train_cap=723, n_labeled=723, lora_r=512,

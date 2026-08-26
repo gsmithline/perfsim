@@ -143,7 +143,7 @@ def _config(g, model, es, beta, gamma, rounds, tag, git_sha):
     m = g.FAM_MODELS[model]
     cfg = {"run_tag": tag, "w_plat": beta, "innate_lambda": gamma, "eps": es,
            "eps_ai": 1.0, "kl_beta": 2.0, "kl_direction": "forward",
-           "training_style": "sft_kl", "kl_ref_adapter": "", "ab_sweeps": 1,
+           "training_style": "sft_kl", "kl_ref_adapter": "", "ab_sweeps": 100,
            "deffuant_alpha": 0.5, "n_rounds": rounds, "seed": 0,
            "dataset": "movielens", "ml_target": "Action",
            "base_model": m["base_model"], "ai_gate_mode": "all_open",
@@ -194,7 +194,7 @@ def build_cell(root, g, model, es, beta, gamma, rounds, smoke=False,
         pred = pred.clone()
         pred[0] = 1.0
     traj = [{"round": t, "contact": contact, "accepted": 700 - t,
-             "peer_gate_mode": peer_gate_mode, "peer_pairs": N,
+             "peer_gate_mode": peer_gate_mode, "peer_pairs": N * 100,
              "s_tag": tag, "op_mean": float(op[t].mean())}
             for t in range(rounds)]
     if no_peer_fields:
@@ -686,7 +686,7 @@ def test_dup_cell_present_as_a_run_dir_is_extra(c, g, prod):
     assert any(e.startswith("EXTRA") and "algebraic dup" in e and dtag in e
                for e in _wave_errors(v))
     # a foreign pofdf4a_ dir is EXTRA too
-    foreign = prod / "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p1_anch2_s0_r30"
+    foreign = prod / "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p1_anch2_s0_r30"
     foreign.mkdir()
     try:
         rc, v, _ = run_checker(c, prod)

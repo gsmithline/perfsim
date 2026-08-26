@@ -51,11 +51,11 @@ SUB_ZS = f"at_pofd_{KEY}_zsprior.sub"
 SUB_EXT = f"at_pofd_{KEY}_ext.sub"
 
 TAG_RE = re.compile(
-    r"^pofdf4a_(?P<model>qwen7b|qwen3_8b)_fwdlam2_sw1_eaopen"
+    r"^pofdf4a_(?P<model>qwen7b|qwen3_8b)_fwdlam2_sw100_eaopen"
     r"_w(?P<w>0|0p25|0p5|0p75|1)_k(?P<k>1|0p5|0p2|0)_es(?P<es>0p05|0p2)"
     r"_anch2_s0_r(?P<r>30|60|100)$")
 SMOKE_TAG_RE = re.compile(
-    r"^pofdf4asmk_(?P<model>qwen7b|qwen3_8b)_fwdlam2_sw1_eaopen"
+    r"^pofdf4asmk_(?P<model>qwen7b|qwen3_8b)_fwdlam2_sw100_eaopen"
     r"_w0p5_k0p5_es0p2_anch2_s0_r3$")
 
 # files whose bytes the new block must not move
@@ -178,11 +178,11 @@ def test_cells_are_80_with_the_exact_dedup_algebra(gen):
 
 def test_tag_grammar_matches_the_contract(gen):
     assert gen.f4a_tag("qwen3_8b", 0.05, 0.25, 0.2) == \
-        "pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
+        "pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p25_k0p2_es0p05_anch2_s0_r30"
     assert gen.f4a_tag("qwen7b", 0.2, 1.0, 1.0) == \
-        "pofdf4a_qwen7b_fwdlam2_sw1_eaopen_w1_k1_es0p2_anch2_s0_r30"
+        "pofdf4a_qwen7b_fwdlam2_sw100_eaopen_w1_k1_es0p2_anch2_s0_r30"
     assert gen.f4a_tag("qwen7b", 0.2, 0.5, 0.5, rounds=3, smoke=True) == \
-        "pofdf4asmk_qwen7b_fwdlam2_sw1_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
+        "pofdf4asmk_qwen7b_fwdlam2_sw100_eaopen_w0p5_k0p5_es0p2_anch2_s0_r3"
     assert gen.f4a_tag("qwen3_8b", 0.2, 0.0, 0.0, rounds=60).endswith("_r60")
 
 
@@ -203,7 +203,7 @@ def test_60_rows_whose_columns_match_their_tags(generated, gen):
         assert m.group("r") == "30" and d["nrounds"] == "30"
         assert d["style"] == "sft_kl" and d["beta"] == "2"
         assert d["seed"] == "0" and d["kldir"] == "forward"
-        assert d["sweeps"] == "1" and d["iclk"] == "0" and d["snap"] == "-1"
+        assert d["sweeps"] == "100" and d["iclk"] == "0" and d["snap"] == "-1"
         assert d["uselora"] == "1" and d["fresh"] == "1"
         assert d["gamma"] == "0.0"                      # homophily gamma
         assert d["deploy_every"] == "1" and d["regime"] == "replace"
@@ -498,14 +498,14 @@ def test_extension_files_appear_only_with_a_manifest(tmp_path_factory, gen):
 def test_frozen_replay_names_are_60_with_shared_beta0(gen):
     names = {gen.f4a_frozen_name(*c[5]) for c in gen.f4a_cells()}
     assert len(names) == 60
-    assert all(n.startswith("frozen_f4a_") and n.endswith("_sw1_r30.pt")
+    assert all(n.startswith("frozen_f4a_") and n.endswith("_sw100_r30.pt")
                for n in names)
     assert sum(1 for n in names if "_shared_" in n) == 8
     assert gen.f4a_frozen_name("qwen7b", 0.05, 0.0, 0.2) == \
         gen.f4a_frozen_name("qwen3_8b", 0.05, 0.0, 0.2) == \
-        "frozen_f4a_shared_w0_k0p2_es0p05_sw1_r30.pt"
+        "frozen_f4a_shared_w0_k0p2_es0p05_sw100_r30.pt"
     assert gen.f4a_frozen_name("qwen3_8b", 0.2, 0.75, 1.0) == \
-        "frozen_f4a_qwen3_8b_w0p75_k1_es0p2_sw1_r30.pt"
+        "frozen_f4a_qwen3_8b_w0p75_k1_es0p2_sw100_r30.pt"
     assert gen.f4a_frozen_name("qwen7b", 0.2, 1.0, 1.0, rounds=60).endswith("_r60.pt")
     per_es = {}
     for n in names:

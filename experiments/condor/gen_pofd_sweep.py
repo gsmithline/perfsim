@@ -9547,7 +9547,7 @@ F4A_GAMMAS = (1.0, 0.5, 0.2, 0.0)
 F4A_SEED = 0
 F4A_ROUNDS = 30
 F4A_SMOKE_ROUNDS = 3
-F4A_SWEEPS = 1
+F4A_SWEEPS = 100      # 2026-08-26: corrected from 1 -- the user's spec is 100 Deffuant sweeps per round
 F4A_LAMBDA = 2.0
 F4A_ALPHA = 0.5
 # The 2026-08-25 reuse audit proved F4A_REUSED == {} (0/80 exact
@@ -9629,7 +9629,7 @@ def f4a_cells():
 
 
 def f4a_tag(model, es, beta, gamma, rounds=F4A_ROUNDS, smoke=False):
-    """pofdf4a_qwen3_8b_fwdlam2_sw1_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30."""
+    """pofdf4a_qwen3_8b_fwdlam2_sw100_eaopen_w0p5_k0p2_es0p05_anch2_s0_r30."""
     pre = "pofdf4asmk" if smoke else "pofdf4a"
     return (f"{pre}_{model}_fwdlam{_num(F4A_LAMBDA)}_sw{F4A_SWEEPS}_eaopen"
             f"_w{_num(beta)}_k{_num(gamma)}_es{_num(es)}_{S3_OP_TOKEN}"
@@ -13796,7 +13796,7 @@ def main():
     # lambda = inf replay names: 60 unique (beta=0 shared across models)
     _f4_frz = {f4a_frozen_name(*s) for (*_c, s) in _f4}
     assert len(_f4_frz) == 60, len(_f4_frz)
-    assert all(n.startswith("frozen_f4a_") and n.endswith("_sw1_r30.pt")
+    assert all(n.startswith("frozen_f4a_") and n.endswith("_sw100_r30.pt")
                for n in _f4_frz)
     assert sum(1 for n in _f4_frz if "_shared_" in n) == 8
     assert all("_shared_" in f4a_frozen_name(m, e, 0.0, g)
@@ -13840,7 +13840,7 @@ def main():
         assert _es in F4A_ES and _beta in F4A_BETAS and _gam in F4A_GAMMAS, _r
         assert _c[10] == "0.0", _r                   # homophily gamma stays 0
         assert _c[12] == "loop" and _c[13] == "0.0", _r
-        assert _c[15] == "forward" and int(_c[16]) == F4A_SWEEPS == 1, _r
+        assert _c[15] == "forward" and int(_c[16]) == F4A_SWEEPS == 100, _r
         assert int(_c[17]) == 0 and int(_c[18]) == -1, _r     # ICL_K 0, no snap
         assert int(_c[19]) == 1 and int(_c[20]) == 1, _r      # LoRA, fresh
         assert int(_c[21]) == 16 and int(_c[22]) == 0, _r
@@ -13849,7 +13849,7 @@ def main():
         assert _c[25] == FAM_MODELS[_model]["chatthink"], _r
         assert _c[25] == ("0" if _model == "qwen3_8b" else "default"), _r
         assert f"_w{_num(_beta)}_k{_num(_gam)}_es{_num(_es)}_" in _t, _r
-        assert "_fwdlam2_sw1_eaopen_" in _t and f"_{S3_OP_TOKEN}_" in _t, _r
+        assert "_fwdlam2_sw100_eaopen_" in _t and f"_{S3_OP_TOKEN}_" in _t, _r
         assert _t.endswith(f"_s{F4A_SEED}_r{F4A_ROUNDS}"), _r
         _key = (_model, _es, _beta, _gam)
         assert f4a_source(*_key) == _key, ("a dup must never queue", _r)

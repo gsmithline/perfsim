@@ -106,13 +106,13 @@ def f4a_cells():
 
 def f4a_tag(model, es, beta, gamma, rounds=F4A_ROUNDS, smoke=False):
     pre = "pofdf4asmk" if smoke else "pofdf4a"
-    return (f"{pre}_{model}_fwdlam2_sw1_eaopen_w{_num(beta)}_k{_num(gamma)}"
+    return (f"{pre}_{model}_fwdlam2_sw100_eaopen_w{_num(beta)}_k{_num(gamma)}"
             f"_es{_num(es)}_anch2_s0_r{rounds}")
 
 
 def f4a_frozen_name(model, es, beta, gamma, rounds=30):
     return (f"frozen_f4a_{model}_w{_num(beta)}_k{_num(gamma)}_es{_num(es)}"
-            f"_sw1_r{rounds}.pt")
+            f"_sw100_r{rounds}.pt")
 
 
 def f4a_ext_requests():
@@ -182,7 +182,7 @@ def _config(model, es, beta, gamma, rounds):
         "run_tag": None, "w_plat": float(beta), "innate_lambda": float(gamma),
         "eps": float(es), "eps_ai": 1.0, "kl_beta": 2.0,
         "kl_direction": "forward", "training_style": "sft_kl",
-        "kl_ref_adapter": "", "ab_sweeps": 1, "deffuant_alpha": 0.5,
+        "kl_ref_adapter": "", "ab_sweeps": 100, "deffuant_alpha": 0.5,
         "n_rounds": rounds, "seed": 0, "dataset": "movielens",
         "ml_target": "Action", "base_model": BASE_MODEL[model],
         "ai_gate_mode": "all_open", "peer_gate_mode": "threshold",
@@ -229,7 +229,7 @@ def make_trained(model, es, beta, gamma, innate, zs, rounds=ROUNDS,
         "pred_raw": torch.as_tensor(pred, dtype=torch.float32),
         "innate": torch.as_tensor(innate, dtype=torch.float32),
         "trajectory": [{"round": t, "contact": 1.0,
-                        "peer_gate_mode": "threshold", "peer_pairs": N,
+                        "peer_gate_mode": "threshold", "peer_pairs": N * 100,
                         "accepted": N - 50} for t in range(rounds)],
         "sft_dose": [{"global_step": 181 * (t + 1), "trainer_seed": 0,
                       "n_rows": N} for t in range(rounds)],
@@ -249,7 +249,7 @@ def make_frozen(model_or_shared, es, beta, gamma, innate, zs, rounds=ROUNDS):
         "population_update": "nested_ai_anchored_then_social_v2",
         "innate_k": float(gamma), "w_plat": float(beta),
         "eps_social": float(es), "eps_ai": 1.0, "ai_gate_mode": "all_open",
-        "peer_gate_mode": "threshold", "ab_sweeps": 1,
+        "peer_gate_mode": "threshold", "ab_sweeps": 100,
         "deffuant_alpha": 0.5, "gamma_bias": 0.0, "rounds": rounds,
         "seed": 0, "dataset": "movielens", "ml_target": "Action",
         "n_agents": N, "base_model": BASE_MODEL[m],
