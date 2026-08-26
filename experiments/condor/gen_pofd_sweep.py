@@ -9718,6 +9718,15 @@ def f4a_frozen_name(model, es, beta, gamma, rounds=F4A_ROUNDS):
 F4A_SINGLE_GPU_MEM = "200G"
 
 
+def f4a_first_rows():
+    """The complement of f4a_rest_rows(): the cells of node groups prod0-3,
+    as single-GPU rows (200G). Used on 2026-08-26 when the sw1 node jobs
+    died in the quota outage at 4 starts (a 5th failure removes them) while
+    ~40 shared A100 GPUs were free. Submit ONLY after removing those node
+    jobs; the two keys are disjoint by construction."""
+    return f4a_rest_rows(first_groups=("prod4", "prod5", "prod6", "prod7"))
+
+
 def f4a_rest_rows(first_groups=("prod0", "prod1", "prod2", "prod3")):
     """SECOND-HALF KEY (2026-08-26 capacity move): the production rows whose
     node groups are NOT in `first_groups` -- the cells still waiting for a
@@ -9747,17 +9756,22 @@ def f4a_rest_rows(first_groups=("prod0", "prod1", "prod2", "prod3")):
 def f4a_sub(kind="main"):
     """kind: 'main' | 'smoke' | 'ext' | 'rest' (second-half cells only)."""
     key = {"main": F4A_KEY, "smoke": F4A_SMOKE_KEY, "ext": F4A_EXT_KEY,
-           "rest": F4A_KEY + "_rest"}[kind]
+           "rest": F4A_KEY + "_rest",
+           "first": F4A_KEY + "_first"}[kind]
     rows = {"main": f4a_rows, "smoke": f4a_smoke_rows,
-            "ext": f4a_ext_rows, "rest": f4a_rest_rows}[kind]()
+            "ext": f4a_ext_rows, "rest": f4a_rest_rows,
+            "first": f4a_first_rows}[kind]()
     what = {"main": "60 TRAINED CELLS (the 20 dups are algebraic, 0 jobs)",
             "smoke": "3-ROUND SMOKE (both models at es=.2 beta=.5 gamma=.5)",
             "ext": ("TARGETED HORIZON EXTENSIONS (60/100 rounds, driven by "
                     "fig4_anchor_extension_request.json)"),
             "rest": ("SECOND-HALF CELLS AS SINGLE-GPU JOBS (node groups prod4-7; "
-                     "submit ONLY after removing those idle node jobs)")}[kind]
+                     "submit ONLY after removing those idle node jobs)"),
+            "first": ("FIRST-HALF CELLS AS SINGLE-GPU JOBS (node groups prod0-3; "
+                      "submit ONLY after removing those node jobs)")}[kind]
     rounds = {"main": str(F4A_ROUNDS), "smoke": str(F4A_SMOKE_ROUNDS),
-              "ext": "60/100 (per-row nrounds)", "rest": str(F4A_ROUNDS)}[kind]
+              "ext": "60/100 (per-row nrounds)", "rest": str(F4A_ROUNDS),
+              "first": str(F4A_ROUNDS)}[kind]
     return F4A_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=F4A_GPU_NAME, bad=BAD_NODE_REQ,
         rounds=rounds, kind=what,
@@ -14000,6 +14014,13 @@ def main():
     files[p] = rows_f4a
     expected[p] = F4A_N_GPU - len(F4A_REUSED)
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _f4a_sub
+    _f4a_first = f4a_first_rows()
+    assert len(_f4a_first) == 32
+    assert not (set(r.split(",")[0].strip() for r in _f4a_first)
+                & set(r.split(",")[0].strip() for r in f4a_rest_rows()))
+    p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_first.txt")
+    files[p] = _f4a_first; expected[p] = 32
+    cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_first.sub")] = f4a_sub("first")
     _f4a_rest = f4a_rest_rows()
     assert len(_f4a_rest) == 28 and all(r.split(",")[26].strip() == F4A_SINGLE_GPU_MEM for r in _f4a_rest)
     assert set(r.split(",")[0].strip() for r in _f4a_rest) < set(r.split(",")[0].strip() for r in rows_f4a)
@@ -14180,6 +14201,11 @@ def main():
             p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}.txt")
             files[p] = _rows1; expected[p] = 60
             cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _sub1
+            _first1 = f4a_first_rows()
+            assert len(_first1) == 32 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _first1)
+            p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_first.txt")
+            files[p] = _first1; expected[p] = 32
+            cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_first.sub")] = f4a_sub("first")
             _rest1 = f4a_rest_rows()
             assert len(_rest1) == 28 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _rest1)
             assert all(r.split(",")[26].strip() == F4A_SINGLE_GPU_MEM for r in _rest1)
