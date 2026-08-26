@@ -66,9 +66,9 @@ EPS_AI=1.0
 # A100-SXM4-80GB; replay_frozen_offline refuses a source served elsewhere.
 EXPECT_GPU="NVIDIA A100-SXM4-80GB"
 QWEN3_SRC="notes/pofd/cluster/pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"
-QWEN3_SHA=""        # fill from the F4A checker's zsprior verdict once the A100 prior is pulled
+QWEN3_SHA="8d63ac2cc99b3aa83fb4ac87b9486fa62baff7a64f39f8509f32e52fb527005c"        # fill from the F4A checker's zsprior verdict once the A100 prior is pulled
 QWEN7B_SRC="notes/pofd/cluster/pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0"
-QWEN7B_SHA=""       # fill from the F4A checker's zsprior verdict once pulled
+QWEN7B_SHA="4f9822a13eff8c457fcfe5037baffae2a87975b178d65b1f9343f7d404044303"       # fill from the F4A checker's zsprior verdict once pulled
 
 ES_LIST="0.05 0.2"
 MODELS="qwen3_8b qwen7b"

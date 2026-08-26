@@ -9579,7 +9579,10 @@ F4A_ZSPRIOR = {m: f4a_zsprior_tag(m) for m in F4A_MODELS}
 # UNPINNED until the A100 serves run: the coordinator pins sha256 of
 # pred_raw[0] (float32 bytes, as check_fig4_anchor records it) per model
 # afterwards; None makes the checker's sha pin a no-op for that model
-F4A_ZSPRIOR_SHA = {"qwen7b": None, "qwen3_8b": None}
+F4A_ZSPRIOR_SHA = {      # A100 serves of 2026-08-26 (node job 17483403, g181, git bcacdc2)
+    "qwen7b": "4f9822a13eff8c457fcfe5037baffae2a87975b178d65b1f9343f7d404044303",
+    "qwen3_8b": "8d63ac2cc99b3aa83fb4ac87b9486fa62baff7a64f39f8509f32e52fb527005c",
+}
 # the ARCHIVED H100-served vectors -- WARN-only references in the checker,
 # never a pin: an A100 serve of the same checkpoint is expected to differ
 # in a handful of agents (qwen7b: 7 archived H100 k0 cells agree;

@@ -15,6 +15,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import os
 import shutil
 import sys
@@ -58,7 +59,10 @@ def g():
     assert mod.F4A_ZSPRIOR == {
         "qwen7b": "pofdzsprior_qwen7b_w0p5_l0p2_es0_a100_s0",
         "qwen3_8b": "pofdzsprior_qwen3_8b_w0p5_l0p2_es0_a100_s0"}
-    assert mod.F4A_ZSPRIOR_SHA == {"qwen7b": None, "qwen3_8b": None}
+    # pinned once the A100 serves landed (2026-08-26); each is None or 64-hex
+    assert set(mod.F4A_ZSPRIOR_SHA) == {"qwen7b", "qwen3_8b"}
+    assert all(v is None or re.fullmatch(r"[0-9a-f]{64}", v)
+               for v in mod.F4A_ZSPRIOR_SHA.values())
     assert mod.F4A_ZSPRIOR_WARN_SHA == {
         "qwen7b": "1674ee5f8d833f46de672791d933e1d3bdeefb07484c2d110dec84ce71da30bb",
         "qwen3_8b": "fdfdeab7466345159cd7ae16ee487d4982d686cfdb93287780ae4d109ccba3f7"}
@@ -527,7 +531,7 @@ def test_unpinned_zero_shot_prior_sha_only_warns(c, g, prod, model):
     # F4A_ZSPRIOR_SHA[model] is None (the production state until the A100
     # serve is pinned): no hard pin; a vector differing from the archived
     # H100-served reference is a WARN, never a failure, and both shas print
-    assert g.F4A_ZSPRIOR_SHA[model] is None
+    assert g.F4A_ZSPRIOR_SHA[model] is None   # the fixture unpins it
     build_zsprior(prod, g, model, pred=_other_vector(model))
     try:
         rc, v, out = run_checker(c, prod)
