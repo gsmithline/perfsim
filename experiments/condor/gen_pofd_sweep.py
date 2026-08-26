@@ -9770,7 +9770,11 @@ request_cpus      = 4
 request_memory    = 128G
 request_disk      = 60G
 request_gpus      = 1
-requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
+# H100 PIN (2026-08-26): the archived zsprior template only required >= 80 GB;
+# a B200 (sm_100, unsupported by the opdyn torch 2.5.1) now matches that and
+# killed the first attempt (i402, exit 1 at CUDA init). replay_frozen_offline
+# also refuses non-H100 sources, so the prior MUST be served on an H100.
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3") && (TARGET.Machine =!= MY.LastRemoteHost) && (TARGET.Machine != "g106.internal.cluster.is.localnet") && (TARGET.Machine != "i104.internal.cluster.is.localnet")
 
 getenv            = False
 environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI=$(eps_ai) AI_GATE_MODE=$(gatemode) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=forward INNATE_LAMBDA=0.2 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=0 SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_zsprior_screen"
@@ -13759,16 +13763,25 @@ def main():
     _f4az_sub = f4a_zsprior_sub()
 
     def _f4a_body(sub, key):
+        # everything below the header EXCEPT the requirements line, which
+        # (2026-08-26) additionally pins the H100: the archived template's
+        # ">= 80 GB" now also matches B200 nodes the opdyn torch cannot drive
         return [l for l in sub.replace(f"configs_pofd_{key}.txt",
                                        "configs_pofd_KEY.txt").splitlines()
-                if not l.startswith("#")]
+                if not l.startswith("#") and not l.startswith("requirements")]
     assert _f4a_body(_f4az_sub, F4A_ZSPRIOR_KEY) == \
         _f4a_body(zsprior_sub(), ZSPRIOR_KEY), \
         "the zsprior sub must be the archived template below the header"
+    _f4az_req = next(l for l in _f4az_sub.splitlines()
+                     if l.startswith("requirements"))
+    assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in _f4az_req \
+        and "TARGET.CUDAGlobalMemoryMb >= 80000" in _f4az_req, _f4az_req
     assert "<=" not in _f4az_sub
     p = os.path.join(HERE, f"configs_pofd_{F4A_ZSPRIOR_KEY}.txt")
     files[p] = rows_f4az
     expected[p] = 1
+    assert 'CUDADeviceName == "NVIDIA H100 80GB HBM3"' in f4a_zsprior_sub(), \
+        "the zero-shot prior must be served on an H100 (B200 nodes match >= 80 GB)"
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_ZSPRIOR_KEY}.sub")] = _f4az_sub
 
     # ---- targeted horizon extensions (F4A ext), manifest-driven ---------

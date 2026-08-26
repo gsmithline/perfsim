@@ -335,8 +335,19 @@ def test_qwen7b_zero_shot_prior_mirrors_the_qwen3_row_on_its_own_sub(generated, 
     assert len(cols) == 25 and cols == _cols(generated["at_pofd_zsprior_screen.sub"])
     body = lambda s, k: [l for l in s.replace(f"configs_pofd_{k}.txt", "X")
                          .splitlines() if not l.startswith("#")]
-    assert body(generated[SUB_ZS], f"{KEY}_zsprior") == \
-        body(generated["at_pofd_zsprior_screen.sub"], "zsprior_screen")
+    # env + queue identical to the archived zsprior template; the ONLY
+    # difference is the requirements line, which now pins the H100 (the
+    # 2026-08-26 attempt landed on a B200 the opdyn torch cannot drive)
+    def _lines(text, key):
+        # body() already returns a list of non-comment lines
+        return [l for l in body(text, key)
+                if not l.startswith("requirements") and not l.startswith("#")]
+    assert _lines(generated[SUB_ZS], f"{KEY}_zsprior") == \
+        _lines(generated["at_pofd_zsprior_screen.sub"], "zsprior_screen")
+    req = next(l for l in generated[SUB_ZS].splitlines()
+               if l.startswith("requirements"))
+    assert 'TARGET.CUDADeviceName == "NVIDIA H100 80GB HBM3"' in req
+    assert "TARGET.CUDAGlobalMemoryMb >= 80000" in req
     assert "1 job" in generated[SUB_ZS]
     assert "<=" not in generated[SUB_ZS]
     # the recorded prior hash: Qwen3 pinned to the replay record, Qwen2.5 open
