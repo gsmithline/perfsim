@@ -9715,6 +9715,9 @@ def f4a_frozen_name(model, es, beta, gamma, rounds=F4A_ROUNDS):
             f"_sw{F4A_SWEEPS}_r{rounds}.pt")
 
 
+F4A_SINGLE_GPU_MEM = "200G"
+
+
 def f4a_rest_rows(first_groups=("prod0", "prod1", "prod2", "prod3")):
     """SECOND-HALF KEY (2026-08-26 capacity move): the production rows whose
     node groups are NOT in `first_groups` -- the cells still waiting for a
@@ -9725,7 +9728,20 @@ def f4a_rest_rows(first_groups=("prod0", "prod1", "prod2", "prod3")):
     groups = f4a_node_groups()
     keep = {e["tag"] for g_, es_ in groups.items()
             if g_ != "smoke0" and g_ not in first_groups for e in es_}
-    return [r for r in f4a_rows() if r.split(",")[0].strip() in keep]
+    out = []
+    for r in f4a_rows():
+        c = [x.strip() for x in r.split(",")]
+        if c[0] not in keep:
+            continue
+        # SINGLE-GPU RAM (2026-08-26): a cell peaks at ~131 GB of host RAM
+        # (28 single-GPU jobs were held at the 90% cap of the 128G request:
+        # "over memory limit of 117964 MB, peak 130791 MB"); the node-packed
+        # runs never saw it because a whole node has 2 TB. Request 200G
+        # (cap 180 GB); the shared A100 hosts have >= 750 GB free.
+        assert c[26] == "128G", c
+        c[26] = F4A_SINGLE_GPU_MEM
+        out.append(", ".join(c))
+    return out
 
 
 def f4a_sub(kind="main"):
@@ -13985,7 +14001,8 @@ def main():
     expected[p] = F4A_N_GPU - len(F4A_REUSED)
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _f4a_sub
     _f4a_rest = f4a_rest_rows()
-    assert len(_f4a_rest) == 28 and set(r.split(",")[0].strip() for r in _f4a_rest) < set(_all_prod_tags_placeholder := [r.split(",")[0].strip() for r in rows_f4a])
+    assert len(_f4a_rest) == 28 and all(r.split(",")[26].strip() == F4A_SINGLE_GPU_MEM for r in _f4a_rest)
+    assert set(r.split(",")[0].strip() for r in _f4a_rest) < set(r.split(",")[0].strip() for r in rows_f4a)
     p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_rest.txt")
     files[p] = _f4a_rest; expected[p] = 28
     cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_rest.sub")] = f4a_sub("rest")
@@ -14165,6 +14182,7 @@ def main():
             cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _sub1
             _rest1 = f4a_rest_rows()
             assert len(_rest1) == 28 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _rest1)
+            assert all(r.split(",")[26].strip() == F4A_SINGLE_GPU_MEM for r in _rest1)
             p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}_rest.txt")
             files[p] = _rest1; expected[p] = 28
             cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}_rest.sub")] = f4a_sub("rest")
