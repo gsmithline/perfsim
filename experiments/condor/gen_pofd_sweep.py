@@ -9753,6 +9753,56 @@ F4A_NODE_KEY = F4A_KEY + "_node"
 F4A_NODE_SMOKE_KEY = F4A_NODE_KEY + "_smoke"
 F4A_NODE_MANIFEST = os.path.join(HERE, "nodepack_fig4_anchor_tradeoff.json")
 F4A_NODE_CELLS_PER_JOB = 8
+
+# SWEEP VARIANTS (2026-08-26). The primary wave is F4A_SWEEPS = 100; the
+# user also wants the ONE-sweep-per-round wave as a separate robustness
+# wave. Both are the SAME machinery: every f4a_* function reads the module
+# globals below at call time, so f4a_set_variant(1) re-points keys, tags,
+# node manifest and frozen names at the sw1 sibling
+# (fig4_anchor_tradeoff_sw1*, nodepack_fig4_anchor_tradeoff_sw1.json,
+# frozen_f4a_*_sw1_r30.pt). Nothing is shared but the two zero-shot priors.
+F4A_PRIMARY_SWEEPS = 100
+F4A_SWEEP_VARIANTS = (100, 1)
+_F4A_VARIANT_GLOBALS = ("F4A_SWEEPS", "F4A_KEY", "F4A_SMOKE_KEY", "F4A_EXT_KEY",
+                        "F4A_EXT_REQUEST_PATH", "F4A_NODE_KEY",
+                        "F4A_NODE_SMOKE_KEY", "F4A_NODE_MANIFEST")
+
+
+def f4a_variant_globals(sweeps):
+    if sweeps == F4A_PRIMARY_SWEEPS:
+        key, mani, ext = ("fig4_anchor_tradeoff", "nodepack_fig4_anchor_tradeoff.json",
+                          "fig4_anchor_extension_request.json")
+    else:
+        key = f"fig4_anchor_tradeoff_sw{sweeps}"
+        mani = f"nodepack_fig4_anchor_tradeoff_sw{sweeps}.json"
+        ext = f"fig4_anchor_sw{sweeps}_extension_request.json"
+    return {"F4A_SWEEPS": int(sweeps), "F4A_KEY": key, "F4A_SMOKE_KEY": key + "_smoke",
+            "F4A_EXT_KEY": key + "_ext", "F4A_EXT_REQUEST_PATH": os.path.join(HERE, ext),
+            "F4A_NODE_KEY": key + "_node", "F4A_NODE_SMOKE_KEY": key + "_node_smoke",
+            "F4A_NODE_MANIFEST": os.path.join(HERE, mani)}
+
+
+def f4a_set_variant(sweeps):
+    """Point every f4a_* function at the wave with `sweeps` Deffuant sweeps
+    (100 = primary, 1 = the robustness sibling). Returns the previous
+    values so f4a_variant() can restore them."""
+    assert sweeps in F4A_SWEEP_VARIANTS, sweeps
+    prev = {k: globals()[k] for k in _F4A_VARIANT_GLOBALS}
+    globals().update(f4a_variant_globals(sweeps))
+    return prev
+
+
+class f4a_variant:
+    """with f4a_variant(1): ... -- temporarily select the sw1 sibling."""
+    def __init__(self, sweeps):
+        self.sweeps = sweeps
+    def __enter__(self):
+        self.prev = f4a_set_variant(self.sweeps)
+        return self
+    def __exit__(self, *exc):
+        globals().update(self.prev)
+        return False
+
 F4A_NODE_PAIRS = (                       # sub suffix -> exact node totals
     ("a", {"hosts": ("g181", "g183"), "cpus": 128, "memory_mb": 2051936,
            "gpus": 8, "disk_kb": 22345412368}),
@@ -14056,6 +14106,60 @@ def main():
     assert sorted(f4a_node_rows("a") + f4a_node_rows("b")) == sorted(g for g in _ng if g != "smoke0")
     assert f4a_node_rows("a", smoke=True) == ["smoke0"] and not f4a_node_rows("b", smoke=True)
     cube_subs[F4A_NODE_MANIFEST] = f4a_node_manifest_text()
+
+    # ---- F4A sw1 sibling: the same wave with ONE sweep per round --------
+    _f4a100_tags = set(_all_prod)
+    _f4a100_rows = {r.split(",")[0].strip(): r for r in f4a_rows()}
+    _f4a100_env = next(l for l in f4a_sub("main").splitlines()
+                       if l.startswith("environment"))
+    for _sw in F4A_SWEEP_VARIANTS:
+        if _sw == F4A_PRIMARY_SWEEPS:
+            continue
+        with f4a_variant(_sw):
+            _rows1 = f4a_rows()
+            _tags1 = [r.split(",")[0].strip() for r in _rows1]
+            assert len(_rows1) == 60 and len(set(_tags1)) == 60
+            assert all(f"_sw{_sw}_" in t for t in _tags1)
+            assert not (set(_tags1) & _f4a100_tags)
+            for _r in _rows1:
+                _c = [x.strip() for x in _r.split(",")]
+                _c100 = [x.strip() for x in
+                         _f4a100_rows[_c[0].replace(f"_sw{_sw}_", f"_sw{F4A_PRIMARY_SWEEPS}_")].split(",")]
+                assert int(_c[16]) == _sw and _c[1:16] + _c[17:] == _c100[1:16] + _c100[17:], \
+                    "sw variants must differ ONLY in the sweeps column and tag"
+            _sub1 = f4a_sub("main")
+            assert next(l for l in _sub1.splitlines() if l.startswith("environment")) == _f4a100_env
+            _prior1 = {r.split(",")[0] for rows in files.values() for r in rows}
+            assert not (set(_tags1) & _prior1)
+            p = os.path.join(HERE, f"configs_pofd_{F4A_KEY}.txt")
+            files[p] = _rows1; expected[p] = 60
+            cube_subs[os.path.join(HERE, f"at_pofd_{F4A_KEY}.sub")] = _sub1
+            _rows1s = f4a_smoke_rows()
+            assert len(_rows1s) == 2 and all(f"_sw{_sw}_" in r.split(",")[0] for r in _rows1s)
+            p = os.path.join(HERE, f"configs_pofd_{F4A_SMOKE_KEY}.txt")
+            files[p] = _rows1s; expected[p] = 2
+            cube_subs[os.path.join(HERE, f"at_pofd_{F4A_SMOKE_KEY}.sub")] = f4a_sub("smoke")
+            _rows1x = f4a_ext_rows()
+            if _rows1x:
+                p = os.path.join(HERE, f"configs_pofd_{F4A_EXT_KEY}.txt")
+                files[p] = _rows1x; expected[p] = len(_rows1x)
+                cube_subs[os.path.join(HERE, f"at_pofd_{F4A_EXT_KEY}.sub")] = f4a_sub("ext")
+            _ng1 = f4a_node_groups()
+            assert [e["tag"] for g_, es_ in _ng1.items() if g_ != "smoke0" for e in es_] == _tags1
+            assert sum(f"_sw{_sw}_" in e["tag"] for es_ in _ng1.values() for e in es_) == 62
+            for _pair, _spec in F4A_NODE_PAIRS:
+                for _smoke in (False, True):
+                    _r = f4a_node_rows(_pair, _smoke)
+                    if not _r:
+                        continue
+                    _k = (F4A_NODE_SMOKE_KEY if _smoke else F4A_NODE_KEY) + f"_{_pair}"
+                    _nsub = f4a_node_sub(_pair, _smoke)
+                    assert f"request_memory    = {_spec['memory_mb']}" in _nsub and F4A_GPU_NAME in _nsub
+                    assert os.path.basename(F4A_NODE_MANIFEST) in _nsub
+                    p = os.path.join(HERE, f"configs_pofd_{_k}.txt")
+                    files[p] = _r; expected[p] = len(_r)
+                    cube_subs[os.path.join(HERE, f"at_pofd_{_k}.sub")] = _nsub
+            cube_subs[F4A_NODE_MANIFEST] = f4a_node_manifest_text()
 
     m, b, e, s = SMOKE
     files[os.path.join(HERE, "configs_pofd_smoke.txt")] = [ROW.format(

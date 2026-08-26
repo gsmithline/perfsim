@@ -485,6 +485,8 @@ def main(argv=None):
                     help="clip the shared y-limit (counts) so a consensus "
                          "spike does not flatten the reference histograms; "
                          "default: automatic")
+    ap.add_argument("--sweeps", type=int, default=100, choices=(100, 1),
+                    help="which sibling wave: 100 (primary) or 1 (figure files get a _sw1 suffix)")
     ap.add_argument("--gen", default=None,
                     help="path of the generator module (default: the "
                          "repo's gen_pofd_sweep.py)")
@@ -495,7 +497,11 @@ def main(argv=None):
         else analysis_dir / "previews"
     refuse_paper_dir(str(out_dir))
     roots = [Path(r) for r in (args.run_root or AN.DEFAULT_RUN_ROOTS)]
-    grid = AN._grid(gen_path=args.gen)
+    _gen_mod = AN.load_gen(args.gen)
+    if hasattr(_gen_mod, "f4a_set_variant"):
+        _gen_mod.f4a_set_variant(args.sweeps)
+    grid = AN._grid(gen=_gen_mod)
+    suffix = "" if args.sweeps == 100 else f"_sw{args.sweeps}"
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[f4a-plot] analysis-dir: {analysis_dir}")
     print(f"[f4a-plot] out-dir     : {out_dir}")
@@ -505,7 +511,7 @@ def main(argv=None):
     for model, es, fig, cap in build_figures(analysis_dir, roots,
                                              args.frozen_dir, grid,
                                              args.with_frozen, args.ymax):
-        stem = f"{STEM}_{model}_es{grid.num(es)}"
+        stem = f"{STEM}_{model}_es{grid.num(es)}{suffix}"
         written += _save(fig, out_dir, stem)
         plt.close(fig)
         (out_dir / f"{stem}_caption.txt").write_text("\n".join(cap) + "\n")

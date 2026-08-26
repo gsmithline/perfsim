@@ -488,10 +488,17 @@ def main(argv=None):
     ap.add_argument("--paper", action="store_true",
                     help="exit 4 if any cell is unsettled or cyclic")
     ap.add_argument("--drift-tol", type=float, default=DRIFT_TOL)
+    ap.add_argument("--sweeps", type=int, default=100, choices=(100, 1),
+                    help="which sibling wave: 100 (primary) or 1 (dirs default to *_sw1)")
     ap.add_argument("--gen", default=None,
                     help="path of the generator module (default: the "
                          "repo's gen_pofd_sweep.py)")
     args = ap.parse_args(argv)
+    if args.sweeps != 100:
+        if args.out_dir == str(DEFAULT_OUT):
+            args.out_dir = str(DEFAULT_OUT.parent / f"fig4_anchor_sw{args.sweeps}")
+        if args.frozen_dir == str(DEFAULT_FROZEN_DIR):
+            args.frozen_dir = str(DEFAULT_OUT / f"frozen_sw{args.sweeps}")
     tol = float(args.drift_tol)
 
     gate_path = Path(args.gate_json)
@@ -505,7 +512,10 @@ def main(argv=None):
         print(f"[analyze_f4a] REFUSING: gate JSON unreadable: {e}",
               file=sys.stderr)
         return 1
-    grid = _grid(gen_path=args.gen)
+    _gen_mod = load_gen(args.gen)
+    if hasattr(_gen_mod, "f4a_set_variant"):
+        _gen_mod.f4a_set_variant(args.sweeps)
+    grid = _grid(gen=_gen_mod)
     why = gate_binds_wave(verdict, grid)
     if why:
         print(f"[analyze_f4a] REFUSING: {why}", file=sys.stderr)

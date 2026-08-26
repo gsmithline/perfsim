@@ -846,6 +846,8 @@ def main(argv=None):
                          "zero-shot priors (4 artifacts)")
     ap.add_argument("--json", dest="json_out", default=None,
                     help="write the machine-readable verdict here")
+    ap.add_argument("--sweeps", type=int, default=100, choices=(100, 1),
+                    help="which sibling wave to gate: 100 (primary) or 1")
     ap.add_argument("--gen", default=None,
                     help="path of gen_pofd_sweep.py (default: this checkout)")
     ap.add_argument("--ext-manifest", default=None,
@@ -860,6 +862,8 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
     g = _load_gen(args.gen)
+    if hasattr(g, "f4a_set_variant"):
+        g.f4a_set_variant(args.sweeps)
     base_rounds = int(g.F4A_ROUNDS)
 
     # ---- what we EXPECT, read from the generator ------------------------

@@ -54,9 +54,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
-OUT="notes/pofd/fig4_anchor/frozen"
+OUT="${OUT:-notes/pofd/fig4_anchor/frozen}"     # sw1 sibling: OUT=notes/pofd/fig4_anchor/frozen_sw1 SWEEPS=1
 ROUNDS=30
-SWEEPS=100      # 2026-08-26: the wave runs 100 Deffuant sweeps per round
+SWEEPS="${SWEEPS:-100}"   # primary wave = 100 Deffuant sweeps; SWEEPS=1 builds the sibling
 SEED=0
 ALPHA=0.5
 EPS_AI=1.0

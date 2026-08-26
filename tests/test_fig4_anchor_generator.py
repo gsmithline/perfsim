@@ -246,7 +246,7 @@ def test_pofdf4a_is_a_new_family_and_nothing_else_moved(generated):
         assert everywhere[t] == {CFG}, (t, everywhere[t])
     for t, where in everywhere.items():
         if t.startswith("pofdf4a"):
-            assert where <= {CFG, CFG_SMOKE, CFG_EXT}, (t, where)
+            assert where <= {CFG, CFG_SMOKE, CFG_EXT, CFG.replace(f"{KEY}.", f"{KEY}_sw1."), CFG_SMOKE.replace(f"{KEY}_", f"{KEY}_sw1_"), CFG_EXT.replace(f"{KEY}_", f"{KEY}_sw1_")}, (t, where)
     assert not any(t.startswith("pofdf4asmk") for t in mine)
     # the archived files are byte-identical
     for name in FROZEN_FILES:
@@ -522,7 +522,7 @@ def test_submit_script_routes_every_fig4_anchor_key():
             'fig4_anchor_tradeoff_zsprior) TARGETS="$WHAT" ;;' in s)
     assert ('fig4_anchor_tradeoff_smoke) TARGETS="fig4_anchor_tradeoff_smoke '
             'fig4_anchor_tradeoff_zsprior" ;;' in s)
-    assert s.count("fig4_anchor_tradeoff[_smoke|_ext|_zsprior|_node[_a|_b]|_node_smoke]") == 3
+    assert s.count("fig4_anchor_tradeoff[_sw1][_smoke|_ext|_zsprior|_node[_a|_b]|_node_smoke]") == 3
     assert 'fig4_anchor_tradeoff_node)       TARGETS="fig4_anchor_tradeoff_node_a fig4_anchor_tradeoff_node_b" ;;' in s
     assert 'fig4_anchor_tradeoff_node_smoke) TARGETS="fig4_anchor_tradeoff_node_smoke_a" ;;' in s
     assert "< eps_AI" in s.split("fig4_anchor_tradeoff|")[0][-2000:]
