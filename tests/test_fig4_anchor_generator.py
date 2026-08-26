@@ -520,5 +520,7 @@ def test_submit_script_routes_every_fig4_anchor_key():
             'fig4_anchor_tradeoff_zsprior) TARGETS="$WHAT" ;;' in s)
     assert ('fig4_anchor_tradeoff_smoke) TARGETS="fig4_anchor_tradeoff_smoke '
             'fig4_anchor_tradeoff_zsprior" ;;' in s)
-    assert s.count("fig4_anchor_tradeoff[_smoke|_ext|_zsprior]") == 3
+    assert s.count("fig4_anchor_tradeoff[_smoke|_ext|_zsprior|_node[_a|_b]|_node_smoke]") == 3
+    assert 'fig4_anchor_tradeoff_node)       TARGETS="fig4_anchor_tradeoff_node_a fig4_anchor_tradeoff_node_b" ;;' in s
+    assert 'fig4_anchor_tradeoff_node_smoke) TARGETS="fig4_anchor_tradeoff_node_smoke_a" ;;' in s
     assert "< eps_AI" in s.split("fig4_anchor_tradeoff|")[0][-2000:]
