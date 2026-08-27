@@ -1,0 +1,4 @@
+pofds4gq_qwen3_8b_b0_fixb20_anch2_ea0p7_w0p75_l0p2_es0p5_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.5, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 1, 1, 16, 0, 30, bottom, 0, 0
+pofds4gq_qwen3_8b_b0_fixb20_anch2_ea0p7_w0p75_l0p2_es0p7_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.7, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 1, 1, 16, 0, 30, bottom, 0, 0
+pofds4gq_qwen3_8b_d8_fixb20_anch2_ea0p7_w0p75_l0p2_es0p5_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.5, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 0, 0, 0, 1, 30, bottom, 8, 0
+pofds4gq_qwen3_8b_d8_fixb20_anch2_ea0p7_w0p75_l0p2_es0p7_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.7, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 0, 0, 0, 1, 30, bottom, 8, 0

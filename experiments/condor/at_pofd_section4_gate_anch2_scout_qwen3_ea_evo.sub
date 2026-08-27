@@ -18,7 +18,7 @@
 # reconstructed from the SAME seed-determined innate vector its FIXED
 # partner clamps, so every fixed/evolving pair shares a cohort.
 # ICL_DAYS rides queue col 24 (8 on d8, 0 on b0). W=0.75 (SCOUT_QWEN3), lam=0.2,
-# gamma=0, greedy serving, movielens Action, ea {0.7} x es {0,.1,.2,.3,1} @30 rounds + es {0.3} x ea {0,.3,.5,.7,1} @15 rounds,
+# gamma=0, greedy serving, movielens Action, ea {0.7} x es {0,.1,.2,.3,.5,.7,1} @30 rounds + es {0.3} x ea {0,.3,.5,.7,1} @15 rounds,
 # SEED 0 ONLY, 30 ROUNDS.
 # GATE every pull with check_section4_gate.py --wave scout_qwen3 (operator, grid, no-clamp
 # integrity, fixed/evolving cohort pairing) -- that is the wave's own

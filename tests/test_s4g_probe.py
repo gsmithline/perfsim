@@ -64,8 +64,9 @@ VARIANTS = {
                         "evolving": "section4_gate_anch2_scout_evo"}),
     # the same scout on Qwen3-8B, thinking OFF (CHAT_THINKING=0 ->
     # config chat_thinking False), tag slug qwen3_8b
-    "scout_qwen3": dict(prefix="pofds4gq", ess=(0.0, 0.1, 0.2, 0.3, 1.0),
-                        rounds=30, n=20, slug="qwen3_8b", base_model=QWEN3,
+    "scout_qwen3": dict(prefix="pofds4gq",
+                        ess=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0),
+                        rounds=30, n=28, slug="qwen3_8b", base_model=QWEN3,
                         thinking=False,
                         keys={"fixed": "section4_gate_anch2_scout_qwen3_fixed",
                               "evolving": "section4_gate_anch2_scout_qwen3_evo"}),
@@ -114,9 +115,17 @@ def _sub_and_rows(cond, variant="probe"):
     return sub, rows
 
 
+# the MAIN key of a cross-shaped wave keeps its ORIGINAL es points; the
+# extension ships separately, so the main config is byte-stable
+MAIN_ESS = {"scout_qwen3": (0.0, 0.1, 0.2, 0.3, 1.0)}
+
+
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_emitted_grid_and_columns(variant):
-    v = VARIANTS[variant]
+    v = dict(VARIANTS[variant])
+    if variant in MAIN_ESS:
+        v["ess"] = MAIN_ESS[variant]
+        v["n"] = len(v["ess"]) * 4
     all_tags = set()
     for cond in CONDS:
         sub, rows = _sub_and_rows(cond, variant)
@@ -521,7 +530,7 @@ def test_scout_qwen3_full_set_passes_beside_the_mistral_scout(tmp_path):
     build_probe(root, variant="scout")            # the Mistral cells too
     r = run_checker(root, wave="scout_qwen3")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "PASS" in r.stdout and "40/40 cells present" in r.stdout
+    assert "PASS" in r.stdout and "48/48 cells present" in r.stdout
     assert "EXTRA" not in r.stdout
     # and the Mistral scout gate still sees exactly its own 20
     r = run_checker(root, wave="scout")
@@ -617,10 +626,17 @@ def test_ea_sweep_tags_disjoint_from_the_es_sweep():
             CONDOR,
             f"configs_pofd_{VARIANTS['scout_qwen3']['keys'][cond]}.txt"))
             if ln.strip()}
-    assert len(ea) == 20 and len(es) == 20
+    assert len(ea) == 20 and len(es) == 20    # the ORIGINAL es key
     assert not (ea & es), "a finished cell would be re-queued"
-    # 10 (point, horizon) cells x 2 arms x 2 conds = 40
-    assert len(ea | es) == 40
+    esx = set()
+    for cond in CONDS:
+        esx |= {l.split(",")[0].strip() for l in open(os.path.join(
+            CONDOR,
+            f"configs_pofd_section4_gate_anch2_scout_qwen3_esx_{'fixed' if cond == 'fixed' else 'evo'}.txt"))
+            if l.strip()}
+    assert len(esx) == 8 and not (esx & es) and not (esx & ea)
+    # 12 (point, horizon) cells x 2 arms x 2 conds = 48
+    assert len(ea | es | esx) == 48
     # the shared corner appears at both horizons, differing ONLY by _r15
     c30 = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.7)
     c15 = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.7,
@@ -644,9 +660,9 @@ def test_checker_rejects_an_off_cross_cell():
     spec.loader.exec_module(chk)
     gen = chk.load_generator(os.path.join(CONDOR, "gen_pofd_sweep.py"))
     w = chk.Wave("scout_qwen3", gen)
-    # 9 DISTINCT (ea, es) points; 10 (point, horizon) cells, because the
+    # 11 DISTINCT (ea, es) points; 12 (point, horizon) cells, because the
     # shared corner runs at both horizons
-    assert len(w.points) == 9 and len(w.pt_keys) == 10
+    assert len(w.points) == 11 and len(w.pt_keys) == 12
     assert w.horizons_ok == (15,) and w.min_rounds == 15
     off = tag_for("b0", "fixed", 1.0, "pofds4gq", "qwen3_8b", ea=1.0,
                   rounds=15)
@@ -879,3 +895,45 @@ def test_pilot_g1_wrong_anchor_in_the_config_fails(tmp_path):
     r = run_checker(root, wave="pilot_g1")
     assert r.returncode == 1
     assert "innate_lambda" in r.stdout
+
+
+def test_esx_extension_matches_the_sweep_it_extends():
+    """es {.5,.7} at ea=.7, 30 rounds -- identical to the completed es
+    cells in every field but the social gate, and never re-queueing
+    them."""
+    want = {0.5, 0.7}
+    for cond in CONDS:
+        key = ("section4_gate_anch2_scout_qwen3_esx_"
+               + ("fixed" if cond == "fixed" else "evo"))
+        sub = open(os.path.join(CONDOR, f"at_pofd_{key}.sub")).read()
+        rows = [l for l in open(os.path.join(
+            CONDOR, f"configs_pofd_{key}.txt")).read().splitlines()
+            if l.strip()]
+        assert len(rows) == 4
+        q = next(l for l in sub.splitlines() if l.startswith("queue"))
+        cols = [c.strip() for c in re.match(
+            r"queue\s+(.*?)\s+from\s+(\S+)", q).group(1).split(",")]
+        got = set()
+        for r in rows:
+            row = dict(zip(cols, [x.strip() for x in r.split(",")]))
+            assert float(row["eps"]) in want
+            assert row["eps_ai"] == "0.7" and row["gatemode"] == "threshold"
+            assert row["wplat"] == "0.75" and row["nrounds"] == "30"
+            assert row["seed"] == "0"
+            assert not row["tag"].endswith("_r15")
+            got.add((row["style"], float(row["eps"])))
+        assert len(got) == 4
+        # same environment as the sweep it extends
+        main = open(os.path.join(
+            CONDOR, "at_pofd_section4_gate_anch2_scout_qwen3_"
+            + ("fixed" if cond == "fixed" else "evo") + ".sub")).read()
+        env = lambda s: next(l for l in s.splitlines()
+                             if l.startswith("environment"))
+        assert env(sub) == env(main)
+
+
+def test_submit_script_knows_the_esx_extension():
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    assert ('section4_gate_anch2_scout_qwen3_esx) TARGETS='
+            '"section4_gate_anch2_scout_qwen3_esx_fixed '
+            'section4_gate_anch2_scout_qwen3_esx_evo" ;;') in src

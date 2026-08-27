@@ -9574,6 +9574,19 @@ S4GQ_ES_ANCHOR = 0.3                    # the ea sweep's social gate
 S4GQ_GATES = [0.0, 0.3, 0.5, 0.7, 1.0]  # the ea sweep
 S4GQ_EA_ROUNDS = 15                     # user, 2026-08-27: "not even 30
                                         # rounds just like 15"
+# ES EXTENSION (2026-08-27, user): fill the social-gate axis between .3
+# and 1, where the original sweep had a four-fold gap and the Figure-5
+# curve was therefore a straight line across most of its range. Same
+# cell in every other respect (ea .7, 30 rounds, beta .75, k .2, seed 0),
+# so these 8 tags simply extend the es sweep. They ship as their own KEY
+# so the 20 completed cells are never re-queued; the wave's grid covers
+# the union.
+S4GQ_ES_EXT = [0.5, 0.7]
+S4GQ_ESX_KEY = S4GQ_KEY + "_esx"
+S4GQ_ESX_FIXED_KEY = S4GQ_ESX_KEY + "_fixed"
+S4GQ_ESX_EVO_KEY = S4GQ_ESX_KEY + "_evo"
+S4GQ_N_ESX_PER_COND = 4                 # 2 es x 2 arms
+S4GQ_N_ESX_TOTAL = 8
 S4GQ_N_EA_PER_COND = 10                 # 5 ea x 2 arms
 S4GQ_N_EA_TOTAL = 20
 S4GQ_N_POINTS = 10                      # 5 es-sweep + 5 ea-sweep
@@ -9597,21 +9610,31 @@ S4GQ_N_POINTS = 10                      # 5 es-sweep + 5 ea-sweep
 def s4gq_points(kind="all"):
     """The wave's (eps_AI, eps_social, rounds) points.
 
-    "es"  the ORIGINAL sweep -- eps_AI = 0.7 x es {0,.1,.2,.3,1} at 30
-          rounds; already run, so this list keeps its original order and
-          its rows must stay byte-identical.
-    "ea"  the NEW sweep -- es = 0.3 x eps_AI {0,.3,.5,.7,1} at 15 rounds,
-          INCLUDING the (0.7, 0.3) corner (a different horizon, hence a
-          different cell and a consistency check).
-    "all" the union, es points first: the checker's grid.
+    "es_main" the ORIGINAL sweep -- eps_AI = 0.7 x es {0,.1,.2,.3,1} at
+          30 rounds. ALREADY RUN, so this list keeps its original order
+          and its rows must stay byte-identical: it is what the main key
+          writes.
+    "esx" the es EXTENSION -- the same cell at es {.5, .7}; its own key,
+          so the completed cells are never re-queued.
+    "es"  es_main + esx SORTED BY es -- the full social-gate axis
+          {0,.1,.2,.3,.5,.7,1}, the order the Figure-5 curve is drawn in.
+    "ea"  the eps_AI sweep -- es = 0.3 x eps_AI {0,.3,.5,.7,1} at 15
+          rounds, INCLUDING the (0.7, 0.3) corner (a different horizon,
+          hence a different cell and a consistency check).
+    "all" the union: the checker's grid.
     """
-    es_pts = [(S4GQ_EA_ANCHOR, es, S4GS_ROUNDS) for es in S4GS_ESS]
+    es_main = [(S4GQ_EA_ANCHOR, es, S4GS_ROUNDS) for es in S4GS_ESS]
+    esx = [(S4GQ_EA_ANCHOR, es, S4GS_ROUNDS) for es in S4GQ_ES_EXT]
     ea_pts = [(ea, S4GQ_ES_ANCHOR, S4GQ_EA_ROUNDS) for ea in S4GQ_GATES]
+    if kind == "es_main":
+        return es_main
+    if kind == "esx":
+        return esx
     if kind == "es":
-        return es_pts
+        return sorted(es_main + esx, key=lambda p: p[1])
     if kind == "ea":
         return ea_pts
-    return es_pts + ea_pts
+    return sorted(es_main + esx, key=lambda p: p[1]) + ea_pts
 S4GQ_MODEL = dict(
     base_model=FAM_MODELS["qwen3_8b"]["base_model"],      # Qwen/Qwen3-8B
     mem=FAM_MODELS["qwen3_8b"]["mem"], disk=FAM_MODELS["qwen3_8b"]["disk"],
@@ -9699,11 +9722,17 @@ S4G_VARIANTS = {
                         kind="30-ROUND SEED-0 SCOUT, QWEN3-8B (thinking "
                              "off)",
                         ea_rounds=S4GQ_EA_ROUNDS,
-                        n_cells=S4GQ_N_POINTS * 2 * 2,   # 40
-                        kind_grid="ea 0.7 x es {0,.1,.2,.3,1} @30r + "
-                                  "es 0.3 x ea {0,.3,.5,.7,1} @15r",
-                        grid="ea {0.7} x es {0,.1,.2,.3,1} @30 rounds + "
-                             "es {0.3} x ea {0,.3,.5,.7,1} @15 rounds"),
+                        esx_key=S4GQ_ESX_KEY,
+                        esx_fixed_key=S4GQ_ESX_FIXED_KEY,
+                        esx_evo_key=S4GQ_ESX_EVO_KEY,
+                        n_cells=(S4GQ_N_POINTS + len(S4GQ_ES_EXT))
+                        * 2 * 2,        # 48
+                        kind_grid="ea 0.7 x es {0,.1,.2,.3,.5,.7,1} "
+                                  "@30r + es 0.3 x ea {0,.3,.5,.7,1} "
+                                  "@15r",
+                        grid="ea {0.7} x es {0,.1,.2,.3,.5,.7,1} @30 "
+                             "rounds + es {0.3} x ea {0,.3,.5,.7,1} @15 "
+                             "rounds"),
     "pilot_g1": dict(key=S4GG_KEY, fixed_key=S4GG_FIXED_KEY,
                      evo_key=S4GG_EVO_KEY, prefix=S4GG_PREFIX,
                      ess=S4GG_ESS, rounds=S4GG_ROUNDS,
@@ -9831,7 +9860,7 @@ def s4gv_main_kind(variant):
     """Which sweep the variant's ORIGINAL key carries: a cross-shaped
     wave's main key is its "es" sweep (the already-run cells), a
     single-sweep variant's is all it has."""
-    return "es" if "ea_key" in S4G_VARIANTS[variant] else "all"
+    return "es_main" if "ea_key" in S4G_VARIANTS[variant] else "all"
 
 
 def s4gv_rows(cond, variant, seeds=None, kind="all"):
@@ -9849,7 +9878,14 @@ def s4gv_rows(cond, variant, seeds=None, kind="all"):
 
 def s4gv_sub(cond, variant, sweep="all"):
     v = S4G_VARIANTS[variant]
-    if sweep == "smoke":
+    if sweep == "esx":
+        key = v["esx_fixed_key"] if cond == "fixed" else v["esx_evo_key"]
+        gridtxt = (f"ea {S4GQ_EA_ANCHOR:g} x es "
+                   f"{{{', '.join(f'{e:g}' for e in S4GQ_ES_EXT)}}} -- the "
+                   f"SOCIAL-GATE EXTENSION of the completed sweep; every "
+                   f"other field is identical, and the completed es "
+                   f"cells are NOT re-queued")
+    elif sweep == "smoke":
         sm = v["smoke"]
         key = sm["fixed_key"] if cond == "fixed" else sm["evo_key"]
         gridtxt = (f"{sm['rounds']}-ROUND SMOKE at es {sm['es']:g}, both "
@@ -9870,6 +9906,7 @@ def s4gv_sub(cond, variant, sweep="all"):
     rows = (s4gv_smoke_rows(cond, variant) if sweep == "smoke"
             else s4gv_rows(cond, variant,
                            kind=("ea" if sweep == "ea"
+                                 else "esx" if sweep == "esx"
                                  else s4gv_main_kind(variant))))
     sub = s4g_sub(cond, key=key, rows=rows, kind=kind,
                   grid=v["grid"], model_env=v["model"])
@@ -14396,6 +14433,47 @@ def main():
                 cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
                     s4gv_sub(_cond, _var, sweep="smoke")
             assert len(_smk_tags) == _sm["n_total"]
+        # ---- the SOCIAL-GATE EXTENSION (its own key) -------------------
+        if "esx_key" in _v:
+            _esx_tags = set()
+            for _cond, _key in (("fixed", _v["esx_fixed_key"]),
+                                ("evolving", _v["esx_evo_key"])):
+                _rows = s4gv_rows(_cond, _var, kind="esx")
+                assert len(_rows) == S4GQ_N_ESX_PER_COND, (_cond,
+                                                           len(_rows))
+                _ncols = 26 if _cond == "fixed" else 24
+                for _r in _rows:
+                    _c = [x.strip() for x in _r.split(",")]
+                    assert len(_c) == _ncols, (_cond, len(_c), _r)
+                    # identical to the completed es cells in EVERY field
+                    # except the social gate itself
+                    assert float(_c[9]) in tuple(S4GQ_ES_EXT), _r
+                    assert float(_c[14]) == S4GQ_EA_ANCHOR and \
+                        _c[15] == "threshold", _r
+                    assert _c[11] == f"{_v['w_plat']:g}" if "w_plat" in _v \
+                        else _c[11] == "0.75", _r
+                    assert _c[22] == str(S4GS_ROUNDS) and _c[3] == "0", _r
+                    assert not _c[0].endswith("_r15"), ("the extension "
+                                                        "runs the base "
+                                                        "horizon", _r)
+                    assert _c[0] not in _fam_tags[_var] and \
+                        _c[0] not in _prior_pr, ("esx tag collides",
+                                                 _c[0])
+                    _esx_tags.add(_c[0])
+                _sub = s4gv_sub(_cond, _var, sweep="esx")
+                _env = next(l for l in _sub.splitlines()
+                            if l.startswith("environment"))
+                _menv = next(l for l in s4gv_sub(_cond, _var).splitlines()
+                             if l.startswith("environment"))
+                assert _env == _menv, ("the extension must run the SAME "
+                                       "environment as the sweep it "
+                                       "extends", _cond)
+                p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+                files[p] = _rows
+                expected[p] = S4GQ_N_ESX_PER_COND
+                cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+            assert len(_esx_tags) == S4GQ_N_ESX_TOTAL
+            _fam_tags[_var] |= _esx_tags
         # ---- the cross-shaped wave's SECOND sweep (its own key) --------
         if "ea_key" not in _v:
             continue
@@ -14444,9 +14522,9 @@ def main():
         assert len(_ea_tags) == S4GQ_N_EA_TOTAL, len(_ea_tags)
         # the CONCEPTUAL grid: 10 (point, horizon) cells x 2 arms x 2
         # conds = 40, partitioned exactly into the 20 run + the 20 new
-        assert len(s4gq_points()) == S4GQ_N_POINTS
+        assert len(s4gq_points()) == S4GQ_N_POINTS + len(S4GQ_ES_EXT)
         assert len(_fam_tags[_var]) + len(_ea_tags) == \
-            S4GQ_N_POINTS * 2 * 2 == 40
+            (S4GQ_N_POINTS + len(S4GQ_ES_EXT)) * 2 * 2 == 48
         # the shared (ea, es) corner appears at BOTH horizons, and the
         # two tags differ only by the _r token
         _corner30 = s4gv_tag("b0", "fixed", S4GQ_EA_ANCHOR,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compact plot for the gamma=1 ROUTING PILOT (section4_gate_anch2_pilot_g1).
+"""Routing-gap plot for any beta=W_PLAT family wave (--variant).
 
 Two panels, sharing the eps_social axis:
   (a) raw MAE per method -- the Figure-5 metric, final-five-round
@@ -34,9 +34,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 GEN_PATH = os.path.join(REPO, "experiments", "condor", "gen_pofd_sweep.py")
 AN_PATH = os.path.join(HERE, "analyze_section4_gate.py")
-LOG = "[pilot_g1_plot]"
+LOG = "[s4g_gap_plot]"
 N_AGENTS = 723
-VARIANT = "pilot_g1"
+DEFAULT_VARIANT = "pilot_g1"
 
 
 def _load(path, name):
@@ -62,21 +62,36 @@ def mae_window(fixed, evolving, mask_b, lo, hi):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--variant", default=DEFAULT_VARIANT,
+                    help="family variant to plot (pilot_g1, "
+                         "scout_qwen3, scout, probe). For a CROSS-shaped "
+                         "wave only the eps_social sweep is drawn, in "
+                         "ascending es order.")
+    ap.add_argument("--stem", default=None,
+                    help="output filename stem (default s4g_<variant>)")
     ap.add_argument("--run-root",
                     default="/home/gsmithline/perfsim/runs/pokec_gated_lm")
-    ap.add_argument("--out-dir",
-                    default=os.path.join(REPO, "notes", "pofd",
-                                         "s4g_pilot_g1"))
+    ap.add_argument("--out-dir", default=None,
+                    help="default notes/pofd/s4g_<variant>/")
     ap.add_argument("--gen", default=GEN_PATH)
     ap.add_argument("--rounds", default="15,30",
                     help="comma-separated round marks for the gap panel")
     args = ap.parse_args(argv)
+    variant = args.variant
+    stem = args.stem or f"s4g_{variant}"
+    if args.out_dir is None:
+        args.out_dir = os.path.join(REPO, "notes", "pofd", stem)
 
     gen = _load(args.gen, "_gen_pilot")
     AN = _load(AN_PATH, "_an_pilot")
-    fam = gen.S4G_VARIANTS[VARIANT]
-    ess = [float(e) for e in fam["ess"]]
-    n_rounds = int(fam["rounds"])
+    fam = gen.S4G_VARIANTS[variant]
+    # the eps_social axis, ASCENDING: for a cross-shaped wave this is
+    # the "es" sweep only (its eps_AI sweep is a different figure)
+    es_pts = (fam["points"]("es") if "ea_key" in fam
+              else fam["points"]("all"))
+    ess = sorted({float(e) for _a, e, _n in es_pts})
+    gate = es_pts[0][0]
+    n_rounds = int(es_pts[0][2])
     marks = [int(x) for x in args.rounds.split(",") if x.strip()]
     seed = int(gen.S4GP_SEEDS[0])
 
@@ -85,7 +100,7 @@ def main(argv=None):
     for arm in gen.S4GP_ARMS:
         for cond in gen.S4G_CONDS:
             for es in ess:
-                tag = gen.s4gv_tag(arm, cond, fam["gate"], es, seed,
+                tag = gen.s4gv_tag(arm, cond, gate, es, seed,
                                    fam["prefix"])
                 rd = AN.find_run(args.run_root, tag)
                 (missing.append(tag) if rd is None
@@ -117,7 +132,7 @@ def main(argv=None):
                          "mae_icl": m["d8"], "routing_gap_G": g,
                          "icl_exactly_zero": m["d8"] == 0.0})
     os.makedirs(args.out_dir, exist_ok=True)
-    csv_p = os.path.join(args.out_dir, "pilot_g1_mae_gap.csv")
+    csv_p = os.path.join(args.out_dir, f"{stem}_mae_gap.csv")
     with open(csv_p, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()
@@ -197,31 +212,37 @@ def main(argv=None):
     for a in (ax1, ax2):
         a.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
-    pdf = os.path.join(args.out_dir, "pilot_g1_routing_gap.pdf")
-    png = os.path.join(args.out_dir, "pilot_g1_routing_gap.png")
+    pdf = os.path.join(args.out_dir, f"{stem}_routing_gap.pdf")
+    png = os.path.join(args.out_dir, f"{stem}_routing_gap.png")
     fig.savefig(pdf); fig.savefig(png, dpi=200)
     plt.close(fig)
     print(f"{LOG} wrote {pdf} and {png}")
 
+    w = fam.get("w_plat", gen.S4GP_W_PLAT)
+    k = fam.get("innate_lambda", gen.W_LAMBDA)
+    gtxt = "all_open" if gate == "open" else f"{gate:g}"
     cap = [
-        "PILOT (gamma=1) -- routing gap. Left: the Figure-5 metric, the",
+        f"{variant} -- routing gap. Left: the Figure-5 metric, the",
         f"final-five-round agent-paired mean |evolving - fixed| in cohort B",
         f"(n={int(mask_b.sum())}) at round {last}, for ordinary SFT and",
         "personal-history ICL. Right: the routing gap G = MAE_ICL -",
         "MAE_SFT at each round mark; G<0 means the shared-weight route",
         "carries more of cohort A's influence, G>0 the personal-history",
-        "route. Qwen3-8B, movielens Action, 30 rounds, seed 0, beta=0.5,",
-        "gamma(k)=1, alpha=0.5, AI gate all_open, one Deffuant sweep per",
-        "round. SEED 0 ONLY -- descriptive, no intervals.",
+        f"route. {fam['slug']}, movielens Action, {n_rounds} rounds, "
+        f"seed 0,",
+        f"beta={w:g}, gamma(k)={k:g}, alpha=0.5, eps_AI={gtxt}, one "
+        f"Deffuant sweep",
+        "per round. SEED 0 ONLY -- descriptive, no intervals.",
     ]
-    cap_p = os.path.join(args.out_dir, "pilot_g1_caption.txt")
+    cap_p = os.path.join(args.out_dir, f"{stem}_caption.txt")
     with open(cap_p, "w") as fh:
         fh.write("\n".join(cap) + "\n")
-    with open(os.path.join(args.out_dir, "pilot_g1_checks.json"), "w") as fh:
-        json.dump({"variant": VARIANT, "seed": seed, "rounds": n_rounds,
+    with open(os.path.join(args.out_dir,
+                           f"{stem}_checks.json"), "w") as fh:
+        json.dump({"variant": variant, "seed": seed, "rounds": n_rounds,
                    "round_marks": marks, "checks": checks,
                    "rows": rows}, fh, indent=2)
-    print(f"{LOG} wrote {cap_p} and pilot_g1_checks.json")
+    print(f"{LOG} wrote {cap_p} and {stem}_checks.json")
     return 0
 
 
