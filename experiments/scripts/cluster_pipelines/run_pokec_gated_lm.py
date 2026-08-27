@@ -774,6 +774,24 @@ def main() -> int:
     # GEN_TEMPERATURE controls the sampling spread (1.0 = the model's true dist).
     do_sample = _env_int("DO_SAMPLE", 0) == 1
     gen_temperature = _env_float("GEN_TEMPERATURE", 1.0)
+    # SAMPLING POLICY (2026-08-27). UNSET = inherit the checkpoint's
+    # generation_config, which is what every archived run did and is
+    # preserved bit-for-bit. SET pins the knob explicitly, so a wave can
+    # claim "T=1 from the model's own distribution" and have it be true:
+    # Qwen checkpoints ship top_p/top_k defaults that silently truncate
+    # the sampled distribution, and several checkpoints ship
+    # repetition_penalty != 1 which perturbs even greedy decoding.
+    def _env_opt_float(name):
+        v = os.environ.get(name, "")
+        return float(v) if v.strip() != "" else None
+
+    def _env_opt_int(name):
+        v = os.environ.get(name, "")
+        return int(v) if v.strip() != "" else None
+
+    gen_top_p = _env_opt_float("GEN_TOP_P")
+    gen_top_k = _env_opt_int("GEN_TOP_K")
+    gen_repetition_penalty = _env_opt_float("GEN_REPETITION_PENALTY")
     n_bins = _env_int("HIST_BINS", 50)
     log_ppl = _env_int("LOG_PERPLEXITY", 1) == 1
     n_ppl = _env_int("N_PERPLEXITY", 64)
@@ -1774,6 +1792,9 @@ def main() -> int:
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
         "do_sample": do_sample, "gen_temperature": gen_temperature,
+        # the PINS (None = inherited from the checkpoint)
+        "gen_top_p": gen_top_p, "gen_top_k": gen_top_k,
+        "gen_repetition_penalty": gen_repetition_penalty,
         "ans_sample_k": ans_sample_k, "ans_sample_n": ans_sample_n,
         "ans_sample_t": ans_sample_t,
         "host": os.uname().nodename,
@@ -2154,9 +2175,21 @@ def main() -> int:
         gen_batch_size=gen_batch_size,
         do_sample=do_sample,
         temperature=gen_temperature,
+        top_p=gen_top_p,
+        top_k=gen_top_k,
+        repetition_penalty=gen_repetition_penalty,
         load_now=True,
     )
     lm.parse_mode = parse_mode
+    # RECORD WHAT GENERATION ACTUALLY USED, knob by knob, marking each as
+    # pinned or inherited from the checkpoint. Without this a run cannot
+    # be audited for its decoding policy without re-loading the model.
+    try:
+        config["gen_policy_effective"] = lm.effective_generation_policy()
+        print(f"[run] generation policy: "
+              f"{config['gen_policy_effective']}", flush=True)
+    except Exception as _e:                                   # noqa: BLE001
+        config["gen_policy_effective"] = {"error": repr(_e)}
     print(f"[run] LM loaded in {time.time() - t0:.1f}s "
           f"(parse_mode={parse_mode})", flush=True)
 

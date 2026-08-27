@@ -9164,8 +9164,12 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 #   SFT_EPOCHS=0 (no optimizer step exists)   kl_beta 0 (no KL term)
 #   ICL_K=0     -- ZERO cross-user exemplars: no other agent's opinion
 #                  can appear in any prompt, ever
-#   ICL_DAYS=8  -- each agent's prompt carries only ITS OWN latest eight
-#                  post-peer opinions, oldest to newest
+#   ICL_DAYS=8  -- each agent's prompt carries ONLY ITS OWN history.
+#                  The window is the last 8 entries of
+#                  [innate, op_raw[0], ..., op_raw[t-1]]: at t=0 it is
+#                  EXACTLY the agent's INNATE opinion, and thereafter the
+#                  innate opinion FOLLOWED BY post-peer states, oldest to
+#                  newest, until innate leaves the window at t=8.
 # The runner writes icl_days_log.json.gz, and the checker replays every
 # rendered sentence BYTE-EXACTLY from (innate, op_raw); that single
 # replay proves locality (own values only, <= 8 of them, none foreign)
@@ -9216,9 +9220,22 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 # it requires the three sampled seeds to differ in pred_raw and the three
 # greedy seeds to AGREE at round 0.
 S3I_ARMS = ("greedy", "sample_t1")
+# SAMPLING POLICY IS PINNED, NOT INHERITED (2026-08-27). generate()
+# passes only max_new_tokens/do_sample/pad_token_id/temperature, so
+# top_p, top_k and repetition_penalty come from EACH CHECKPOINT's
+# generation_config unless pinned -- and Qwen ships top_p/top_k defaults
+# that would silently truncate the sampled distribution. "One draw per
+# agent at T=1 from the model's own label distribution" is only true
+# with top_p=1 and top_k disabled, so the sampled arm pins them.
+#   greedy: policy left INHERITED on purpose -- argmax ignores top_p/
+#   top_k, and repetition_penalty must match the reference-regularized
+#   SFT wave this arm is paired against (which inherits it). The runner
+#   records the EFFECTIVE value either way, so both arms are auditable.
 S3I_DECODE = {
-    "greedy":    dict(tok="greedy", do_sample=0, temperature=None),
-    "sample_t1": dict(tok="sample_t1", do_sample=1, temperature=1.0),
+    "greedy":    dict(tok="greedy", do_sample=0, temperature=None,
+                      top_p=None, top_k=None, repetition_penalty=None),
+    "sample_t1": dict(tok="sample_t1", do_sample=1, temperature=1.0,
+                      top_p=1.0, top_k=0, repetition_penalty=1.0),
 }
 S3I_KEY = "section3_model_icl"          # the umbrella name; per-arm keys below
 S3I_SMOKE_KEY = "section3_model_icl_smoke"
@@ -9310,6 +9327,13 @@ def s3i_sub(arm="greedy", smoke=False):
     dec_env = f" DO_SAMPLE={dec['do_sample']}"
     if dec["temperature"] is not None:
         dec_env += f" GEN_TEMPERATURE={dec['temperature']:g}"
+    if dec["top_p"] is not None:
+        dec_env += f" GEN_TOP_P={dec['top_p']:g}"
+    if dec["top_k"] is not None:
+        dec_env += f" GEN_TOP_K={dec['top_k']:d}"
+    if dec["repetition_penalty"] is not None:
+        dec_env += (f" GEN_REPETITION_PENALTY="
+                    f"{dec['repetition_penalty']:g}")
     sub = S3M_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
         rounds=S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS,
@@ -9335,6 +9359,11 @@ def s3i_sub(arm="greedy", smoke=False):
     assert "ICL_K=$(iclk)" in sub and "USE_LORA=$(uselora)" in sub
     assert f"DO_SAMPLE={dec['do_sample']}" in sub
     assert ("GEN_TEMPERATURE=1" in sub) == (arm == "sample_t1")
+    for knob, envname in (("top_p", "GEN_TOP_P"), ("top_k", "GEN_TOP_K"),
+                          ("repetition_penalty",
+                           "GEN_REPETITION_PENALTY")):
+        assert (f"{envname}=" in sub) == (dec[knob] is not None), \
+            (arm, envname)
     return sub
 
 

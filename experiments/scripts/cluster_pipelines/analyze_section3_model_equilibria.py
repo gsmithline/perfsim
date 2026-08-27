@@ -374,6 +374,35 @@ def main():
             "accepted_limit_cycle": model in args.accept_limit_cycle,
             "all_consensus": all(r["consensus"] for r in selected),
         })
+        # ---- SAMPLED-SERVING AGGREGATION, at MODEL level --------------
+        # The per-cell sampled columns are useless to a reader without
+        # this: the reportable quantity is the across-seed mean of each,
+        # WITH its own across-seed uncertainty. Two different spreads are
+        # kept apart and never mixed:
+        #   *_ci95_*     ACROSS-SEED uncertainty (3 seeds, df=2 t)
+        #   temporal_sd  WITHIN-run round-to-round fluctuation of the
+        #                population mean over the late window
+        #   pop_sd       WITHIN-round spread ACROSS AGENTS
+        # These are computed for BOTH arms so the CSVs stay comparable;
+        # they are the headline numbers only for the sampled arm.
+        for key, out_prefix in (("late_mean", "late_mean"),
+                                ("round30_mean", "round30_mean"),
+                                ("temporal_sd", "temporal_sd"),
+                                ("late_drift", "late_drift"),
+                                ("pop_sd_final", "pop_sd_final"),
+                                ("pop_sd_late", "pop_sd_late")):
+            v = [float(r[key]) for r in selected]
+            m_, sd_, half_ = tci3(v)
+            model_rows[-1][f"{out_prefix}"] = f"{m_:.8f}"
+            model_rows[-1][f"{out_prefix}_seed_sd"] = f"{sd_:.8f}"
+            model_rows[-1][f"{out_prefix}_ci95_low"] = f"{m_ - half_:.8f}"
+            model_rows[-1][f"{out_prefix}_ci95_high"] = f"{m_ + half_:.8f}"
+        model_rows[-1]["late_window"] = selected[0]["late_window"]
+        model_rows[-1]["stochastic_arm"] = w.stochastic
+        # for the sampled arm the headline is late_mean, not the
+        # settled equilibrium: say so IN the row rather than in prose
+        model_rows[-1]["headline_column"] = (
+            "late_mean" if w.stochastic else "equilibrium_mean")
 
     cells_csv = out / "model_equilibrium_cells.csv"
     with cells_csv.open("w", newline="") as fh:

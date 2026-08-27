@@ -189,9 +189,10 @@ def build_run(root, model, seed, arm="greedy", rounds=ROUNDS, smoke=False,
     for t in range(rounds):
         x = x + 0.05 * ((0.5 + 0.0001 * seed) - x)
         op.append(x.clone())
-        # a sampled arm's served vector must depend on the seed; a
-        # greedy arm's round-0 vector must not
-        pred.append(torch.full((N,), 0.55)
+        # varies BY ROUND (so a round-shifted raw log is detectable),
+        # and by SEED only on the sampled arm -- the greedy arm's round-0
+        # vector must be seed-invariant
+        pred.append(torch.full((N,), 0.55 + 0.001 * t)
                     + (pred_jitter * seed * (t + 1)))
     op_t, pred_t = torch.stack(op), torch.stack(pred)
     cfg = {
@@ -206,6 +207,15 @@ def build_run(root, model, seed, arm="greedy", rounds=ROUNDS, smoke=False,
         "seed_base_data": True, "save_raw_gen": True,
         "serve_eval_mode": True,
         "do_sample": arm == "sample_t1",
+        **({"gen_top_p": 1.0, "gen_top_k": 0,
+            "gen_repetition_penalty": 1.0,
+            "gen_policy_effective": {
+                "do_sample": {"value": True, "source": "pinned"},
+                "temperature": {"value": 1.0, "source": "pinned"},
+                "top_p": {"value": 1.0, "source": "pinned"},
+                "top_k": {"value": 0, "source": "pinned"},
+                "repetition_penalty": {"value": 1.0, "source": "pinned"}}}
+           if arm == "sample_t1" else {}),
         "training_style": "frozen", "kl_beta": 0.0, "use_lora": False,
         "fresh_each_round": False, "sft_epochs": 0,
         "icl_k": 0, "icl_days": ICL_DAYS, "parse_mode": "strict",
@@ -227,9 +237,12 @@ def build_run(root, model, seed, arm="greedy", rounds=ROUNDS, smoke=False,
     with open(os.path.join(d, "config.json"), "w") as fh:
         json.dump(cfg, fh, default=str)
 
-    raws = [{"round": t, "parse_fail_frac": 0.0,
-             "raw": ["0.55"] * N, "parsed": [0.55] * N}
-            for t in range(rounds)]
+    raws = []
+    for t in range(rounds):
+        served = [round(float(v), 6) for v in pred_t[t].tolist()]
+        raws.append({"round": t, "parse_fail_frac": 0.0,
+                     "raw": [f"{v:.6f}" for v in served],
+                     "parsed": served})
     if raw_mut:
         raw_mut(raws)
     with gzip.open(os.path.join(d, "raw_gen_log.json.gz"), "wt",
@@ -523,3 +536,169 @@ def test_arm_tags_are_not_interchangeable(tmp_path):
     r = run_checker(root, arm="sample_t1")
     assert r.returncode == 1
     assert "absent" in r.stdout.lower()
+
+
+def test_submit_usage_strings_contain_no_brace():
+    """REGRESSION (2026-08-27). The usage text lives inside
+    ``BID="${1:?usage: ...}"`` and ``WHAT="${2:?usage: ...}"``. A literal
+    '}' anywhere in it CLOSES the parameter expansion early, so BID and
+    WHAT silently absorb the rest of the string -- BID became
+    '25[_smoke]|section4...' and every key fell through to the usage
+    branch. Writing a key as '..._{greedy,sample_t1}' caused exactly
+    that. The usage grammar uses [] and | only; braces are forbidden."""
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read().splitlines()
+    for ln in src:
+        st = ln.strip()
+        if st.startswith(("BID=", "WHAT=")) or st.startswith('*) echo "usage:'):
+            body = st.split("usage:", 1)[1] if "usage:" in st else ""
+            # the ONLY closing brace allowed is the one that terminates
+            # the expansion at the very end of the assignment
+            assert "{" not in body, f"brace in usage text: {st[:80]}"
+
+
+def test_submit_resolves_both_arms_end_to_end(tmp_path):
+    """The case must actually resolve TARGETS for all four keys -- the
+    check that would have caught the brace bug."""
+    sh = os.path.join(CONDOR, "submit_pofd_sweep.sh")
+    body = open(sh).read()
+    start = body.index('case "$WHAT" in')
+    end = body.index("\nesac", start) + len("\nesac")
+    case_block = body[start:end]
+    for key in ("section3_model_icl_greedy",
+                "section3_model_icl_greedy_smoke",
+                "section3_model_icl_sample_t1",
+                "section3_model_icl_sample_t1_smoke"):
+        script = f'WHAT="{key}"\nTARGETS=""\n{case_block}\necho "$TARGETS"'
+        r = subprocess.run(["bash", "-c", script], capture_output=True,
+                           text=True)
+        assert r.returncode == 0, (key, r.stderr[:200])
+        assert r.stdout.strip() == key, (key, r.stdout.strip())
+
+
+# ============ RELEASE BLOCKERS (2026-08-27): regression tests ==========
+def test_sampled_arm_pins_the_decoding_policy_in_the_sub():
+    """BLOCKER 1. generate() sends only max_new_tokens/do_sample/
+    pad_token_id/temperature, so top_p, top_k and repetition_penalty come
+    from EACH CHECKPOINT's generation_config unless pinned. 'One draw at
+    T=1 from the model's own distribution' is false when a checkpoint
+    truncates, so the sampled arm must pin them."""
+    _, sub = _cols(key_for("sample_t1"))
+    env = next(l for l in sub.splitlines() if l.startswith("environment"))
+    for tok in ("DO_SAMPLE=1", "GEN_TEMPERATURE=1", "GEN_TOP_P=1",
+                "GEN_TOP_K=0", "GEN_REPETITION_PENALTY=1"):
+        assert tok in env, tok
+    # greedy deliberately INHERITS: argmax ignores top_p/top_k and the
+    # repetition penalty must match the SFT wave it is paired against
+    _, gsub = _cols(key_for("greedy"))
+    genv = next(l for l in gsub.splitlines() if l.startswith("environment"))
+    assert "GEN_TOP_P" not in genv and "GEN_TOP_K" not in genv
+
+
+def test_model_wrapper_defaults_preserve_archived_behaviour():
+    """The new knobs must default to None = inherit, or every archived
+    run's decoding would change meaning retroactively."""
+    import ast
+    src = open(os.path.join(REPO, "perfsim", "models",
+                            "hf_causal_lm.py")).read()
+    tree = ast.parse(src)
+    cls = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
+    init = next(n for n in cls.body
+                if isinstance(n, ast.FunctionDef) and n.name == "__init__")
+    pos = init.args.posonlyargs + init.args.args
+    defaults = {}
+    if init.args.defaults:
+        for a, d in zip(pos[-len(init.args.defaults):], init.args.defaults):
+            defaults[a.arg] = d
+    for a, d in zip(init.args.kwonlyargs, init.args.kw_defaults):
+        defaults[a.arg] = d
+    args = pos + init.args.kwonlyargs
+    for knob in ("top_p", "top_k", "repetition_penalty"):
+        assert knob in [a.arg for a in args], f"{knob} not a parameter"
+        d = defaults.get(knob)
+        assert isinstance(d, ast.Constant) and d.value is None, \
+            f"{knob} must default to None (inherit)"
+    # and they must only be SENT when pinned
+    assert "if self._top_p is not None:" in src
+    assert "if self._repetition_penalty is not None:" in src
+
+
+@pytest.mark.slow
+def test_sampled_arm_inheriting_a_checkpoint_default_fails(tmp_path):
+    """BLOCKER 1, gate side: a sampled cell whose recorded effective
+    policy says a knob came from the checkpoint must FAIL."""
+    def mut(c):
+        c["gen_policy_effective"]["top_p"] = {"value": 0.8,
+                                              "source": "checkpoint_default"}
+    root = tmp_path / "runs"
+    build_run(root, "qwen7b", 0, "sample_t1", cfg_mut=mut)
+    r = run_checker(root, arm="sample_t1")
+    assert r.returncode == 1
+    assert "checkpoint_default" in r.stdout or "not 'pinned'" in r.stdout
+
+
+@pytest.mark.slow
+def test_sampled_arm_missing_the_effective_policy_fails(tmp_path):
+    def mut(c):
+        c.pop("gen_policy_effective", None)
+    root = tmp_path / "runs"
+    build_run(root, "qwen7b", 0, "sample_t1", cfg_mut=mut)
+    r = run_checker(root, arm="sample_t1")
+    assert r.returncode == 1
+    assert "gen_policy_effective" in r.stdout
+
+
+@pytest.mark.slow
+def test_parsed_vector_must_equal_pred_raw(tmp_path):
+    """BLOCKER 3. The strict raw-generation gate proves the log is
+    internally consistent; it does NOT prove the log describes THIS run.
+    A well-formed log whose parsed vector is not pred_raw must fail."""
+    def mut(raws):
+        raws[4]["parsed"] = [0.42] * N
+        raws[4]["raw"] = ["0.420000"] * N          # still well-formed
+    root = tmp_path / "runs"
+    build_run(root, "qwen7b", 0, "greedy", raw_mut=mut)
+    r = run_checker(root, arm="greedy")
+    assert r.returncode == 1
+    assert "PARSE-VS-SERVED" in r.stdout
+
+
+@pytest.mark.slow
+def test_parsed_vector_shifted_by_one_round_fails(tmp_path):
+    """The sharpest form of the same failure: a log that is correct but
+    belongs to the wrong rounds."""
+    def mut(raws):
+        vals = [r["parsed"] for r in raws]
+        for i, r in enumerate(raws):
+            r["parsed"] = vals[(i + 1) % len(vals)]
+            r["raw"] = [f"{v:.6f}" for v in r["parsed"]]
+    root = tmp_path / "runs"
+    build_run(root, "qwen7b", 0, "greedy", raw_mut=mut)
+    r = run_checker(root, arm="greedy")
+    assert r.returncode == 1
+    assert "PARSE-VS-SERVED" in r.stdout
+
+
+def test_analyzer_aggregates_sampled_stats_at_model_level():
+    """BLOCKER 2. Per-cell sampled columns are not reportable; the model
+    row must carry the across-seed mean AND across-seed uncertainty of
+    each, and must keep the three spreads distinct."""
+    src = open(os.path.join(
+        PIPE, "analyze_section3_model_equilibria.py")).read()
+    for key in ("late_mean", "round30_mean", "temporal_sd", "late_drift",
+                "pop_sd_final", "pop_sd_late"):
+        assert f'("{key}", "{key}")' in src, key
+    for suffix in ("_seed_sd", "_ci95_low", "_ci95_high"):
+        assert f'f"{{out_prefix}}{suffix}"' in src, suffix
+    assert '"headline_column"' in src
+    assert '"stochastic_arm"' in src
+
+
+def test_d8_history_wording_starts_at_innate():
+    """The history is the last <=8 of [innate, op_raw[0], ...]: it starts
+    with the INNATE opinion at t=0, then post-peer states."""
+    gen = open(os.path.join(CONDOR, "gen_pofd_sweep.py")).read()
+    i = gen.index("S3I_KEY = ")
+    block = gen[max(0, i - 6000):i]
+    assert "INNATE opinion" in block and "post-peer states" in block
+    chk = open(CHECKER).read()
+    assert "STARTS with the" in chk and "innate opinion" in chk.lower()

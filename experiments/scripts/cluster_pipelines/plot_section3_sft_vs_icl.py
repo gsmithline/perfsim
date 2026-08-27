@@ -10,7 +10,8 @@ adaptation channel, which is what makes a paired plot meaningful:
   SFT  reference-regularized, fresh r512 LoRA each round, forward KL
        lambda=2                          (wave section3_model_equilibria)
   ICL  frozen weights, ICL_K=0, ICL_DAYS=8: each agent sees only its own
-       last eight post-peer opinions     (wave section3_model_icl)
+       history -- the innate opinion at t=0, then post-peer states,
+       oldest to newest (wave section3_model_icl)
 
 THE PERFECT-PREDICTION REFERENCE IS RETAINED. At W=1 with both gates
 open and mean-preserving alpha=.5 sweeps, a platform that predicts
@@ -203,7 +204,8 @@ def main():
         "surface. Each model contributes two points: reference-regularized",
         "SFT (fresh r512 LoRA each round, forward KL lambda=2) and frozen",
         "personal-history ICL (ICL_K=0, ICL_DAYS=8 -- each agent sees only",
-        "its own last eight post-peer opinions). Bars are across-seed 95%",
+        "its own history: the innate opinion at t=0, then post-peer",
+        "states, oldest to newest). Bars are across-seed 95%",
         "Student-t intervals over seeds {0,42,43}; the grey line connects",
         "the two channels for one model. Both arms share every other",
         f"setting (MovieLens/Action, 723 agents, 30 rounds, S=100 sweeps,",

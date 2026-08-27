@@ -22,9 +22,13 @@ WHAT THIS FILE PROVES, and why each check exists.
 3. THE PERSONAL-HISTORY LOG IS COMPLETE AND REPLAYS BYTE-EXACTLY.
    icl_days_log.json.gz must hold exactly rounds 0..n-1, each with 723
    rendered sentences, and every sentence must replay CHARACTER FOR
-   CHARACTER from (innate, op_raw). That single replay simultaneously
-   proves: the context is the agent's OWN last <= 8 post-peer opinions,
-   in the right window and order, and nothing else.
+   CHARACTER from (innate, op_raw). The history is the last <= 8
+   entries of [innate, op_raw[0], ..., op_raw[t-1]]: it STARTS with the
+   agent's INNATE opinion at t=0 and is thereafter the innate opinion
+   FOLLOWED BY post-peer states, oldest to newest, until innate leaves
+   the window at t=8. That single replay simultaneously proves the
+   context is the agent's OWN values, in the right window and order,
+   and nothing else.
 
 4. NO CROSS-AGENT CONTEXT. icl_k == 0, icl_ctx_log.json.gz absent, and
    the cross-user exemplar tensors (icl_idx_raw / icl_val_raw) empty.
@@ -189,6 +193,60 @@ def check_personal_history(run_dir, d, rounds, cfg, errs, rec):
         rec["history_replay"] = "byte-exact"
 
 
+def check_parsed_matches_pred(run_dir, d, rounds, errs, rec):
+    """(8) EVERY round's logged `parsed` vector must equal pred_raw for
+    THAT round, agent by agent.
+
+    The strict raw-generation gate proves the log is internally
+    consistent (each raw string IS its parsed value). It does NOT prove
+    the log describes the run: a log could be perfectly well-formed and
+    belong to a different round, a different agent order, or a different
+    run entirely, and every other check would still pass. pred_raw is
+    what actually reached the population, so the two must agree
+    elementwise or the generations are not evidence about this
+    trajectory."""
+    p = run_dir / "raw_gen_log.json.gz"
+    if not p.exists():
+        return
+    pred = d.get("pred_raw")
+    if not torch.is_tensor(pred) or tuple(pred.shape) != (rounds, N_AGENTS):
+        return
+    pred = pred.float()
+    try:
+        with gzip.open(p, "rt") as fh:
+            rows = [json.loads(l) for l in fh if l.strip()]
+    except (OSError, ValueError):
+        return
+    by_round = {}
+    for r in rows:
+        t = r.get("round")
+        if isinstance(t, int):
+            by_round[t] = r.get("parsed")
+    bad, worst, n_checked = [], 0.0, 0
+    for t in range(rounds):
+        vals = by_round.get(t)
+        if not isinstance(vals, list) or len(vals) != N_AGENTS:
+            bad.append((t, "missing or wrong-length parsed vector"))
+            continue
+        pv = torch.tensor([float(v) for v in vals], dtype=torch.float32)
+        # pred_raw is what was SERVED; the runner clamps to [0,1] on the
+        # way out, so compare against the same clamp
+        diff = (pv.clamp(0.0, 1.0) - pred[t].clamp(0.0, 1.0)).abs()
+        worst = max(worst, float(diff.max()))
+        n_checked += 1
+        if float(diff.max()) > 1e-6:
+            i = int(diff.argmax())
+            bad.append((t, f"agent {i}: parsed {float(pv[i]):.6f} != "
+                           f"pred_raw {float(pred[t][i]):.6f}"))
+    rec["parsed_vs_pred_max_abs"] = worst
+    rec["parsed_vs_pred_rounds_checked"] = n_checked
+    if bad:
+        errs.append(f"PARSE-VS-SERVED the logged `parsed` vector differs "
+                    f"from pred_raw in {len(bad)} round(s) (max |diff| "
+                    f"{worst:.3e}), e.g. round {bad[0][0]} {bad[0][1]} -- "
+                    f"the raw log does not describe this trajectory")
+
+
 def check_arrays(d, rounds, errs):
     """(5) Complete, finite, in-range trajectory with a live twin."""
     for name in ("op_raw", "pred_raw"):
@@ -270,6 +328,39 @@ def check_cell(tag, model, seed, rounds, g, roots, arm="greedy"):
     dec = g.S3I_DECODE[arm]
     if dec["temperature"] is not None:
         S3M._eq(cfg, "gen_temperature", float(dec["temperature"]), errs)
+    # (7c) THE SAMPLING POLICY IS PINNED, NOT INHERITED. top_p/top_k/
+    # repetition_penalty otherwise come from each checkpoint's
+    # generation_config, so "T=1 from the model's own distribution"
+    # would be false wherever a checkpoint truncates.
+    for knob, key in (("top_p", "gen_top_p"), ("top_k", "gen_top_k"),
+                      ("repetition_penalty", "gen_repetition_penalty")):
+        want = dec[knob]
+        if want is None:
+            continue
+        S3M._eq(cfg, key, float(want) if knob != "top_k" else int(want),
+                errs)
+    # and the RECORDED EFFECTIVE policy must agree with the pins
+    effp = cfg.get("gen_policy_effective")
+    if dec["top_p"] is not None:
+        if not isinstance(effp, dict):
+            errs.append("DECODE gen_policy_effective absent -- the run "
+                        "does not record what generation actually used")
+        else:
+            for knob, want in (("top_p", dec["top_p"]),
+                               ("top_k", dec["top_k"]),
+                               ("repetition_penalty",
+                                dec["repetition_penalty"]),
+                               ("do_sample", dec["do_sample"] == 1),
+                               ("temperature", dec["temperature"])):
+                got = (effp.get(knob) or {})
+                if got.get("source") != "pinned":
+                    errs.append(f"DECODE effective {knob} is "
+                                f"{got.get('source')!r}, not 'pinned' -- "
+                                f"this arm must not inherit a checkpoint "
+                                f"default")
+                elif want is not None and got.get("value") != want:
+                    errs.append(f"DECODE effective {knob}="
+                                f"{got.get('value')!r}, want {want!r}")
     if dec["tok"] not in tag:
         errs.append(f"DECODE tag does not carry the '{dec['tok']}' token "
                     f"-- a cell that does not say which decoder ran "
@@ -294,6 +385,7 @@ def check_cell(tag, model, seed, rounds, g, roots, arm="greedy"):
         # every round, report parse_fail_frac == 0, carry 723 parsed
         # values, and every raw string must BE the served value.
         gen_stats = S3M.check_raw_generations(run_dir, rounds, errs)
+        check_parsed_matches_pred(run_dir, d, rounds, errs, rec)
 
     op = torch.as_tensor(d.get("op_raw", torch.empty(0))).float()
     pr = torch.as_tensor(d.get("pred_raw", torch.empty(0))).float()

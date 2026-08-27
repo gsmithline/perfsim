@@ -49,6 +49,17 @@ class HFCausalLMModel(Model):
         gen_batch_size: int = 16,
         do_sample: bool = False,
         temperature: float = 1.0,
+        # SAMPLING POLICY. None = INHERIT the checkpoint's
+        # generation_config -- the historical behaviour of every archived
+        # run, preserved exactly. A value PINS that knob, so a wave can
+        # state "T=1 from the model's own distribution" and have it be
+        # true: Qwen checkpoints ship top_p/top_k defaults that would
+        # otherwise truncate the sampled distribution silently, and
+        # several ship repetition_penalty != 1, which perturbs even
+        # greedy decoding.
+        top_p: float | None = None,
+        top_k: int | None = None,
+        repetition_penalty: float | None = None,
         group_prompting: bool = False,
         load_now: bool = True,
     ) -> None:
@@ -67,6 +78,9 @@ class HFCausalLMModel(Model):
         self._gen_batch_size = gen_batch_size
         self._do_sample = do_sample
         self._temperature = temperature
+        self._top_p = top_p
+        self._top_k = top_k
+        self._repetition_penalty = repetition_penalty
         self._group_prompting = group_prompting
 
         # diagnostics from the most recent forward(): the raw decoded strings and
@@ -380,6 +394,17 @@ class HFCausalLMModel(Model):
                 )
                 if do_sample:
                     gen_kwargs["temperature"] = temperature
+                    # top_p / top_k shape the SAMPLED distribution and are
+                    # inert under greedy decoding, so they are sent only
+                    # when sampling
+                    if self._top_p is not None:
+                        gen_kwargs["top_p"] = self._top_p
+                    if self._top_k is not None:
+                        gen_kwargs["top_k"] = self._top_k
+                # repetition_penalty perturbs BOTH decoders
+                if self._repetition_penalty is not None:
+                    gen_kwargs["repetition_penalty"] = \
+                        self._repetition_penalty
                 with torch.no_grad():
                     gen = self.inner_model.generate(**inputs, **gen_kwargs)
                 new_tokens = gen[:, inputs["input_ids"].shape[1] :]
@@ -396,6 +421,30 @@ class HFCausalLMModel(Model):
                 self.inner_model.eval()
 
         return out
+
+    def effective_generation_policy(self) -> dict:
+        """What generation ACTUALLY used, knob by knob: the pinned value
+        when this wrapper pins it, otherwise the value inherited from the
+        checkpoint's generation_config. Recorded by the runner so a run
+        is auditable without re-loading the checkpoint."""
+        gc = getattr(getattr(self, "inner_model", None),
+                     "generation_config", None)
+
+        def eff(pinned, name):
+            if pinned is not None:
+                return {"value": pinned, "source": "pinned"}
+            return {"value": (getattr(gc, name, None) if gc is not None
+                              else None),
+                    "source": "checkpoint_default"}
+
+        return {
+            "do_sample": {"value": self._do_sample, "source": "pinned"},
+            "temperature": {"value": self._temperature, "source": "pinned"},
+            "top_p": eff(self._top_p, "top_p"),
+            "top_k": eff(self._top_k, "top_k"),
+            "repetition_penalty": eff(self._repetition_penalty,
+                                      "repetition_penalty"),
+        }
 
     @staticmethod
     def _parse(text: str, default: float = 0.5) -> float:
