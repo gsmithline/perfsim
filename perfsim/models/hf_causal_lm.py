@@ -488,7 +488,7 @@ class HFCausalLMModel(Model):
     # ---- PROSE parsing (2026-08-27) ----------------------------------
     # A number that is NOT part of a longer numeric literal.
     _STANDALONE_NUM = re.compile(r"(?<![\d.])(\d*\.\d+|\d+(?:\.\d*)?)"
-                                 r"(?![\d.])")
+                                 r"(?!\d)(?!\.\d)")
     # Scale descriptions echoed back from the prompt ("between 0 and 1",
     # "on a 0-1 scale"). Their 0 and 1 are NOT predictions, and leaving
     # them in would make almost every prose answer look ambiguous.
@@ -501,7 +501,7 @@ class HFCausalLMModel(Model):
     _LABELLED = re.compile(
         r"(?:answer|estimate[ds]?|estimation|prediction|predicted|rating|"
         r"score|value|opinion)\b[^0-9\n]{0,24}?"
-        r"(?<![\d.])(\d*\.\d+|\d+(?:\.\d*)?)(?![\d.])", re.I)
+        r"(?<![\d.])(\d*\.\d+|\d+(?:\.\d*)?)(?!\d)(?!\.\d)", re.I)
 
     @classmethod
     def _parse_prose(cls, text, default: float = 0.5):
