@@ -1,7 +1,9 @@
-"""Tests for the 2026-08-26 SECTION-4 PROBE wave
-(section4_gate_anch2_probe: 8 jobs, 5 rounds, seed 0, beta=0.75,
-ea 0.7 x es {0, 1} x arms {b0, d8} x conds {fixed, evolving}) and for
-check_section4_gate.py --wave probe.
+"""Tests for the beta=0.75 SECTION-4 family:
+  section4_gate_anch2_probe (2026-08-26): 8 jobs, 5 rounds, es {0, 1}
+  section4_gate_anch2_scout (2026-08-27): 20 jobs, 30 rounds,
+                                          es {0, .1, .2, .3, 1}
+both seed 0, ea 0.7, arms {b0, d8} x conds {fixed, evolving}, and for
+check_section4_gate.py --wave probe|scout.
 
 The generator tests read the EMITTED artifacts on disk (the configs and
 subs Condor actually consumes), with the grid restated independently --
@@ -48,6 +50,16 @@ TARGET = "Action"
 BASE = "mistralai/Mistral-7B-Instruct-v0.3"
 KEYS = {"fixed": "section4_gate_anch2_probe_fixed",
         "evolving": "section4_gate_anch2_probe_evo"}
+# the two variants, restated independently of the generator
+VARIANTS = {
+    "probe": dict(prefix="pofds4gp", ess=(0.0, 1.0), rounds=5, n=8,
+                  keys={"fixed": "section4_gate_anch2_probe_fixed",
+                        "evolving": "section4_gate_anch2_probe_evo"}),
+    "scout": dict(prefix="pofds4gs", ess=(0.0, 0.1, 0.2, 0.3, 1.0),
+                  rounds=30, n=20,
+                  keys={"fixed": "section4_gate_anch2_scout_fixed",
+                        "evolving": "section4_gate_anch2_scout_evo"}),
+}
 
 _G0 = torch.Generator().manual_seed(20260826)
 INNATE = torch.rand(N, generator=_G0)
@@ -65,14 +77,14 @@ def _num(v):
     return f"{float(v):g}".replace(".", "p")
 
 
-def tag_for(arm, cond, es):
-    return (f"pofds4gp_mistral7b_{arm}_{COND_TOK[cond]}_anch2_ea0p7"
+def tag_for(arm, cond, es, prefix="pofds4gp"):
+    return (f"{prefix}_mistral7b_{arm}_{COND_TOK[cond]}_anch2_ea0p7"
             f"_w0p75_l0p2_es{_num(es)}_s{SEED}")
 
 
 # ------------------------------------------------ emitted-artifact tests
-def _sub_and_rows(cond):
-    key = KEYS[cond]
+def _sub_and_rows(cond, variant="probe"):
+    key = VARIANTS[variant]["keys"][cond]
     sub = open(os.path.join(CONDOR, f"at_pofd_{key}.sub")).read()
     rows = [ln for ln in open(os.path.join(
         CONDOR, f"configs_pofd_{key}.txt")).read().splitlines()
@@ -80,17 +92,19 @@ def _sub_and_rows(cond):
     return sub, rows
 
 
-def test_emitted_grid_and_columns():
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
+def test_emitted_grid_and_columns(variant):
+    v = VARIANTS[variant]
     all_tags = set()
     for cond in CONDS:
-        sub, rows = _sub_and_rows(cond)
-        assert len(rows) == 4
+        sub, rows = _sub_and_rows(cond, variant)
+        assert len(rows) == v["n"] // 2
         # column positions come off the sub's own queue line -- the only
         # definition Condor reads
         q = next(l for l in sub.splitlines() if l.startswith("queue"))
         m = re.match(r"queue\s+(.*?)\s+from\s+(\S+)", q)
         cols = [c.strip() for c in m.group(1).split(",")]
-        assert m.group(2).endswith(f"configs_pofd_{KEYS[cond]}.txt")
+        assert m.group(2).endswith(f"configs_pofd_{v['keys'][cond]}.txt")
         got = set()
         for r in rows:
             c = [x.strip() for x in r.split(",")]
@@ -98,9 +112,9 @@ def test_emitted_grid_and_columns():
             row = dict(zip(cols, c))
             assert row["wplat"] == "0.75" and row["eps_ai"] == "0.7"
             assert row["gamma"] == "0.0" and row["mode"] == "loop"
-            assert row["seed"] == "0" and row["nrounds"] == "5"
+            assert row["seed"] == "0" and row["nrounds"] == str(v["rounds"])
             assert row["gatemode"] == "threshold"
-            assert float(row["eps"]) in ESS
+            assert float(row["eps"]) in v["ess"]
             arm = "d8" if row["style"] == "frozen" else "b0"
             assert row["icldays"] == ("8" if arm == "d8" else "0")
             assert row["uselora"] == ("0" if arm == "d8" else "1")
@@ -108,10 +122,11 @@ def test_emitted_grid_and_columns():
                 assert row["cmode"] == "bottom" and row["sftexcl"] == "0"
             else:
                 assert "cmode" not in row and "sftexcl" not in row
-            assert row["tag"] == tag_for(arm, cond, float(row["eps"]))
+            assert row["tag"] == tag_for(arm, cond, float(row["eps"]),
+                                         v["prefix"])
             got.add((arm, float(row["eps"])))
             all_tags.add(row["tag"])
-        assert got == {(a, e) for a in ARMS for e in ESS}
+        assert got == {(a, e) for a in ARMS for e in v["ess"]}
         env = next(l for l in sub.splitlines()
                    if l.startswith("environment"))
         for tok in ("AI_GATE_REFERENCE=anchor", "SAVE_RAW_GEN=1",
@@ -121,27 +136,29 @@ def test_emitted_grid_and_columns():
             assert tok in env, (cond, tok)
         assert ("INNATE_CLAMP_PEER_MODE=stubborn" in env) == \
             (cond == "fixed")
-        assert f"submit_pofd_sweep.sh <BID> {KEYS[cond]}" in sub
-        assert "--wave probe" in sub
-    assert len(all_tags) == 8
+        assert f"submit_pofd_sweep.sh <BID> {v['keys'][cond]}" in sub
+        assert f"--wave {variant}" in sub
+    assert len(all_tags) == v["n"]
 
 
-def test_probe_tags_disjoint_from_every_s4g_key():
-    probe = set()
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
+def test_family_tags_disjoint_from_every_other_s4g_key(variant):
+    mine = set()
     for cond in CONDS:
-        _, rows = _sub_and_rows(cond)
-        probe |= {r.split(",")[0].strip() for r in rows}
+        _, rows = _sub_and_rows(cond, variant)
+        mine |= {r.split(",")[0].strip() for r in rows}
     others = set()
     for f in os.listdir(CONDOR):
         if f.startswith("configs_pofd_section4_gate_anch2") and \
-                "probe" not in f:
+                variant not in f:
             others |= {ln.split(",")[0].strip()
                        for ln in open(os.path.join(CONDOR, f))
                        if ln.strip()}
-    assert others and not (probe & others)
+    assert others and not (mine & others)
     # and the prefix itself can never be swallowed by the S4G scans
-    assert all(t.startswith("pofds4gp_") and
-               not t.startswith("pofds4g_") for t in probe)
+    pre = VARIANTS[variant]["prefix"] + "_"
+    assert all(t.startswith(pre) and not t.startswith("pofds4g_")
+               for t in mine)
 
 
 def test_submit_script_knows_the_probe_keys():
@@ -154,13 +171,16 @@ def test_submit_script_knows_the_probe_keys():
     assert ('section4_gate_anch2_probe) TARGETS='
             '"section4_gate_anch2_probe_fixed '
             'section4_gate_anch2_probe_evo" ;;') in src
+    assert ('section4_gate_anch2_scout) TARGETS='
+            '"section4_gate_anch2_scout_fixed '
+            'section4_gate_anch2_scout_evo" ;;') in src
 
 
 # --------------------------------------------------- synthetic runs
-def make_cfg(tag, arm, cond, es):
+def make_cfg(tag, arm, cond, es, rounds=ROUNDS):
     c = {
         "run_tag": tag, "base_model": BASE, "dataset": "movielens",
-        "ml_target": TARGET, "n_rounds": ROUNDS, "seed": SEED,
+        "ml_target": TARGET, "n_rounds": rounds, "seed": SEED,
         "eps": es, "eps_ai": EA,
         "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
         "ai_gate_reference": "anchor",
@@ -211,15 +231,16 @@ def render_days(vals):
             + ", ".join(f"{v:.2f}" for v in vals) + ".")
 
 
-def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None):
-    tag = tag_for(arm, cond, es)
+def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
+              prefix="pofds4gp", rounds=ROUNDS):
+    tag = tag_for(arm, cond, es, prefix)
     d = os.path.join(str(root), tag)
     os.makedirs(d, exist_ok=True)
     mask = bottom_mask(INNATE, CLAMP_N) if cond == "fixed" else None
 
     op, tw, pr = [], [], []
     x, y = INNATE.clone(), INNATE.clone()
-    for t in range(ROUNDS):
+    for t in range(rounds):
         # the twin depends on (cond, es, seed) only -- NEVER the arm --
         # which is the twin-agreement invariant the gate replays
         y = y + 0.01 * ((0.35 + 0.02 * es) - y)
@@ -231,20 +252,20 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None):
         tw.append(y.clone())
         pr.append(torch.full((N,), 0.55 + 0.005 * t))
 
-    cfg = make_cfg(tag, arm, cond, es)
+    cfg = make_cfg(tag, arm, cond, es, rounds)
     if cfg_mut:
         cfg_mut(cfg)
     payload = {
         "config": cfg,
         "trajectory": [{"round": t, "contact": 0.4}
-                       for t in range(ROUNDS)],
+                       for t in range(rounds)],
         "op_raw": torch.stack(op),
         "twin_raw": torch.stack(tw),
         "pred_raw": torch.stack(pr),
         "innate": INNATE.clone(),
     }
     if mask is not None:
-        touch = torch.zeros(ROUNDS, N, dtype=torch.bool)
+        touch = torch.zeros(rounds, N, dtype=torch.bool)
         touch[:, ~mask] = True
         payload.update({
             "innate_clamp_mask": mask.clone(),
@@ -260,12 +281,12 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None):
     with open(os.path.join(d, "config.json"), "w") as fh:
         json.dump(cfg, fh, default=str)
     with open(os.path.join(d, "telemetry.json"), "w") as fh:
-        for t in range(ROUNDS):
+        for t in range(rounds):
             fh.write(json.dumps({"round": t, "deployment": t,
                                  "is_deploy": 1, "contact": 0.4}) + "\n")
     raws = [{"round": t, "parse_fail_frac": 0.0,
              "raw": ["0.55"] * N, "parsed": [0.55] * N}
-            for t in range(ROUNDS)]
+            for t in range(rounds)]
     if raw_mut:
         raw_mut(raws)
     with gzip.open(os.path.join(d, "raw_gen_log.json.gz"), "wt",
@@ -276,7 +297,7 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None):
         hist = [INNATE.tolist()]
         with gzip.open(os.path.join(d, "icl_days_log.json.gz"), "wt",
                        compresslevel=1) as fh:
-            for t in range(ROUNDS):
+            for t in range(rounds):
                 win = hist[-ICL_DAYS:]
                 fh.write(json.dumps({
                     "round": t,
@@ -287,24 +308,26 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None):
 
 
 def build_probe(root, skip=(), cfg_mut_on=None, cfg_mut=None,
-                raw_mut_on=None, raw_mut=None):
+                raw_mut_on=None, raw_mut=None, variant="probe"):
+    v = VARIANTS[variant]
     for cond in CONDS:
         for arm in ARMS:
-            for es in ESS:
+            for es in v["ess"]:
                 cell = (arm, cond, es)
                 if cell in skip:
                     continue
                 build_run(root, arm, cond, es,
                           cfg_mut=cfg_mut if cell == cfg_mut_on else None,
-                          raw_mut=raw_mut if cell == raw_mut_on else None)
+                          raw_mut=raw_mut if cell == raw_mut_on else None,
+                          prefix=v["prefix"], rounds=v["rounds"])
     return root
 
 
-def run_checker(root, extra=()):
+def run_checker(root, extra=(), wave="probe"):
     env = dict(os.environ)
     env["USE_TF"] = "0"
     cmd = [sys.executable, CHECKER, "--run-root", str(root),
-           "--wave", "probe"] + list(extra)
+           "--wave", wave] + list(extra)
     return subprocess.run(cmd, capture_output=True, text=True, env=env,
                           cwd=REPO)
 
@@ -388,3 +411,43 @@ def test_missing_cell_is_a_hard_failure(tmp_path):
     r = run_checker(root)
     assert r.returncode == 1
     assert "ABSENT" in r.stdout
+
+
+# ---------------------------------------------------------------- scout
+@pytest.mark.slow
+def test_scout_full_set_passes_and_ignores_probe_dirs(tmp_path):
+    """The 20-cell 30-round scout passes; the probe's finished run dirs
+    (and S4G/smoke dirs) beside it are invisible to the scout scan."""
+    root = build_probe(tmp_path / "runs", variant="scout")
+    build_probe(root, variant="probe")            # the real situation
+    os.makedirs(root / ("pofds4g_mistral7b_b0_fixb20_anch2_ea1_w0p5_l0p2"
+                        "_es1_s0"), exist_ok=True)
+    r = run_checker(root, wave="scout")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PASS" in r.stdout and "20/20 cells present" in r.stdout
+    assert "n_rounds" not in r.stdout          # every cell at 30 rounds
+    # and the probe gate, on the same root, still sees exactly its 8
+    r = run_checker(root, wave="probe")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "8/8 cells present" in r.stdout and "EXTRA" not in r.stdout
+
+
+@pytest.mark.slow
+def test_scout_cell_at_the_probe_horizon_fails(tmp_path):
+    """A 5-round artifact wearing a scout tag is a short run, never a
+    scout cell."""
+    root = build_probe(tmp_path / "runs", variant="scout",
+                       skip=(("d8", "fixed", 0.2),))
+    build_run(root, "d8", "fixed", 0.2, prefix="pofds4gs", rounds=5)
+    r = run_checker(root, wave="scout")
+    assert r.returncode == 1
+    assert "n_rounds=5, expected 30" in r.stdout
+
+
+@pytest.mark.slow
+def test_scout_missing_social_gate_is_absent(tmp_path):
+    root = build_probe(tmp_path / "runs", variant="scout",
+                       skip=(("b0", "evolving", 0.3),))
+    r = run_checker(root, wave="scout")
+    assert r.returncode == 1
+    assert "ABSENT" in r.stdout and "es0p3" in r.stdout

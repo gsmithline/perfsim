@@ -9464,34 +9464,46 @@ def s4g2_sub(cond, kind="main"):
     return s4g_sub(cond, key=key, rows=rows, kind=what, grid=S4G2_GRID_TXT)
 
 
-# section4_gate_anch2_probe (2026-08-26). FIVE-ROUND SEED-0 CHANNEL
-# PROBE at beta=0.75: does the SFT-vs-personal-history-ICL story hold
-# when the platform blend is strong? Same corrected-gate machinery as
-# the S4G waves (mistral7b, anch2 operator, bottom-20 fixed vs evolving,
-# strict-< threshold gates, WITH_TWIN=1, movielens Action, 723 agents),
-# with exactly FOUR pinned departures, each visible in tag + config +
-# sub env:
+# section4_gate_anch2_probe (2026-08-26) and section4_gate_anch2_scout
+# (2026-08-27): THE beta=0.75 CHANNEL FAMILY. Does the SFT-vs-personal-
+# history-ICL story hold when the platform blend is strong? Same
+# corrected-gate machinery as the S4G waves (mistral7b, anch2 operator,
+# bottom-20 fixed vs evolving, strict-< threshold gates, WITH_TWIN=1,
+# movielens Action, 723 agents), with exactly these pinned departures,
+# each visible in tag + config + sub env:
 #   W_PLAT = 0.75            (queue col 11; tag token w0p75)
-#   EPS_AI = 0.7, ES {0, 1}  (ea0p7; es0 = peers closed, es1 = open)
-#   N_ROUNDS = 5, SEED 0     (a probe, not a production horizon)
+#   EPS_AI = 0.7             (ea0p7)
+#   SEED 0                   (a probe/scout, not a production replicate)
 #   PARSE_MODE=strict + DEFFUANT_ALPHA=0.5 pinned in the env (the fig6
 #   seed-0 gate found 0.076% malformed Mistral generations under the
 #   legacy parser; strict counts them as failures and serves the 0.5
 #   default instead of a clamped misread, and both fields are recorded
 #   in config for the checker to pin)
 # gamma (INNATE_LAMBDA) stays 0.2 and alpha stays 0.5 -- the requested
-# values ARE the S4G surface values, now pinned explicitly.
-# GRID -- 8 jobs: 2 arms {b0 = ordinary SFT, d8 = personal-history ICL}
-# x 2 conds {fixed, evolving} x es {0, 1}, at ea=0.7, seed 0, 5 rounds.
-# REGISTERED QUESTION: the signed and absolute effect on cohort B (the
-# 578 responsive agents) vs the matched twin -- is ICL near zero with
-# peers closed (es=0) but stronger than SFT with peers open (es=1)?
-# TAGS: pofds4gp_ prefix -- disjoint from pofds4g_/pofds4gsmk_ under
-# the underscore-carrying prefix scans, so neither wave's checker can
-# see the other's dirs as EXTRA.
-# GATE: check_section4_gate.py --wave probe (the S4G checker's third
-# wave; no smoke -- the 5-round wave IS the probe).
-# ANALYZE: analyze_s4g_probe.py (cohort-B signed/absolute effect).
+# values ARE the S4G surface values, now pinned explicitly. Neither is
+# varied anywhere in this family (user, 2026-08-27).
+#
+# TWO VARIANTS, one grammar, DISJOINT prefixes (the idempotent wrapper
+# no-ops any tag whose run dir already holds a trajectory.pt, so a
+# 30-round cell must never wear a 5-round cell's tag):
+#   probe  pofds4gp_  5 rounds, es {0, 1}               =  8 jobs (done
+#          2026-08-27: ICL transmission 0 exactly with peers closed,
+#          0.021 vs SFT 0.031 with peers open and still climbing)
+#   scout  pofds4gs_  30 rounds, es {0, .1, .2, .3, 1}  = 20 jobs -- the
+#          user's 30-round seed-0 scout: does beta=0.75 give a CLEANER
+#          SFT/ICL crossover across the social gate than the beta=0.5
+#          Figure-6 grid? If so these parameters carry the full three-
+#          seed wave.
+# Both: 2 arms {b0 = ordinary SFT, d8 = personal-history ICL} x 2 conds
+# {fixed, evolving} x the variant's es list, at ea=0.7, seed 0.
+# REGISTERED QUESTION (Figure-5 frame): the DIRECT fixed-vs-evolving
+# transmission into cohort B (agent-paired MAE) -- 0 exactly for d8 with
+# peers closed; ICL vs SFT ordering as the social gate opens.
+# TAGS: pofds4gp_ / pofds4gs_ -- disjoint from pofds4g_/pofds4gsmk_ and
+# from each other under the underscore-carrying prefix scans, so no
+# wave's checker can see another's dirs as EXTRA.
+# GATE: check_section4_gate.py --wave probe|scout. ANALYZE:
+# analyze_s4g_probe.py --variant probe|scout.
 S4GP_KEY = "section4_gate_anch2_probe"
 S4GP_FIXED_KEY = S4GP_KEY + "_fixed"
 S4GP_EVO_KEY = S4GP_KEY + "_evo"
@@ -9504,61 +9516,118 @@ S4GP_ROUNDS = 5
 S4GP_W_PLAT = 0.75
 S4GP_N_PER_COND = 4              # 2 arms x 2 es
 S4GP_N_TOTAL = 8
+S4GS_KEY = "section4_gate_anch2_scout"
+S4GS_FIXED_KEY = S4GS_KEY + "_fixed"
+S4GS_EVO_KEY = S4GS_KEY + "_evo"
+S4GS_PREFIX = "pofds4gs"
+S4GS_ESS = [0.0, 0.1, 0.2, 0.3, 1.0]
+S4GS_ROUNDS = S4G_ROUNDS         # 30, the production horizon
+S4GS_N_PER_COND = 10             # 2 arms x 5 es
+S4GS_N_TOTAL = 20
+# the family table the checker / analyzer / tests read; arms, gates,
+# seeds and W_PLAT are family-wide (S4GP_*)
+S4G_VARIANTS = {
+    "probe": dict(key=S4GP_KEY, fixed_key=S4GP_FIXED_KEY,
+                  evo_key=S4GP_EVO_KEY, prefix=S4GP_PREFIX, ess=S4GP_ESS,
+                  rounds=S4GP_ROUNDS, n_per_cond=S4GP_N_PER_COND,
+                  n_total=S4GP_N_TOTAL,
+                  kind="FIVE-ROUND SEED-0 PROBE",
+                  kind_grid="ea 0.7 x es {0, 1}",
+                  grid="ea {0.7} x es {0, 1}"),
+    "scout": dict(key=S4GS_KEY, fixed_key=S4GS_FIXED_KEY,
+                  evo_key=S4GS_EVO_KEY, prefix=S4GS_PREFIX, ess=S4GS_ESS,
+                  rounds=S4GS_ROUNDS, n_per_cond=S4GS_N_PER_COND,
+                  n_total=S4GS_N_TOTAL,
+                  kind="30-ROUND SEED-0 SCOUT",
+                  kind_grid="ea 0.7 x es {0, .1, .2, .3, 1}",
+                  grid="ea {0.7} x es {0, .1, .2, .3, 1}"),
+}
 
 
-def s4gp_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
-    """The s4g grammar with the probe prefix and the beta=0.75 w token:
-    pofds4gp_mistral7b_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
+def s4gv_tag(arm, cond, gate, es, seed, prefix, rounds=None):
+    """The s4g grammar with a family prefix and the beta=0.75 w token:
+    {prefix}_mistral7b_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
     _es{es}_s{seed}."""
-    t = s4g_tag(arm, cond, gate, es, seed,
-                prefix=S4GP_PREFIX if prefix is None else prefix,
-                rounds=rounds)
+    t = s4g_tag(arm, cond, gate, es, seed, prefix=prefix, rounds=rounds)
     assert "_w0p5_" in t, t
     return t.replace("_w0p5_", f"_w{_num(S4GP_W_PLAT)}_", 1)
 
 
-def s4gp_row(arm, cond, es, seed=0):
-    """One probe row: s4g_row's own output with the tag re-spelled by
-    s4gp_tag and W_PLAT (queue col 11) moved 0.5 -> 0.75. Everything
+def s4gp_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
+    return s4gv_tag(arm, cond, gate, es, seed,
+                    S4GP_PREFIX if prefix is None else prefix, rounds)
+
+
+def s4gs_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
+    return s4gv_tag(arm, cond, gate, es, seed,
+                    S4GS_PREFIX if prefix is None else prefix, rounds)
+
+
+def s4gv_row(arm, cond, es, seed, variant):
+    """One family row: s4g_row's own output with the tag re-spelled by
+    s4gv_tag and W_PLAT (queue col 11) moved 0.5 -> 0.75. Everything
     else IS the corrected-gate wave's row, by construction."""
+    v = S4G_VARIANTS[variant]
     row = s4g_row(arm, cond, S4GP_GATES[0], es, seed,
-                  nrounds=S4GP_ROUNDS, prefix=S4GP_PREFIX)
+                  nrounds=v["rounds"], prefix=v["prefix"])
     cols = [c.strip() for c in row.split(",")]
     want_tag = s4g_tag(arm, cond, S4GP_GATES[0], es, seed,
-                       prefix=S4GP_PREFIX)
+                       prefix=v["prefix"])
     assert cols[0] == want_tag and cols[11] == "0.5", row
-    cols[0] = s4gp_tag(arm, cond, S4GP_GATES[0], es, seed)
+    cols[0] = s4gv_tag(arm, cond, S4GP_GATES[0], es, seed, v["prefix"])
     cols[11] = f"{S4GP_W_PLAT:g}"
     return ", ".join(cols)
 
 
-def s4gp_rows(cond, seeds=None):
+def s4gv_rows(cond, variant, seeds=None):
+    v = S4G_VARIANTS[variant]
     seeds = S4GP_SEEDS if seeds is None else seeds
-    return [s4gp_row(arm, cond, es, seed)
+    return [s4gv_row(arm, cond, es, seed, variant)
             for seed in seeds
             for arm in S4GP_ARMS
-            for es in S4GP_ESS]
+            for es in v["ess"]]
 
 
-def s4gp_sub(cond):
-    key = S4GP_FIXED_KEY if cond == "fixed" else S4GP_EVO_KEY
-    kind = ("FIVE-ROUND SEED-0 PROBE -- beta(W_PLAT)=0.75, gamma(k)=0.2, "
-            "alpha=0.5; ea 0.7 x es {0, 1} x arms {b0, d8}")
-    sub = s4g_sub(cond, key=key, rows=s4gp_rows(cond), kind=kind,
-                  grid="ea {0.7} x es {0, 1}")
-    # the probe departs from the S4G surface in exactly the pinned ways
+def s4gv_sub(cond, variant):
+    v = S4G_VARIANTS[variant]
+    key = v["fixed_key"] if cond == "fixed" else v["evo_key"]
+    kind = (f"{v['kind']} -- beta(W_PLAT)=0.75, gamma(k)=0.2, alpha=0.5; "
+            f"{v['kind_grid']} x arms {{b0, d8}}")
+    sub = s4g_sub(cond, key=key, rows=s4gv_rows(cond, variant), kind=kind,
+                  grid=v["grid"])
+    # the family departs from the S4G surface in exactly the pinned ways
     # below; every substitution is asserted so a template drift cannot
     # silently emit an unmarked sub
     for old, new in (
-            ("W=0.5, lam=0.2", "W=0.75 (PROBE), lam=0.2"),
-            ("SEEDS 0/42/43", "SEED 0 ONLY, 5 ROUNDS"),
+            ("W=0.5, lam=0.2", f"W=0.75 ({variant.upper()}), lam=0.2"),
+            ("SEEDS 0/42/43", f"SEED 0 ONLY, {v['rounds']} ROUNDS"),
             ("SAVE_RAW_GEN=1 ",
              "SAVE_RAW_GEN=1 PARSE_MODE=strict DEFFUANT_ALPHA=0.5 "),
             ("with check_section4_gate.py (",
-             "with check_section4_gate.py --wave probe (")):
-        assert sub.count(old) == 1, (cond, old)
+             f"with check_section4_gate.py --wave {variant} (")):
+        assert sub.count(old) == 1, (cond, variant, old)
         sub = sub.replace(old, new)
     return sub
+
+
+def s4gp_row(arm, cond, es, seed=0):
+    return s4gv_row(arm, cond, es, seed, "probe")
+
+
+def s4gp_rows(cond, seeds=None):
+    return s4gv_rows(cond, "probe", seeds)
+
+
+def s4gp_sub(cond):
+    return s4gv_sub(cond, "probe")
+
+
+def s4gs_rows(cond, seeds=None):
+    return s4gv_rows(cond, "scout", seeds)
+
+
+def s4gs_sub(cond):
+    return s4gv_sub(cond, "scout")
 
 
 # fig4_anchor_tradeoff[_smoke|_ext|_zsprior] (2026-08-25).  FIGURE-4
@@ -13963,40 +14032,49 @@ def main():
         cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
             s4g2_sub(_cond, "ext")
 
-    # ---- Section-4 corrected-gate PROBE: 5 rounds, seed 0, beta=0.75 ----
+    # ---- Section-4 beta=0.75 family: probe (5 rounds, es {0,1}) and ----
+    # ---- scout (30 rounds, es {0,.1,.2,.3,1}), seed 0, disjoint prefixes --
     _prior_pr = {r.split(",")[0].strip()
                  for rows in files.values() for r in rows}
-    _pr_tags = set()
-    for _cond, _key in (("fixed", S4GP_FIXED_KEY),
-                        ("evolving", S4GP_EVO_KEY)):
-        _rows = s4gp_rows(_cond)
-        assert len(_rows) == S4GP_N_PER_COND, (_cond, len(_rows))
-        _ncols = 26 if _cond == "fixed" else 24
-        for _r in _rows:
-            _c = [x.strip() for x in _r.split(",")]
-            assert len(_c) == _ncols, (_cond, len(_c), _r)
-            assert _c[0].startswith(S4GP_PREFIX + "_mistral7b_") and \
-                f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] and \
-                "_w0p75_l0p2_" in _c[0], _c[0]
-            assert _c[11] == "0.75" and float(_c[14]) == S4GP_GATES[0], _r
-            assert float(_c[9]) in tuple(S4GP_ESS) and _c[3] == "0", _r
-            assert _c[22] == str(S4GP_ROUNDS) and _c[15] == "threshold" \
-                and _c[10] == "0.0", _r
-            assert _c[0] not in _prior_pr, ("probe tag collides", _c[0])
-            _pr_tags.add(_c[0])
-        _sub = s4gp_sub(_cond)
-        _env = next(l for l in _sub.splitlines()
-                    if l.startswith("environment"))
-        assert "AI_GATE_REFERENCE=anchor" in _env and \
-            "PARSE_MODE=strict" in _env and "DEFFUANT_ALPHA=0.5" in _env \
-            and "SAVE_RAW_GEN=1" in _env and "WITH_TWIN=1" in _env, _cond
-        assert ("INNATE_CLAMP_PEER_MODE=stubborn" in _env) == \
-            (_cond == "fixed"), _cond
-        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
-        files[p] = _rows
-        expected[p] = S4GP_N_PER_COND
-        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
-    assert len(_pr_tags) == S4GP_N_TOTAL
+    _fam_tags = {}
+    for _var, _v in S4G_VARIANTS.items():
+        _fam_tags[_var] = set()
+        for _cond, _key in (("fixed", _v["fixed_key"]),
+                            ("evolving", _v["evo_key"])):
+            _rows = s4gv_rows(_cond, _var)
+            assert len(_rows) == _v["n_per_cond"], (_var, _cond, len(_rows))
+            _ncols = 26 if _cond == "fixed" else 24
+            for _r in _rows:
+                _c = [x.strip() for x in _r.split(",")]
+                assert len(_c) == _ncols, (_var, _cond, len(_c), _r)
+                assert _c[0].startswith(_v["prefix"] + "_mistral7b_") and \
+                    f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] and \
+                    "_w0p75_l0p2_" in _c[0], _c[0]
+                assert _c[11] == "0.75" and \
+                    float(_c[14]) == S4GP_GATES[0], _r
+                assert float(_c[9]) in tuple(_v["ess"]) and _c[3] == "0", _r
+                assert _c[22] == str(_v["rounds"]) and \
+                    _c[15] == "threshold" and _c[10] == "0.0", _r
+                assert _c[0] not in _prior_pr, ("family tag collides",
+                                                _var, _c[0])
+                _fam_tags[_var].add(_c[0])
+            _sub = s4gv_sub(_cond, _var)
+            _env = next(l for l in _sub.splitlines()
+                        if l.startswith("environment"))
+            assert "AI_GATE_REFERENCE=anchor" in _env and \
+                "PARSE_MODE=strict" in _env and \
+                "DEFFUANT_ALPHA=0.5" in _env and "SAVE_RAW_GEN=1" in _env \
+                and "WITH_TWIN=1" in _env, (_var, _cond)
+            assert ("INNATE_CLAMP_PEER_MODE=stubborn" in _env) == \
+                (_cond == "fixed"), (_var, _cond)
+            p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+            files[p] = _rows
+            expected[p] = _v["n_per_cond"]
+            cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+        assert len(_fam_tags[_var]) == _v["n_total"], _var
+    # the two variants never share a tag (a 30-round cell must never be
+    # no-op'd by a finished 5-round cell's run dir)
+    assert not (_fam_tags["probe"] & _fam_tags["scout"])
 
     # ---- Figure-4 anchor trade-off (F4A): beta x gamma x es x 2 models ----
     # ---- under the threshold peer gate; 60 trained + 20 algebraic dups ----

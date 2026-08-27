@@ -251,14 +251,20 @@ GEN_REL = os.path.join("experiments", "condor", "gen_pofd_sweep.py")
 WAVE_V1 = "section4_gate_anch2"
 WAVE_FIG6 = "section4_gate_anch2_fig6"
 WAVE_PROBE = "section4_gate_anch2_probe"
+WAVE_SCOUT = "section4_gate_anch2_scout"
 WAVE_ALIASES = {WAVE_V1: WAVE_V1, "v1": WAVE_V1,
                 WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6,
-                WAVE_PROBE: WAVE_PROBE, "probe": WAVE_PROBE}
-WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, WAVE_PROBE, "v1", "fig6", "probe")
+                WAVE_PROBE: WAVE_PROBE, "probe": WAVE_PROBE,
+                WAVE_SCOUT: WAVE_SCOUT, "scout": WAVE_SCOUT}
+WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, WAVE_PROBE, WAVE_SCOUT,
+                "v1", "fig6", "probe", "scout")
+# the beta=0.75 family: wave name -> generator S4G_VARIANTS key
+FAMILY_VARIANT = {WAVE_PROBE: "probe", WAVE_SCOUT: "scout"}
 
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
 PROBE_PREFIX = "pofds4gp"       # the 5-round beta=0.75 probe wave
+SCOUT_PREFIX = "pofds4gs"       # the 30-round beta=0.75 scout wave
 # mirror of HFCausalLMModel._parse_strict's regex (never import
 # transformers on the login node); tests pin the two to agree
 _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
@@ -268,6 +274,7 @@ _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
 PROD_SCAN = PROD_PREFIX + "_"
 SMOKE_SCAN = SMOKE_PREFIX + "_"
 PROBE_SCAN = PROBE_PREFIX + "_"
+SCOUT_SCAN = SCOUT_PREFIX + "_"
 
 OP_TOKEN = "anch2"                 # <-> nested_ai_anchored_then_social_v2
 OP_INFIX = "_" + OP_TOKEN + "_"
@@ -293,7 +300,7 @@ CLAMP_COUNT = 145                  # round(0.2 * 723)
 # ONLY by a wave that declares extension horizons (fig6 _r60/_r100);
 # base cells never carry one.
 TAG_RE = re.compile(
-    r"^(?P<pre>pofds4gsmk|pofds4gp|pofds4g)"
+    r"^(?P<pre>pofds4gsmk|pofds4gs|pofds4gp|pofds4g)"
     r"_(?P<slug>[a-z0-9]+)"
     r"_(?P<arm>b0|d8)"
     r"_(?P<cond>fixb20|evoall)"
@@ -437,7 +444,8 @@ class Wave:
     def __init__(self, name, gen, ext_manifest=None):
         self.name = WAVE_ALIASES[name]
         self.fig6 = self.name == WAVE_FIG6
-        self.probe = self.name == WAVE_PROBE
+        self.probe = self.name in FAMILY_VARIANT      # probe OR scout
+        self.variant = FAMILY_VARIANT.get(self.name)
         self.gen = gen
         if self.fig6:
             self.key = gen.S4G2_KEY
@@ -469,14 +477,17 @@ class Wave:
                     f"generator declares (cells, gpu, witness, twin)="
                     f"{declared} but s4g2_cells() yields {got}")
         elif self.probe:
-            # the 5-round beta=0.75 probe: 2 arms x 2 conds x es {0, 1}
-            # at ea=0.7, seed 0 -- no smoke (the wave IS the probe), no
-            # twin-derived cells, no witnesses, no extensions
-            self.key = gen.S4GP_KEY
+            # the beta=0.75 family (probe: 5 rounds, es {0, 1}; scout:
+            # 30 rounds, es {0, .1, .2, .3, 1}): 2 arms x 2 conds x the
+            # variant's es list at ea=0.7, seed 0 -- no smoke (the wave
+            # IS the probe), no twin-derived cells, no witnesses, no
+            # extensions
+            fam = gen.S4G_VARIANTS[self.variant]
+            self.key = fam["key"]
             self.arms = tuple(gen.S4GP_ARMS)
             self.conds = tuple(gen.S4G_CONDS)
             self.gates = tuple(float(v) for v in gen.S4GP_GATES)
-            self.ess = tuple(float(v) for v in gen.S4GP_ESS)
+            self.ess = tuple(float(v) for v in fam["ess"])
             self.seeds = tuple(int(s) for s in gen.S4GP_SEEDS)
             self.cells6 = [(arm, cond, ea, es, seed, "gpu")
                            for seed in self.seeds for arm in self.arms
@@ -487,10 +498,10 @@ class Wave:
             self.ext_manifest = None
             self.ext_requests = []
             smoke_rows = lambda cond: []          # noqa: E731
-            if len(self.cells6) != gen.S4GP_N_TOTAL:
-                raise ValueError(f"generator declares S4GP_N_TOTAL="
-                                 f"{gen.S4GP_N_TOTAL} but the product has "
-                                 f"{len(self.cells6)} cells")
+            if len(self.cells6) != fam["n_total"]:
+                raise ValueError(f"generator declares n_total="
+                                 f"{fam['n_total']} for {self.variant} but "
+                                 f"the product has {len(self.cells6)} cells")
         else:
             self.key = gen.S4G_KEY
             self.arms = tuple(gen.S4G_ARMS)
@@ -512,12 +523,13 @@ class Wave:
                 raise ValueError(f"generator declares S4G_N_TOTAL="
                                  f"{gen.S4G_N_TOTAL} but the product has "
                                  f"{len(self.cells6)} cells")
-        self.rounds = int(gen.S4GP_ROUNDS if self.probe
-                          else gen.S4G_ROUNDS)
+        self.rounds = int(gen.S4G_VARIANTS[self.variant]["rounds"]
+                          if self.probe else gen.S4G_ROUNDS)
         self.smoke_rounds = int(gen.S4G_SMOKE_ROUNDS)
-        self.prod_prefix = PROBE_PREFIX if self.probe else PROD_PREFIX
+        self.prod_prefix = (gen.S4G_VARIANTS[self.variant]["prefix"]
+                            if self.probe else PROD_PREFIX)
         self.prod_scan = self.prod_prefix + "_"
-        self.tag_fn = gen.s4gp_tag if self.probe else gen.s4g_tag
+        self.tag_fn = gen.s4gv_tag if self.probe else gen.s4g_tag
         self.w_plat = float(gen.S4GP_W_PLAT if self.probe else W_PLAT)
         # config pins that hold ONLY on this wave's (fresh) runs: the
         # probe pins the strict parser and the Deffuant alpha it runs
@@ -1379,9 +1391,11 @@ def main(argv=None):
                          f"the original 72-cell wave, DEFAULT), "
                          f"{WAVE_FIG6} (alias fig6; the 192-cell Figure-6 "
                          f"grid with twin-derived ea=0 cells, witnesses and "
-                         f"_r60/_r100 extensions) or {WAVE_PROBE} (alias "
+                         f"_r60/_r100 extensions), {WAVE_PROBE} (alias "
                          f"probe; the 8-cell 5-round beta=0.75 channel "
-                         f"probe, pofds4gp_ tags)")
+                         f"probe, pofds4gp_ tags) or {WAVE_SCOUT} (alias "
+                         f"scout; the 20-cell 30-round beta=0.75 scout "
+                         f"over es {{0,.1,.2,.3,1}}, pofds4gs_ tags)")
     ap.add_argument("--run-root", default=DEFAULT_RUN_ROOT,
                     help=f"directory holding the run dirs (default the "
                          f"cluster path {DEFAULT_RUN_ROOT})")
@@ -1447,7 +1461,8 @@ def main(argv=None):
     scan = SMOKE_SCAN if args.smoke else wave.prod_scan
     if args.smoke and not wave.smoke_cells:
         print(f"{LOG} usage error: the {wave.name} wave defines no smoke "
-              f"cells (the 5-round probe IS the probe run)", file=sys.stderr)
+              f"cells (the probe/scout waves ARE the probe runs)",
+              file=sys.stderr)
         return 2
     gbad = wave.self_test_grammar(args.smoke)
     if gbad:

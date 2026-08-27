@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""SECTION-4 PROBE analyzer (2026-08-26): cohort-B signed/absolute
-effect for the 8-cell, 5-round, seed-0, beta=0.75 channel probe
-(section4_gate_anch2_probe; tags pofds4gp_*).
+"""SECTION-4 PROBE / SCOUT analyzer (2026-08-26/27): cohort-B effects
+for the beta=0.75 channel family --
+  --variant probe   8 cells, 5 rounds, es {0, 1}            (pofds4gp_)
+  --variant scout  20 cells, 30 rounds, es {0,.1,.2,.3,1}  (pofds4gs_)
+both seed 0, ea=0.7, gamma=0.2, alpha=0.5, {b0, d8} x {fixed, evolving}.
+For the scout the crossover question is answered per social gate on the
+LATE WINDOW (the final five post-peer rounds, the Figure-6 convention)
+with the final round beside it.
 
 READ-ONLY and DESCRIPTIVE: seed 0 is the only replicate, so NO
 confidence intervals are computed or reported anywhere in this file --
@@ -85,29 +90,40 @@ def _load(path, name):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Section-4 probe: cohort-B effect vs twin; CPU only")
+    ap.add_argument("--variant", default="probe", choices=("probe", "scout"),
+                    help="probe (8 cells, 5 rounds, es {0,1}; DEFAULT) or "
+                         "scout (20 cells, 30 rounds, es {0,.1,.2,.3,1})")
     ap.add_argument("--run-root",
                     default="/home/gsmithline/perfsim/runs/pokec_gated_lm")
-    ap.add_argument("--out-dir",
-                    default=os.path.join(REPO, "notes", "pofd", "s4g_probe"))
+    ap.add_argument("--out-dir", default=None,
+                    help="default notes/pofd/s4g_<variant>/")
     ap.add_argument("--gen", default=GEN_PATH)
     ap.add_argument("--json", dest="json_out", default=None)
     args = ap.parse_args(argv)
+    if args.out_dir is None:
+        args.out_dir = os.path.join(REPO, "notes", "pofd",
+                                    f"s4g_{args.variant}")
+    stem = f"s4g_{args.variant}"
 
     gen = _load(args.gen, "_gen_s4gp")
     AN = _load(AN_PATH, "_an_s4gp")
+    fam = gen.S4G_VARIANTS[args.variant]
 
     conds = tuple(gen.S4G_CONDS)
     arms = tuple(gen.S4GP_ARMS)
-    ess = tuple(float(e) for e in gen.S4GP_ESS)
+    ess = tuple(float(e) for e in fam["ess"])
     ea = float(gen.S4GP_GATES[0])
     seed = int(gen.S4GP_SEEDS[0])
-    rounds = int(gen.S4GP_ROUNDS)
+    rounds = int(fam["rounds"])
+    late = list(range(max(0, rounds - 5), rounds))     # final five rounds
+    print(f"{LOG} variant={args.variant} key={fam['key']} rounds={rounds} "
+          f"es={list(ess)} late window op_raw {late[0]}-{late[-1]}")
 
     cells = [(cond, arm, es) for cond in conds for arm in arms
              for es in ess]
     run_of, missing = {}, []
     for cond, arm, es in cells:
-        tag = gen.s4gp_tag(arm, cond, ea, es, seed)
+        tag = gen.s4gv_tag(arm, cond, ea, es, seed, fam["prefix"])
         rd = AN.find_run(args.run_root, tag)
         (missing.append(tag) if rd is None
          else run_of.__setitem__((cond, arm, es), rd))
@@ -184,8 +200,12 @@ def main(argv=None):
                        "max_abs_diff": float(diff.abs().max()),
                        "bit_identical": bool(torch.equal(f[t], e[t]))}
                 direct_rows.append(row)
-            direct_final[(arm, es)] = direct_rows[-1]
-    dpath = os.path.join(args.out_dir, "s4g_probe_direct_contrast.csv")
+            fin = dict(direct_rows[-1])
+            lw = [direct_rows[-rounds + t] for t in late]
+            fin["mae_b_paired_late"] = sum(r["mae_b_paired"] for r in lw) / len(lw)
+            fin["delta_mu_b_late"] = sum(r["delta_mu_b"] for r in lw) / len(lw)
+            direct_final[(arm, es)] = fin
+    dpath = os.path.join(args.out_dir, f"{stem}_direct_contrast.csv")
     with open(dpath, "w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=list(direct_rows[0]))
         wtr.writeheader()
@@ -194,24 +214,42 @@ def main(argv=None):
     print(f"\n{LOG} (1) DIRECT fixed-vs-evolving contrast on cohort B "
           f"(agent-paired), final round {rounds} of {rounds}, post-peer. "
           f"THE FIGURE-5 QUANTITY. SEED 0 ONLY -- descriptive.")
-    hdr = (f"{'peers':<8} {'arm':>3} {'mae_b_paired':>13} {'delta_mu_b':>11} "
-           f"{'w1_b_pair':>10} {'max|d|':>8} {'bit-identical':>13}")
+    hdr = (f"{'es':>4} {'arm':>3} {'mae_b_paired':>13} {'delta_mu_b':>11} "
+           f"{'w1_b_pair':>10} {'max|d|':>8} {'bit-identical':>13} | "
+           f"{'mae_late5':>10} {'delta_late5':>12}")
     print(hdr)
     print("-" * len(hdr))
     for es in ess:
         for arm in arms:
             r = direct_final[(arm, es)]
-            print(f"{('closed' if es == 0.0 else 'open'):<8} {arm:>3} "
+            print(f"{es:>4g} {arm:>3} "
                   f"{r['mae_b_paired']:>13.4f} {r['delta_mu_b']:>+11.4f} "
                   f"{r['w1_b_pair']:>10.4f} {r['max_abs_diff']:>8.4f} "
-                  f"{str(r['bit_identical']):>13}")
+                  f"{str(r['bit_identical']):>13} | "
+                  f"{r['mae_b_paired_late']:>10.4f} "
+                  f"{r['delta_mu_b_late']:>+12.4f}")
+    # the crossover per social gate, on the late window
+    print(f"\n{LOG} CROSSOVER per social gate (late-window mae_b_paired, "
+          f"rounds {late[0] + 1}-{late[-1] + 1}): SFT(b0) vs ICL(d8)")
+    crossover = []
+    for es in ess:
+        mb = direct_final[("b0", es)]["mae_b_paired_late"]
+        md = direct_final[("d8", es)]["mae_b_paired_late"]
+        win = ("null (ICL exactly 0)" if md == 0.0 else
+               "ICL" if md > mb else "SFT")
+        ratio = (md / mb) if mb > 0 else float("nan")
+        crossover.append({"es": es, "sft_mae_late": mb, "icl_mae_late": md,
+                          "icl_over_sft": ratio, "larger": win})
+        print(f"{LOG}   es={es:<4g} SFT {mb:.4f}  ICL {md:.4f}  "
+              f"ICL/SFT={ratio:.2f}  -> {win}")
     print(f"\n{LOG} REGISTERED QUESTION in the transmission frame -- does "
           f"A reach B through ICL (d8) ~0 with peers closed, and more than "
           f"through SFT (b0) with peers open?")
+    es_open = max(ess)
     closed_d8 = direct_final[("d8", 0.0)]["mae_b_paired"]
     closed_b0 = direct_final[("b0", 0.0)]["mae_b_paired"]
-    open_d8 = direct_final[("d8", 1.0)]["mae_b_paired"]
-    open_b0 = direct_final[("b0", 1.0)]["mae_b_paired"]
+    open_d8 = direct_final[("d8", es_open)]["mae_b_paired"]
+    open_b0 = direct_final[("b0", es_open)]["mae_b_paired"]
     direct_verdict = {
         "closed_d8_mae": closed_d8, "closed_b0_mae": closed_b0,
         "closed_d8_bit_identical": direct_final[("d8", 0.0)]["bit_identical"],
@@ -222,12 +260,12 @@ def main(argv=None):
     print(f"{LOG}   peers CLOSED: d8 mae={closed_d8:.4f} "
           f"({'EXACT structural null' if closed_d8 == 0.0 else 'NOT zero'}), "
           f"b0 mae={closed_b0:.4f} (shared-weight route)")
-    print(f"{LOG}   peers OPEN:   d8 mae={open_d8:.4f} vs b0 mae="
-          f"{open_b0:.4f} -> ICL {'>' if open_d8 > open_b0 else '<='} SFT "
-          f"transmission at round {rounds}")
+    print(f"{LOG}   peers OPEN (es={es_open:g}): d8 mae={open_d8:.4f} vs "
+          f"b0 mae={open_b0:.4f} -> ICL {'>' if open_d8 > open_b0 else '<='}"
+          f" SFT transmission at round {rounds}")
 
     # ---- (2) PLATFORM EFFECT vs twin: agent-local, NOT transmission ------
-    csv_path = os.path.join(args.out_dir, "s4g_probe_cohortB.csv")
+    csv_path = os.path.join(args.out_dir, f"{stem}_cohortB.csv")
     with open(csv_path, "w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=list(rows_csv[0]))
         wtr.writeheader()
@@ -260,8 +298,8 @@ def main(argv=None):
     for cond in conds:
         closed_d8 = per_cell[(cond, "d8", 0.0)]["abs_b"]
         closed_b0 = per_cell[(cond, "b0", 0.0)]["abs_b"]
-        open_d8 = per_cell[(cond, "d8", 1.0)]["abs_b"]
-        open_b0 = per_cell[(cond, "b0", 1.0)]["abs_b"]
+        open_d8 = per_cell[(cond, "d8", es_open)]["abs_b"]
+        open_b0 = per_cell[(cond, "b0", es_open)]["abs_b"]
         verdicts[cond] = {
             "closed_d8_abs": closed_d8, "closed_b0_abs": closed_b0,
             "open_d8_abs": open_d8, "open_b0_abs": open_b0,
@@ -273,7 +311,9 @@ def main(argv=None):
               f" SFT when open")
 
     verdict = {
-        "wave": gen.S4GP_KEY, "rounds": rounds, "seed": seed,
+        "wave": fam["key"], "variant": args.variant, "rounds": rounds,
+        "seed": seed, "late_window_op_raw": [late[0], late[-1]],
+        "crossover_late_window": crossover,
         "eps_ai": ea, "w_plat": float(gen.S4GP_W_PLAT),
         "cells": [{"cond": c, "arm": a, "es": e, **per_cell[(c, a, e)]}
                   for (c, a, e) in sorted(per_cell, key=str)],
@@ -285,8 +325,7 @@ def main(argv=None):
         "primary_frame": "direct_transmission (mae_b_paired)",
         "note": "seed 0 only -- descriptive, no intervals",
     }
-    jp = args.json_out or os.path.join(args.out_dir,
-                                       "s4g_probe_verdict.json")
+    jp = args.json_out or os.path.join(args.out_dir, f"{stem}_verdict.json")
     os.makedirs(os.path.dirname(os.path.abspath(jp)), exist_ok=True)
     with open(jp, "w") as fh:
         json.dump(verdict, fh, indent=2)
