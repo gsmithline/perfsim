@@ -832,3 +832,90 @@ def test_revised_sampled_smoke_cannot_reuse_the_contaminated_run():
     # greedy is UNrevised: its smoke passed under the policy it still runs
     g = tag_for(SMOKE_MODEL, SMOKE_SEED, "greedy", SMOKE_ROUNDS, smoke=True)
     assert "_p2_" not in g
+
+
+# =============== 100-ROUND HORIZON EXTENSION (2026-08-27) =============
+EXT = {"key": "section3_model_icl_greedy_r100", "rounds": 100,
+       "models": ("qwen3_8b", "olmo7b", "olmo3_7b"), "n": 9}
+
+
+def test_extension_grid_is_the_unsettled_models_only():
+    rows = _rows(EXT["key"])
+    assert len(rows) == EXT["n"]
+    cols, sub = _cols(EXT["key"])
+    got = set()
+    for r in rows:
+        d = dict(zip(cols, [x.strip() for x in r.split(",")]))
+        # CONFIGURATION UNCHANGED except the horizon
+        assert d["sweeps"] == str(SWEEPS), "100 Deffuant sweeps unchanged"
+        assert d["wplat"] == "1" and d["lam"] == "1"
+        assert d["style"] == "frozen" and d["iclk"] == "0"
+        assert d["uselora"] == "0" and d["gamma"] == "0.0"
+        assert d["nrounds"] == str(EXT["rounds"])
+        m = next(k for k in MODELS if d["basemodel"] == BASE[k])
+        assert d["tag"] == tag_for(m, int(d["seed"]), "greedy",
+                                   EXT["rounds"])
+        assert d["tag"].endswith("_r100")
+        got.add((m, int(d["seed"])))
+    assert got == {(m, s) for m in EXT["models"] for s in SEEDS}
+    assert "--arm greedy" in sub
+
+
+def test_extension_never_overwrites_the_30_round_runs():
+    ext = {r.split(",")[0].strip() for r in _rows(EXT["key"])}
+    base = {r.split(",")[0].strip() for r in _rows(key_for("greedy"))}
+    assert len(ext) == 9 and not (ext & base)
+    # every extension cell has a completed 30-round twin, differing ONLY
+    # in the horizon token
+    for t in ext:
+        assert t.endswith("_r100")
+        assert t[:-5] + "_r30" in base
+
+
+def test_extension_environment_matches_the_wave_it_extends():
+    _, ext_sub = _cols(EXT["key"])
+    _, main_sub = _cols(key_for("greedy"))
+    env = lambda s: next(l for l in s.splitlines()
+                         if l.startswith("environment"))
+    assert env(ext_sub) == env(main_sub)
+
+
+def test_submit_script_knows_the_extension():
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    assert 'section3_model_icl_greedy_r100) TARGETS="$WHAT" ;;' in src
+
+
+@pytest.mark.slow
+def test_extension_prefix_must_match_the_30_round_run(tmp_path):
+    """The extension is run from round 0, so rounds 0..29 must reproduce
+    the completed run BIT-FOR-BIT. A drifted prefix means it is a
+    different process and cannot replace the short cell."""
+    root = tmp_path / "runs"
+    for m in EXT["models"]:
+        for s_ in SEEDS:
+            build_run(root, m, s_, "greedy")                    # r30
+            build_run(root, m, s_, "greedy", rounds=EXT["rounds"])  # r100
+    r = run_checker(root, extra=("--ext",), arm="greedy")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "9/9 cells PASS" in r.stdout
+
+    # now perturb ONE extension run's prefix
+    tag = tag_for("olmo7b", 42, "greedy", EXT["rounds"])
+    p = os.path.join(str(root), tag, "trajectory.pt")
+    d = torch.load(p, weights_only=False)
+    d["op_raw"][5] = d["op_raw"][5] + 1e-4
+    torch.save(d, p)
+    r = run_checker(root, extra=("--ext",), arm="greedy")
+    assert r.returncode == 1
+    assert "PREFIX" in r.stdout and "bit-identical" in r.stdout
+
+
+@pytest.mark.slow
+def test_extension_without_its_30_round_twin_fails(tmp_path):
+    root = tmp_path / "runs"
+    for m in EXT["models"]:
+        for s_ in SEEDS:
+            build_run(root, m, s_, "greedy", rounds=EXT["rounds"])
+    r = run_checker(root, extra=("--ext",), arm="greedy")
+    assert r.returncode == 1
+    assert "PREFIX" in r.stdout and "absent" in r.stdout

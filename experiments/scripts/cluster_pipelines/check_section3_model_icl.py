@@ -432,12 +432,25 @@ def main():
                          "DO_SAMPLE=1 at GEN_TEMPERATURE=1.0 (robustness)")
     ap.add_argument("--smoke", action="store_true",
                     help="the 3-round Mistral-7B smoke of the chosen arm")
+    ap.add_argument("--ext", action="store_true",
+                    help="the 100-round horizon extension of the models "
+                         "that were unsettled at 30 rounds. Adds the "
+                         "PREFIX-IDENTITY requirement: rounds 0..29 of "
+                         "each extended run must be BIT-IDENTICAL to its "
+                         "completed 30-round twin")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
     roots = [Path(r) for r in (args.run_root or DEFAULT_RUN_ROOTS)]
     g = _load_gen()
-    if args.smoke:
+    if args.smoke and args.ext:
+        ap.error("--smoke and --ext are exclusive")
+    if args.ext:
+        cells = [(m, s_, g.s3i_tag(m, s_, args.arm,
+                                   rounds=g.S3I_EXT_ROUNDS),
+                  g.S3I_EXT_ROUNDS)
+                 for m in g.S3I_EXT_MODELS for s_ in g.S3I_SEEDS]
+    elif args.smoke:
         cells = [(g.S3I_SMOKE_MODEL, g.S3I_SMOKE_SEED,
                   g.s3i_tag(g.S3I_SMOKE_MODEL, g.S3I_SMOKE_SEED, args.arm,
                             rounds=g.S3I_SMOKE_ROUNDS, smoke=True),
@@ -491,6 +504,55 @@ def main():
                         f"({len(z)} distinct pred_raw[0]) -- with frozen "
                         f"weights and identical innate-only prompts, "
                         f"greedy decoding must be seed-invariant there")
+    # (10) PREFIX IDENTITY. An extension is RUN FROM ROUND 0, and
+    # nothing in the frozen arm depends on N_ROUNDS (torch is seeded
+    # once; the Deffuant sweep draws from its own generator), so rounds
+    # 0..29 of a 100-round run must reproduce the completed 30-round run
+    # BIT-FOR-BIT. That is a far stronger statement than any field
+    # comparison: it certifies the two runs are the same process, so the
+    # extension may replace the short cell rather than merely sit beside
+    # it. A mismatch means the extension is a DIFFERENT experiment and
+    # its settled value cannot be substituted.
+    if args.ext:
+        for r in recs:
+            if r.get("status") == "ABSENT":
+                continue
+            short_tag = g.s3i_tag(r["model"], r["seed"], args.arm,
+                                  rounds=g.S3I_ROUNDS)
+            sp = _resolve(short_tag, roots)
+            if sp is None:
+                wave_errs.append(f"PREFIX {r['tag']}: its {g.S3I_ROUNDS}"
+                                 f"-round twin {short_tag} is absent, so "
+                                 f"the extension cannot be certified as "
+                                 f"the same process")
+                continue
+            lp = _resolve(r["tag"], roots)
+            dl = torch.load(lp, map_location="cpu", weights_only=False)
+            ds = torch.load(sp, map_location="cpu", weights_only=False)
+            n0 = int(g.S3I_ROUNDS)
+            for field in ("op_raw", "pred_raw", "innate"):
+                a, b = dl.get(field), ds.get(field)
+                if not (torch.is_tensor(a) and torch.is_tensor(b)):
+                    wave_errs.append(f"PREFIX {r['tag']}: {field} missing")
+                    continue
+                a2 = a[:n0] if a.ndim == 2 else a
+                b2 = b[:n0] if b.ndim == 2 else b
+                if tuple(a2.shape) != tuple(b2.shape):
+                    wave_errs.append(
+                        f"PREFIX {r['tag']}: {field} prefix shape "
+                        f"{tuple(a2.shape)} != {tuple(b2.shape)}")
+                elif not torch.equal(a2.float(), b2.float()):
+                    d_ = float((a2.float() - b2.float()).abs().max())
+                    wave_errs.append(
+                        f"PREFIX {r['tag']}: {field} rounds 0..{n0 - 1} "
+                        f"differ from the {n0}-round run (max |diff| "
+                        f"{d_:.3e}) -- run from round 0 with the same "
+                        f"seed and frozen weights, these must be "
+                        f"bit-identical; the extension is a different "
+                        f"process and cannot replace the short cell")
+                else:
+                    r.setdefault("prefix_identical", []).append(field)
+            del dl, ds
     shas = sorted({r["git_sha"] for r in recs if r.get("git_sha")})
     if len(shas) > 1:
         wave_errs.append(f"WAVE {len(shas)} distinct git_sha across the "
@@ -501,8 +563,9 @@ def main():
            f"{'parse':>7} {'history':>11}")
     print("=" * len(hdr))
     n_pass = sum(1 for r in recs if r["status"] == "PASS")
-    print(f"SECTION-3 PERSONAL-HISTORY ICL [{args.arm}] -- "
-          f"{'SMOKE' if args.smoke else 'PRODUCTION'} grid, "
+    print(f"SECTION-3 PERSONAL-HISTORY ICL [{args.arm}"
+          f"{' r' + str(g.S3I_EXT_ROUNDS) if args.ext else ''}] -- "
+          f"{'SMOKE' if args.smoke else 'EXTENSION' if args.ext else 'PRODUCTION'} grid, "
           f"{n_pass}/{len(recs)} cells PASS")
     print("=" * len(hdr))
     print(hdr)
@@ -521,7 +584,12 @@ def main():
 
     ok = n_pass == len(recs) and not wave_errs
     verdict = {
-        "wave": g.s3i_arm_key(args.arm, args.smoke), "arm": args.arm,
+        "wave": (g.s3i_ext_key() if args.ext
+                 else g.s3i_arm_key(args.arm, args.smoke)),
+        "arm": args.arm, "ext": bool(args.ext),
+        "rounds": (g.S3I_EXT_ROUNDS if args.ext
+                   else g.S3I_SMOKE_ROUNDS if args.smoke
+                   else g.S3I_ROUNDS),
         "decoding": dict(g.S3I_DECODE[args.arm]),
         "smoke": bool(args.smoke),
         "n_cells": len(recs), "n_pass": n_pass,

@@ -9284,6 +9284,41 @@ S3I_SMOKE_REV = {"sample_t1": "p2"}
 S3I_ICL_DAYS = 8
 S3I_ARM = "d8"
 S3I_N_TOTAL = 18                 # 6 models x 3 seeds
+#
+# HORIZON EXTENSION TO 100 ROUNDS (2026-08-27, user). The greedy wave
+# gated PASS 18/18, but three models were NOT settled at round 30:
+# population SD is ~0 everywhere (consensus reached) while the consensus
+# VALUE still moves -- Qwen3 -.057/round, OLMo2 +.014, OLMo3 +.018. Their
+# round-30 numbers are "where the own-history ratchet is", not
+# equilibria, so they are re-run to 100 rounds. The three that DID settle
+# (Qwen2.5, Mistral, Ministral) are not re-run: their values stand.
+# CONFIGURATION IS UNCHANGED, including AB_SWEEPS=100. The only
+# difference is N_ROUNDS, which rides the queue column, so the extension
+# uses the SAME row builder and the SAME sub template.
+# RUN FROM ROUND 0, NOT RESUMED: there is no checkpoint-resume path here,
+# and starting fresh makes the first 30 rounds an independent
+# REPRODUCTION of the completed run. Nothing in the frozen arm depends on
+# N_ROUNDS (torch is seeded once; the Deffuant sweep draws from its own
+# generator), so rounds 0-29 must come back BIT-IDENTICAL -- the gate
+# requires exactly that, which is a far stronger check than any
+# per-field comparison.
+# TAGS carry _r100 where the completed cells carry _r30, so the
+# idempotent wrapper can never confuse them and no 30-round run is
+# overwritten.
+S3I_EXT_ROUNDS = 100
+S3I_EXT_MODELS = ("qwen3_8b", "olmo7b", "olmo3_7b")   # the unsettled 3
+S3I_EXT_ARM = "greedy"
+S3I_N_EXT = 9                    # 3 models x 3 seeds
+S3I_HORIZONS = (S3I_EXT_ROUNDS, S3I_ROUNDS)   # longest first, for lookup
+
+
+def s3i_ext_key():
+    return f"{s3i_arm_key(S3I_EXT_ARM)}_r{S3I_EXT_ROUNDS}"
+
+
+def s3i_ext_rows():
+    return [s3i_row(m, seed, S3I_EXT_ARM, rounds=S3I_EXT_ROUNDS)
+            for m in S3I_EXT_MODELS for seed in S3I_SEEDS]
 
 
 def s3i_arm_key(arm, smoke=False):
@@ -9343,17 +9378,20 @@ def s3i_smoke_rows(arm="greedy"):
                     rounds=S3I_SMOKE_ROUNDS, smoke=True)]
 
 
-def s3i_sub(arm="greedy", smoke=False):
+def s3i_sub(arm="greedy", smoke=False, ext=False):
     """The S3M sub with the ICL arm's environment. Rendered from the
     SAME template so the two waves cannot drift apart on any field the
     comparison depends on; every ICL-specific substitution is asserted,
     so a template change that silently drops one is a build error."""
     dec = S3I_DECODE[arm]
-    key = s3i_arm_key(arm, smoke)
-    rows = s3i_smoke_rows(arm) if smoke else s3i_rows(arm)
+    key = s3i_ext_key() if ext else s3i_arm_key(arm, smoke)
+    rows = (s3i_ext_rows() if ext
+            else s3i_smoke_rows(arm) if smoke else s3i_rows(arm))
     what = ("GREEDY (main paper)" if arm == "greedy"
             else "SAMPLED T=1.0 (robustness)")
-    kind = (f"3-ROUND MISTRAL-7B SMOKE, {what}" if smoke
+    kind = (f"{S3I_EXT_ROUNDS}-ROUND HORIZON EXTENSION of the unsettled "
+            f"models {list(S3I_EXT_MODELS)}, {what}" if ext
+            else f"3-ROUND MISTRAL-7B SMOKE, {what}" if smoke
             else f"OPEN-GATE CROSS-MODEL EQUILIBRIA, PERSONAL-HISTORY "
                  f"ICL -- {what}")
     # DO_SAMPLE is pinned EXPLICITLY on both arms rather than left to the
@@ -9373,7 +9411,8 @@ def s3i_sub(arm="greedy", smoke=False):
         dec_env += f" MAX_NEW_TOKENS={dec['max_new_tokens']:d}"
     sub = S3M_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
-        rounds=S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS,
+        rounds=(S3I_EXT_ROUNDS if ext
+                else S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS),
         kind=kind, gateflag=(" --smoke" if smoke else "")
         + f" --arm {arm}",
         extra_env=f" PARSE_MODE={dec['parse_mode']}" + dec_env)
@@ -14488,13 +14527,59 @@ def main():
             files[p] = s3i_smoke_rows(_arm) if _smoke else s3i_rows(_arm)
             expected[p] = len(files[p])
             cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
-    # 6 models x 3 seeds x 2 arms = 36 production + 2 smokes
-    assert len(_s3i_all) == S3I_N_TOTAL * 2 + 2 == 38, len(_s3i_all)
+    # ---- the 100-round horizon extension of the unsettled models ------
+    _ext_rows = s3i_ext_rows()
+    assert len(_ext_rows) == S3I_N_EXT == 9, len(_ext_rows)
+    _ext_tags = set()
+    for _r in _ext_rows:
+        _c = [x.strip() for x in _r.split(",")]
+        # CONFIGURATION UNCHANGED except the horizon: same arm, same
+        # sweeps, same surface -- only nrounds moves
+        assert _c[1] == "frozen" and _c[19] == "0" and _c[17] == "0", _r
+        assert _c[16] == str(S3I_SWEEPS), ("100 Deffuant sweeps must be "
+                                           "unchanged", _r)
+        assert _c[11] == f"{S3I_BETA:g}" and _c[14] == f"{S3I_GAMMA:g}", _r
+        assert _c[23] == str(S3I_EXT_ROUNDS), ("nrounds is col 23", _r)
+        assert _c[0].endswith(f"_r{S3I_EXT_ROUNDS}"), _r
+        assert f"_{S3I_ARM}_greedy_" in _c[0], _r
+        # NEVER overwrite a 30-round run
+        assert _c[0] not in _s3i_all and _c[0] not in _s3i_prior, _c[0]
+        _ext_tags.add(_c[0])
+    assert len(_ext_tags) == S3I_N_EXT
+    # the extended models are a subset of the wave, and each has a
+    # completed 30-round counterpart it must reproduce round-for-round
+    for _m in S3I_EXT_MODELS:
+        assert _m in S3I_MODELS, _m
+        for _sd in S3I_SEEDS:
+            assert s3i_tag(_m, _sd, S3I_EXT_ARM) in _s3i_all, (_m, _sd)
+    _p = os.path.join(HERE, f"configs_pofd_{s3i_ext_key()}.txt")
+    files[_p] = _ext_rows
+    expected[_p] = S3I_N_EXT
+    _esub = s3i_sub(S3I_EXT_ARM, ext=True)
+    _eenv = next(l for l in _esub.splitlines()
+                 if l.startswith("environment"))
+    _menv = next(l for l in s3i_sub(S3I_EXT_ARM).splitlines()
+                 if l.startswith("environment"))
+    assert _eenv == _menv, ("the extension must run the SAME environment "
+                            "as the wave it extends")
+    cube_subs[os.path.join(HERE, f"at_pofd_{s3i_ext_key()}.sub")] = _esub
+    _s3i_all |= _ext_tags
+
+    # 6 models x 3 seeds x 2 arms = 36 production + 2 smokes + 9 extension
+    assert len(_s3i_all) == S3I_N_TOTAL * 2 + 2 + S3I_N_EXT == 47, \
+        len(_s3i_all)
     # the two arms never share a tag, and neither touches the SFT wave
     _greedy = {t for t in _s3i_all if "_greedy_" in t}
     _samp = {t for t in _s3i_all if "_sample_t1_" in t}
-    assert len(_greedy) == 19 and len(_samp) == 19
+    # greedy: 18 production + 1 smoke + the 9-cell r100 extension;
+    # sampled: 18 production + 1 smoke (no extension)
+    assert len(_greedy) == 19 + S3I_N_EXT == 28, len(_greedy)
+    assert len(_samp) == 19, len(_samp)
     assert not (_greedy & _samp)
+    # every extension tag ends _r100 and its _r30 twin also exists
+    _r100 = {t for t in _greedy if t.endswith("_r100")}
+    assert len(_r100) == S3I_N_EXT
+    assert all(t[:-5] + "_r30" in _greedy for t in _r100)
     _s3m_all = {s3m_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
     _s3m_all |= {s3m_cell_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
     assert not (_s3i_all & _s3m_all)

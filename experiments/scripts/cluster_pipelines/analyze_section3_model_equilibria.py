@@ -191,6 +191,9 @@ class WaveCfg:
         if name == "icl":
             self.models, self.seeds = g.S3I_MODELS, g.S3I_SEEDS
             self.rounds = g.S3I_ROUNDS
+            self._g, self._arm = g, arm
+            self.horizons = tuple(getattr(g, "S3I_HORIZONS",
+                                          (g.S3I_ROUNDS,)))
             self.cell_tag = (lambda m, sd, _a=arm:
                              g.s3i_cell_tag(m, sd, _a))
             self.key = g.s3i_arm_key(arm)
@@ -240,6 +243,15 @@ def main():
                          "main-paper result; sample_t1 is the robustness "
                          "arm and is reported WITHOUT a settling "
                          "requirement (a sampled process fluctuates).")
+    ap.add_argument("--resolve-horizon", action="store_true",
+                    help="icl only: use the LONGEST available horizon per "
+                         "cell (100-round extension where it exists, else "
+                         "30). The extension's first 30 rounds are gated "
+                         "bit-identical to the short run, so substituting "
+                         "it is exact, not an approximation.")
+    ap.add_argument("--windows", default="10,20",
+                    help="comma-separated late windows to report drift "
+                         "and mean over (default 10,20)")
     ap.add_argument("--late-window", type=int, default=10,
                     help="sampled arm: rounds averaged for the "
                          "final-window mean and its temporal variability")
@@ -289,21 +301,43 @@ def main():
         for seed in w.seeds:
             tag = w.cell_tag(model, seed)
             path = _find(tag, roots)
+            resolved_rounds = w.rounds
+            if args.resolve_horizon and args.wave == "icl":
+                # longest first: an extension supersedes the short run
+                for _h in w.horizons:
+                    _t = w._g.s3i_tag(model, seed, w._arm, rounds=_h)
+                    _p = _find(_t, roots)
+                    if _p is not None:
+                        tag, path, resolved_rounds = _t, _p, _h
+                        break
             if path is None:
                 missing.append(tag)
                 continue
             d = torch.load(path, map_location="cpu", weights_only=False)
             op = torch.as_tensor(d["op_raw"]).float().numpy()
             pred = torch.as_tensor(d["pred_raw"]).float().numpy()
-            if op.shape[0] != w.rounds or pred.shape[0] != w.rounds:
+            if op.shape[0] != resolved_rounds or \
+                    pred.shape[0] != resolved_rounds:
                 # the window is defined on the wave's fixed 30-round
                 # horizon; a longer artifact would otherwise be silently
                 # truncated and a shorter one silently accepted
                 missing.append(f"{tag} (horizon {op.shape[0]}/"
-                               f"{pred.shape[0]} != {w.rounds})")
+                               f"{pred.shape[0]} != {resolved_rounds})")
                 continue
             stats = _cell_stats(op, pred, args.window)
             sto = _stochastic_stats(op, args.late_window)
+            # DRIFT AND MEAN OVER EVERY REQUESTED WINDOW. A value that is
+            # stable over the last 10 rounds but not the last 20 has not
+            # converged; reporting both is what makes that visible.
+            multi = {}
+            for _wn in [int(x) for x in args.windows.split(",") if x]:
+                if _wn <= op.shape[0]:
+                    _st = _cell_stats(op, pred, _wn)
+                    multi[f"late{_wn}_mean"] = f"{_st['equilibrium_mean']:.8f}"
+                    multi[f"late{_wn}_drift"] = f"{_st['drift']:.8f}"
+                    multi[f"late{_wn}_range"] = f"{_st['window_range']:.8f}"
+                    multi[f"late{_wn}_settled"] = settled(_st,
+                                                          args.drift_tol)
             innate = torch.as_tensor(d["innate"]).float().numpy()
             innate_means.append(float(innate.mean()))
             rows.append({
@@ -335,6 +369,8 @@ def main():
                 "pop_sd_final": f"{sto['pop_sd_final']:.8f}",
                 "pop_sd_late": f"{sto['pop_sd_late']:.8f}",
                 "late_window": sto["late_window"],
+                "resolved_rounds": resolved_rounds,
+                **multi,
                 "git_sha": (d.get("config", {}) or {}).get("git_sha"),
                 "path": str(path),
                 "served_distinct": stats["served_distinct"],
