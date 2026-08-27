@@ -1,0 +1,10 @@
+pofds4gq_qwen3_8b_b0_evoall_anch2_ea0_w0p75_l0p2_es0p3_s0_r15, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0, threshold, 0, -1, 1, 1, 16, 0, 15, 0
+pofds4gq_qwen3_8b_b0_evoall_anch2_ea0p3_w0p75_l0p2_es0p3_s0_r15, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.3, threshold, 0, -1, 1, 1, 16, 0, 15, 0
+pofds4gq_qwen3_8b_b0_evoall_anch2_ea0p5_w0p75_l0p2_es0p3_s0_r15, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.5, threshold, 0, -1, 1, 1, 16, 0, 15, 0
+pofds4gq_qwen3_8b_b0_evoall_anch2_ea0p7_w0p75_l0p2_es0p3_s0_r15, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 1, 1, 16, 0, 15, 0
+pofds4gq_qwen3_8b_b0_evoall_anch2_ea1_w0p75_l0p2_es0p3_s0_r15, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 1, threshold, 0, -1, 1, 1, 16, 0, 15, 0
+pofds4gq_qwen3_8b_d8_evoall_anch2_ea0_w0p75_l0p2_es0p3_s0_r15, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0, threshold, 0, -1, 0, 0, 0, 1, 15, 8
+pofds4gq_qwen3_8b_d8_evoall_anch2_ea0p3_w0p75_l0p2_es0p3_s0_r15, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.3, threshold, 0, -1, 0, 0, 0, 1, 15, 8
+pofds4gq_qwen3_8b_d8_evoall_anch2_ea0p5_w0p75_l0p2_es0p3_s0_r15, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.5, threshold, 0, -1, 0, 0, 0, 1, 15, 8
+pofds4gq_qwen3_8b_d8_evoall_anch2_ea0p7_w0p75_l0p2_es0p3_s0_r15, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 0.7, threshold, 0, -1, 0, 0, 0, 1, 15, 8
+pofds4gq_qwen3_8b_d8_evoall_anch2_ea1_w0p75_l0p2_es0p3_s0_r15, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.75, loop, 0.0, 1, threshold, 0, -1, 0, 0, 0, 1, 15, 8

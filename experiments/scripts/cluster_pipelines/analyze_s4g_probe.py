@@ -116,22 +116,39 @@ def main(argv=None):
 
     conds = tuple(gen.S4G_CONDS)
     arms = tuple(gen.S4GP_ARMS)
-    ess = tuple(float(e) for e in fam["ess"])
-    ea = float(gen.S4GP_GATES[0])
     seed = int(gen.S4GP_SEEDS[0])
     rounds = int(fam["rounds"])
     late = list(range(max(0, rounds - 5), rounds))     # final five rounds
-    print(f"{LOG} variant={args.variant} key={fam['key']} rounds={rounds} "
-          f"es={list(ess)} late window op_raw {late[0]}-{late[-1]}")
+    # THE GRID IS A POINT LIST (the Qwen3 wave is a CROSS: an es sweep at
+    # one eps_AI plus an eps_AI sweep at one es). Sweeps are reported
+    # separately -- a single table over a cross would mix two different
+    # held-fixed variables in one column.
+    base_r = int(fam["rounds"])
+    points = [(float(a), float(e), int(n)) for (a, e, n)
+              in fam["points"]("all")]
+    es_pts = [(float(a), float(e), int(n)) for (a, e, n)
+              in fam["points"]("es")]
+    ea_pts = ([(float(a), float(e), int(n)) for (a, e, n)
+               in fam["points"]("ea")] if "ea_key" in fam else [])
+    ea_anchor = es_pts[0][0]
+    ess = tuple(e for _, e, _ in es_pts)
+    print(f"{LOG} variant={args.variant} key={fam['key']} "
+          f"points={len(points)} | es sweep at ea={ea_anchor:g}: "
+          f"{[f'{e:g}' for e in ess]} @{base_r}r"
+          + (f" | ea sweep at es={ea_pts[0][1]:g}: "
+             f"{[f'{a:g}' for a, _, _ in ea_pts]} @{ea_pts[0][2]}r"
+             if ea_pts else "")
+          + f" | late window = each cell's final 5 rounds")
 
-    cells = [(cond, arm, es) for cond in conds for arm in arms
-             for es in ess]
+    cells = [(cond, arm, ea, es, nr) for cond in conds for arm in arms
+             for (ea, es, nr) in points]
     run_of, missing = {}, []
-    for cond, arm, es in cells:
-        tag = gen.s4gv_tag(arm, cond, ea, es, seed, fam["prefix"])
+    for cond, arm, ea, es, nr in cells:
+        tag = gen.s4gv_tag(arm, cond, ea, es, seed, fam["prefix"],
+                           rounds=(None if nr == base_r else nr))
         rd = AN.find_run(args.run_root, tag)
         (missing.append(tag) if rd is None
-         else run_of.__setitem__((cond, arm, es), rd))
+         else run_of.__setitem__((cond, arm, ea, es, nr), rd))
     print(f"{LOG} trajectories located: {len(run_of)}/{len(cells)}")
     if missing:
         for t in missing:
@@ -141,18 +158,18 @@ def main(argv=None):
         return 1
 
     rows_csv, per_cell, inn_sha = [], {}, {}
-    op_b = {}                      # (cond, arm, es) -> op_raw[:, B] (5 x 578)
-    for (cond, arm, es), rd in sorted(run_of.items(), key=str):
+    op_b = {}            # (cond, arm, ea, es, rounds) -> op_raw[:, B]
+    for (cond, arm, ea, es, nr), rd in sorted(run_of.items(), key=str):
         d = AN.load(rd)
         op = d["op_raw"].float()
         tw, tw_src = AN.twin_of(d)
         inn = d["innate"].float()
-        if tuple(op.shape) != (rounds, N) or tuple(tw.shape) != (rounds, N):
+        if tuple(op.shape) != (nr, N) or tuple(tw.shape) != (nr, N):
             print(f"{LOG} HARD FAIL {os.path.basename(rd)}: shapes "
-                  f"{tuple(op.shape)}/{tuple(tw.shape)} != {(rounds, N)}",
+                  f"{tuple(op.shape)}/{tuple(tw.shape)} != {(nr, N)}",
                   file=sys.stderr)
             return 1
-        inn_sha[(cond, arm, es)] = AN.innate_sha(inn)
+        inn_sha[(cond, arm, ea, es, nr)] = AN.innate_sha(inn)
         mask_a = AN.cohort_a_mask(inn)
         cm = d.get("innate_clamp_mask")
         if torch.is_tensor(cm) and cm.numel() and \
@@ -161,12 +178,13 @@ def main(argv=None):
                   f"mask != reconstructed bottom-145 cohort", file=sys.stderr)
             return 1
         b = ~mask_a
-        op_b[(cond, arm, es)] = op[:, b].clone()
+        op_b[(cond, arm, ea, es, nr)] = op[:, b].clone()
         rec_rounds = []
-        for t in range(rounds):
+        for t in range(nr):
             diff = op[t][b] - tw[t][b]
             row = {
-                "cond": cond, "arm": arm, "es": f"{es:g}", "round": t + 1,
+                "cond": cond, "arm": arm, "ea": f"{ea:g}",
+                "es": f"{es:g}", "rounds": nr, "round": t + 1,
                 "signed_b": float(diff.mean()),
                 "abs_b": float(diff.abs().mean()),
                 "w1_b": AN.w1(op[t][b], tw[t][b]),
@@ -179,7 +197,7 @@ def main(argv=None):
             }
             rec_rounds.append(row)
             rows_csv.append(row)
-        per_cell[(cond, arm, es)] = rec_rounds[-1]
+        per_cell[(cond, arm, ea, es, nr)] = rec_rounds[-1]
         del d, op, tw, inn
 
     if len(set(inn_sha.values())) != 1:
@@ -193,11 +211,13 @@ def main(argv=None):
     # ---- (1) DIRECT fixed-vs-evolving contrast: the Figure-5 quantity --
     direct_rows, direct_final = [], {}
     for arm in arms:
-        for es in ess:
-            f, e = op_b[("fixed", arm, es)], op_b[("evolving", arm, es)]
-            for t in range(rounds):
+        for (ea, es, nr) in points:
+            f = op_b[("fixed", arm, ea, es, nr)]
+            e = op_b[("evolving", arm, ea, es, nr)]
+            for t in range(nr):
                 diff = f[t] - e[t]
-                row = {"arm": arm, "es": f"{es:g}", "round": t + 1,
+                row = {"arm": arm, "ea": f"{ea:g}", "es": f"{es:g}",
+                       "rounds": nr, "round": t + 1,
                        "mae_b_paired": float(diff.abs().mean()),
                        "delta_mu_b": float(diff.mean()),
                        "t_a_evolving_minus_fixed": float(-diff.mean()),
@@ -206,10 +226,13 @@ def main(argv=None):
                        "bit_identical": bool(torch.equal(f[t], e[t]))}
                 direct_rows.append(row)
             fin = dict(direct_rows[-1])
-            lw = [direct_rows[-rounds + t] for t in late]
-            fin["mae_b_paired_late"] = sum(r["mae_b_paired"] for r in lw) / len(lw)
-            fin["delta_mu_b_late"] = sum(r["delta_mu_b"] for r in lw) / len(lw)
-            direct_final[(arm, es)] = fin
+            lw = direct_rows[-min(5, nr):]      # THIS cell's final five
+            fin["mae_b_paired_late"] = sum(r["mae_b_paired"]
+                                           for r in lw) / len(lw)
+            fin["delta_mu_b_late"] = sum(r["delta_mu_b"]
+                                         for r in lw) / len(lw)
+            fin["late_rounds"] = f"{lw[0]['round']}-{lw[-1]['round']}"
+            direct_final[(arm, ea, es, nr)] = fin
     dpath = os.path.join(args.out_dir, f"{stem}_direct_contrast.csv")
     with open(dpath, "w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=list(direct_rows[0]))
@@ -219,45 +242,94 @@ def main(argv=None):
     print(f"\n{LOG} (1) DIRECT fixed-vs-evolving contrast on cohort B "
           f"(agent-paired), final round {rounds} of {rounds}, post-peer. "
           f"THE FIGURE-5 QUANTITY. SEED 0 ONLY -- descriptive.")
-    hdr = (f"{'es':>4} {'arm':>3} {'mae_b_paired':>13} {'delta_mu_b':>11} "
-           f"{'w1_b_pair':>10} {'max|d|':>8} {'bit-identical':>13} | "
-           f"{'mae_late5':>10} {'delta_late5':>12}")
+    hdr = (f"{'ea':>4} {'es':>4} {'r':>3} {'arm':>3} {'mae_b_paired':>13} "
+           f"{'delta_mu_b':>11} {'w1_b_pair':>10} {'max|d|':>8} "
+           f"{'bit-identical':>13} | {'mae_late5':>10} {'delta_late5':>12}")
     print(hdr)
     print("-" * len(hdr))
-    for es in ess:
+    for (ea, es, nr) in points:
         for arm in arms:
-            r = direct_final[(arm, es)]
-            print(f"{es:>4g} {arm:>3} "
+            r = direct_final[(arm, ea, es, nr)]
+            print(f"{ea:>4g} {es:>4g} {nr:>3} {arm:>3} "
                   f"{r['mae_b_paired']:>13.4f} {r['delta_mu_b']:>+11.4f} "
                   f"{r['w1_b_pair']:>10.4f} {r['max_abs_diff']:>8.4f} "
                   f"{str(r['bit_identical']):>13} | "
                   f"{r['mae_b_paired_late']:>10.4f} "
                   f"{r['delta_mu_b_late']:>+12.4f}")
-    # the crossover per social gate, on the late window
-    print(f"\n{LOG} CROSSOVER per social gate (late-window mae_b_paired, "
-          f"rounds {late[0] + 1}-{late[-1] + 1}): SFT(b0) vs ICL(d8)")
-    crossover = []
-    for es in ess:
-        mb = direct_final[("b0", es)]["mae_b_paired_late"]
-        md = direct_final[("d8", es)]["mae_b_paired_late"]
-        win = ("null (ICL exactly 0)" if md == 0.0 else
-               "ICL" if md > mb else "SFT")
-        ratio = (md / mb) if mb > 0 else float("nan")
-        crossover.append({"es": es, "sft_mae_late": mb, "icl_mae_late": md,
-                          "icl_over_sft": ratio, "larger": win})
-        print(f"{LOG}   es={es:<4g} SFT {mb:.4f}  ICL {md:.4f}  "
-              f"ICL/SFT={ratio:.2f}  -> {win}")
+
+    def _sweep_table(label, sweep_pts, varying):
+        """One crossover table for one sweep of the cross. `varying` is
+        the axis that moves ("es" or "ea"); the other is held fixed and
+        printed in the header."""
+        rows_out = []
+        held = "ea" if varying == "es" else "es"
+        held_val = sweep_pts[0][0] if held == "ea" else sweep_pts[0][1]
+        nr0 = sweep_pts[0][2]
+        print(f"\n{LOG} CROSSOVER {label} (late-window mae_b_paired, the "
+              f"final 5 of {nr0} rounds, {held}={held_val:g} held): "
+              f"SFT(b0) vs ICL(d8)")
+        for (a, e, nr) in sweep_pts:
+            mb = direct_final[("b0", a, e, nr)]["mae_b_paired_late"]
+            md = direct_final[("d8", a, e, nr)]["mae_b_paired_late"]
+            win = ("null (ICL exactly 0)" if md == 0.0 else
+                   "ICL" if md > mb else "SFT")
+            ratio = (md / mb) if mb > 0 else float("nan")
+            x = e if varying == "es" else a
+            rows_out.append({"sweep": varying, "eps_ai": a,
+                             "eps_social": e, "rounds": nr,
+                             "sft_mae_late": mb, "icl_mae_late": md,
+                             "icl_over_sft": ratio, "larger": win})
+            print(f"{LOG}   {varying}={x:<4g} SFT {mb:.4f}  ICL {md:.4f}  "
+                  f"ICL/SFT={ratio:.2f}  -> {win}")
+        return rows_out
+
+    crossover = _sweep_table("per SOCIAL gate", es_pts, "es")
+    if ea_pts:
+        crossover += _sweep_table("per AI gate", ea_pts, "ea")
+        # the shared (ea, es) corner ran at BOTH horizons: the short run
+        # and the long run's first rounds must agree if the trajectory
+        # prefix is horizon-independent
+        shared = [(a, e, n) for (a, e, n) in es_pts
+                  if any(a == a2 and e == e2 for a2, e2, _ in ea_pts)]
+        if shared:
+            a, e, n_long = shared[0]
+            n_short = next(n for a2, e2, n in ea_pts
+                           if a2 == a and e2 == e)
+            print(f"\n{LOG} HORIZON CONSISTENCY at (ea={a:g}, es={e:g}): "
+                  f"the {n_short}-round run vs the first {n_short} rounds "
+                  f"of the {n_long}-round run")
+            worst = 0.0
+            for cond in conds:
+                for arm in arms:
+                    s_ = op_b[(cond, arm, a, e, n_short)]
+                    l_ = op_b[(cond, arm, a, e, n_long)][:n_short]
+                    d = float((s_ - l_).abs().max())
+                    worst = max(worst, d)
+                    print(f"{LOG}   {cond:<8} {arm}: max|diff| = {d:.3e}"
+                          + ("  BIT-IDENTICAL" if d == 0.0 else ""))
+            verdict_hz = {"eps_ai": a, "eps_social": e,
+                          "rounds_short": n_short, "rounds_long": n_long,
+                          "max_abs_diff": worst,
+                          "bit_identical": worst == 0.0}
+            print(f"{LOG}   => trajectory prefix is "
+                  + ("HORIZON-INDEPENDENT (bit-exact)" if worst == 0.0
+                     else f"NOT bit-identical (max {worst:.3e}); "
+                          f"cross-horizon reads are not exact")
+                  )
+        else:
+            verdict_hz = None
     print(f"\n{LOG} REGISTERED QUESTION in the transmission frame -- does "
           f"A reach B through ICL (d8) ~0 with peers closed, and more than "
           f"through SFT (b0) with peers open?")
     es_open = max(ess)
-    closed_d8 = direct_final[("d8", 0.0)]["mae_b_paired"]
-    closed_b0 = direct_final[("b0", 0.0)]["mae_b_paired"]
-    open_d8 = direct_final[("d8", es_open)]["mae_b_paired"]
-    open_b0 = direct_final[("b0", es_open)]["mae_b_paired"]
+    _k = lambda arm, e: (arm, ea_anchor, e, base_r)      # noqa: E731
+    closed_d8 = direct_final[_k("d8", 0.0)]["mae_b_paired"]
+    closed_b0 = direct_final[_k("b0", 0.0)]["mae_b_paired"]
+    open_d8 = direct_final[_k("d8", es_open)]["mae_b_paired"]
+    open_b0 = direct_final[_k("b0", es_open)]["mae_b_paired"]
     direct_verdict = {
         "closed_d8_mae": closed_d8, "closed_b0_mae": closed_b0,
-        "closed_d8_bit_identical": direct_final[("d8", 0.0)]["bit_identical"],
+        "closed_d8_bit_identical": direct_final[_k("d8", 0.0)]["bit_identical"],
         "open_d8_mae": open_d8, "open_b0_mae": open_b0,
         "icl_transmits_more_when_open": open_d8 > open_b0,
         "icl_null_when_closed": closed_d8 == 0.0,
@@ -281,17 +353,20 @@ def main(argv=None):
     print(f"\n{LOG} (2) PLATFORM EFFECT on cohort B vs the MATCHED TWIN "
           f"(agent-local, NOT transmission), final round ({rounds} of "
           f"{rounds}), post-peer. SEED 0 ONLY -- descriptive, no intervals.")
-    hdr = (f"{'cond':<9} {'es':>3} {'arm':>3} {'signed_b':>9} {'abs_b':>8} "
-           f"{'w1_b':>8} {'mu_op_b':>8} {'mu_tw_b':>8} {'sd_ratio':>8}")
+    hdr = (f"{'cond':<9} {'ea/es@r':>11} {'arm':>3} {'signed_b':>9} "
+           f"{'abs_b':>8} {'w1_b':>8} {'mu_op_b':>8} {'mu_tw_b':>8} "
+           f"{'sd_ratio':>8}")
     print(hdr)
     print("-" * len(hdr))
     for cond in conds:
-        for es in ess:
+        for (ea, es, nr) in points:
             for arm in arms:
-                r = per_cell[(cond, arm, es)]
+                r = per_cell[(cond, arm, ea, es, nr)]
                 sdr = (r["sd_op_b"] / r["sd_tw_b"]
                        if r["sd_tw_b"] > 0 else float("nan"))
-                print(f"{cond:<9} {es:>3g} {arm:>3} {r['signed_b']:>+9.4f} "
+                pt = f"{ea:g}/{es:g}@{nr}"
+                print(f"{cond:<9} {pt:>11} {arm:>3} "
+                      f"{r['signed_b']:>+9.4f} "
                       f"{r['abs_b']:>8.4f} {r['w1_b']:>8.4f} "
                       f"{r['mu_op_b']:>8.4f} {r['mu_tw_b']:>8.4f} "
                       f"{sdr:>8.3f}")
@@ -301,10 +376,10 @@ def main(argv=None):
           f"the record; it does NOT answer the transmission question):")
     verdicts = {}
     for cond in conds:
-        closed_d8 = per_cell[(cond, "d8", 0.0)]["abs_b"]
-        closed_b0 = per_cell[(cond, "b0", 0.0)]["abs_b"]
-        open_d8 = per_cell[(cond, "d8", es_open)]["abs_b"]
-        open_b0 = per_cell[(cond, "b0", es_open)]["abs_b"]
+        closed_d8 = per_cell[(cond, "d8", ea_anchor, 0.0, base_r)]["abs_b"]
+        closed_b0 = per_cell[(cond, "b0", ea_anchor, 0.0, base_r)]["abs_b"]
+        open_d8 = per_cell[(cond, "d8", ea_anchor, es_open, base_r)]["abs_b"]
+        open_b0 = per_cell[(cond, "b0", ea_anchor, es_open, base_r)]["abs_b"]
         verdicts[cond] = {
             "closed_d8_abs": closed_d8, "closed_b0_abs": closed_b0,
             "open_d8_abs": open_d8, "open_b0_abs": open_b0,
@@ -320,11 +395,14 @@ def main(argv=None):
         "seed": seed, "late_window_op_raw": [late[0], late[-1]],
         "crossover_late_window": crossover,
         "eps_ai": ea, "w_plat": float(gen.S4GP_W_PLAT),
-        "cells": [{"cond": c, "arm": a, "es": e, **per_cell[(c, a, e)]}
-                  for (c, a, e) in sorted(per_cell, key=str)],
+        "cells": [{"cond": k[0], "arm": k[1], "eps_ai": k[2],
+                   "eps_social": k[3], "rounds": k[4], **per_cell[k]}
+                  for k in sorted(per_cell, key=str)],
         "direct_contrast_final": [
-            {"arm": a, "es": e, **direct_final[(a, e)]}
-            for (a, e) in sorted(direct_final, key=str)],
+            {"arm": k[0], "eps_ai": k[1], "eps_social": k[2],
+             "rounds": k[3], **direct_final[k]}
+            for k in sorted(direct_final, key=str)],
+        "horizon_consistency": (verdict_hz if ea_pts else None),
         "contrasts_direct_transmission": direct_verdict,
         "contrasts_platform_vs_twin": verdicts,
         "primary_frame": "direct_transmission (mae_b_paired)",

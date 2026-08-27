@@ -9540,11 +9540,78 @@ S4GS_N_TOTAL = 20
 # 30 rounds, seed 0, bottom-20 cohort A (a pure function of innate, so
 # the SAME cohort as the Mistral cells). Tag slug qwen3_8b, prefix
 # pofds4gq_. The family's config pins per variant live in "pins".
+#
+# EA SWEEP (2026-08-27, user): the es sweep above holds eps_AI = 0.7
+# fixed, so it says NOTHING about how AI receptivity controls
+# transmission. The second compact sweep fixes eps_social = 0.3 -- the
+# gate where the Qwen3 crossover is clean AND the population still has
+# spread (at es=1 the evolving d8 population collapses to sd 0.010) --
+# and varies eps_AI over {0, .3, .5, .7, 1}.
+# THE GRID IS A CROSS, NOT A PRODUCT: the es sweep at ea=0.7 and the ea
+# sweep at es=0.3 SHARE the (0.7, 0.3) point, which is already run. So
+# the wave has 9 (ea, es) points x 2 arms x 2 conds = 36 cells, of which
+# 20 exist and 16 are new. The new cells ship as their own key
+# (..._ea[_fixed|_evo]) so the finished 20 are never re-queued; the tags
+# and the checker's grid cover the union.
+# eps_AI = 0 IS A WITNESS ROW, not a wasted one: gp.ai_gate is a STRICT
+# |m - x'| < eps_AI, so at eps_AI = 0 it never opens, the served vector
+# never enters, and op_raw MUST equal twin_raw bit-exactly with contact
+# 0 in every round. check_section4_gate's ea0-witness block asserts
+# exactly that on any wave, so these four cells verify the gate
+# machinery on Qwen3 while giving the peer-only transmission baseline.
+# Both arms collapse onto the same trajectory there (nothing is served),
+# which is itself checkable.
 S4GQ_KEY = "section4_gate_anch2_scout_qwen3"
 S4GQ_FIXED_KEY = S4GQ_KEY + "_fixed"
 S4GQ_EVO_KEY = S4GQ_KEY + "_evo"
+S4GQ_EA_KEY = S4GQ_KEY + "_ea"
+S4GQ_EA_FIXED_KEY = S4GQ_EA_KEY + "_fixed"
+S4GQ_EA_EVO_KEY = S4GQ_EA_KEY + "_evo"
 S4GQ_PREFIX = "pofds4gq"
 S4GQ_SLUG = "qwen3_8b"
+S4GQ_EA_ANCHOR = S4GP_GATES[0]          # 0.7, the es sweep's gate
+S4GQ_ES_ANCHOR = 0.3                    # the ea sweep's social gate
+S4GQ_GATES = [0.0, 0.3, 0.5, 0.7, 1.0]  # the ea sweep
+S4GQ_EA_ROUNDS = 15                     # user, 2026-08-27: "not even 30
+                                        # rounds just like 15"
+S4GQ_N_EA_PER_COND = 10                 # 5 ea x 2 arms
+S4GQ_N_EA_TOTAL = 20
+S4GQ_N_POINTS = 10                      # 5 es-sweep + 5 ea-sweep
+#
+# HORIZONS, AND WHY THE SHARED CORNER IS RUN TWICE. The es sweep ran 30
+# rounds; the ea sweep runs 15. A (point, horizon) pair is the cell, so
+# every ea-sweep tag carries the _r15 token -- the same grammar the
+# Figure-6 extensions use, here for a SHORTER horizon. Consequences:
+#   * no tag can collide with a finished 30-round cell, so the
+#     idempotent wrapper can never no-op a 15-round job (or the reverse);
+#   * the (ea 0.7, es 0.3) corner is RUN AGAIN at 15 rounds rather than
+#     read off the 30-round artifact's first 15 rounds. That costs one
+#     cheap cell per arm/cond and buys two things: the ea sweep is
+#     self-contained at ONE horizon (no cross-horizon comparison in the
+#     headline table), and the pair is a free CONSISTENCY CHECK -- the
+#     15-round run and the 30-round run's first 15 rounds must agree if
+#     the trajectory prefix is horizon-independent, which is asserted
+#     nowhere else in this repo.
+
+
+def s4gq_points(kind="all"):
+    """The wave's (eps_AI, eps_social, rounds) points.
+
+    "es"  the ORIGINAL sweep -- eps_AI = 0.7 x es {0,.1,.2,.3,1} at 30
+          rounds; already run, so this list keeps its original order and
+          its rows must stay byte-identical.
+    "ea"  the NEW sweep -- es = 0.3 x eps_AI {0,.3,.5,.7,1} at 15 rounds,
+          INCLUDING the (0.7, 0.3) corner (a different horizon, hence a
+          different cell and a consistency check).
+    "all" the union, es points first: the checker's grid.
+    """
+    es_pts = [(S4GQ_EA_ANCHOR, es, S4GS_ROUNDS) for es in S4GS_ESS]
+    ea_pts = [(ea, S4GQ_ES_ANCHOR, S4GQ_EA_ROUNDS) for ea in S4GQ_GATES]
+    if kind == "es":
+        return es_pts
+    if kind == "ea":
+        return ea_pts
+    return es_pts + ea_pts
 S4GQ_MODEL = dict(
     base_model=FAM_MODELS["qwen3_8b"]["base_model"],      # Qwen/Qwen3-8B
     mem=FAM_MODELS["qwen3_8b"]["mem"], disk=FAM_MODELS["qwen3_8b"]["disk"],
@@ -9559,6 +9626,9 @@ S4G_VARIANTS = {
                   n_total=S4GP_N_TOTAL, slug="mistral7b",
                   model=REACH_MODELS["mistral7b"],
                   pins=dict(S4G_FAMILY_PINS),
+                  points=lambda kind="all": [(S4GP_GATES[0], es,
+                                              S4GP_ROUNDS)
+                                             for es in S4GP_ESS],
                   kind="FIVE-ROUND SEED-0 PROBE",
                   kind_grid="ea 0.7 x es {0, 1}",
                   grid="ea {0.7} x es {0, 1}"),
@@ -9568,6 +9638,9 @@ S4G_VARIANTS = {
                   n_total=S4GS_N_TOTAL, slug="mistral7b",
                   model=REACH_MODELS["mistral7b"],
                   pins=dict(S4G_FAMILY_PINS),
+                  points=lambda kind="all": [(S4GP_GATES[0], es,
+                                              S4GS_ROUNDS)
+                                             for es in S4GS_ESS],
                   kind="30-ROUND SEED-0 SCOUT",
                   kind_grid="ea 0.7 x es {0, .1, .2, .3, 1}",
                   grid="ea {0.7} x es {0, .1, .2, .3, 1}"),
@@ -9577,10 +9650,18 @@ S4G_VARIANTS = {
                         n_per_cond=S4GS_N_PER_COND, n_total=S4GS_N_TOTAL,
                         slug=S4GQ_SLUG, model=S4GQ_MODEL,
                         pins=dict(S4G_FAMILY_PINS, chat_thinking=False),
+                        points=s4gq_points,
+                        ea_key=S4GQ_EA_KEY,
+                        ea_fixed_key=S4GQ_EA_FIXED_KEY,
+                        ea_evo_key=S4GQ_EA_EVO_KEY,
                         kind="30-ROUND SEED-0 SCOUT, QWEN3-8B (thinking "
                              "off)",
-                        kind_grid="ea 0.7 x es {0, .1, .2, .3, 1}",
-                        grid="ea {0.7} x es {0, .1, .2, .3, 1}"),
+                        ea_rounds=S4GQ_EA_ROUNDS,
+                        n_cells=S4GQ_N_POINTS * 2 * 2,   # 40
+                        kind_grid="ea 0.7 x es {0,.1,.2,.3,1} @30r + "
+                                  "es 0.3 x ea {0,.3,.5,.7,1} @15r",
+                        grid="ea {0.7} x es {0,.1,.2,.3,1} @30 rounds + "
+                             "es {0.3} x ea {0,.3,.5,.7,1} @15 rounds"),
 }
 assert len({v["prefix"] for v in S4G_VARIANTS.values()}) == len(S4G_VARIANTS)
 
@@ -9616,37 +9697,70 @@ def s4gs_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
                     S4GS_PREFIX if prefix is None else prefix, rounds)
 
 
-def s4gv_row(arm, cond, es, seed, variant):
+def s4gv_row(arm, cond, es, seed, variant, ea=None, rounds=None):
     """One family row: s4g_row's own output with the tag re-spelled by
     s4gv_tag and W_PLAT (queue col 11) moved 0.5 -> 0.75. Everything
-    else IS the corrected-gate wave's row, by construction."""
+    else IS the corrected-gate wave's row, by construction.
+
+    rounds=None -> the variant's base horizon and a bare tag; a horizon
+    that DIFFERS from the base rides both the nrounds column and an
+    _r<rounds> tag token, so a 15-round cell can never wear (or be
+    no-op'd by) a 30-round cell's tag."""
     v = S4G_VARIANTS[variant]
-    row = s4g_row(arm, cond, S4GP_GATES[0], es, seed,
-                  nrounds=v["rounds"], prefix=v["prefix"])
+    ea = S4GP_GATES[0] if ea is None else ea
+    nr = v["rounds"] if rounds is None else int(rounds)
+    tag_r = None if nr == v["rounds"] else nr
+    row = s4g_row(arm, cond, ea, es, seed, nrounds=nr, prefix=v["prefix"],
+                  tag_rounds=tag_r)
     cols = [c.strip() for c in row.split(",")]
-    want_tag = s4g_tag(arm, cond, S4GP_GATES[0], es, seed,
-                       prefix=v["prefix"])
+    want_tag = s4g_tag(arm, cond, ea, es, seed, prefix=v["prefix"],
+                       rounds=tag_r)
     assert cols[0] == want_tag and cols[11] == "0.5", row
-    cols[0] = s4gv_tag(arm, cond, S4GP_GATES[0], es, seed, v["prefix"])
+    cols[0] = s4gv_tag(arm, cond, ea, es, seed, v["prefix"], rounds=tag_r)
     cols[11] = f"{S4GP_W_PLAT:g}"
+    assert cols[22] == str(nr), row
     return ", ".join(cols)
 
 
-def s4gv_rows(cond, variant, seeds=None):
+def s4gv_main_kind(variant):
+    """Which sweep the variant's ORIGINAL key carries: a cross-shaped
+    wave's main key is its "es" sweep (the already-run cells), a
+    single-sweep variant's is all it has."""
+    return "es" if "ea_key" in S4G_VARIANTS[variant] else "all"
+
+
+def s4gv_rows(cond, variant, seeds=None, kind="all"):
+    """The variant's rows for one condition. kind selects the sweep for
+    a cross-shaped wave ("es" = the original key, "ea" = the new one);
+    single-sweep variants ignore it and yield their only sweep."""
     v = S4G_VARIANTS[variant]
     seeds = S4GP_SEEDS if seeds is None else seeds
-    return [s4gv_row(arm, cond, es, seed, variant)
+    pts = v["points"](kind)
+    return [s4gv_row(arm, cond, es, seed, variant, ea=ea, rounds=nr)
             for seed in seeds
             for arm in S4GP_ARMS
-            for es in v["ess"]]
+            for (ea, es, nr) in pts]
 
 
-def s4gv_sub(cond, variant):
+def s4gv_sub(cond, variant, sweep="all"):
     v = S4G_VARIANTS[variant]
-    key = v["fixed_key"] if cond == "fixed" else v["evo_key"]
+    if sweep == "ea":
+        key = v["ea_fixed_key"] if cond == "fixed" else v["ea_evo_key"]
+        gridtxt = (f"es {S4GQ_ES_ANCHOR:g} x ea "
+                   f"{{{', '.join(f'{g:g}' for g in S4GQ_GATES)}}} at "
+                   f"{v['ea_rounds']} ROUNDS (every tag carries _r"
+                   f"{v['ea_rounds']}; the ea{_num(S4GQ_EA_ANCHOR)} cell "
+                   f"is re-run at this horizon as a consistency check "
+                   f"against its 30-round twin)")
+    else:
+        key = v["fixed_key"] if cond == "fixed" else v["evo_key"]
+        gridtxt = v["kind_grid"]
     kind = (f"{v['kind']} -- beta(W_PLAT)=0.75, gamma(k)=0.2, alpha=0.5; "
-            f"{v['kind_grid']} x arms {{b0, d8}}")
-    sub = s4g_sub(cond, key=key, rows=s4gv_rows(cond, variant), kind=kind,
+            f"{gridtxt} x arms {{b0, d8}}")
+    rows = s4gv_rows(cond, variant,
+                     kind=("ea" if sweep == "ea"
+                           else s4gv_main_kind(variant)))
+    sub = s4g_sub(cond, key=key, rows=rows, kind=kind,
                   grid=v["grid"], model_env=v["model"])
     # the family departs from the S4G surface in exactly the pinned ways
     # below; every substitution is asserted so a template drift cannot
@@ -14097,7 +14211,7 @@ def main():
         _fam_tags[_var] = set()
         for _cond, _key in (("fixed", _v["fixed_key"]),
                             ("evolving", _v["evo_key"])):
-            _rows = s4gv_rows(_cond, _var)
+            _rows = s4gv_rows(_cond, _var, kind=s4gv_main_kind(_var))
             assert len(_rows) == _v["n_per_cond"], (_var, _cond, len(_rows))
             _ncols = 26 if _cond == "fixed" else 24
             for _r in _rows:
@@ -14132,6 +14246,67 @@ def main():
             expected[p] = _v["n_per_cond"]
             cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
         assert len(_fam_tags[_var]) == _v["n_total"], _var
+        # ---- the cross-shaped wave's SECOND sweep (its own key) --------
+        if "ea_key" not in _v:
+            continue
+        _ea_tags = set()
+        for _cond, _key in (("fixed", _v["ea_fixed_key"]),
+                            ("evolving", _v["ea_evo_key"])):
+            _rows = s4gv_rows(_cond, _var, kind="ea")
+            assert len(_rows) == S4GQ_N_EA_PER_COND, (_var, _cond,
+                                                      len(_rows))
+            _ncols = 26 if _cond == "fixed" else 24
+            for _r in _rows:
+                _c = [x.strip() for x in _r.split(",")]
+                assert len(_c) == _ncols, (_var, _cond, len(_c), _r)
+                assert _c[0].startswith(f"{_v['prefix']}_{_v['slug']}_") \
+                    and f"_{S4G_OP_TOKEN}_" in _c[0] \
+                    and "_w0p75_l0p2_" in _c[0], _c[0]
+                assert _c[11] == "0.75" and _c[3] == "0", _r
+                assert float(_c[9]) == S4GQ_ES_ANCHOR, ("the ea sweep is "
+                                                        "at one es", _r)
+                assert float(_c[14]) in tuple(S4GQ_GATES), _r
+                # the SHORTER horizon rides the nrounds column AND the tag
+                assert _c[22] == str(S4GQ_EA_ROUNDS), _r
+                assert _c[0].endswith(f"_r{S4GQ_EA_ROUNDS}"), (
+                    "a 15-round cell must declare its horizon in the tag "
+                    "or the wrapper could no-op it against a 30-round "
+                    "run dir", _r)
+                assert _c[15] == "threshold" and _c[10] == "0.0", _r
+                # disjoint from the es-sweep key AND every other wave
+                assert _c[0] not in _fam_tags[_var], ("ea row collides "
+                                                      "with an es row",
+                                                      _c[0])
+                assert _c[0] not in _prior_pr, ("ea tag collides", _c[0])
+                _ea_tags.add(_c[0])
+            _sub = s4gv_sub(_cond, _var, sweep="ea")
+            _env = next(l for l in _sub.splitlines()
+                        if l.startswith("environment"))
+            _mainenv = next(l for l in s4gv_sub(_cond, _var).splitlines()
+                            if l.startswith("environment"))
+            assert _env == _mainenv, ("the ea sweep must run the SAME "
+                                      "environment as the es sweep",
+                                      _var, _cond)
+            p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+            files[p] = _rows
+            expected[p] = S4GQ_N_EA_PER_COND
+            cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+        assert len(_ea_tags) == S4GQ_N_EA_TOTAL, len(_ea_tags)
+        # the CONCEPTUAL grid: 10 (point, horizon) cells x 2 arms x 2
+        # conds = 40, partitioned exactly into the 20 run + the 20 new
+        assert len(s4gq_points()) == S4GQ_N_POINTS
+        assert len(_fam_tags[_var]) + len(_ea_tags) == \
+            S4GQ_N_POINTS * 2 * 2 == 40
+        # the shared (ea, es) corner appears at BOTH horizons, and the
+        # two tags differ only by the _r token
+        _corner30 = s4gv_tag("b0", "fixed", S4GQ_EA_ANCHOR,
+                             S4GQ_ES_ANCHOR, 0, _v["prefix"])
+        _corner15 = s4gv_tag("b0", "fixed", S4GQ_EA_ANCHOR,
+                             S4GQ_ES_ANCHOR, 0, _v["prefix"],
+                             rounds=S4GQ_EA_ROUNDS)
+        assert _corner30 in _fam_tags[_var] and _corner15 in _ea_tags
+        assert _corner15 == f"{_corner30}_r{S4GQ_EA_ROUNDS}"
+        _fam_tags[_var] |= _ea_tags
     # no two variants share a tag (a 30-round cell must never be no-op'd
     # by a finished 5-round cell's run dir; a Qwen cell never by a
     # Mistral one)

@@ -70,6 +70,15 @@ VARIANTS = {
                         keys={"fixed": "section4_gate_anch2_scout_qwen3_fixed",
                               "evolving": "section4_gate_anch2_scout_qwen3_evo"}),
 }
+# the eps_AI sweep: the SAME wave's second arm -- es pinned at 0.3, ea
+# varying, the shared (0.7, 0.3) corner EXCLUDED (already run under the
+# es-sweep key). Restated independently of the generator.
+EA_SWEEP = {
+    "prefix": "pofds4gq", "slug": "qwen3_8b", "rounds": 15,
+    "es": 0.3, "eas": (0.0, 0.3, 0.5, 0.7, 1.0), "n": 20,
+    "keys": {"fixed": "section4_gate_anch2_scout_qwen3_ea_fixed",
+             "evolving": "section4_gate_anch2_scout_qwen3_ea_evo"},
+}
 
 _G0 = torch.Generator().manual_seed(20260826)
 INNATE = torch.rand(N, generator=_G0)
@@ -87,9 +96,11 @@ def _num(v):
     return f"{float(v):g}".replace(".", "p")
 
 
-def tag_for(arm, cond, es, prefix="pofds4gp", slug="mistral7b"):
-    return (f"{prefix}_{slug}_{arm}_{COND_TOK[cond]}_anch2_ea0p7"
-            f"_w0p75_l0p2_es{_num(es)}_s{SEED}")
+def tag_for(arm, cond, es, prefix="pofds4gp", slug="mistral7b", ea=0.7,
+            rounds=None):
+    return (f"{prefix}_{slug}_{arm}_{COND_TOK[cond]}_anch2_ea{_num(ea)}"
+            f"_w0p75_l0p2_es{_num(es)}_s{SEED}"
+            + ("" if rounds is None else f"_r{rounds}"))
 
 
 # ------------------------------------------------ emitted-artifact tests
@@ -194,11 +205,11 @@ def test_submit_script_knows_the_probe_keys():
 
 # --------------------------------------------------- synthetic runs
 def make_cfg(tag, arm, cond, es, rounds=ROUNDS, base_model=BASE,
-             thinking=None):
+             thinking=None, ea=EA):
     c = {
         "run_tag": tag, "base_model": base_model, "dataset": "movielens",
         "ml_target": TARGET, "n_rounds": rounds, "seed": SEED,
-        "eps": es, "eps_ai": EA,
+        "eps": es, "eps_ai": ea,
         "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
         "ai_gate_reference": "anchor",
         "population_update": "nested_ai_anchored_then_social_v2",
@@ -252,8 +263,8 @@ def render_days(vals):
 
 def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
               prefix="pofds4gp", rounds=ROUNDS, slug="mistral7b",
-              base_model=BASE, thinking=None):
-    tag = tag_for(arm, cond, es, prefix, slug)
+              base_model=BASE, thinking=None, ea=EA, tag_rounds=None):
+    tag = tag_for(arm, cond, es, prefix, slug, ea, tag_rounds)
     d = os.path.join(str(root), tag)
     os.makedirs(d, exist_ok=True)
     mask = bottom_mask(INNATE, CLAMP_N) if cond == "fixed" else None
@@ -264,7 +275,12 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
         # the twin depends on (cond, es, seed) only -- NEVER the arm --
         # which is the twin-agreement invariant the gate replays
         y = y + 0.01 * ((0.35 + 0.02 * es) - y)
-        x = x + 0.02 * ((0.5 + 0.01 * es) - x)
+        if float(ea) == 0.0:
+            # the strict-< AI gate NEVER opens at eps_AI = 0: the served
+            # vector cannot enter, so the population IS the twin
+            x = y.clone()
+        else:
+            x = x + 0.02 * ((0.5 + 0.01 * es) - x)
         if mask is not None:
             x[mask] = INNATE[mask]
             y[mask] = INNATE[mask]
@@ -272,12 +288,13 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
         tw.append(y.clone())
         pr.append(torch.full((N,), 0.55 + 0.005 * t))
 
-    cfg = make_cfg(tag, arm, cond, es, rounds, base_model, thinking)
+    cfg = make_cfg(tag, arm, cond, es, rounds, base_model, thinking, ea)
     if cfg_mut:
         cfg_mut(cfg)
+    contact = 0.0 if float(ea) == 0.0 else 0.4
     payload = {
         "config": cfg,
-        "trajectory": [{"round": t, "contact": 0.4}
+        "trajectory": [{"round": t, "contact": contact}
                        for t in range(rounds)],
         "op_raw": torch.stack(op),
         "twin_raw": torch.stack(tw),
@@ -303,7 +320,8 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
     with open(os.path.join(d, "telemetry.json"), "w") as fh:
         for t in range(rounds):
             fh.write(json.dumps({"round": t, "deployment": t,
-                                 "is_deploy": 1, "contact": 0.4}) + "\n")
+                                 "is_deploy": 1,
+                                 "contact": contact}) + "\n")
     raws = [{"round": t, "parse_fail_frac": 0.0,
              "raw": ["0.55"] * N, "parsed": [0.55] * N}
             for t in range(rounds)]
@@ -327,21 +345,36 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
     return d
 
 
+def variant_points(variant):
+    """[(ea, es, rounds, tag_rounds)] -- the variant's cells, restated
+    independently of the generator. scout_qwen3 is a CROSS: its es sweep
+    at ea=0.7 runs 30 rounds (bare tags) and its ea sweep at es=0.3 runs
+    15 (tags carry _r15)."""
+    v = VARIANTS[variant]
+    pts = [(0.7, es, v["rounds"], None) for es in v["ess"]]
+    if variant == "scout_qwen3":
+        e = EA_SWEEP
+        pts += [(ea, e["es"], e["rounds"], e["rounds"])
+                for ea in e["eas"]]
+    return pts
+
+
 def build_probe(root, skip=(), cfg_mut_on=None, cfg_mut=None,
                 raw_mut_on=None, raw_mut=None, variant="probe"):
     v = VARIANTS[variant]
     for cond in CONDS:
         for arm in ARMS:
-            for es in v["ess"]:
-                cell = (arm, cond, es)
-                if cell in skip:
+            for (ea, es, nr, tag_r) in variant_points(variant):
+                cell = (arm, cond, es) if tag_r is None else \
+                    (arm, cond, es, ea)
+                if cell in skip or (arm, cond, es) in skip:
                     continue
                 build_run(root, arm, cond, es,
                           cfg_mut=cfg_mut if cell == cfg_mut_on else None,
                           raw_mut=raw_mut if cell == raw_mut_on else None,
-                          prefix=v["prefix"], rounds=v["rounds"],
+                          prefix=v["prefix"], rounds=nr,
                           slug=v["slug"], base_model=v["base_model"],
-                          thinking=v["thinking"])
+                          thinking=v["thinking"], ea=ea, tag_rounds=tag_r)
     return root
 
 
@@ -482,7 +515,7 @@ def test_scout_qwen3_full_set_passes_beside_the_mistral_scout(tmp_path):
     build_probe(root, variant="scout")            # the Mistral cells too
     r = run_checker(root, wave="scout_qwen3")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "PASS" in r.stdout and "20/20 cells present" in r.stdout
+    assert "PASS" in r.stdout and "40/40 cells present" in r.stdout
     assert "EXTRA" not in r.stdout
     # and the Mistral scout gate still sees exactly its own 20
     r = run_checker(root, wave="scout")
@@ -524,3 +557,135 @@ def test_scout_qwen3_tag_slug_parses_with_its_underscore():
     assert m and m.group("slug") == "qwen3_8b" and m.group("arm") == "d8"
     m = chk.TAG_RE.match(tag_for("b0", "fixed", 1.0, "pofds4gs"))
     assert m and m.group("slug") == "mistral7b" and m.group("arm") == "b0"
+
+
+# ------------------------------------------------------- the ea sweep
+def test_ea_sweep_emitted_grid():
+    """es pinned, ea varying, the shared corner never re-queued."""
+    v = EA_SWEEP
+    all_tags = set()
+    for cond in CONDS:
+        key = v["keys"][cond]
+        sub = open(os.path.join(CONDOR, f"at_pofd_{key}.sub")).read()
+        rows = [ln for ln in open(os.path.join(
+            CONDOR, f"configs_pofd_{key}.txt")).read().splitlines()
+            if ln.strip()]
+        assert len(rows) == v["n"] // 2
+        q = next(l for l in sub.splitlines() if l.startswith("queue"))
+        cols = [c.strip() for c in
+                re.match(r"queue\s+(.*?)\s+from\s+(\S+)", q).group(1).split(",")]
+        got = set()
+        for r in rows:
+            row = dict(zip(cols, [x.strip() for x in r.split(",")]))
+            assert float(row["eps"]) == v["es"], "the ea sweep holds es"
+            assert float(row["eps_ai"]) in v["eas"]
+            assert row["wplat"] == "0.75"
+            assert row["nrounds"] == str(v["rounds"]), "15-round sweep"
+            assert row["seed"] == "0" and row["gamma"] == "0.0"
+            arm = "d8" if row["style"] == "frozen" else "b0"
+            # the SHORTER horizon must be declared in the tag, or the
+            # idempotent wrapper could no-op it against a 30-round dir
+            assert row["tag"].endswith(f"_r{v['rounds']}")
+            assert row["tag"] == tag_for(arm, cond, v["es"], v["prefix"],
+                                         v["slug"], float(row["eps_ai"]),
+                                         rounds=v["rounds"])
+            got.add((arm, float(row["eps_ai"])))
+            all_tags.add(row["tag"])
+        assert got == {(a, e) for a in ARMS for e in v["eas"]}
+        # the ea sweep must run the SAME environment as the es sweep
+        main = open(os.path.join(
+            CONDOR, f"at_pofd_{VARIANTS['scout_qwen3']['keys'][cond]}.sub")).read()
+        env_of = lambda s: next(l for l in s.splitlines()
+                                if l.startswith("environment"))
+        assert env_of(sub) == env_of(main)
+    assert len(all_tags) == v["n"]
+
+
+def test_ea_sweep_tags_disjoint_from_the_es_sweep():
+    ea, es = set(), set()
+    for cond in CONDS:
+        ea |= {ln.split(",")[0].strip() for ln in open(os.path.join(
+            CONDOR, f"configs_pofd_{EA_SWEEP['keys'][cond]}.txt"))
+            if ln.strip()}
+        es |= {ln.split(",")[0].strip() for ln in open(os.path.join(
+            CONDOR,
+            f"configs_pofd_{VARIANTS['scout_qwen3']['keys'][cond]}.txt"))
+            if ln.strip()}
+    assert len(ea) == 20 and len(es) == 20
+    assert not (ea & es), "a finished cell would be re-queued"
+    # 10 (point, horizon) cells x 2 arms x 2 conds = 40
+    assert len(ea | es) == 40
+    # the shared corner appears at both horizons, differing ONLY by _r15
+    c30 = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.7)
+    c15 = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.7,
+                  rounds=15)
+    assert c30 in es and c15 in ea and c15 == f"{c30}_r15"
+
+
+def test_submit_script_knows_the_ea_sweep():
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    assert ('section4_gate_anch2_scout_qwen3_ea) TARGETS='
+            '"section4_gate_anch2_scout_qwen3_ea_fixed '
+            'section4_gate_anch2_scout_qwen3_ea_evo" ;;') in src
+
+
+def test_checker_rejects_an_off_cross_cell():
+    """The wave is a CROSS: (ea=1, es=1) uses values that each appear on
+    one arm but is not a cell, and must not be silently admitted."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("chk", CHECKER)
+    chk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chk)
+    gen = chk.load_generator(os.path.join(CONDOR, "gen_pofd_sweep.py"))
+    w = chk.Wave("scout_qwen3", gen)
+    # 9 DISTINCT (ea, es) points; 10 (point, horizon) cells, because the
+    # shared corner runs at both horizons
+    assert len(w.points) == 9 and len(w.pt_keys) == 10
+    assert w.horizons_ok == (15,) and w.min_rounds == 15
+    off = tag_for("b0", "fixed", 1.0, "pofds4gq", "qwen3_8b", ea=1.0,
+                  rounds=15)
+    info, errs = chk.parse_tag(off, False, w)
+    assert any("is not a point" in e for e in errs), errs
+    for on in (tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=1.0,
+                       rounds=15),
+               tag_for("d8", "evolving", 1.0, "pofds4gq", "qwen3_8b", ea=0.7),
+               tag_for("d8", "evolving", 0.3, "pofds4gq", "qwen3_8b", ea=0.0,
+                       rounds=15)):
+        info, errs = chk.parse_tag(on, False, w)
+        assert not errs, (on, errs)
+
+
+def test_checker_enforces_the_per_point_horizon():
+    """An ea-sweep cell without _r15 is a 30-round cell; an es-sweep cell
+    with _r15 is not a cell at all. Both must FAIL, or the idempotent
+    wrapper could pair a 15-round job with a 30-round run dir."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("chk", CHECKER)
+    chk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chk)
+    gen = chk.load_generator(os.path.join(CONDOR, "gen_pofd_sweep.py"))
+    w = chk.Wave("scout_qwen3", gen)
+    bare = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.3)
+    assert any("wrong horizon" in e
+               for e in chk.parse_tag(bare, False, w)[1])
+    tagged = tag_for("d8", "evolving", 1.0, "pofds4gq", "qwen3_8b",
+                     ea=0.7, rounds=15)
+    assert any("wrong horizon" in e
+               for e in chk.parse_tag(tagged, False, w)[1])
+
+
+@pytest.mark.slow
+def test_ea0_cell_that_served_anything_fails(tmp_path):
+    """The eps_AI=0 cells are WITNESSES: the strict-< gate never opens,
+    so op_raw must BE the twin. A cell where the served vector reached
+    the population must fail even though every other field is perfect."""
+    root = build_probe(tmp_path / "runs", variant="scout_qwen3")
+    tag = tag_for("b0", "fixed", 0.3, "pofds4gq", "qwen3_8b", ea=0.0,
+                  rounds=15)
+    p = os.path.join(str(root), tag, "trajectory.pt")
+    d = torch.load(p, weights_only=False)
+    d["op_raw"][3] = d["op_raw"][3] + 0.02      # the platform got in
+    torch.save(d, p)
+    r = run_checker(root, wave="scout_qwen3")
+    assert r.returncode == 1
+    assert "op_raw != twin_raw" in r.stdout

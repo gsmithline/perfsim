@@ -496,22 +496,52 @@ class Wave:
             self.key = fam["key"]
             self.arms = tuple(gen.S4GP_ARMS)
             self.conds = tuple(gen.S4G_CONDS)
-            self.gates = tuple(float(v) for v in gen.S4GP_GATES)
-            self.ess = tuple(float(v) for v in fam["ess"])
             self.seeds = tuple(int(s) for s in gen.S4GP_SEEDS)
+            # THE GRID IS A POINT LIST, not a product: the Qwen3 wave is
+            # a CROSS (the es sweep at one eps_AI plus the eps_AI sweep
+            # at one es), so a product would invent cells that were
+            # never run and report them ABSENT.
+            # (eps_AI, eps_social, rounds): a CROSS whose two arms may
+            # sit at DIFFERENT horizons (the Qwen3 wave's es sweep ran 30
+            # rounds, its eps_AI sweep runs 15), so the cell is a
+            # (point, horizon) pair and the shorter one carries an _r
+            # token.
+            self.pts3 = [(float(ea), float(es), int(nr))
+                         for (ea, es, nr) in fam["points"]("all")]
+            base = int(fam["rounds"])
+            # (eps_AI, eps_social, TAG HORIZON) -- the horizon token is
+            # None at the variant's base horizon. THE TRIPLE IS THE CELL:
+            # the Qwen3 cross runs (0.7, 0.3) at BOTH 30 and 15 rounds,
+            # so a map keyed on the point alone would silently drop one.
+            self.pt_keys = [(ea, es, None if nr == base else nr)
+                            for ea, es, nr in self.pts3]
+            if len(set(self.pt_keys)) != len(self.pt_keys):
+                raise ValueError(f"{self.name}: duplicate (eps_ai, "
+                                 f"eps_social, horizon) point(s)")
+            self.points = sorted({(ea, es) for ea, es, _ in self.pts3})
+            self.gates = tuple(sorted({ea for ea, _, _ in self.pts3}))
+            self.ess = tuple(sorted({es for _, es, _ in self.pts3}))
+            # every horizon a point is allowed to run at
+            self.horizons_at = {}
+            for ea, es, h in self.pt_keys:
+                self.horizons_at.setdefault((ea, es), set()).add(h)
+            self.horizons_ok = tuple(sorted({nr for _, _, nr in self.pts3
+                                             if nr != base}))
             self.cells6 = [(arm, cond, ea, es, seed, "gpu")
                            for seed in self.seeds for arm in self.arms
-                           for cond in self.conds for ea in self.gates
-                           for es in self.ess]
+                           for cond in self.conds
+                           for (ea, es, _h) in self.pt_keys]
             self.witness = set()
-            self.horizons_ok = ()
             self.ext_manifest = None
             self.ext_requests = []
             smoke_rows = lambda cond: []          # noqa: E731
-            if len(self.cells6) != fam["n_total"]:
-                raise ValueError(f"generator declares n_total="
-                                 f"{fam['n_total']} for {self.variant} but "
-                                 f"the product has {len(self.cells6)} cells")
+            # n_total is the MAIN key's job count; a cross-shaped wave
+            # also declares n_cells, the full conceptual grid
+            want_cells = int(fam.get("n_cells", fam["n_total"]))
+            if len(self.cells6) != want_cells:
+                raise ValueError(f"generator declares {len(self.cells6)} "
+                                 f"cells for {self.variant} but its "
+                                 f"declared count is {want_cells}")
         else:
             self.key = gen.S4G_KEY
             self.arms = tuple(gen.S4G_ARMS)
@@ -535,6 +565,16 @@ class Wave:
                                  f"{len(self.cells6)} cells")
         self.rounds = int(gen.S4G_VARIANTS[self.variant]["rounds"]
                           if self.probe else gen.S4G_ROUNDS)
+        # The COMMON PREFIX the twin-agreement check compares over. The
+        # twin is a pure function of (cond, es, seed), so every run at
+        # one such group must carry the same twin_raw -- but a group can
+        # now hold runs at DIFFERENT horizons (the Qwen3 cross runs
+        # es=0.3 at both 30 and 15 rounds), and hashing 30 rows against
+        # 15 would report a disagreement that is only a length mismatch.
+        # For every other wave this is the base horizon, unchanged.
+        self.min_rounds = min([int(nr) for _, _, nr in self.pts3]
+                              if getattr(self, "pts3", None)
+                              else [self.rounds])
         self.smoke_rounds = int(gen.S4G_SMOKE_ROUNDS)
         self.prod_prefix = (gen.S4G_VARIANTS[self.variant]["prefix"]
                             if self.probe else PROD_PREFIX)
@@ -567,6 +607,17 @@ class Wave:
                                    for c in self.smoke_cells})
 
     # -- the conceptual grid ------------------------------------------
+    def run_keys_full(self):
+        """(arm, cond, ea, es, seed, horizon) for every cell needing a
+        run dir. A family wave's horizon comes from its point; every
+        other wave's base cells carry None."""
+        pk = getattr(self, "pt_keys", None)
+        if pk is None:
+            return [c + (None,) for c in self.run_cells()]
+        return [(arm, cond, ea, es, seed, h)
+                for seed in self.seeds for arm in self.arms
+                for cond in self.conds for (ea, es, h) in pk]
+
     def run_cells(self):
         """Cells that require a run dir (kind gpu or witness)."""
         return [c[:5] for c in self.cells6 if c[5] in ("gpu", "witness")]
@@ -601,7 +652,7 @@ class Wave:
         if smoke:
             todo = [(c, None) for c in self.smoke_cells]
         else:
-            todo = [(c, None) for c in self.run_cells()]
+            todo = [(k[:5], k[5]) for k in self.run_keys_full()]
             todo += [(c, None) for c in self.twin_cells()]
             todo += [(e[:5], e[5]) for e in self.ext_requests]
         for cell, r in todo:
@@ -682,12 +733,34 @@ def parse_tag(tag, smoke, wave):
             errs.append(f"smoke cell must be {want}; got ea{_num(ea)} "
                         f"es{_num(es)} s{seed}")
     else:
-        if ea not in wave.gates:
-            errs.append(f"eps_ai {ea:g} is not in the {wave.name} grid "
-                        f"{list(wave.gates)}")
-        if es not in wave.ess:
-            errs.append(f"eps_social {es:g} is not in the {wave.name} grid "
-                        f"{list(wave.ess)}")
+        pts = getattr(wave, "points", None)
+        hat = getattr(wave, "horizons_at", None)
+        if pts is not None and hat is not None and (ea, es) in pts:
+            ok_h = hat[(ea, es)]
+            if horizon not in ok_h:
+                want = " or ".join(sorted(
+                    ("a bare tag (the base horizon)" if h is None
+                     else f"_r{h}") for h in ok_h))
+                errs.append(
+                    f"the ({ea:g}, {es:g}) point of {wave.name} runs at "
+                    f"{want}, but this tag says "
+                    + ("no horizon token" if horizon is None
+                       else f"_r{horizon}")
+                    + " -- a run at the wrong horizon is a different cell")
+        if pts is not None and (ea, es) not in pts:
+            errs.append(f"(eps_ai, eps_social) = ({ea:g}, {es:g}) is not a "
+                        f"point of the {wave.name} grid "
+                        f"{[(f'{a:g}', f'{e:g}') for a, e in pts]} -- this "
+                        f"wave is a CROSS, not a product, so a value that "
+                        f"appears on one arm of it is not automatically a "
+                        f"cell")
+        elif pts is None:
+            if ea not in wave.gates:
+                errs.append(f"eps_ai {ea:g} is not in the {wave.name} grid "
+                            f"{list(wave.gates)}")
+            if es not in wave.ess:
+                errs.append(f"eps_social {es:g} is not in the {wave.name} "
+                            f"grid {list(wave.ess)}")
         if seed not in wave.seeds:
             errs.append(f"seed {seed} is not in the {wave.name} grid "
                         f"{list(wave.seeds)}")
@@ -1035,7 +1108,8 @@ def check_one(run_dir, wave, smoke, inspect_archived=False):
     # horizon, so an extension run is comparable to its base cell.
     rec["op_sha256"] = _sha_t(op)
     rec["twin_sha256"] = _sha_t(tw)
-    rec["twin_base_sha256"] = _sha_t(tw[:min(wave.rounds, int(tw.shape[0]))])
+    rec["twin_base_sha256"] = _sha_t(
+        tw[:min(wave.min_rounds, int(tw.shape[0]))])
     rec["pop_final_mean"] = float(op[-1].mean())
     rec["pop_final_sd"] = float(op[-1].std())
     rec["twin_final_mean"] = float(tw[-1].mean())
@@ -1495,7 +1569,7 @@ def main(argv=None):
         run_keys = [c + (None,) for c in wave.smoke_cells]
         twin_keys, ext_keys = [], []
     else:
-        run_keys = [c + (None,) for c in wave.run_cells()]
+        run_keys = wave.run_keys_full()
         twin_keys = [c + (None,) for c in wave.twin_cells()]
         ext_keys = list(wave.ext_requests)
     seed_subset = None
@@ -1716,7 +1790,8 @@ def main(argv=None):
 
     for g, by_sha in sorted(tw_base.items(), key=str):
         if len(by_sha) > 1:
-            _twin_disagree(g, by_sha, f"over the first {wave.rounds} rounds")
+            _twin_disagree(g, by_sha,
+                           f"over the first {wave.min_rounds} rounds")
     for g, by_sha in sorted(tw_full.items(), key=str):
         if g[3] is None or len(by_sha) < 2:
             continue
