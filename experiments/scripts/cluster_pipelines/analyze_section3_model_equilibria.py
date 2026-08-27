@@ -140,12 +140,40 @@ def tci3(vals):
     return mean, sd, half
 
 
-def gate_binds_wave(verdict, g):
+class WaveCfg:
+    """Which Section-3 wave to analyse. The SFT wave (reference-
+    regularized, the published Figure 3(a)) and the personal-history ICL
+    wave share this entire analysis -- window, drift, consensus and the
+    three-seed interval are defined once -- and differ only in which
+    tags/constants they resolve."""
+
+    def __init__(self, name, g):
+        self.name = name
+        if name == "icl":
+            self.models, self.seeds = g.S3I_MODELS, g.S3I_SEEDS
+            self.rounds = g.S3I_ROUNDS
+            self.cell_tag = g.s3i_cell_tag
+            self.key = g.S3I_KEY
+            self.arm_label = "personal-history ICL"
+        else:
+            self.models, self.seeds = g.S3M_MODELS, g.S3M_SEEDS
+            self.rounds = g.S3M_ROUNDS
+            self.cell_tag = g.s3m_cell_tag
+            self.key = g.S3M_KEY
+            self.arm_label = "reference-regularized SFT"
+
+
+def gate_binds_wave(verdict, g, w=None):
     """The gate JSON must be this wave's full production verdict: PASS,
-    18 cells, and every production (cell) tag present with status PASS."""
+    18 cells, and every production (cell) tag present with status PASS.
+
+    w defaults to the SFT wave, so the original two-argument call site
+    (and its tests) keeps working unchanged."""
+    if w is None:
+        w = WaveCfg("sft", g)
     if not verdict.get("ok"):
         return "gate is not PASS"
-    want = {g.s3m_cell_tag(m, s) for m in g.S3M_MODELS for s in g.S3M_SEEDS}
+    want = {w.cell_tag(m, s) for m in w.models for s in w.seeds}
     cells = verdict.get("cells") or []
     got = {c.get("tag"): c.get("status") for c in cells}
     if verdict.get("n_cells") != len(want):
@@ -160,9 +188,13 @@ def gate_binds_wave(verdict, g):
 def main():
     ap = argparse.ArgumentParser(
         description="analyze the Section 3 model-specific equilibrium wave")
+    ap.add_argument("--wave", default="sft", choices=("sft", "icl"),
+                    help="sft = the reference-regularized wave (the "
+                         "published Figure 3(a); DEFAULT); icl = the "
+                         "frozen personal-history analogue")
     ap.add_argument("--run-root", action="append", default=None)
     ap.add_argument("--gate-json", required=True)
-    ap.add_argument("--out-dir", default=str(DEFAULT_OUT))
+    ap.add_argument("--out-dir", default=None)
     ap.add_argument("--window", type=int, default=WINDOW)
     ap.add_argument("--drift-tol", type=float, default=DRIFT_TOL)
     ap.add_argument("--consensus-sd-tol", type=float,
@@ -188,10 +220,13 @@ def main():
         ap.error("--window must be an even integer >= 4")
 
     roots = [Path(r) for r in (args.run_root or DEFAULT_RUN_ROOTS)]
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
     g = _load_gen()
-    why = gate_binds_wave(verdict, g)
+    w = WaveCfg(args.wave, g)
+    out = Path(args.out_dir) if args.out_dir else (
+        DEFAULT_OUT if args.wave == "sft"
+        else REPO / "notes" / "pofd" / "section3_model_icl")
+    out.mkdir(parents=True, exist_ok=True)
+    why = gate_binds_wave(verdict, g, w)
     if why:
         print(f"[analyze_s3m] REFUSING: {why}", file=sys.stderr)
         return 1
@@ -199,9 +234,9 @@ def main():
                         if c.get("git_sha")})
 
     rows, missing, innate_means = [], [], []
-    for model in g.S3M_MODELS:
-        for seed in g.S3M_SEEDS:
-            tag = g.s3m_cell_tag(model, seed)
+    for model in w.models:
+        for seed in w.seeds:
+            tag = w.cell_tag(model, seed)
             path = _find(tag, roots)
             if path is None:
                 missing.append(tag)
@@ -209,12 +244,12 @@ def main():
             d = torch.load(path, map_location="cpu", weights_only=False)
             op = torch.as_tensor(d["op_raw"]).float().numpy()
             pred = torch.as_tensor(d["pred_raw"]).float().numpy()
-            if op.shape[0] != g.S3M_ROUNDS or pred.shape[0] != g.S3M_ROUNDS:
+            if op.shape[0] != w.rounds or pred.shape[0] != w.rounds:
                 # the window is defined on the wave's fixed 30-round
                 # horizon; a longer artifact would otherwise be silently
                 # truncated and a shorter one silently accepted
                 missing.append(f"{tag} (horizon {op.shape[0]}/"
-                               f"{pred.shape[0]} != {g.S3M_ROUNDS})")
+                               f"{pred.shape[0]} != {w.rounds})")
                 continue
             stats = _cell_stats(op, pred, args.window)
             innate = torch.as_tensor(d["innate"]).float().numpy()
@@ -244,7 +279,7 @@ def main():
                     f"{stats['served_max_mode_share']:.8f}",
             })
 
-    expected = len(g.S3M_MODELS) * len(g.S3M_SEEDS)
+    expected = len(w.models) * len(w.seeds)
     if missing or len(rows) != expected:
         print(f"[analyze_s3m] REFUSING: {len(missing)} required cell(s) "
               "missing or short", file=sys.stderr)
@@ -258,7 +293,7 @@ def main():
     perfect_mean = float(np.mean(innate_means))
 
     model_rows = []
-    for model in g.S3M_MODELS:
+    for model in w.models:
         selected = [r for r in rows if r["model"] == model]
         vals = [float(r["equilibrium_mean"]) for r in selected]
         mean, sd, half = tci3(vals)
@@ -307,13 +342,14 @@ def main():
             if args.accept_limit_cycle else None),
         "n_cells": len(rows),
         "n_models": len(model_rows),
-        "seeds": list(g.S3M_SEEDS),
+        "wave": w.name, "wave_key": w.key, "arm": w.arm_label,
+        "seeds": list(w.seeds),
         "perfect_prediction_mean": perfect_mean,
         "perfect_prediction_reference": "mean(innate); see module docstring",
         "postpeer": True,
         "tensor": "op_raw (end-of-round, post-peer)",
         "window": args.window,
-        "window_rounds": [g.S3M_ROUNDS - args.window + 1, g.S3M_ROUNDS],
+        "window_rounds": [w.rounds - args.window + 1, w.rounds],
         "replicate_unit": "seed",
         "ci": "95% t, df=2",
         "t_crit_df2_95": T_CRIT_DF2_95,

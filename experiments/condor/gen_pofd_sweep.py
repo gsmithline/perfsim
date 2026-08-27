@@ -9146,6 +9146,150 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 """
 
 
+# section3_model_icl[_smoke] (2026-08-27, user). THE PERSONAL-HISTORY
+# ICL ANALOGUE OF FIGURE 3(a).
+#
+# WHAT IT IS. The Section-3 cross-model equilibrium surface with exactly
+# ONE thing replaced: reference-regularized SFT becomes FROZEN
+# personal-history ICL. Every other field is byte-matched to the S3M
+# wave -- six checkpoints, MovieLens/Action 723 agents, 30 rounds,
+# AB_SWEEPS=100, W_PLAT(beta)=1, INNATE_LAMBDA(gamma)=1, DEFFUANT_ALPHA
+# (alpha)=0.5, BOTH gates all_open, corrected anch2 operator, greedy
+# serving, WITH_TWIN=1, seeds {0,42,43} -- so the two waves differ in the
+# adaptation channel and nothing else, which is what makes the paired
+# SFT-vs-ICL comparison meaningful.
+#
+# THE ARM. d8 = frozen weights + personal history:
+#   training_style frozen   USE_LORA=0   FRESH_EACH_ROUND=0
+#   SFT_EPOCHS=0 (no optimizer step exists)   kl_beta 0 (no KL term)
+#   ICL_K=0     -- ZERO cross-user exemplars: no other agent's opinion
+#                  can appear in any prompt, ever
+#   ICL_DAYS=8  -- each agent's prompt carries only ITS OWN latest eight
+#                  post-peer opinions, oldest to newest
+# The runner writes icl_days_log.json.gz, and the checker replays every
+# rendered sentence BYTE-EXACTLY from (innate, op_raw); that single
+# replay proves locality (own values only, <= 8 of them, none foreign)
+# and completeness at once.
+#
+# PARSE_MODE=strict FOR THE WHOLE WAVE (user, 2026-08-27: "Treat Mistral
+# strictly: do not reuse the old parser exception or silently substitute
+# default values"). The S3M wave needed a Mistral-only strict-parse rerun
+# because the legacy first-digit-run parser read ".64 (" as 1.0 with NO
+# failure flagged. Here strict parsing is the wave-wide default, so there
+# is no exemption to carry and no model is treated specially: a
+# malformed generation is COUNTED as a parse failure and the checker
+# requires zero of them on every model.
+#
+# TAGS. New pofds3i_ family, arm token _d8_ where S3M carries _fwdlam2_:
+#   pofds3i_{model}_d8_sw100_eaopen_w1_k1_esopen_anch2_s{seed}_r30
+# Disjoint from every pofds3m_ tag by prefix AND by arm token, so no
+# completed cell can be overwritten or silently satisfy a cell here.
+#
+# REUSE: audited 2026-08-27 -- 0 of the 18 cells exist. Nothing on disk
+# pairs ICL_DAYS=8 with (W=1, k=1, S=100, both gates open, anch2); the
+# archived d8 runs are all Section-4 (W=.5/.75, k=.2, threshold gates).
+# S3I_REUSED stays empty unless a future audit supplies evidence.
+#
+# SMOKE: ONE 3-round Mistral-7B cell. Mistral is the checkpoint that
+# broke the S3M wave through malformed generations, so it is the most
+# informative screen for a wave whose whole parsing story is "strict, no
+# exceptions" -- and 3 rounds is enough to exercise the personal-history
+# window filling up (innate, then two post-peer rounds).
+S3I_KEY = "section3_model_icl"
+S3I_SMOKE_KEY = "section3_model_icl_smoke"
+S3I_PREFIX = "pofds3i"
+S3I_SMOKE_PREFIX = "pofds3ismk"
+S3I_MODELS = S3M_MODELS
+S3I_SEEDS = S3M_SEEDS
+S3I_REUSED = {}                  # (model, seed) -> archived tag; audit only
+S3I_BETA = S3M_BETA              # W_PLAT = 1
+S3I_GAMMA = S3M_GAMMA            # INNATE_LAMBDA = 1
+S3I_ALPHA = S3M_ALPHA            # 0.5
+S3I_SWEEPS = S3M_SWEEPS          # 100
+S3I_ROUNDS = S3M_ROUNDS          # 30
+S3I_SMOKE_ROUNDS = S3M_SMOKE_ROUNDS
+S3I_SMOKE_SEED = S3M_SMOKE_SEED
+S3I_SMOKE_MODEL = "mistral7b"
+S3I_ICL_DAYS = 8
+S3I_ARM = "d8"
+S3I_N_TOTAL = 18                 # 6 models x 3 seeds
+
+
+def s3i_tag(model, seed, rounds=S3I_ROUNDS, smoke=False):
+    pre = S3I_SMOKE_PREFIX if smoke else S3I_PREFIX
+    return (f"{pre}_{model}_{S3I_ARM}_sw{S3I_SWEEPS}_eaopen_w1_k1"
+            f"_esopen_{S3_OP_TOKEN}_s{seed}_r{rounds}")
+
+
+def s3i_cell_tag(model, seed):
+    """The tag the checker/analyzer resolve for a production cell. No
+    rerun/exemption machinery exists on this wave by design."""
+    return s3i_tag(model, seed)
+
+
+def s3i_row(model, seed, rounds=S3I_ROUNDS, smoke=False):
+    """One row. The ARM columns come from REACH_ARM_COLS["d8"] -- the
+    same frozen personal-history envelope Section 4 uses -- so the arm
+    is defined in exactly one place."""
+    a = REACH_ARM_COLS[S3I_ARM]
+    m = FAM_MODELS[model]
+    assert a["style"] == "frozen" and a["uselora"] == 0 and \
+        a["iclk"] == 0 and a["fresh"] == 0, a
+    return ROW_PS.format(
+        tag=s3i_tag(model, seed, rounds, smoke), style=a["style"],
+        beta=a["beta"], seed=seed,
+        es=f"{S3_EPS_SOCIAL:g}", wplat=f"{S3I_BETA:g}",
+        lam=f"{S3I_GAMMA:g}", kldir="forward", sweeps=S3I_SWEEPS,
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=a["fresh"], ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def s3i_rows():
+    return [s3i_row(model, seed) for model in S3I_MODELS
+            for seed in S3I_SEEDS if (model, seed) not in S3I_REUSED]
+
+
+def s3i_smoke_rows():
+    return [s3i_row(S3I_SMOKE_MODEL, S3I_SMOKE_SEED,
+                    rounds=S3I_SMOKE_ROUNDS, smoke=True)]
+
+
+def s3i_sub(smoke=False):
+    """The S3M sub with the ICL arm's environment. Rendered from the
+    SAME template so the two waves cannot drift apart on any field the
+    comparison depends on; every ICL-specific substitution is asserted,
+    so a template change that silently drops one is a build error."""
+    key = S3I_SMOKE_KEY if smoke else S3I_KEY
+    rows = s3i_smoke_rows() if smoke else s3i_rows()
+    kind = ("3-ROUND MISTRAL-7B SMOKE (personal-history ICL)" if smoke
+            else "OPEN-GATE CROSS-MODEL EQUILIBRIA, PERSONAL-HISTORY ICL")
+    sub = S3M_SUB_TEMPLATE.format(
+        key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
+        rounds=S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS,
+        kind=kind, gateflag=(" --smoke" if smoke else ""),
+        extra_env=" PARSE_MODE=strict")
+    for old, new in (
+            # the arm: own history, no optimizer, no cross-user exemplars
+            ("ICL_DAYS=0 ", f"ICL_DAYS={S3I_ICL_DAYS} "),
+            ("SFT_EPOCHS=1 ", "SFT_EPOCHS=0 "),
+            ("WANDB_RUN_SUFFIX=_section3_model_equilibria",
+             "WANDB_RUN_SUFFIX=_section3_model_icl"),
+            # the header must describe THIS wave
+            ("forward-KL\n# lambda=2, Deffuant alpha=0.5",
+             "FROZEN personal-history ICL\n# (ICL_K=0, ICL_DAYS=8; no "
+             "LoRA, no optimizer, no KL), Deffuant alpha=0.5"),
+            ("fresh r512 LoRA each round",
+             "frozen weights, PARSE_MODE=strict"),
+            ("check_section3_model_equilibria.py",
+             "check_section3_model_icl.py")):
+        assert sub.count(old) == 1, ("S3I sub substitution missing", old)
+        sub = sub.replace(old, new)
+    assert "ICL_K=$(iclk)" in sub and "USE_LORA=$(uselora)" in sub
+    return sub
+
+
 # sft_update_dose_loop[_smoke] (2026-08-25). RECURSIVE UPDATE-DOSE TEST.
 #
 # QUESTION: at the Section 3 no-memory/full-adoption surface (Qwen3-8B,
@@ -14182,6 +14326,51 @@ def main():
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{S3M_RERUN_SMOKE_KEY}.sub")] = \
         _s3mrs_sub
+
+    # ---- Section-3 PERSONAL-HISTORY ICL analogue of Figure 3(a) --------
+    _s3i_prior = {r.split(",")[0].strip()
+                  for rows in files.values() for r in rows}
+    rows_s3i = s3i_rows()
+    assert len(rows_s3i) == S3I_N_TOTAL == 18, len(rows_s3i)
+    assert not S3I_REUSED, "reuse must be evidenced by an audit"
+    _s3i_seen = set()
+    for _r in rows_s3i + s3i_smoke_rows():
+        _c = [x.strip() for x in _r.split(",")]
+        # the ARM: frozen, no LoRA, no cross-user exemplars
+        assert _c[1] == "frozen" and _c[2] == "0", ("frozen, no KL", _r)
+        assert _c[19] == "0", ("USE_LORA must be 0", _r)
+        assert _c[17] == "0", ("ICL_K must be 0 -- no cross-agent "
+                               "exemplars", _r)
+        assert _c[20] == "0", ("FRESH_EACH_ROUND is meaningless with no "
+                               "adapter", _r)
+        # the SURFACE: byte-matched to S3M
+        assert _c[11] == f"{S3I_BETA:g}" and _c[14] == f"{S3I_GAMMA:g}", _r
+        assert _c[16] == str(S3I_SWEEPS) and _c[10] == "0.0", _r
+        assert _c[0].startswith((S3I_PREFIX + "_", S3I_SMOKE_PREFIX + "_"))
+        assert f"_{S3I_ARM}_" in _c[0] and "_eaopen_" in _c[0] \
+            and "_esopen_" in _c[0] and f"_{S3_OP_TOKEN}_" in _c[0], _c[0]
+        assert _c[0] not in _s3i_prior, ("S3I tag collides", _c[0])
+        _s3i_seen.add(_c[0])
+    assert len(_s3i_seen) == S3I_N_TOTAL + 1
+    # every S3M tag stays distinct: the two waves are compared, never merged
+    _s3m_all = {s3m_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
+    _s3m_all |= {s3m_cell_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
+    assert not (_s3i_seen & _s3m_all)
+    for _key, _rows, _smoke in ((S3I_KEY, rows_s3i, False),
+                                (S3I_SMOKE_KEY, s3i_smoke_rows(), True)):
+        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+        files[p] = _rows
+        expected[p] = len(_rows)
+        _sub = s3i_sub(smoke=_smoke)
+        _env = next(l for l in _sub.splitlines()
+                    if l.startswith("environment"))
+        assert "ICL_DAYS=8" in _env and "SFT_EPOCHS=0" in _env \
+            and "PARSE_MODE=strict" in _env \
+            and "AI_GATE_MODE=all_open" in _env \
+            and "PEER_GATE_MODE=all_open" in _env \
+            and "AI_GATE_REFERENCE=anchor" in _env \
+            and "DEFFUANT_ALPHA=0.5" in _env, _key
+        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
 
     # ---- recursive update-dose test (UD) --------------------------------
     rows_ud = ud_rows()
