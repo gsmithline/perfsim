@@ -1892,3 +1892,102 @@ def test_gate_is_written_as_strict():
     src = open(ANALYZER).read()
     assert "|m - x'| <= eps_AI" not in src
     assert "|m - x'| < eps_AI" in src
+
+
+# ------------------------------------------- agent-paired cohort-B MAE
+# (2026-08-27) mae_b_paired: the DIRECT fixed-vs-evolving transmission
+# magnitude, agent-paired over the late window, written beside T_a /
+# delta_mu_b in the source-effect rows. T_a is a difference of cohort-B
+# MEANS and cancels when cohort A spreads B without shifting it; the
+# paired MAE does not.
+def test_paired_mae_b_is_the_closed_form_and_half_split():
+    f = torch.tensor([[0.5, 0.5, 0.5], [0.6, 0.6, 0.6], [0.7, 0.7, 0.7],
+                      [0.8, 0.8, 0.8], [0.9, 0.9, 0.9]])
+    e = f.clone()
+    e[:, 0] += 0.03          # one agent shifted up by 0.03 every round
+    e[:, 1] -= 0.03          # one shifted down: the MEAN difference is 0
+    mae, h1, h2 = AN.paired_mae_b(f, e)
+    assert mae == pytest.approx(0.02)            # (0.03 + 0.03 + 0) / 3
+    assert h1 == pytest.approx(0.02) and h2 == pytest.approx(0.02)
+    # the mean-of-B contrast is blind to it -- exactly why MAE is written
+    assert float((f - e).mean()) == pytest.approx(0.0, abs=1e-7)
+    assert AN.paired_mae_b(f, f) == (0.0, 0.0, 0.0)
+    with pytest.raises(ValueError):
+        AN.paired_mae_b(f, f[:, :2])
+
+
+def test_op_b_window_reads_the_late_window_on_cohort_b_only(tmp_path):
+    rd = build_cell(tmp_path, "b0", "fixed", 0.2, 0.2, 0)
+    d = torch.load(os.path.join(rd, "trajectory.pt"), weights_only=False)
+    w = AN.op_b_window(d, MASK_A, AN.LATE_IDX)
+    assert tuple(w.shape) == (5, int(MASK_B.sum()))
+    assert torch.equal(w[0], d["op_raw"][25][MASK_B].float())
+    assert torch.equal(w[-1], d["op_raw"][29][MASK_B].float())
+
+
+def test_source_effect_csv_carries_the_paired_mae_by_construction(full_run):
+    """Cohort B is an affine image of innate in the fixture, so the
+    agent-paired MAE has a closed form: per seed
+        diff_i = (scale_f - scale_e) * (innate_i - mu0) + (off_f - off_e)
+    constant over t (no drift), MAE = mean_i |diff_i|."""
+    _, out, _ = full_run
+    rows = read_csv(os.path.join(out, "section4_gate_source_effect.csv"))
+    mu0 = float(INNATE[MASK_B].mean())
+    dev = INNATE[MASK_B] - mu0
+    for r in rows:
+        arm, ea, es = r["arm"], float(r["eps_ai"]), float(r["eps_social"])
+        want = []
+        for s in AN.SEEDS:
+            diff = ((_scale(arm, "fixed", ea, es, s)
+                     - _scale(arm, "evolving", ea, es, s)) * dev
+                    + (_off(arm, "fixed", ea, es, s)
+                       - _off(arm, "evolving", ea, es, s)))
+            want.append(float(diff.abs().mean()))
+            assert float(r[f"mae_b_paired_s{s}"]) == pytest.approx(
+                want[-1], abs=1e-6)
+        m, sd, lo, hi = AN.tci3(want)
+        assert float(r["mae_b_paired_mean"]) == pytest.approx(m, abs=1e-6)
+        assert float(r["mae_b_paired_ci_lo"]) == pytest.approx(lo, abs=1e-5)
+        assert float(r["mae_b_paired_ci_hi"]) == pytest.approx(hi, abs=1e-5)
+        assert r["mae_b_paired_drift_flag"] == "False"
+        # the structural null is exact in the paired metric too
+        if arm == "d8" and es == 0.0:
+            assert all(float(r[f"mae_b_paired_s{s}"]) == 0.0
+                       for s in AN.SEEDS)
+        else:
+            assert float(r["mae_b_paired_mean"]) > 0.0
+
+
+def test_source_rows_without_windows_leave_the_mae_block_na():
+    cells = _synth_cells([0.50, 0.52, 0.54], [0.40, 0.41, 0.42])
+    row = [r for r in AN.build_source_rows(cells, 0.002)
+           if r["arm"] == "b0" and r["eps_ai"] == 0.2
+           and r["eps_social"] == 0.2][0]
+    assert row["status"] == "complete"
+    assert row["mae_b_paired_mean"] is None
+    assert row["mae_b_paired_s0"] is None
+    assert row["mae_b_paired_drift_flag"] is None
+
+
+def test_fig6_source_effect_carries_the_paired_mae(fig6_run):
+    rc, out, summary = fig6_run
+    # the fixture's happy path exits 2 (unsettled pairs -> an extension
+    # request is written); 1 would be a structural failure
+    assert rc in (0, 2)
+    assert summary["mae_b_paired_column"] == "mae_b_paired"
+    rows = read_csv(os.path.join(out, "section4_fig6_source_effect.csv"))
+    assert rows and all("mae_b_paired_mean" in r for r in rows)
+    for r in rows:
+        if r["status"] != "complete":
+            continue
+        v = float(r["mae_b_paired_mean"])
+        assert math.isfinite(v) and v >= 0.0
+        if r["arm"] == "d8" and float(r["eps_social"]) == 0.0:
+            assert v == 0.0
+        if float(r["eps_ai"]) == 0.0:
+            # twin-derived on BOTH sides: the two twins are contrasted,
+            # and the two methods collapse onto the same value
+            other = [x for x in rows if x["arm"] != r["arm"]
+                     and x["eps_ai"] == r["eps_ai"]
+                     and x["eps_social"] == r["eps_social"]][0]
+            assert float(other["mae_b_paired_mean"]) == pytest.approx(v)

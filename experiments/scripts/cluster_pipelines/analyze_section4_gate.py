@@ -730,6 +730,43 @@ def w1(a, b):
     return float((torch.sort(a).values - torch.sort(b).values).abs().mean())
 
 
+MAE_COL = "mae_b_paired"
+MAE_DEF = ("mae_b_paired = mean over the late window of mean_i "
+           "|op_B(fixed)[t][i] - op_B(evolving)[t][i]| over the cohort-B "
+           "agents i, the two members PAIRED BY AGENT ID at the same "
+           "window position (2026-08-27). The DIRECT fixed-vs-evolving "
+           "transmission magnitude: T_a / delta_mu_b is the difference of "
+           "cohort-B MEANS and cancels when cohort A's influence spreads B "
+           "without shifting it; the paired MAE does not. Sign-free "
+           "(>= 0); 0 exactly for the d8/eps_social=0 structural null.")
+
+
+def op_b_window(d, mask_a, late_idx):
+    """[len(late_idx), n_B] float32: the artifact's op_raw over the late
+    window on cohort B only -- the ONLY tensor that outlives a cell's
+    load, kept so the fixed/evolving pair can be contrasted agent by
+    agent (5 x 578 floats). A twin-derived artifact's op_raw IS its
+    source run's twin_raw, so the same window applies."""
+    op = d["op_raw"].float()
+    idx = torch.tensor(list(late_idx), dtype=torch.long)
+    return op[idx][:, ~mask_a].clone()
+
+
+def paired_mae_b(win_f, win_e):
+    """(mae, mae_h1, mae_h2): the agent-paired cohort-B MAE between the
+    fixed and evolving windows over the whole window and its two halves
+    (half_split of the window positions: 2 vs 3 for a 5-round window).
+    Both windows must have the same shape (same window length, same
+    cohort B)."""
+    if tuple(win_f.shape) != tuple(win_e.shape):
+        raise ValueError(f"paired windows differ in shape "
+                         f"{tuple(win_f.shape)} vs {tuple(win_e.shape)}")
+    per_round = (win_f - win_e).abs().mean(dim=1)          # [T_win]
+    h1, h2 = half_split(list(range(int(per_round.numel()))))
+    return (float(per_round.mean()),
+            float(per_round[h1].mean()), float(per_round[h2].mean()))
+
+
 def cohort_a_mask(innate, frac=CLAMP_FRAC):
     """Bool [n] mask of cohort A = the round(frac*n) LOWEST-innate agents
     under the deterministic (innate value, agent id) ranking.
@@ -1209,12 +1246,17 @@ def _served_summary(cells_by_seed, key):
     return vals, nums
 
 
-def build_source_rows(cells, drift_tol, grid=None):
+def build_source_rows(cells, drift_tol, grid=None, win_b=None):
     """B. SOURCE EFFECT per (arm, eps_ai, eps_social), aggregated over the
     three PAIRED seeds.  Original wave: delta_mu_b = fixed - evolving is
     primary.  fig6: T_a = evolving - fixed is primary, and every row also
     carries the per-pair settled verdicts / outcomes / horizons and the
-    late-window served-value cardinality of both members."""
+    late-window served-value cardinality of both members.
+
+    win_b: {cell key: op_b_window(...)} -- when both members of a pair
+    carry a window, the row also gets the agent-paired cohort-B MAE
+    block (MAE_COL: per seed, three-seed mean / sd / 95% t interval,
+    half-window drift flag). Absent windows leave the block NA."""
     g = _grid(grid)
     rows = []
     for arm in g.arms:
@@ -1225,6 +1267,7 @@ def build_source_rows(cells, drift_tol, grid=None):
                           and (arm, "evolving", ea, es, s) in cells]
                 complete = len(paired) == len(SEEDS)
                 d_b, d_pop, d_b_h1, d_b_h2 = {}, {}, {}, {}
+                mae, mae_h1, mae_h2 = {}, {}, {}
                 gpu_pair, sha_ok = {}, {}
                 fx, ev = {}, {}
                 for s in paired:
@@ -1237,6 +1280,11 @@ def build_source_rows(cells, drift_tol, grid=None):
                     d_b_h2[s] = f["mu_b_h2"] - e["mu_b_h2"]
                     gpu_pair[s] = f'{f["gpu_arch"]}/{e["gpu_arch"]}'
                     sha_ok[s] = f["innate_sha256"] == e["innate_sha256"]
+                    if win_b is not None:
+                        wf = win_b.get((arm, "fixed", ea, es, s))
+                        we = win_b.get((arm, "evolving", ea, es, s))
+                        if wf is not None and we is not None:
+                            mae[s], mae_h1[s], mae_h2[s] = paired_mae_b(wf, we)
                 row = {"arm": arm, "arm_label": ARM_LABEL[arm],
                        "eps_ai": ea, "eps_social": es,
                        "n_seeds_paired": len(paired),
@@ -1259,6 +1307,10 @@ def build_source_rows(cells, drift_tol, grid=None):
                                  for s in paired})
                     row["horizon"] = "|".join(str(h) for h in hs)
                 row.update(source_effect_block(d_b, primary_t_a=g.fig6))
+                # the agent-paired transmission magnitude, beside T_a
+                row.update(agg_block(MAE_COL, mae, 0.0, "zero"))
+                row.update(drift_block(MAE_COL, mae_h1, mae_h2, drift_tol,
+                                       _ci_half(row, MAE_COL)))
                 row.update(agg_block("delta_mu_pop", d_pop, 0.0, "zero"))
                 row.update(drift_block("delta_mu_b", d_b_h1, d_b_h2,
                                        drift_tol,
@@ -2043,7 +2095,7 @@ def print_table(rows, title, mean_key, mark_key, fmt="%+.4f", grid=None):
                     cellstr.append(f"{'--':>12}")
                     continue
                 s = fmt % r[mean_key]
-                s += "*" if r.get(mark_key) else " "
+                s += "*" if (mark_key and r.get(mark_key)) else " "
                 s += "\u2020" if _flag_of(r, prefix) else " "
                 cellstr.append(f"{s:>12}")
             print(f"  {arm:<3} ea={ea:<4g}" + " ".join(cellstr))
@@ -2082,7 +2134,7 @@ def print_fig6_detail(rows, grid):
           f"settled verdict and late-window served cardinality ==")
     print(f"  {T_A_SIGN}")
     hdr = (f"  {'arm':<3} {'ea':>4} {'es':>4} {'T_a':>9} "
-           f"{'[ci_lo, ci_hi]':>22} {'outcome':>22} {'hz':>6} "
+           f"{'[ci_lo, ci_hi]':>22} {'MAE_B':>8} {'outcome':>22} {'hz':>6} "
            f"{'distinct f|e':>16} {'top-share f|e':>18}")
     print(hdr)
     warn = []
@@ -2100,6 +2152,8 @@ def print_fig6_detail(rows, grid):
                     ci_s = (f"[{r[f'{T_A_COL}_ci_lo']:+.4f}, "
                             f"{r[f'{T_A_COL}_ci_hi']:+.4f}]")
                 oc = r.get("outcome") or "--"
+                mv = r.get(f"{MAE_COL}_mean")
+                mae_s = "--" if mv is None else f"{mv:.4f}"
                 dist = (f"{r.get('served_distinct_fixed', '')}|"
                         f"{r.get('served_distinct_evolving', '')}")
                 top = (f"{r.get('served_top_share_fixed', '')}|"
@@ -2107,14 +2161,16 @@ def print_fig6_detail(rows, grid):
                 dist = dist.replace(SERVED_NA, "n/a")
                 top = top.replace(SERVED_NA, "n/a")
                 print(f"  {arm:<3} {ea:>4g} {es:>4g} {t_s:>9} {ci_s:>22} "
-                      f"{oc:>22} {r.get('horizon', ''):>6} {dist:>16} "
-                      f"{top:>18}")
+                      f"{mae_s:>8} {oc:>22} {r.get('horizon', ''):>6} "
+                      f"{dist:>16} {top:>18}")
                 mins = [r.get(f"served_distinct_{c}_min")
                         for c in grid.conds]
                 mins = [v for v in mins if isinstance(v, int)]
                 if ea != 0.0 and mins and min(mins) <= 3:
                     warn.append(f"{arm} ea={ea:g} es={es:g} "
                                 f"(min distinct {min(mins)})")
+    print(f"  MAE_B = {MAE_COL} three-seed mean (agent-paired cohort-B "
+          f"MAE, fixed vs evolving; see the MAE table)")
     print("  distinct = number of distinct pred_raw values pooled over the "
           "late window (per seed, f|e = fixed|evolving); top-share = "
           "fraction at the single most common value; n/a = eps_AI=0 "
@@ -2334,6 +2390,7 @@ def main(argv=None):
     state = {"ref_sha": None, "mask_a": None}
     twin_shas = {}          # (cond, es, seed) -> {tag: sha256(twin_raw)}
     derived = {}            # (cond, es, seed) -> (rounds, late, tag, arch)
+    win_b = {}              # cell key -> op_b_window (5 x n_B floats)
     twin_needed = {(k[1], k[3], k[4]) for k, v in located.items()
                    if v["analysed_from"] == "twin_raw"}
 
@@ -2374,7 +2431,9 @@ def main(argv=None):
                 return
             rounds, late = reduce_cell(dd, state["mask_a"],
                                        late_window(N_ROUNDS))
-            derived[cse] = (rounds, late, tag, gpu_arch(run_dir), sha)
+            derived[cse] = (rounds, late, tag, gpu_arch(run_dir), sha,
+                            op_b_window(dd, state["mask_a"],
+                                        late_window(N_ROUNDS)))
 
     for key in g.keys:
         loc = located.get(key)
@@ -2429,6 +2488,7 @@ def main(argv=None):
             note_twin(d, key, tag, rd)
         late_idx = late_window(horizon) if g.fig6 else LATE_IDX
         rounds, late = reduce_cell(d, state["mask_a"], late_idx)
+        win_b[key] = op_b_window(d, state["mask_a"], late_idx)
         del d                                  # drop before the next open
         for r in rounds:
             per_round_rows.append({
@@ -2460,7 +2520,8 @@ def main(argv=None):
                                  f"({cond}, es={es:g}, seed={seed}) "
                                  f"passed the checks)")
                 continue
-            rounds, late0, src_tag, arch, sha = got
+            rounds, late0, src_tag, arch, sha, win = got
+            win_b[key] = win
             tag = loc["tag"]
             for r in rounds:
                 per_round_rows.append({
@@ -2531,7 +2592,7 @@ def main(argv=None):
         return 1
 
     # ---- 3. aggregate
-    source_rows = build_source_rows(cells, args.drift_tol, g)
+    source_rows = build_source_rows(cells, args.drift_tol, g, win_b=win_b)
     disp_rows = build_dispersion_rows(cells, args.drift_tol, g)
     null_rows = build_null_rows(cells, g)
     gap_rows = build_method_gap_rows(source_rows, args.drift_tol, g) \
@@ -2625,6 +2686,11 @@ def main(argv=None):
                     "three-seed source effect  mu_B(fixed) - mu_B(evolving)",
                     "delta_mu_b_mean", "delta_mu_b_ci_excludes_zero",
                     grid=g)
+    print_table(source_rows,
+                f"three-seed agent-paired cohort-B MAE  "
+                f"mean_i |op_B(fixed) - op_B(evolving)| [{MAE_COL}]",
+                f"{MAE_COL}_mean", None, "%.4f", grid=g)
+    print(f"  {MAE_DEF}")
     print_table(disp_rows,
                 "three-seed cohort-B SD ratio  SD_B(fixed) / SD_B(evolving)",
                 "sd_ratio_b_mean", "sd_ratio_b_ci_excludes_one", "%.4f",
@@ -2692,6 +2758,8 @@ def main(argv=None):
         "drift_tol": args.drift_tol,
         "population_update_required": POP_UPDATE_V2,
         "inherited_from": "analyze_bottom20_section4_3seed.py",
+        "mae_b_paired_column": MAE_COL,
+        "mae_b_paired_definition": MAE_DEF,
         "gate_json": args.gate_json, "gate_ok": gate_ok,
         "gate_info": gate_info,
         "n_series_complete": n_complete,

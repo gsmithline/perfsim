@@ -18,10 +18,25 @@ responsive agents -- relative to the matched no-platform twin. Is
 personal-history ICL (d8) near zero with peers CLOSED (es=0) but
 STRONGER than ordinary SFT (b0) with peers OPEN (es=1)?
 
-Metrics, all over cohort B only, all vs the run's own twin_raw:
-  signed_b  mean(op[t][B] - twin[t][B])   (direction of the pull)
-  abs_b     mean|op[t][B] - twin[t][B]|   (magnitude, MAD)
-  w1_b      Wasserstein-1 between the two cohort-B populations
+TWO CONTRASTS, kept apart because they answer different questions:
+
+(1) DIRECT fixed-vs-evolving contrast -- THE FIGURE-5 QUANTITY (added
+    2026-08-27 after the first read conflated the two). Does cohort A's
+    state reach cohort B? Each arm's fixed run is paired AGENT BY AGENT
+    with its evolving run at the same (arm, es):
+      mae_b_paired   mean_i |op_B(fixed)[t][i] - op_B(evolving)[t][i]|
+      delta_mu_b     mean op_B(fixed) - mean op_B(evolving)   (= -T_a)
+      w1_b_pair      Wasserstein-1 between the two cohort-B populations
+    The d8/es=0 cell is the structural null: frozen weights, own-history
+    prompts and an inert peer step give A no path to B, so mae_b_paired
+    must be 0 exactly there.
+(2) PLATFORM EFFECT vs the run's own twin -- agent-local: does the
+    platform move B at all, relative to the matched no-platform process?
+      signed_b  mean(op[t][B] - twin[t][B])   (direction of the pull)
+      abs_b     mean|op[t][B] - twin[t][B]|   (magnitude, MAD)
+      w1_b      Wasserstein-1 between the two cohort-B populations
+    This is NOT transmission: it is identical for fixed and evolving
+    wherever A cannot reach B.
 op_raw is the END-OF-ROUND POST-PEER state (peer sweeps run last), so
 round r means "after round r's AI blend and Deffuant sweep".
 
@@ -31,9 +46,11 @@ via analyze_section4_gate.cohort_a_mask, so the evolving condition
 (which stores no mask) is masked exactly like its fixed partner.
 
 Outputs (out dir, default notes/pofd/s4g_probe/):
-  s4g_probe_cohortB.csv    every (cond, arm, es, round) row
-  s4g_probe_verdict.json   machine-readable summary (--json to move it)
-and a printed final-round table plus the two hypothesis contrasts.
+  s4g_probe_direct_contrast.csv   (1) per (arm, es, round)
+  s4g_probe_cohortB.csv           (2) per (cond, arm, es, round)
+  s4g_probe_verdict.json          machine-readable summary (--json moves it)
+and printed final-round tables plus the registered contrasts in BOTH
+frames; the transmission frame (1) is the one the question is about.
 """
 from __future__ import annotations
 
@@ -103,6 +120,7 @@ def main(argv=None):
         return 1
 
     rows_csv, per_cell, inn_sha = [], {}, {}
+    op_b = {}                      # (cond, arm, es) -> op_raw[:, B] (5 x 578)
     for (cond, arm, es), rd in sorted(run_of.items(), key=str):
         d = AN.load(rd)
         op = d["op_raw"].float()
@@ -122,6 +140,7 @@ def main(argv=None):
                   f"mask != reconstructed bottom-145 cohort", file=sys.stderr)
             return 1
         b = ~mask_a
+        op_b[(cond, arm, es)] = op[:, b].clone()
         rec_rounds = []
         for t in range(rounds):
             diff = op[t][b] - tw[t][b]
@@ -149,6 +168,65 @@ def main(argv=None):
         return 1
 
     os.makedirs(args.out_dir, exist_ok=True)
+
+    # ---- (1) DIRECT fixed-vs-evolving contrast: the Figure-5 quantity --
+    direct_rows, direct_final = [], {}
+    for arm in arms:
+        for es in ess:
+            f, e = op_b[("fixed", arm, es)], op_b[("evolving", arm, es)]
+            for t in range(rounds):
+                diff = f[t] - e[t]
+                row = {"arm": arm, "es": f"{es:g}", "round": t + 1,
+                       "mae_b_paired": float(diff.abs().mean()),
+                       "delta_mu_b": float(diff.mean()),
+                       "t_a_evolving_minus_fixed": float(-diff.mean()),
+                       "w1_b_pair": AN.w1(f[t], e[t]),
+                       "max_abs_diff": float(diff.abs().max()),
+                       "bit_identical": bool(torch.equal(f[t], e[t]))}
+                direct_rows.append(row)
+            direct_final[(arm, es)] = direct_rows[-1]
+    dpath = os.path.join(args.out_dir, "s4g_probe_direct_contrast.csv")
+    with open(dpath, "w", newline="") as fh:
+        wtr = csv.DictWriter(fh, fieldnames=list(direct_rows[0]))
+        wtr.writeheader()
+        wtr.writerows(direct_rows)
+    print(f"{LOG} wrote {dpath} ({len(direct_rows)} rows)")
+    print(f"\n{LOG} (1) DIRECT fixed-vs-evolving contrast on cohort B "
+          f"(agent-paired), final round {rounds} of {rounds}, post-peer. "
+          f"THE FIGURE-5 QUANTITY. SEED 0 ONLY -- descriptive.")
+    hdr = (f"{'peers':<8} {'arm':>3} {'mae_b_paired':>13} {'delta_mu_b':>11} "
+           f"{'w1_b_pair':>10} {'max|d|':>8} {'bit-identical':>13}")
+    print(hdr)
+    print("-" * len(hdr))
+    for es in ess:
+        for arm in arms:
+            r = direct_final[(arm, es)]
+            print(f"{('closed' if es == 0.0 else 'open'):<8} {arm:>3} "
+                  f"{r['mae_b_paired']:>13.4f} {r['delta_mu_b']:>+11.4f} "
+                  f"{r['w1_b_pair']:>10.4f} {r['max_abs_diff']:>8.4f} "
+                  f"{str(r['bit_identical']):>13}")
+    print(f"\n{LOG} REGISTERED QUESTION in the transmission frame -- does "
+          f"A reach B through ICL (d8) ~0 with peers closed, and more than "
+          f"through SFT (b0) with peers open?")
+    closed_d8 = direct_final[("d8", 0.0)]["mae_b_paired"]
+    closed_b0 = direct_final[("b0", 0.0)]["mae_b_paired"]
+    open_d8 = direct_final[("d8", 1.0)]["mae_b_paired"]
+    open_b0 = direct_final[("b0", 1.0)]["mae_b_paired"]
+    direct_verdict = {
+        "closed_d8_mae": closed_d8, "closed_b0_mae": closed_b0,
+        "closed_d8_bit_identical": direct_final[("d8", 0.0)]["bit_identical"],
+        "open_d8_mae": open_d8, "open_b0_mae": open_b0,
+        "icl_transmits_more_when_open": open_d8 > open_b0,
+        "icl_null_when_closed": closed_d8 == 0.0,
+    }
+    print(f"{LOG}   peers CLOSED: d8 mae={closed_d8:.4f} "
+          f"({'EXACT structural null' if closed_d8 == 0.0 else 'NOT zero'}), "
+          f"b0 mae={closed_b0:.4f} (shared-weight route)")
+    print(f"{LOG}   peers OPEN:   d8 mae={open_d8:.4f} vs b0 mae="
+          f"{open_b0:.4f} -> ICL {'>' if open_d8 > open_b0 else '<='} SFT "
+          f"transmission at round {rounds}")
+
+    # ---- (2) PLATFORM EFFECT vs twin: agent-local, NOT transmission ------
     csv_path = os.path.join(args.out_dir, "s4g_probe_cohortB.csv")
     with open(csv_path, "w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=list(rows_csv[0]))
@@ -157,9 +235,9 @@ def main(argv=None):
     print(f"{LOG} wrote {csv_path} ({len(rows_csv)} rows)")
 
     # ---- final-round table --------------------------------------------
-    print(f"\n{LOG} COHORT-B EFFECT vs MATCHED TWIN, final round "
-          f"({rounds} of {rounds}), post-peer. SEED 0 ONLY -- descriptive, "
-          f"no intervals.")
+    print(f"\n{LOG} (2) PLATFORM EFFECT on cohort B vs the MATCHED TWIN "
+          f"(agent-local, NOT transmission), final round ({rounds} of "
+          f"{rounds}), post-peer. SEED 0 ONLY -- descriptive, no intervals.")
     hdr = (f"{'cond':<9} {'es':>3} {'arm':>3} {'signed_b':>9} {'abs_b':>8} "
            f"{'w1_b':>8} {'mu_op_b':>8} {'mu_tw_b':>8} {'sd_ratio':>8}")
     print(hdr)
@@ -176,9 +254,8 @@ def main(argv=None):
                       f"{sdr:>8.3f}")
 
     # ---- the registered contrasts -------------------------------------
-    print(f"\n{LOG} REGISTERED QUESTION -- is ICL (d8) ~0 with peers "
-          f"closed (es=0) but stronger than SFT (b0) with peers open "
-          f"(es=1)?")
+    print(f"\n{LOG} the same contrast in the platform-vs-twin frame (for "
+          f"the record; it does NOT answer the transmission question):")
     verdicts = {}
     for cond in conds:
         closed_d8 = per_cell[(cond, "d8", 0.0)]["abs_b"]
@@ -200,7 +277,12 @@ def main(argv=None):
         "eps_ai": ea, "w_plat": float(gen.S4GP_W_PLAT),
         "cells": [{"cond": c, "arm": a, "es": e, **per_cell[(c, a, e)]}
                   for (c, a, e) in sorted(per_cell, key=str)],
-        "contrasts": verdicts,
+        "direct_contrast_final": [
+            {"arm": a, "es": e, **direct_final[(a, e)]}
+            for (a, e) in sorted(direct_final, key=str)],
+        "contrasts_direct_transmission": direct_verdict,
+        "contrasts_platform_vs_twin": verdicts,
+        "primary_frame": "direct_transmission (mae_b_paired)",
         "note": "seed 0 only -- descriptive, no intervals",
     }
     jp = args.json_out or os.path.join(args.out_dir,
