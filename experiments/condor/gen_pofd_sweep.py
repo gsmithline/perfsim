@@ -8315,7 +8315,7 @@ S4G_GRID_TXT = "ea {0.2, 1} x es {0, 0.2, 1}"
 
 
 def s4g_sub(cond, smoke=False, key=None, rows=None, kind=None,
-            grid=S4G_GRID_TXT):
+            grid=S4G_GRID_TXT, model_env=None):
     """The two Section-4 sub templates, rendered for ANY key that shares
     the corrected-gate environment (the original 72-cell wave, the
     Figure-6 grid, and its extensions). Defaults reproduce the original
@@ -8334,7 +8334,8 @@ def s4g_sub(cond, smoke=False, key=None, rows=None, kind=None,
     tmpl = (S4G_FIXED_SUB_TEMPLATE if cond == "fixed"
             else S4G_EVO_SUB_TEMPLATE)
     return tmpl.format(key=key, n_jobs=len(rows), kind=kind, grid=grid,
-                       **REACH_MODELS["mistral7b"])
+                       **(REACH_MODELS["mistral7b"] if model_env is None
+                          else model_env))
 
 
 S4G_FIXED_SUB_TEMPLATE = """\
@@ -9526,31 +9527,83 @@ S4GS_N_PER_COND = 10             # 2 arms x 5 es
 S4GS_N_TOTAL = 20
 # the family table the checker / analyzer / tests read; arms, gates,
 # seeds and W_PLAT are family-wide (S4GP_*)
+# scout_qwen3 (2026-08-27, user: "lets just try qwen 3"): the scout grid
+# on Qwen3-8B (thinking OFF, CHAT_THINKING=0 as in Section 3 / F4A).
+# Why: the Mistral scout failed the strict raw-generation gate on all
+# ten d8 cells (deterministic "To estimate the user's..." narrations,
+# <=0.08%) and one b0 cell (a whole malformed round); both Qwen models
+# passed that gate 18/18 in the Section-3 wave. Qwen3-8B over Qwen2.5-7B
+# because the frozen d8 arm needs a GRADED served map: the zero-shot
+# priors on disk serve 11 distinct values (top share 0.36) vs 5 (top
+# share 0.54, the near-binary 0.25/0.65 map). Everything else is the
+# scout: W_PLAT=0.75, k=0.2, alpha=0.5, ea=0.7, es {0,.1,.2,.3,1},
+# 30 rounds, seed 0, bottom-20 cohort A (a pure function of innate, so
+# the SAME cohort as the Mistral cells). Tag slug qwen3_8b, prefix
+# pofds4gq_. The family's config pins per variant live in "pins".
+S4GQ_KEY = "section4_gate_anch2_scout_qwen3"
+S4GQ_FIXED_KEY = S4GQ_KEY + "_fixed"
+S4GQ_EVO_KEY = S4GQ_KEY + "_evo"
+S4GQ_PREFIX = "pofds4gq"
+S4GQ_SLUG = "qwen3_8b"
+S4GQ_MODEL = dict(
+    base_model=FAM_MODELS["qwen3_8b"]["base_model"],      # Qwen/Qwen3-8B
+    mem=FAM_MODELS["qwen3_8b"]["mem"], disk=FAM_MODELS["qwen3_8b"]["disk"],
+    ppl_batch=FAM_MODELS["qwen3_8b"]["pplbatch"],
+    extra_env="HF_HOME=/lustre/fast/fast/gsmithline/hf_cache "
+              "HF_HUB_OFFLINE=1 CHAT_THINKING=0 ")
+S4G_FAMILY_PINS = {"parse_mode": "strict", "deffuant_alpha": 0.5}
 S4G_VARIANTS = {
     "probe": dict(key=S4GP_KEY, fixed_key=S4GP_FIXED_KEY,
                   evo_key=S4GP_EVO_KEY, prefix=S4GP_PREFIX, ess=S4GP_ESS,
                   rounds=S4GP_ROUNDS, n_per_cond=S4GP_N_PER_COND,
-                  n_total=S4GP_N_TOTAL,
+                  n_total=S4GP_N_TOTAL, slug="mistral7b",
+                  model=REACH_MODELS["mistral7b"],
+                  pins=dict(S4G_FAMILY_PINS),
                   kind="FIVE-ROUND SEED-0 PROBE",
                   kind_grid="ea 0.7 x es {0, 1}",
                   grid="ea {0.7} x es {0, 1}"),
     "scout": dict(key=S4GS_KEY, fixed_key=S4GS_FIXED_KEY,
                   evo_key=S4GS_EVO_KEY, prefix=S4GS_PREFIX, ess=S4GS_ESS,
                   rounds=S4GS_ROUNDS, n_per_cond=S4GS_N_PER_COND,
-                  n_total=S4GS_N_TOTAL,
+                  n_total=S4GS_N_TOTAL, slug="mistral7b",
+                  model=REACH_MODELS["mistral7b"],
+                  pins=dict(S4G_FAMILY_PINS),
                   kind="30-ROUND SEED-0 SCOUT",
                   kind_grid="ea 0.7 x es {0, .1, .2, .3, 1}",
                   grid="ea {0.7} x es {0, .1, .2, .3, 1}"),
+    "scout_qwen3": dict(key=S4GQ_KEY, fixed_key=S4GQ_FIXED_KEY,
+                        evo_key=S4GQ_EVO_KEY, prefix=S4GQ_PREFIX,
+                        ess=S4GS_ESS, rounds=S4GS_ROUNDS,
+                        n_per_cond=S4GS_N_PER_COND, n_total=S4GS_N_TOTAL,
+                        slug=S4GQ_SLUG, model=S4GQ_MODEL,
+                        pins=dict(S4G_FAMILY_PINS, chat_thinking=False),
+                        kind="30-ROUND SEED-0 SCOUT, QWEN3-8B (thinking "
+                             "off)",
+                        kind_grid="ea 0.7 x es {0, .1, .2, .3, 1}",
+                        grid="ea {0.7} x es {0, .1, .2, .3, 1}"),
 }
+assert len({v["prefix"] for v in S4G_VARIANTS.values()}) == len(S4G_VARIANTS)
+
+
+def s4g_variant_of_prefix(prefix):
+    for v in S4G_VARIANTS.values():
+        if v["prefix"] == prefix:
+            return v
+    return None
 
 
 def s4gv_tag(arm, cond, gate, es, seed, prefix, rounds=None):
-    """The s4g grammar with a family prefix and the beta=0.75 w token:
-    {prefix}_mistral7b_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
-    _es{es}_s{seed}."""
+    """The s4g grammar with a family prefix, the variant's model slug
+    and the beta=0.75 w token:
+    {prefix}_{slug}_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
+    _es{es}_s{seed}.  The slug follows the prefix (pofds4gq_ -> qwen3_8b;
+    an unknown prefix keeps mistral7b, the s4g default)."""
     t = s4g_tag(arm, cond, gate, es, seed, prefix=prefix, rounds=rounds)
-    assert "_w0p5_" in t, t
-    return t.replace("_w0p5_", f"_w{_num(S4GP_W_PLAT)}_", 1)
+    assert "_w0p5_" in t and "_mistral7b_" in t, t
+    t = t.replace("_w0p5_", f"_w{_num(S4GP_W_PLAT)}_", 1)
+    v = s4g_variant_of_prefix(prefix)
+    slug = "mistral7b" if v is None else v["slug"]
+    return t.replace("_mistral7b_", f"_{slug}_", 1)
 
 
 def s4gp_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
@@ -9594,17 +9647,20 @@ def s4gv_sub(cond, variant):
     kind = (f"{v['kind']} -- beta(W_PLAT)=0.75, gamma(k)=0.2, alpha=0.5; "
             f"{v['kind_grid']} x arms {{b0, d8}}")
     sub = s4g_sub(cond, key=key, rows=s4gv_rows(cond, variant), kind=kind,
-                  grid=v["grid"])
+                  grid=v["grid"], model_env=v["model"])
     # the family departs from the S4G surface in exactly the pinned ways
     # below; every substitution is asserted so a template drift cannot
     # silently emit an unmarked sub
-    for old, new in (
-            ("W=0.5, lam=0.2", f"W=0.75 ({variant.upper()}), lam=0.2"),
+    subs = [("W=0.5, lam=0.2", f"W=0.75 ({variant.upper()}), lam=0.2"),
             ("SEEDS 0/42/43", f"SEED 0 ONLY, {v['rounds']} ROUNDS"),
             ("SAVE_RAW_GEN=1 ",
              "SAVE_RAW_GEN=1 PARSE_MODE=strict DEFFUANT_ALPHA=0.5 "),
             ("with check_section4_gate.py (",
-             f"with check_section4_gate.py --wave {variant} (")):
+             f"with check_section4_gate.py --wave {variant} (")]
+    if v["slug"] != "mistral7b":
+        subs.append(("WANDB_RUN_SUFFIX=_mistral7b_pofds4g_",
+                     f"WANDB_RUN_SUFFIX=_{v['slug']}_pofds4g_"))
+    for old, new in subs:
         assert sub.count(old) == 1, (cond, variant, old)
         sub = sub.replace(old, new)
     return sub
@@ -14047,9 +14103,9 @@ def main():
             for _r in _rows:
                 _c = [x.strip() for x in _r.split(",")]
                 assert len(_c) == _ncols, (_var, _cond, len(_c), _r)
-                assert _c[0].startswith(_v["prefix"] + "_mistral7b_") and \
-                    f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] and \
-                    "_w0p75_l0p2_" in _c[0], _c[0]
+                assert _c[0].startswith(f"{_v['prefix']}_{_v['slug']}_") \
+                    and f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] \
+                    and "_w0p75_l0p2_" in _c[0], _c[0]
                 assert _c[11] == "0.75" and \
                     float(_c[14]) == S4GP_GATES[0], _r
                 assert float(_c[9]) in tuple(_v["ess"]) and _c[3] == "0", _r
@@ -14067,14 +14123,21 @@ def main():
                 and "WITH_TWIN=1" in _env, (_var, _cond)
             assert ("INNATE_CLAMP_PEER_MODE=stubborn" in _env) == \
                 (_cond == "fixed"), (_var, _cond)
+            assert f"BASE_MODEL={_v['model']['base_model']} " in _env, _var
+            assert ("CHAT_THINKING=0" in _env) == \
+                (_v["slug"] == "qwen3_8b"), (_var, _cond)
+            assert f"WANDB_RUN_SUFFIX=_{_v['slug']}_pofds4g_" in _env, _var
             p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
             files[p] = _rows
             expected[p] = _v["n_per_cond"]
             cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
         assert len(_fam_tags[_var]) == _v["n_total"], _var
-    # the two variants never share a tag (a 30-round cell must never be
-    # no-op'd by a finished 5-round cell's run dir)
-    assert not (_fam_tags["probe"] & _fam_tags["scout"])
+    # no two variants share a tag (a 30-round cell must never be no-op'd
+    # by a finished 5-round cell's run dir; a Qwen cell never by a
+    # Mistral one)
+    for _a in _fam_tags:
+        for _b in _fam_tags:
+            assert _a == _b or not (_fam_tags[_a] & _fam_tags[_b]), (_a, _b)
 
     # ---- Figure-4 anchor trade-off (F4A): beta x gamma x es x 2 models ----
     # ---- under the threshold peer gate; 60 trained + 20 algebraic dups ----

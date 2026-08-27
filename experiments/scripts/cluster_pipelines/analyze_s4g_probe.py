@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """SECTION-4 PROBE / SCOUT analyzer (2026-08-26/27): cohort-B effects
 for the beta=0.75 channel family --
-  --variant probe   8 cells, 5 rounds, es {0, 1}            (pofds4gp_)
-  --variant scout  20 cells, 30 rounds, es {0,.1,.2,.3,1}  (pofds4gs_)
-both seed 0, ea=0.7, gamma=0.2, alpha=0.5, {b0, d8} x {fixed, evolving}.
+  --variant probe        8 cells, 5 rounds, es {0, 1}           (pofds4gp_)
+  --variant scout       20 cells, 30 rounds, es {0,.1,.2,.3,1} (pofds4gs_)
+  --variant scout_qwen3 the scout grid on Qwen3-8B             (pofds4gq_)
+all seed 0, ea=0.7, gamma=0.2, alpha=0.5, {b0, d8} x {fixed, evolving};
+the model slug rides the tag (mistral7b / qwen3_8b).
 For the scout the crossover question is answered per social gate on the
 LATE WINDOW (the final five post-peer rounds, the Figure-6 convention)
 with the final round beside it.
@@ -90,9 +92,12 @@ def _load(path, name):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Section-4 probe: cohort-B effect vs twin; CPU only")
-    ap.add_argument("--variant", default="probe", choices=("probe", "scout"),
-                    help="probe (8 cells, 5 rounds, es {0,1}; DEFAULT) or "
-                         "scout (20 cells, 30 rounds, es {0,.1,.2,.3,1})")
+    ap.add_argument("--variant", default="probe",
+                    choices=("probe", "scout", "scout_qwen3"),
+                    help="probe (8 cells, 5 rounds, es {0,1}; DEFAULT), "
+                         "scout (20 cells, 30 rounds, es {0,.1,.2,.3,1}, "
+                         "Mistral-7B) or scout_qwen3 (the same scout on "
+                         "Qwen3-8B)")
     ap.add_argument("--run-root",
                     default="/home/gsmithline/perfsim/runs/pokec_gated_lm")
     ap.add_argument("--out-dir", default=None,

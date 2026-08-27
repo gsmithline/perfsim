@@ -51,14 +51,24 @@ BASE = "mistralai/Mistral-7B-Instruct-v0.3"
 KEYS = {"fixed": "section4_gate_anch2_probe_fixed",
         "evolving": "section4_gate_anch2_probe_evo"}
 # the two variants, restated independently of the generator
+QWEN3 = "Qwen/Qwen3-8B"
 VARIANTS = {
     "probe": dict(prefix="pofds4gp", ess=(0.0, 1.0), rounds=5, n=8,
+                  slug="mistral7b", base_model=BASE, thinking=None,
                   keys={"fixed": "section4_gate_anch2_probe_fixed",
                         "evolving": "section4_gate_anch2_probe_evo"}),
     "scout": dict(prefix="pofds4gs", ess=(0.0, 0.1, 0.2, 0.3, 1.0),
-                  rounds=30, n=20,
+                  rounds=30, n=20, slug="mistral7b", base_model=BASE,
+                  thinking=None,
                   keys={"fixed": "section4_gate_anch2_scout_fixed",
                         "evolving": "section4_gate_anch2_scout_evo"}),
+    # the same scout on Qwen3-8B, thinking OFF (CHAT_THINKING=0 ->
+    # config chat_thinking False), tag slug qwen3_8b
+    "scout_qwen3": dict(prefix="pofds4gq", ess=(0.0, 0.1, 0.2, 0.3, 1.0),
+                        rounds=30, n=20, slug="qwen3_8b", base_model=QWEN3,
+                        thinking=False,
+                        keys={"fixed": "section4_gate_anch2_scout_qwen3_fixed",
+                              "evolving": "section4_gate_anch2_scout_qwen3_evo"}),
 }
 
 _G0 = torch.Generator().manual_seed(20260826)
@@ -77,8 +87,8 @@ def _num(v):
     return f"{float(v):g}".replace(".", "p")
 
 
-def tag_for(arm, cond, es, prefix="pofds4gp"):
-    return (f"{prefix}_mistral7b_{arm}_{COND_TOK[cond]}_anch2_ea0p7"
+def tag_for(arm, cond, es, prefix="pofds4gp", slug="mistral7b"):
+    return (f"{prefix}_{slug}_{arm}_{COND_TOK[cond]}_anch2_ea0p7"
             f"_w0p75_l0p2_es{_num(es)}_s{SEED}")
 
 
@@ -123,7 +133,7 @@ def test_emitted_grid_and_columns(variant):
             else:
                 assert "cmode" not in row and "sftexcl" not in row
             assert row["tag"] == tag_for(arm, cond, float(row["eps"]),
-                                         v["prefix"])
+                                         v["prefix"], v["slug"])
             got.add((arm, float(row["eps"])))
             all_tags.add(row["tag"])
         assert got == {(a, e) for a in ARMS for e in v["ess"]}
@@ -132,8 +142,11 @@ def test_emitted_grid_and_columns(variant):
         for tok in ("AI_GATE_REFERENCE=anchor", "SAVE_RAW_GEN=1",
                     "PARSE_MODE=strict", "DEFFUANT_ALPHA=0.5",
                     "WITH_TWIN=1", "INNATE_LAMBDA=0.2",
-                    "KL_DIRECTION=forward"):
+                    "KL_DIRECTION=forward",
+                    f"BASE_MODEL={v['base_model']} "):
             assert tok in env, (cond, tok)
+        assert ("CHAT_THINKING=0" in env) == (v["thinking"] is False)
+        assert f"WANDB_RUN_SUFFIX=_{v['slug']}_pofds4g_" in env
         assert ("INNATE_CLAMP_PEER_MODE=stubborn" in env) == \
             (cond == "fixed")
         assert f"submit_pofd_sweep.sh <BID> {v['keys'][cond]}" in sub
@@ -174,12 +187,16 @@ def test_submit_script_knows_the_probe_keys():
     assert ('section4_gate_anch2_scout) TARGETS='
             '"section4_gate_anch2_scout_fixed '
             'section4_gate_anch2_scout_evo" ;;') in src
+    assert ('section4_gate_anch2_scout_qwen3) TARGETS='
+            '"section4_gate_anch2_scout_qwen3_fixed '
+            'section4_gate_anch2_scout_qwen3_evo" ;;') in src
 
 
 # --------------------------------------------------- synthetic runs
-def make_cfg(tag, arm, cond, es, rounds=ROUNDS):
+def make_cfg(tag, arm, cond, es, rounds=ROUNDS, base_model=BASE,
+             thinking=None):
     c = {
-        "run_tag": tag, "base_model": BASE, "dataset": "movielens",
+        "run_tag": tag, "base_model": base_model, "dataset": "movielens",
         "ml_target": TARGET, "n_rounds": rounds, "seed": SEED,
         "eps": es, "eps_ai": EA,
         "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
@@ -205,6 +222,8 @@ def make_cfg(tag, arm, cond, es, rounds=ROUNDS):
                      "gpu_name": "NVIDIA H100 80GB HBM3"},
     }
     c.update(ARM_CFG[arm])
+    if thinking is not None:
+        c["chat_thinking"] = thinking      # recorded only when CHAT_THINKING is set
     if cond == "fixed":
         c.update({"innate_clamp_mode": "bottom", "innate_clamp_frac": 0.2,
                   "innate_clamp_seed": SEED,
@@ -232,8 +251,9 @@ def render_days(vals):
 
 
 def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
-              prefix="pofds4gp", rounds=ROUNDS):
-    tag = tag_for(arm, cond, es, prefix)
+              prefix="pofds4gp", rounds=ROUNDS, slug="mistral7b",
+              base_model=BASE, thinking=None):
+    tag = tag_for(arm, cond, es, prefix, slug)
     d = os.path.join(str(root), tag)
     os.makedirs(d, exist_ok=True)
     mask = bottom_mask(INNATE, CLAMP_N) if cond == "fixed" else None
@@ -252,7 +272,7 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
         tw.append(y.clone())
         pr.append(torch.full((N,), 0.55 + 0.005 * t))
 
-    cfg = make_cfg(tag, arm, cond, es, rounds)
+    cfg = make_cfg(tag, arm, cond, es, rounds, base_model, thinking)
     if cfg_mut:
         cfg_mut(cfg)
     payload = {
@@ -319,7 +339,9 @@ def build_probe(root, skip=(), cfg_mut_on=None, cfg_mut=None,
                 build_run(root, arm, cond, es,
                           cfg_mut=cfg_mut if cell == cfg_mut_on else None,
                           raw_mut=raw_mut if cell == raw_mut_on else None,
-                          prefix=v["prefix"], rounds=v["rounds"])
+                          prefix=v["prefix"], rounds=v["rounds"],
+                          slug=v["slug"], base_model=v["base_model"],
+                          thinking=v["thinking"])
     return root
 
 
@@ -451,3 +473,54 @@ def test_scout_missing_social_gate_is_absent(tmp_path):
     r = run_checker(root, wave="scout")
     assert r.returncode == 1
     assert "ABSENT" in r.stdout and "es0p3" in r.stdout
+
+
+# ---------------------------------------------------------- scout_qwen3
+@pytest.mark.slow
+def test_scout_qwen3_full_set_passes_beside_the_mistral_scout(tmp_path):
+    root = build_probe(tmp_path / "runs", variant="scout_qwen3")
+    build_probe(root, variant="scout")            # the Mistral cells too
+    r = run_checker(root, wave="scout_qwen3")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PASS" in r.stdout and "20/20 cells present" in r.stdout
+    assert "EXTRA" not in r.stdout
+    # and the Mistral scout gate still sees exactly its own 20
+    r = run_checker(root, wave="scout")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "20/20 cells present" in r.stdout and "EXTRA" not in r.stdout
+
+
+@pytest.mark.slow
+def test_scout_qwen3_run_on_the_wrong_model_fails(tmp_path):
+    """A Mistral config under a qwen3_8b tag, or thinking left on, is
+    not a Qwen3 scout cell."""
+    def wrong_model(c):
+        c["base_model"] = BASE
+    root = build_probe(tmp_path / "runs", variant="scout_qwen3",
+                       cfg_mut_on=("b0", "fixed", 0.3), cfg_mut=wrong_model)
+    r = run_checker(root, wave="scout_qwen3")
+    assert r.returncode == 1
+    assert "base_model='mistralai/Mistral-7B-Instruct-v0.3'" in r.stdout
+
+    def thinking_on(c):
+        c["chat_thinking"] = True
+    root = build_probe(tmp_path / "runs2", variant="scout_qwen3",
+                       cfg_mut_on=("d8", "evolving", 1.0),
+                       cfg_mut=thinking_on)
+    r = run_checker(root, wave="scout_qwen3")
+    assert r.returncode == 1
+    assert "chat_thinking=True" in r.stdout
+
+
+def test_scout_qwen3_tag_slug_parses_with_its_underscore():
+    """qwen3_8b carries an underscore; the checker's grammar must still
+    split it from the arm token (and never mis-parse a Mistral tag)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("chk", CHECKER)
+    chk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chk)
+    m = chk.TAG_RE.match(tag_for("d8", "evolving", 0.3, "pofds4gq",
+                                 "qwen3_8b"))
+    assert m and m.group("slug") == "qwen3_8b" and m.group("arm") == "d8"
+    m = chk.TAG_RE.match(tag_for("b0", "fixed", 1.0, "pofds4gs"))
+    assert m and m.group("slug") == "mistral7b" and m.group("arm") == "b0"

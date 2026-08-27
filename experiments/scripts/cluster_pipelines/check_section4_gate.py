@@ -252,19 +252,28 @@ WAVE_V1 = "section4_gate_anch2"
 WAVE_FIG6 = "section4_gate_anch2_fig6"
 WAVE_PROBE = "section4_gate_anch2_probe"
 WAVE_SCOUT = "section4_gate_anch2_scout"
+WAVE_SCOUT_QWEN3 = "section4_gate_anch2_scout_qwen3"
 WAVE_ALIASES = {WAVE_V1: WAVE_V1, "v1": WAVE_V1,
                 WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6,
                 WAVE_PROBE: WAVE_PROBE, "probe": WAVE_PROBE,
-                WAVE_SCOUT: WAVE_SCOUT, "scout": WAVE_SCOUT}
+                WAVE_SCOUT: WAVE_SCOUT, "scout": WAVE_SCOUT,
+                WAVE_SCOUT_QWEN3: WAVE_SCOUT_QWEN3,
+                "scout_qwen3": WAVE_SCOUT_QWEN3}
 WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, WAVE_PROBE, WAVE_SCOUT,
-                "v1", "fig6", "probe", "scout")
-# the beta=0.75 family: wave name -> generator S4G_VARIANTS key
-FAMILY_VARIANT = {WAVE_PROBE: "probe", WAVE_SCOUT: "scout"}
+                WAVE_SCOUT_QWEN3, "v1", "fig6", "probe", "scout",
+                "scout_qwen3")
+# the beta=0.75 family: wave name -> generator S4G_VARIANTS key. The
+# variant carries its own prefix, model slug, base model and config pins
+# (the Qwen3-8B scout pins chat_thinking=False on top of the family's
+# parse_mode=strict / deffuant_alpha=0.5).
+FAMILY_VARIANT = {WAVE_PROBE: "probe", WAVE_SCOUT: "scout",
+                  WAVE_SCOUT_QWEN3: "scout_qwen3"}
 
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
 PROBE_PREFIX = "pofds4gp"       # the 5-round beta=0.75 probe wave
 SCOUT_PREFIX = "pofds4gs"       # the 30-round beta=0.75 scout wave
+SCOUT_QWEN3_PREFIX = "pofds4gq"  # the same scout on Qwen3-8B
 # mirror of HFCausalLMModel._parse_strict's regex (never import
 # transformers on the login node); tests pin the two to agree
 _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
@@ -275,6 +284,7 @@ PROD_SCAN = PROD_PREFIX + "_"
 SMOKE_SCAN = SMOKE_PREFIX + "_"
 PROBE_SCAN = PROBE_PREFIX + "_"
 SCOUT_SCAN = SCOUT_PREFIX + "_"
+SCOUT_QWEN3_SCAN = SCOUT_QWEN3_PREFIX + "_"
 
 OP_TOKEN = "anch2"                 # <-> nested_ai_anchored_then_social_v2
 OP_INFIX = "_" + OP_TOKEN + "_"
@@ -300,8 +310,8 @@ CLAMP_COUNT = 145                  # round(0.2 * 723)
 # ONLY by a wave that declares extension horizons (fig6 _r60/_r100);
 # base cells never carry one.
 TAG_RE = re.compile(
-    r"^(?P<pre>pofds4gsmk|pofds4gs|pofds4gp|pofds4g)"
-    r"_(?P<slug>[a-z0-9]+)"
+    r"^(?P<pre>pofds4gsmk|pofds4gs|pofds4gq|pofds4gp|pofds4g)"
+    r"_(?P<slug>[a-z0-9]+(?:_[a-z0-9]+)*?)"
     r"_(?P<arm>b0|d8)"
     r"_(?P<cond>fixb20|evoall)"
     r"_(?P<op>anch2)"
@@ -531,10 +541,15 @@ class Wave:
         self.prod_scan = self.prod_prefix + "_"
         self.tag_fn = gen.s4gv_tag if self.probe else gen.s4g_tag
         self.w_plat = float(gen.S4GP_W_PLAT if self.probe else W_PLAT)
+        # the wave's model: the family variant's slug / base model, else
+        # the Section-4 surface (Mistral-7B)
+        fam = gen.S4G_VARIANTS[self.variant] if self.probe else None
+        self.model_slug = fam["slug"] if fam else MODEL_SLUG
+        self.base_model = fam["model"]["base_model"] if fam else BASE_MODEL
         # config pins that hold ONLY on this wave's (fresh) runs: the
-        # probe pins the strict parser and the Deffuant alpha it runs
-        self.extra_pins = ({"parse_mode": "strict", "deffuant_alpha": 0.5}
-                           if self.probe else {})
+        # family pins the strict parser and the Deffuant alpha it runs;
+        # the Qwen3-8B scout also pins chat_thinking=False
+        self.extra_pins = dict(fam["pins"]) if fam else {}
         # the smoke cells, parsed out of the generator's own smoke rows
         # (first CSV column is the tag)
         self.smoke_cells = []
@@ -615,7 +630,7 @@ def parse_tag(tag, smoke, wave):
     m = TAG_RE.match(tag)
     if m is None:
         return None, [f"tag is not in the pofds4g grammar "
-                      f"{wave.prod_prefix}_{MODEL_SLUG}_<b0|d8>"
+                      f"{wave.prod_prefix}_{wave.model_slug}_<b0|d8>"
                       f"_<fixb20|evoall>_{OP_TOKEN}_ea<EA>"
                       f"_w{_num(wave.w_plat)}_l0p2_es<ES>_s<SEED>"
                       f"[_r<HORIZON>]"]
@@ -633,8 +648,9 @@ def parse_tag(tag, smoke, wave):
         errs.append(f"tag prefix {pre!r} does not belong to the {wave.name} "
                     f"wave (expected {wave.prod_prefix!r}) -- the probe and "
                     f"S4G production waves are gated separately")
-    if slug != MODEL_SLUG:
-        errs.append(f"model slug {slug!r}; this wave is {MODEL_SLUG}-only")
+    if slug != wave.model_slug:
+        errs.append(f"model slug {slug!r}; the {wave.name} wave is "
+                    f"{wave.model_slug}-only")
     rebuilt = (f"{pre}_{slug}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}_ea{_num(ea)}"
                f"_w{_num(w)}_l{_num(lam)}_es{_num(es)}_s{seed}"
                + ("" if horizon is None else f"_r{horizon}"))
@@ -904,7 +920,8 @@ def check_one(run_dir, wave, smoke, inspect_archived=False):
         bad(f"n_rounds={cfg.get('n_rounds')!r}, expected {want_rounds}"
             + (f" (the _r{info['horizon']} horizon of this extension)"
                if info["horizon"] else ""))
-    pins = dict(PINS, w_plat=wave.w_plat, **wave.extra_pins)
+    pins = dict(PINS, w_plat=wave.w_plat, base_model=wave.base_model,
+                **wave.extra_pins)
     for key, want in pins.items():
         got = cfg.get(key, "<absent>")
         if isinstance(want, bool):
@@ -1393,9 +1410,11 @@ def main(argv=None):
                          f"grid with twin-derived ea=0 cells, witnesses and "
                          f"_r60/_r100 extensions), {WAVE_PROBE} (alias "
                          f"probe; the 8-cell 5-round beta=0.75 channel "
-                         f"probe, pofds4gp_ tags) or {WAVE_SCOUT} (alias "
+                         f"probe, pofds4gp_ tags), {WAVE_SCOUT} (alias "
                          f"scout; the 20-cell 30-round beta=0.75 scout "
-                         f"over es {{0,.1,.2,.3,1}}, pofds4gs_ tags)")
+                         f"over es {{0,.1,.2,.3,1}}, pofds4gs_ tags) or "
+                         f"{WAVE_SCOUT_QWEN3} (alias scout_qwen3; the "
+                         f"same scout on Qwen3-8B, pofds4gq_ tags)")
     ap.add_argument("--run-root", default=DEFAULT_RUN_ROOT,
                     help=f"directory holding the run dirs (default the "
                          f"cluster path {DEFAULT_RUN_ROOT})")
