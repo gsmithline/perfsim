@@ -1,0 +1,10 @@
+pofds4gg_qwen3_8b_b0_evoall_anch2_eaopen_w0p5_l1_es0_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 1, 1, 16, 0, 30, 0
+pofds4gg_qwen3_8b_b0_evoall_anch2_eaopen_w0p5_l1_es0p1_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 1, 1, 16, 0, 30, 0
+pofds4gg_qwen3_8b_b0_evoall_anch2_eaopen_w0p5_l1_es0p2_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 1, 1, 16, 0, 30, 0
+pofds4gg_qwen3_8b_b0_evoall_anch2_eaopen_w0p5_l1_es0p3_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 1, 1, 16, 0, 30, 0
+pofds4gg_qwen3_8b_b0_evoall_anch2_eaopen_w0p5_l1_es1_s0, sft, 0, 0, 1, replace, 1.0, fixed, ab, 1, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 1, 1, 16, 0, 30, 0
+pofds4gg_qwen3_8b_d8_evoall_anch2_eaopen_w0p5_l1_es0_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 0, 0, 0, 1, 30, 8
+pofds4gg_qwen3_8b_d8_evoall_anch2_eaopen_w0p5_l1_es0p1_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.1, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 0, 0, 0, 1, 30, 8
+pofds4gg_qwen3_8b_d8_evoall_anch2_eaopen_w0p5_l1_es0p2_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 0, 0, 0, 1, 30, 8
+pofds4gg_qwen3_8b_d8_evoall_anch2_eaopen_w0p5_l1_es0p3_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 0.3, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 0, 0, 0, 1, 30, 8
+pofds4gg_qwen3_8b_d8_evoall_anch2_eaopen_w0p5_l1_es1_s0, frozen, 0, 0, 1, replace, 1.0, fixed, ab, 1, 0.0, 0.5, loop, 0.0, 1, all_open, 0, -1, 0, 0, 0, 1, 30, 8

@@ -9619,6 +9619,48 @@ S4GQ_MODEL = dict(
     extra_env="HF_HOME=/lustre/fast/fast/gsmithline/hf_cache "
               "HF_HUB_OFFLINE=1 CHAT_THINKING=0 ")
 S4G_FAMILY_PINS = {"parse_mode": "strict", "deffuant_alpha": 0.5}
+#
+# ROUTING PILOT, gamma = 1 (2026-08-27, user). Before any full routing
+# wave, a 20-job pilot on the SAME corrected Section-4 Qwen3 machinery
+# with three deliberate departures from the scout:
+#   W_PLAT (beta)     0.5   (the scout ran 0.75)
+#   INNATE_LAMBDA (k) 1     (the scout ran 0.2) -- the ONLY wave in this
+#                           family with a full innate anchor
+#   AI gate           all_open, tag token _eaopen_ -- NOT eps_AI = 1.
+#                     all_open ignores the distance entirely; a numeric
+#                     ea1 gate still applies the strict |m - x'| < 1
+#                     test, so the two are different experiments and the
+#                     tag must not spell one as the other. EPS_AI rides
+#                     the queue at 1 and is INERT; the checker pins
+#                     ai_gate_mode == all_open and does NOT tie the tag
+#                     to the (unused) eps_ai config field.
+# Everything else is the family surface: one Deffuant sweep per round
+# (AB_SWEEPS default 1), alpha 0.5, strict parsing, greedy serving,
+# thinking off, anch2, bottom-20 cohort A fixed vs evolving, seed 0,
+# 30 rounds, es {0, .1, .2, .3, 1} x {b0, d8} x {fixed, evolving} = 20.
+# SMOKE FIRST: 4 jobs x 3 rounds at es = 0.2 (both arms x both conds),
+# production configuration; the pilot is submitted only if it passes.
+# TAGS pofds4gg_ (gamma) / pofds4ggsmk_ -- disjoint from every other
+# family prefix under the underscore-carrying scans.
+S4GG_KEY = "section4_gate_anch2_pilot_g1"
+S4GG_FIXED_KEY = S4GG_KEY + "_fixed"
+S4GG_EVO_KEY = S4GG_KEY + "_evo"
+S4GG_SMOKE_KEY = S4GG_KEY + "_smoke"
+S4GG_SMOKE_FIXED_KEY = S4GG_SMOKE_KEY + "_fixed"
+S4GG_SMOKE_EVO_KEY = S4GG_SMOKE_KEY + "_evo"
+S4GG_PREFIX = "pofds4gg"
+S4GG_SMOKE_PREFIX = "pofds4ggsmk"
+S4GG_W_PLAT = 0.5
+S4GG_LAMBDA = 1.0                # the innate anchor k -- NOT the KL beta
+S4GG_GATE = "open"               # AI_GATE_MODE=all_open, token _eaopen_
+S4GG_EPS_AI_INERT = 1.0          # rides the queue; ignored by all_open
+S4GG_ESS = S4GS_ESS              # {0, .1, .2, .3, 1}
+S4GG_ROUNDS = S4GS_ROUNDS        # 30
+S4GG_SMOKE_ROUNDS = 3
+S4GG_SMOKE_ES = 0.2
+S4GG_N_PER_COND = 10
+S4GG_N_TOTAL = 20
+S4GG_N_SMOKE = 4
 S4G_VARIANTS = {
     "probe": dict(key=S4GP_KEY, fixed_key=S4GP_FIXED_KEY,
                   evo_key=S4GP_EVO_KEY, prefix=S4GP_PREFIX, ess=S4GP_ESS,
@@ -9662,29 +9704,69 @@ S4G_VARIANTS = {
                                   "es 0.3 x ea {0,.3,.5,.7,1} @15r",
                         grid="ea {0.7} x es {0,.1,.2,.3,1} @30 rounds + "
                              "es {0.3} x ea {0,.3,.5,.7,1} @15 rounds"),
+    "pilot_g1": dict(key=S4GG_KEY, fixed_key=S4GG_FIXED_KEY,
+                     evo_key=S4GG_EVO_KEY, prefix=S4GG_PREFIX,
+                     ess=S4GG_ESS, rounds=S4GG_ROUNDS,
+                     n_per_cond=S4GG_N_PER_COND, n_total=S4GG_N_TOTAL,
+                     slug=S4GQ_SLUG, model=S4GQ_MODEL,
+                     w_plat=S4GG_W_PLAT, innate_lambda=S4GG_LAMBDA,
+                     gate=S4GG_GATE, gatemode="all_open",
+                     eps_ai_col=S4GG_EPS_AI_INERT,
+                     pins=dict(S4G_FAMILY_PINS, chat_thinking=False,
+                               ai_gate_mode="all_open",
+                               innate_lambda=S4GG_LAMBDA),
+                     smoke=dict(prefix=S4GG_SMOKE_PREFIX,
+                                fixed_key=S4GG_SMOKE_FIXED_KEY,
+                                evo_key=S4GG_SMOKE_EVO_KEY,
+                                es=S4GG_SMOKE_ES,
+                                rounds=S4GG_SMOKE_ROUNDS,
+                                n_total=S4GG_N_SMOKE),
+                     points=lambda kind="all": [(S4GG_GATE, es,
+                                                 S4GG_ROUNDS)
+                                                for es in S4GG_ESS],
+                     kind="30-ROUND SEED-0 ROUTING PILOT, gamma=1, "
+                          "QWEN3-8B (thinking off)",
+                     kind_grid="AI gate all_open x es {0,.1,.2,.3,1}",
+                     grid="AI gate all_open x es {0,.1,.2,.3,1}"),
 }
 assert len({v["prefix"] for v in S4G_VARIANTS.values()}) == len(S4G_VARIANTS)
 
 
 def s4g_variant_of_prefix(prefix):
+    """The variant a tag prefix belongs to -- its production prefix OR
+    its smoke prefix, so a smoke tag inherits the same slug / W_PLAT /
+    innate anchor / gate token as the production cells it screens."""
     for v in S4G_VARIANTS.values():
         if v["prefix"] == prefix:
+            return v
+        sm = v.get("smoke")
+        if sm is not None and sm["prefix"] == prefix:
             return v
     return None
 
 
 def s4gv_tag(arm, cond, gate, es, seed, prefix, rounds=None):
-    """The s4g grammar with a family prefix, the variant's model slug
-    and the beta=0.75 w token:
-    {prefix}_{slug}_{arm}_{fixb20|evoall}_anch2_ea0p7_w0p75_l0p2
-    _es{es}_s{seed}.  The slug follows the prefix (pofds4gq_ -> qwen3_8b;
-    an unknown prefix keeps mistral7b, the s4g default)."""
-    t = s4g_tag(arm, cond, gate, es, seed, prefix=prefix, rounds=rounds)
-    assert "_w0p5_" in t and "_mistral7b_" in t, t
-    t = t.replace("_w0p5_", f"_w{_num(S4GP_W_PLAT)}_", 1)
+    """The s4g grammar with a family prefix, and the variant's model
+    slug / W_PLAT / innate-anchor / AI-gate tokens:
+    {prefix}_{slug}_{arm}_{fixb20|evoall}_anch2_{ea}_w{W}_l{k}
+    _es{es}_s{seed}[_r{rounds}].
+
+    gate == "open" spells the AI gate _eaopen_ (AI_GATE_MODE=all_open),
+    the repo-wide convention -- deliberately NOT ea1, which is a numeric
+    strict |m - x'| < 1 gate and a different experiment."""
+    num_gate = S4GP_GATES[0] if gate == "open" else gate
+    t = s4g_tag(arm, cond, num_gate, es, seed, prefix=prefix,
+                rounds=rounds)
+    assert "_w0p5_l0p2_" in t and "_mistral7b_" in t, t
     v = s4g_variant_of_prefix(prefix)
     slug = "mistral7b" if v is None else v["slug"]
-    return t.replace("_mistral7b_", f"_{slug}_", 1)
+    w = S4GP_W_PLAT if v is None else v.get("w_plat", S4GP_W_PLAT)
+    lam = W_LAMBDA if v is None else v.get("innate_lambda", W_LAMBDA)
+    t = t.replace("_w0p5_l0p2_", f"_w{_num(w)}_l{_num(lam)}_", 1)
+    t = t.replace("_mistral7b_", f"_{slug}_", 1)
+    if gate == "open":
+        t = t.replace(f"_anch2_ea{_num(num_gate)}_", "_anch2_eaopen_", 1)
+    return t
 
 
 def s4gp_tag(arm, cond, gate, es, seed, prefix=None, rounds=None):
@@ -9707,19 +9789,42 @@ def s4gv_row(arm, cond, es, seed, variant, ea=None, rounds=None):
     _r<rounds> tag token, so a 15-round cell can never wear (or be
     no-op'd by) a 30-round cell's tag."""
     v = S4G_VARIANTS[variant]
-    ea = S4GP_GATES[0] if ea is None else ea
+    ea = v.get("gate", S4GP_GATES[0]) if ea is None else ea
     nr = v["rounds"] if rounds is None else int(rounds)
     tag_r = None if nr == v["rounds"] else nr
-    row = s4g_row(arm, cond, ea, es, seed, nrounds=nr, prefix=v["prefix"],
-                  tag_rounds=tag_r)
+    num_ea = v["eps_ai_col"] if ea == "open" else ea
+    row = s4g_row(arm, cond, num_ea, es, seed, nrounds=nr,
+                  prefix=v["prefix"], tag_rounds=tag_r)
     cols = [c.strip() for c in row.split(",")]
-    want_tag = s4g_tag(arm, cond, ea, es, seed, prefix=v["prefix"],
+    want_tag = s4g_tag(arm, cond, num_ea, es, seed, prefix=v["prefix"],
                        rounds=tag_r)
     assert cols[0] == want_tag and cols[11] == "0.5", row
+    assert cols[15] == "threshold", row
     cols[0] = s4gv_tag(arm, cond, ea, es, seed, v["prefix"], rounds=tag_r)
-    cols[11] = f"{S4GP_W_PLAT:g}"
+    cols[11] = f"{v.get('w_plat', S4GP_W_PLAT):g}"
+    cols[15] = v.get("gatemode", "threshold")
     assert cols[22] == str(nr), row
     return ", ".join(cols)
+
+
+def s4gv_smoke_rows(cond, variant):
+    """The variant's 3-round smoke rows (both arms at one es), in
+    production configuration but under the smoke PREFIX, so a truncated
+    run can never satisfy a production cell."""
+    v = S4G_VARIANTS[variant]
+    sm = v["smoke"]
+    out = []
+    for arm in S4GP_ARMS:
+        r = s4gv_row(arm, cond, sm["es"], S4GP_SEEDS[0], variant,
+                     rounds=sm["rounds"])
+        cols = [c.strip() for c in r.split(",")]
+        # re-spell the tag under the smoke prefix, and drop the horizon
+        # token the row builder added for the shorter run
+        cols[0] = s4gv_tag(arm, cond, v.get("gate", S4GP_GATES[0]),
+                           sm["es"], S4GP_SEEDS[0], sm["prefix"])
+        assert cols[22] == str(sm["rounds"]), r
+        out.append(", ".join(cols))
+    return out
 
 
 def s4gv_main_kind(variant):
@@ -9744,7 +9849,12 @@ def s4gv_rows(cond, variant, seeds=None, kind="all"):
 
 def s4gv_sub(cond, variant, sweep="all"):
     v = S4G_VARIANTS[variant]
-    if sweep == "ea":
+    if sweep == "smoke":
+        sm = v["smoke"]
+        key = sm["fixed_key"] if cond == "fixed" else sm["evo_key"]
+        gridtxt = (f"{sm['rounds']}-ROUND SMOKE at es {sm['es']:g}, both "
+                   f"arms, production configuration")
+    elif sweep == "ea":
         key = v["ea_fixed_key"] if cond == "fixed" else v["ea_evo_key"]
         gridtxt = (f"es {S4GQ_ES_ANCHOR:g} x ea "
                    f"{{{', '.join(f'{g:g}' for g in S4GQ_GATES)}}} at "
@@ -9757,20 +9867,27 @@ def s4gv_sub(cond, variant, sweep="all"):
         gridtxt = v["kind_grid"]
     kind = (f"{v['kind']} -- beta(W_PLAT)=0.75, gamma(k)=0.2, alpha=0.5; "
             f"{gridtxt} x arms {{b0, d8}}")
-    rows = s4gv_rows(cond, variant,
-                     kind=("ea" if sweep == "ea"
-                           else s4gv_main_kind(variant)))
+    rows = (s4gv_smoke_rows(cond, variant) if sweep == "smoke"
+            else s4gv_rows(cond, variant,
+                           kind=("ea" if sweep == "ea"
+                                 else s4gv_main_kind(variant))))
     sub = s4g_sub(cond, key=key, rows=rows, kind=kind,
                   grid=v["grid"], model_env=v["model"])
     # the family departs from the S4G surface in exactly the pinned ways
     # below; every substitution is asserted so a template drift cannot
     # silently emit an unmarked sub
-    subs = [("W=0.5, lam=0.2", f"W=0.75 ({variant.upper()}), lam=0.2"),
+    w = v.get("w_plat", S4GP_W_PLAT)
+    lam = v.get("innate_lambda", W_LAMBDA)
+    subs = [("W=0.5, lam=0.2",
+             f"W={w:g} ({variant.upper()}), lam={lam:g}"),
             ("SEEDS 0/42/43", f"SEED 0 ONLY, {v['rounds']} ROUNDS"),
             ("SAVE_RAW_GEN=1 ",
              "SAVE_RAW_GEN=1 PARSE_MODE=strict DEFFUANT_ALPHA=0.5 "),
             ("with check_section4_gate.py (",
              f"with check_section4_gate.py --wave {variant} (")]
+    if lam != W_LAMBDA:
+        subs.append((f"INNATE_LAMBDA={W_LAMBDA:g} ",
+                     f"INNATE_LAMBDA={lam:g} "))
     if v["slug"] != "mistral7b":
         subs.append(("WANDB_RUN_SUFFIX=_mistral7b_pofds4g_",
                      f"WANDB_RUN_SUFFIX=_{v['slug']}_pofds4g_"))
@@ -14217,14 +14334,21 @@ def main():
             for _r in _rows:
                 _c = [x.strip() for x in _r.split(",")]
                 assert len(_c) == _ncols, (_var, _cond, len(_c), _r)
+                _wtok = f"_w{_num(_v.get('w_plat', S4GP_W_PLAT))}" \
+                    f"_l{_num(_v.get('innate_lambda', W_LAMBDA))}_"
+                _eatok = ("_eaopen_" if _v.get("gate") == "open"
+                          else f"_ea{_num(S4GP_GATES[0])}_")
                 assert _c[0].startswith(f"{_v['prefix']}_{_v['slug']}_") \
-                    and f"_{S4G_OP_TOKEN}_" in _c[0] and "_ea0p7_" in _c[0] \
-                    and "_w0p75_l0p2_" in _c[0], _c[0]
-                assert _c[11] == "0.75" and \
-                    float(_c[14]) == S4GP_GATES[0], _r
+                    and f"_{S4G_OP_TOKEN}_" in _c[0] and _eatok in _c[0] \
+                    and _wtok in _c[0], _c[0]
+                assert _c[11] == f"{_v.get('w_plat', S4GP_W_PLAT):g}", _r
+                assert _c[15] == _v.get("gatemode", "threshold"), _r
+                assert float(_c[14]) == (_v["eps_ai_col"]
+                                         if _v.get("gate") == "open"
+                                         else S4GP_GATES[0]), _r
                 assert float(_c[9]) in tuple(_v["ess"]) and _c[3] == "0", _r
                 assert _c[22] == str(_v["rounds"]) and \
-                    _c[15] == "threshold" and _c[10] == "0.0", _r
+                    _c[10] == "0.0", _r
                 assert _c[0] not in _prior_pr, ("family tag collides",
                                                 _var, _c[0])
                 _fam_tags[_var].add(_c[0])
@@ -14246,6 +14370,32 @@ def main():
             expected[p] = _v["n_per_cond"]
             cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
         assert len(_fam_tags[_var]) == _v["n_total"], _var
+        # ---- a variant that ships a SMOKE (its own prefix + keys) ------
+        if "smoke" in _v:
+            _sm = _v["smoke"]
+            _smk_tags = set()
+            for _cond, _key in (("fixed", _sm["fixed_key"]),
+                                ("evolving", _sm["evo_key"])):
+                _rows = s4gv_smoke_rows(_cond, _var)
+                assert len(_rows) == _sm["n_total"] // 2, (_var, len(_rows))
+                for _r in _rows:
+                    _c = [x.strip() for x in _r.split(",")]
+                    assert _c[0].startswith(f"{_sm['prefix']}_{_v['slug']}_")
+                    assert _c[22] == str(_sm["rounds"]), _r
+                    assert float(_c[9]) == _sm["es"], _r
+                    assert not _c[0].endswith(f"_r{_sm['rounds']}"), (
+                        "the smoke wears its own PREFIX, not a horizon "
+                        "token", _r)
+                    assert _c[0] not in _fam_tags[_var] and \
+                        _c[0] not in _prior_pr, ("smoke tag collides",
+                                                 _c[0])
+                    _smk_tags.add(_c[0])
+                p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+                files[p] = _rows
+                expected[p] = _sm["n_total"] // 2
+                cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = \
+                    s4gv_sub(_cond, _var, sweep="smoke")
+            assert len(_smk_tags) == _sm["n_total"]
         # ---- the cross-shaped wave's SECOND sweep (its own key) --------
         if "ea_key" not in _v:
             continue

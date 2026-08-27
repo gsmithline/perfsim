@@ -97,9 +97,10 @@ def _num(v):
 
 
 def tag_for(arm, cond, es, prefix="pofds4gp", slug="mistral7b", ea=0.7,
-            rounds=None):
-    return (f"{prefix}_{slug}_{arm}_{COND_TOK[cond]}_anch2_ea{_num(ea)}"
-            f"_w0p75_l0p2_es{_num(es)}_s{SEED}"
+            rounds=None, w=0.75, lam=0.2):
+    eatok = "open" if ea == "open" else _num(ea)
+    return (f"{prefix}_{slug}_{arm}_{COND_TOK[cond]}_anch2_ea{eatok}"
+            f"_w{_num(w)}_l{_num(lam)}_es{_num(es)}_s{SEED}"
             + ("" if rounds is None else f"_r{rounds}"))
 
 
@@ -205,15 +206,16 @@ def test_submit_script_knows_the_probe_keys():
 
 # --------------------------------------------------- synthetic runs
 def make_cfg(tag, arm, cond, es, rounds=ROUNDS, base_model=BASE,
-             thinking=None, ea=EA):
+             thinking=None, ea=EA, w=W_PLAT, lam=0.2):
     c = {
         "run_tag": tag, "base_model": base_model, "dataset": "movielens",
         "ml_target": TARGET, "n_rounds": rounds, "seed": SEED,
-        "eps": es, "eps_ai": ea,
-        "ai_gate_mode": "threshold", "peer_gate_mode": "threshold",
+        "eps": es, "eps_ai": (1.0 if ea == "open" else ea),
+        "ai_gate_mode": ("all_open" if ea == "open" else "threshold"),
+        "peer_gate_mode": "threshold",
         "ai_gate_reference": "anchor",
         "population_update": "nested_ai_anchored_then_social_v2",
-        "gamma_bias": 0.0, "w_plat": W_PLAT, "innate_lambda": 0.2,
+        "gamma_bias": 0.0, "w_plat": w, "innate_lambda": lam,
         "parse_mode": "strict", "deffuant_alpha": 0.5,
         "n_labeled": N, "train_cap": N,
         "kl_direction": "forward", "kl_ref_adapter": "",
@@ -263,8 +265,9 @@ def render_days(vals):
 
 def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
               prefix="pofds4gp", rounds=ROUNDS, slug="mistral7b",
-              base_model=BASE, thinking=None, ea=EA, tag_rounds=None):
-    tag = tag_for(arm, cond, es, prefix, slug, ea, tag_rounds)
+              base_model=BASE, thinking=None, ea=EA, tag_rounds=None,
+              w=W_PLAT, lam=0.2):
+    tag = tag_for(arm, cond, es, prefix, slug, ea, tag_rounds, w, lam)
     d = os.path.join(str(root), tag)
     os.makedirs(d, exist_ok=True)
     mask = bottom_mask(INNATE, CLAMP_N) if cond == "fixed" else None
@@ -275,7 +278,7 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
         # the twin depends on (cond, es, seed) only -- NEVER the arm --
         # which is the twin-agreement invariant the gate replays
         y = y + 0.01 * ((0.35 + 0.02 * es) - y)
-        if float(ea) == 0.0:
+        if ea != "open" and float(ea) == 0.0:
             # the strict-< AI gate NEVER opens at eps_AI = 0: the served
             # vector cannot enter, so the population IS the twin
             x = y.clone()
@@ -288,10 +291,13 @@ def build_run(root, arm, cond, es, cfg_mut=None, raw_mut=None,
         tw.append(y.clone())
         pr.append(torch.full((N,), 0.55 + 0.005 * t))
 
-    cfg = make_cfg(tag, arm, cond, es, rounds, base_model, thinking, ea)
+    cfg = make_cfg(tag, arm, cond, es, rounds, base_model, thinking, ea,
+                   w, lam)
     if cfg_mut:
         cfg_mut(cfg)
-    contact = 0.0 if float(ea) == 0.0 else 0.4
+    # all_open admits everyone; a strict gate at eps_AI = 0 admits nobody
+    contact = (1.0 if ea == "open"
+               else 0.0 if float(ea) == 0.0 else 0.4)
     payload = {
         "config": cfg,
         "trajectory": [{"round": t, "contact": contact}
@@ -689,3 +695,126 @@ def test_ea0_cell_that_served_anything_fails(tmp_path):
     r = run_checker(root, wave="scout_qwen3")
     assert r.returncode == 1
     assert "op_raw != twin_raw" in r.stdout
+
+
+# ------------------------------------------------- the gamma=1 pilot
+PILOT = {"prefix": "pofds4gg", "smoke_prefix": "pofds4ggsmk",
+         "slug": "qwen3_8b", "w": 0.5, "lam": 1.0, "rounds": 30,
+         "ess": (0.0, 0.1, 0.2, 0.3, 1.0), "n": 20,
+         "smoke_es": 0.2, "smoke_rounds": 3, "smoke_n": 4,
+         "keys": {"fixed": "section4_gate_anch2_pilot_g1_fixed",
+                  "evolving": "section4_gate_anch2_pilot_g1_evo"},
+         "smoke_keys": {"fixed": "section4_gate_anch2_pilot_g1_smoke_fixed",
+                        "evolving": "section4_gate_anch2_pilot_g1_smoke_evo"}}
+
+
+def test_pilot_g1_emitted_rows():
+    """beta=.5, k=1, AI gate all_open (tag _eaopen_, NOT ea1), one
+    Deffuant sweep, 30 rounds, seed 0."""
+    p = PILOT
+    tags = set()
+    for cond in CONDS:
+        key = p["keys"][cond]
+        sub = open(os.path.join(CONDOR, f"at_pofd_{key}.sub")).read()
+        rows = [l for l in open(os.path.join(
+            CONDOR, f"configs_pofd_{key}.txt")).read().splitlines()
+            if l.strip()]
+        assert len(rows) == p["n"] // 2
+        q = next(l for l in sub.splitlines() if l.startswith("queue"))
+        cols = [c.strip() for c in re.match(
+            r"queue\s+(.*?)\s+from\s+(\S+)", q).group(1).split(",")]
+        got = set()
+        for r in rows:
+            row = dict(zip(cols, [x.strip() for x in r.split(",")]))
+            assert row["wplat"] == "0.5", "beta = .5"
+            assert row["gatemode"] == "all_open", "AI gate all_open"
+            assert row["gamma"] == "0.0", "homophily gamma stays 0"
+            assert row["nrounds"] == "30" and row["seed"] == "0"
+            assert float(row["eps"]) in p["ess"]
+            arm = "d8" if row["style"] == "frozen" else "b0"
+            assert row["tag"] == tag_for(arm, cond, float(row["eps"]),
+                                         p["prefix"], p["slug"],
+                                         ea="open", w=p["w"],
+                                         lam=p["lam"])
+            assert "_eaopen_" in row["tag"] and "_l1_" in row["tag"]
+            got.add((arm, float(row["eps"])))
+            tags.add(row["tag"])
+        assert got == {(a, e) for a in ARMS for e in p["ess"]}
+        env = next(l for l in sub.splitlines()
+                   if l.startswith("environment"))
+        # the innate anchor is k=1 here, NOT the family's 0.2
+        assert "INNATE_LAMBDA=1 " in env and "INNATE_LAMBDA=0.2" not in env
+        for tok in ("AI_GATE_REFERENCE=anchor", "PARSE_MODE=strict",
+                    "DEFFUANT_ALPHA=0.5", "CHAT_THINKING=0",
+                    "BASE_MODEL=Qwen/Qwen3-8B ", "SAVE_RAW_GEN=1"):
+            assert tok in env, tok
+        assert "--wave pilot_g1" in sub
+    assert len(tags) == p["n"]
+
+
+def test_pilot_g1_smoke_is_four_three_round_cells():
+    p = PILOT
+    tags = set()
+    for cond in CONDS:
+        rows = [l for l in open(os.path.join(
+            CONDOR,
+            f"configs_pofd_{p['smoke_keys'][cond]}.txt")).read().splitlines()
+            if l.strip()]
+        assert len(rows) == 2
+        for r in rows:
+            c = [x.strip() for x in r.split(",")]
+            assert c[0].startswith(p["smoke_prefix"] + "_")
+            assert c[22] == str(p["smoke_rounds"])
+            assert float(c[9]) == p["smoke_es"]
+            assert c[15] == "all_open" and c[11] == "0.5"
+            tags.add(c[0])
+    assert len(tags) == p["smoke_n"]
+    # the smoke wears its own PREFIX and never a horizon token
+    assert all(not t.endswith("_r3") for t in tags)
+
+
+def test_pilot_g1_tags_disjoint_from_every_other_key():
+    mine = set()
+    for cond in CONDS:
+        for k in (PILOT["keys"][cond], PILOT["smoke_keys"][cond]):
+            mine |= {l.split(",")[0].strip() for l in open(
+                os.path.join(CONDOR, f"configs_pofd_{k}.txt"))
+                if l.strip()}
+    others = set()
+    for f in os.listdir(CONDOR):
+        if f.startswith("configs_pofd_") and "pilot_g1" not in f:
+            others |= {l.split(",")[0].strip()
+                       for l in open(os.path.join(CONDOR, f))
+                       if l.strip()}
+    assert others and not (mine & others)
+
+
+def test_checker_rejects_a_numeric_gate_for_the_all_open_pilot():
+    """ea1 is a strict |m - x'| < 1 gate; all_open ignores the distance.
+    They are different experiments and the tag must not spell one as the
+    other."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("chk", CHECKER)
+    chk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chk)
+    gen = chk.load_generator(os.path.join(CONDOR, "gen_pofd_sweep.py"))
+    w = chk.Wave("pilot_g1", gen)
+    assert w.w_plat == 0.5 and w.innate_lambda == 1.0
+    assert w.extra_pins["ai_gate_mode"] == "all_open"
+    num = tag_for("b0", "fixed", 0.0, "pofds4gg", "qwen3_8b", ea=1.0,
+                  w=0.5, lam=1.0)
+    assert chk.parse_tag(num, False, w)[1]
+    ok = tag_for("b0", "fixed", 0.0, "pofds4gg", "qwen3_8b", ea="open",
+                 w=0.5, lam=1.0)
+    assert not chk.parse_tag(ok, False, w)[1]
+    # the wrong innate anchor is caught too
+    bad_k = tag_for("b0", "fixed", 0.0, "pofds4gg", "qwen3_8b", ea="open",
+                    w=0.5, lam=0.2)
+    assert any("INNATE_LAMBDA" in e for e in chk.parse_tag(bad_k, False, w)[1])
+
+
+def test_submit_script_knows_the_pilot():
+    src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
+    for k in ("section4_gate_anch2_pilot_g1) TARGETS=",
+              "section4_gate_anch2_pilot_g1_smoke) TARGETS="):
+        assert k in src

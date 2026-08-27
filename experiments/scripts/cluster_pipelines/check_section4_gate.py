@@ -253,27 +253,32 @@ WAVE_FIG6 = "section4_gate_anch2_fig6"
 WAVE_PROBE = "section4_gate_anch2_probe"
 WAVE_SCOUT = "section4_gate_anch2_scout"
 WAVE_SCOUT_QWEN3 = "section4_gate_anch2_scout_qwen3"
+WAVE_PILOT_G1 = "section4_gate_anch2_pilot_g1"
 WAVE_ALIASES = {WAVE_V1: WAVE_V1, "v1": WAVE_V1,
                 WAVE_FIG6: WAVE_FIG6, "fig6": WAVE_FIG6,
                 WAVE_PROBE: WAVE_PROBE, "probe": WAVE_PROBE,
                 WAVE_SCOUT: WAVE_SCOUT, "scout": WAVE_SCOUT,
                 WAVE_SCOUT_QWEN3: WAVE_SCOUT_QWEN3,
-                "scout_qwen3": WAVE_SCOUT_QWEN3}
+                "scout_qwen3": WAVE_SCOUT_QWEN3,
+                WAVE_PILOT_G1: WAVE_PILOT_G1, "pilot_g1": WAVE_PILOT_G1}
 WAVE_CHOICES = (WAVE_V1, WAVE_FIG6, WAVE_PROBE, WAVE_SCOUT,
-                WAVE_SCOUT_QWEN3, "v1", "fig6", "probe", "scout",
-                "scout_qwen3")
+                WAVE_SCOUT_QWEN3, WAVE_PILOT_G1, "v1", "fig6", "probe",
+                "scout", "scout_qwen3", "pilot_g1")
 # the beta=0.75 family: wave name -> generator S4G_VARIANTS key. The
 # variant carries its own prefix, model slug, base model and config pins
 # (the Qwen3-8B scout pins chat_thinking=False on top of the family's
 # parse_mode=strict / deffuant_alpha=0.5).
 FAMILY_VARIANT = {WAVE_PROBE: "probe", WAVE_SCOUT: "scout",
-                  WAVE_SCOUT_QWEN3: "scout_qwen3"}
+                  WAVE_SCOUT_QWEN3: "scout_qwen3",
+                  WAVE_PILOT_G1: "pilot_g1"}
 
 PROD_PREFIX = "pofds4g"
 SMOKE_PREFIX = "pofds4gsmk"
 PROBE_PREFIX = "pofds4gp"       # the 5-round beta=0.75 probe wave
 SCOUT_PREFIX = "pofds4gs"       # the 30-round beta=0.75 scout wave
 SCOUT_QWEN3_PREFIX = "pofds4gq"  # the same scout on Qwen3-8B
+PILOT_G1_PREFIX = "pofds4gg"     # the gamma=1 routing pilot
+PILOT_G1_SMOKE_PREFIX = "pofds4ggsmk"
 # mirror of HFCausalLMModel._parse_strict's regex (never import
 # transformers on the login node); tests pin the two to agree
 _WELL_FORMED_RE = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)")
@@ -310,12 +315,13 @@ CLAMP_COUNT = 145                  # round(0.2 * 723)
 # ONLY by a wave that declares extension horizons (fig6 _r60/_r100);
 # base cells never carry one.
 TAG_RE = re.compile(
-    r"^(?P<pre>pofds4gsmk|pofds4gs|pofds4gq|pofds4gp|pofds4g)"
+    r"^(?P<pre>pofds4ggsmk|pofds4gsmk|pofds4gg|pofds4gs|pofds4gq"
+    r"|pofds4gp|pofds4g)"
     r"_(?P<slug>[a-z0-9]+(?:_[a-z0-9]+)*?)"
     r"_(?P<arm>b0|d8)"
     r"_(?P<cond>fixb20|evoall)"
     r"_(?P<op>anch2)"
-    r"_ea(?P<ea>[0-9p]+)"
+    r"_ea(?P<ea>open|[0-9p]+)"
     r"_w(?P<w>[0-9p]+)"
     r"_l(?P<l>[0-9p]+)"
     r"_es(?P<es>[0-9p]+)"
@@ -409,7 +415,9 @@ def _raw_parse(tag):
     if m is None:
         return None
     r = m.group("r")
-    return (m.group("arm"), TOK_COND[m.group("cond")], _unnum(m.group("ea")),
+    ea_tok = m.group("ea")
+    return (m.group("arm"), TOK_COND[m.group("cond")],
+            "open" if ea_tok == "open" else _unnum(ea_tok),
             _unnum(m.group("es")), int(m.group("seed")),
             None if r is None else int(r))
 
@@ -476,6 +484,7 @@ class Wave:
                                  for (a, c, ea, es, sd, r)
                                  in gen.s4g2_ext_requests()]
             smoke_rows = gen.s4g2_smoke_rows
+            self.smoke_prefix = SMOKE_PREFIX
             # the generator's own declared counts must describe its cells
             kinds = [k for *_, k in self.cells6]
             declared = (gen.S4G2_N_CELLS, gen.S4G2_N_GPU,
@@ -506,7 +515,8 @@ class Wave:
             # rounds, its eps_AI sweep runs 15), so the cell is a
             # (point, horizon) pair and the shorter one carries an _r
             # token.
-            self.pts3 = [(float(ea), float(es), int(nr))
+            self.pts3 = [(ea if ea == "open" else float(ea),
+                          float(es), int(nr))
                          for (ea, es, nr) in fam["points"]("all")]
             base = int(fam["rounds"])
             # (eps_AI, eps_social, TAG HORIZON) -- the horizon token is
@@ -519,7 +529,8 @@ class Wave:
                 raise ValueError(f"{self.name}: duplicate (eps_ai, "
                                  f"eps_social, horizon) point(s)")
             self.points = sorted({(ea, es) for ea, es, _ in self.pts3})
-            self.gates = tuple(sorted({ea for ea, _, _ in self.pts3}))
+            self.gates = tuple(sorted({ea for ea, _, _ in self.pts3},
+                                      key=str))
             self.ess = tuple(sorted({es for _, es, _ in self.pts3}))
             # every horizon a point is allowed to run at
             self.horizons_at = {}
@@ -534,7 +545,13 @@ class Wave:
             self.witness = set()
             self.ext_manifest = None
             self.ext_requests = []
-            smoke_rows = lambda cond: []          # noqa: E731
+            self.smoke_prefix = (fam["smoke"]["prefix"] if "smoke" in fam
+                                 else SMOKE_PREFIX)
+            if "smoke" in fam:
+                smoke_rows = (lambda cond, _v=self.variant:
+                              gen.s4gv_smoke_rows(cond, _v))
+            else:
+                smoke_rows = lambda cond: []      # noqa: E731
             # n_total is the MAIN key's job count; a cross-shaped wave
             # also declares n_cells, the full conceptual grid
             want_cells = int(fam.get("n_cells", fam["n_total"]))
@@ -559,6 +576,7 @@ class Wave:
             self.ext_manifest = None
             self.ext_requests = []
             smoke_rows = gen.s4g_smoke_rows
+            self.smoke_prefix = SMOKE_PREFIX
             if len(self.cells6) != gen.S4G_N_TOTAL:
                 raise ValueError(f"generator declares S4G_N_TOTAL="
                                  f"{gen.S4G_N_TOTAL} but the product has "
@@ -580,12 +598,19 @@ class Wave:
                             if self.probe else PROD_PREFIX)
         self.prod_scan = self.prod_prefix + "_"
         self.tag_fn = gen.s4gv_tag if self.probe else gen.s4g_tag
-        self.w_plat = float(gen.S4GP_W_PLAT if self.probe else W_PLAT)
+        self.w_plat = float(
+            gen.S4G_VARIANTS[self.variant].get("w_plat", gen.S4GP_W_PLAT)
+            if self.probe else W_PLAT)
         # the wave's model: the family variant's slug / base model, else
         # the Section-4 surface (Mistral-7B)
         fam = gen.S4G_VARIANTS[self.variant] if self.probe else None
         self.model_slug = fam["slug"] if fam else MODEL_SLUG
         self.base_model = fam["model"]["base_model"] if fam else BASE_MODEL
+        # the innate anchor k and the smoke prefix are per-variant: the
+        # gamma=1 pilot is the only family wave with a full anchor, and
+        # it ships its own smoke prefix
+        self.innate_lambda = float(fam.get("innate_lambda", INNATE_LAMBDA)
+                                   if fam else INNATE_LAMBDA)
         # config pins that hold ONLY on this wave's (fresh) runs: the
         # family pins the strict parser and the Deffuant alpha it runs;
         # the Qwen3-8B scout also pins chat_thinking=False
@@ -597,7 +622,8 @@ class Wave:
             for row in smoke_rows(cond):
                 tag = row.split(",")[0].strip()
                 p = _raw_parse(tag)
-                if p is None or not tag.startswith(SMOKE_SCAN) or \
+                if p is None or \
+                        not tag.startswith(self.smoke_prefix + "_") or \
                         p[5] is not None:
                     raise ValueError(f"generator smoke tag {tag!r} is not in "
                                      f"this checker's smoke grammar")
@@ -639,9 +665,11 @@ class Wave:
 
     def render_tag(self, arm, cond, ea, es, seed, smoke=False, rounds=None):
         """THE generator's tag -- never a local re-implementation."""
-        return self.tag_fn(arm, cond, float(ea), float(es), int(seed),
-                           prefix=SMOKE_PREFIX if smoke
-                           else self.prod_prefix,
+        return self.tag_fn(arm, cond,
+                           ea if ea == "open" else float(ea), float(es),
+                           int(seed),
+                           prefix=(self.smoke_prefix if smoke
+                                   else self.prod_prefix),
                            rounds=rounds)
 
     def self_test_grammar(self, smoke):
@@ -687,14 +715,21 @@ def parse_tag(tag, smoke, wave):
                       f"[_r<HORIZON>]"]
     pre, slug = m.group("pre"), m.group("slug")
     arm, cond = m.group("arm"), TOK_COND[m.group("cond")]
-    ea, es = _unnum(m.group("ea")), _unnum(m.group("es"))
+    ea_tok = m.group("ea")
+    # "eaopen" == AI_GATE_MODE=all_open, which IGNORES the distance --
+    # deliberately NOT the same cell as a numeric ea1 strict gate.
+    ea = "open" if ea_tok == "open" else _unnum(ea_tok)
+    es = _unnum(m.group("es"))
     w, lam = _unnum(m.group("w")), _unnum(m.group("l"))
     seed = int(m.group("seed"))
     horizon = None if m.group("r") is None else int(m.group("r"))
-    if (pre == SMOKE_PREFIX) != bool(smoke):
-        errs.append(f"smoke/production prefix mismatch: prefix {pre!r} with "
-                    f"--smoke={bool(smoke)}; a smoke cell can never stand in "
-                    f"for a production cell (or the reverse)")
+    want_smoke_pre = getattr(wave, "smoke_prefix", SMOKE_PREFIX)
+    if (pre == want_smoke_pre) != bool(smoke):
+        errs.append(f"smoke/production prefix mismatch: prefix {pre!r} "
+                    f"with --smoke={bool(smoke)} (this wave's smoke "
+                    f"prefix is {want_smoke_pre!r}); a smoke cell can "
+                    f"never stand in for a production cell (or the "
+                    f"reverse)")
     elif not smoke and pre != wave.prod_prefix:
         errs.append(f"tag prefix {pre!r} does not belong to the {wave.name} "
                     f"wave (expected {wave.prod_prefix!r}) -- the probe and "
@@ -702,7 +737,8 @@ def parse_tag(tag, smoke, wave):
     if slug != wave.model_slug:
         errs.append(f"model slug {slug!r}; the {wave.name} wave is "
                     f"{wave.model_slug}-only")
-    rebuilt = (f"{pre}_{slug}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}_ea{_num(ea)}"
+    rebuilt = (f"{pre}_{slug}_{arm}_{COND_TOK[cond]}_{OP_TOKEN}"
+               f"_ea{'open' if ea == 'open' else _num(ea)}"
                f"_w{_num(w)}_l{_num(lam)}_es{_num(es)}_s{seed}"
                + ("" if horizon is None else f"_r{horizon}"))
     if rebuilt != tag:
@@ -712,9 +748,10 @@ def parse_tag(tag, smoke, wave):
     if w != wave.w_plat:
         errs.append(f"tag says w{m.group('w')} (= {w:g}); the {wave.name} "
                     f"wave is W_PLAT={wave.w_plat:g}")
-    if lam != INNATE_LAMBDA:
-        errs.append(f"tag says l{m.group('l')} (= {lam:g}); the wave is "
-                    f"INNATE_LAMBDA={INNATE_LAMBDA:g}")
+    if lam != wave.innate_lambda:
+        errs.append(f"tag says l{m.group('l')} (= {lam:g}); the "
+                    f"{wave.name} wave is "
+                    f"INNATE_LAMBDA={wave.innate_lambda:g}")
     if horizon is not None:
         if smoke:
             errs.append(f"smoke tag carries a horizon token _r{horizon}; "
@@ -733,6 +770,7 @@ def parse_tag(tag, smoke, wave):
             errs.append(f"smoke cell must be {want}; got ea{_num(ea)} "
                         f"es{_num(es)} s{seed}")
     else:
+        _g = lambda v: v if isinstance(v, str) else f"{v:g}"  # noqa: E731
         pts = getattr(wave, "points", None)
         hat = getattr(wave, "horizons_at", None)
         if pts is not None and hat is not None and (ea, es) in pts:
@@ -742,22 +780,22 @@ def parse_tag(tag, smoke, wave):
                     ("a bare tag (the base horizon)" if h is None
                      else f"_r{h}") for h in ok_h))
                 errs.append(
-                    f"the ({ea:g}, {es:g}) point of {wave.name} runs at "
+                    f"the ({_g(ea)}, {es:g}) point of {wave.name} runs at "
                     f"{want}, but this tag says "
                     + ("no horizon token" if horizon is None
                        else f"_r{horizon}")
                     + " -- a run at the wrong horizon is a different cell")
         if pts is not None and (ea, es) not in pts:
-            errs.append(f"(eps_ai, eps_social) = ({ea:g}, {es:g}) is not a "
-                        f"point of the {wave.name} grid "
-                        f"{[(f'{a:g}', f'{e:g}') for a, e in pts]} -- this "
+            errs.append(f"(eps_ai, eps_social) = ({_g(ea)}, {es:g}) is not "
+                        f"a point of the {wave.name} grid "
+                        f"{[(_g(a), _g(e)) for a, e in pts]} -- this "
                         f"wave is a CROSS, not a product, so a value that "
                         f"appears on one arm of it is not automatically a "
                         f"cell")
         elif pts is None:
             if ea not in wave.gates:
-                errs.append(f"eps_ai {ea:g} is not in the {wave.name} grid "
-                            f"{list(wave.gates)}")
+                errs.append(f"eps_ai {_g(ea)} is not in the {wave.name} "
+                            f"grid {list(wave.gates)}")
             if es not in wave.ess:
                 errs.append(f"eps_social {es:g} is not in the {wave.name} "
                             f"grid {list(wave.ess)}")
@@ -975,8 +1013,18 @@ def check_one(run_dir, wave, smoke, inspect_archived=False):
 
     # --- 3. GRID FIELDS, TAG vs CONFIG in BOTH directions -------------
     # forward: the config value must equal what the tag says
-    for key, tok, want in (("eps_ai", f"ea{_num(info['ea'])}", info["ea"]),
-                           ("eps", f"es{_num(info['es'])}", info["es"])):
+    grid_fields = [("eps", f"es{_num(info['es'])}", info["es"])]
+    if info["ea"] != "open":
+        grid_fields.insert(0, ("eps_ai", f"ea{_num(info['ea'])}",
+                               info["ea"]))
+    else:
+        # all_open ignores the distance, so config eps_ai carries no
+        # meaning here; what must be true is the MODE, pinned below
+        if cfg.get("ai_gate_mode") != "all_open":
+            bad(f"tag says eaopen (AI_GATE_MODE=all_open) but the config "
+                f"records ai_gate_mode={cfg.get('ai_gate_mode')!r} -- a "
+                f"numeric gate is a different experiment")
+    for key, tok, want in grid_fields:
         got = cfg.get(key, None)
         if got is None or abs(float(got) - want) > 1e-12:
             bad(f"{key}={got!r} but the tag says {tok} (= {want:g}) -- the "

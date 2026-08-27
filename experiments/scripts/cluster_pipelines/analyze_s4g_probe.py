@@ -250,7 +250,7 @@ def main(argv=None):
     for (ea, es, nr) in points:
         for arm in arms:
             r = direct_final[(arm, ea, es, nr)]
-            print(f"{ea:>4g} {es:>4g} {nr:>3} {arm:>3} "
+            print(f"{_g(ea):>4} {es:>4g} {nr:>3} {arm:>3} "
                   f"{r['mae_b_paired']:>13.4f} {r['delta_mu_b']:>+11.4f} "
                   f"{r['w1_b_pair']:>10.4f} {r['max_abs_diff']:>8.4f} "
                   f"{str(r['bit_identical']):>13} | "
@@ -263,10 +263,11 @@ def main(argv=None):
         printed in the header."""
         rows_out = []
         held = "ea" if varying == "es" else "es"
-        held_val = sweep_pts[0][0] if held == "ea" else sweep_pts[0][1]
+        held_val = _g(sweep_pts[0][0] if held == "ea"
+                      else sweep_pts[0][1])
         nr0 = sweep_pts[0][2]
         print(f"\n{LOG} CROSSOVER {label} (late-window mae_b_paired, the "
-              f"final 5 of {nr0} rounds, {held}={held_val:g} held): "
+              f"final 5 of {nr0} rounds, {held}={held_val} held): "
               f"SFT(b0) vs ICL(d8)")
         for (a, e, nr) in sweep_pts:
             mb = direct_final[("b0", a, e, nr)]["mae_b_paired_late"]
@@ -274,15 +275,48 @@ def main(argv=None):
             win = ("null (ICL exactly 0)" if md == 0.0 else
                    "ICL" if md > mb else "SFT")
             ratio = (md / mb) if mb > 0 else float("nan")
-            x = e if varying == "es" else a
+            x = _g(e if varying == "es" else a)
             rows_out.append({"sweep": varying, "eps_ai": a,
                              "eps_social": e, "rounds": nr,
                              "sft_mae_late": mb, "icl_mae_late": md,
+                             "routing_gap_G": md - mb,
                              "icl_over_sft": ratio, "larger": win})
-            print(f"{LOG}   {varying}={x:<4g} SFT {mb:.4f}  ICL {md:.4f}  "
+            print(f"{LOG}   {varying}={x:<4} SFT {mb:.4f}  ICL {md:.4f}  "
                   f"ICL/SFT={ratio:.2f}  -> {win}")
         return rows_out
 
+    def _gap_table(at_round):
+        """G = MAE_ICL - MAE_SFT on the five rounds ENDING at at_round,
+        for every es point. Negative G = SFT routes more of cohort A's
+        influence into B; positive = personal-history ICL does."""
+        w0, w1 = at_round - 5, at_round
+        print(f"\n{LOG} ROUTING GAP G = MAE_ICL - MAE_SFT at ROUND "
+              f"{at_round} (mean over rounds {w0 + 1}-{w1})")
+        print(f"{LOG}   {'es':>5} {'MAE_SFT':>9} {'MAE_ICL':>9} "
+              f"{'G':>10}  sign")
+        out = []
+        for (a, e, nr) in es_pts:
+            if at_round > nr:
+                continue
+            rr = [r for r in direct_rows if r["arm"] == "b0"
+                  and r["es"] == f"{e:g}" and r["rounds"] == nr
+                  and w0 < r["round"] <= w1]
+            dd = [r for r in direct_rows if r["arm"] == "d8"
+                  and r["es"] == f"{e:g}" and r["rounds"] == nr
+                  and w0 < r["round"] <= w1]
+            mb = sum(r["mae_b_paired"] for r in rr) / len(rr)
+            md = sum(r["mae_b_paired"] for r in dd) / len(dd)
+            g = md - mb
+            out.append({"round": at_round, "eps_social": e,
+                        "sft_mae": mb, "icl_mae": md, "routing_gap_G": g,
+                        "icl_exactly_zero": md == 0.0})
+            print(f"{LOG}   {e:>5g} {mb:>9.4f} {md:>9.4f} {g:>+10.4f}  "
+                  + ("ICL > SFT" if g > 0 else
+                     "SFT > ICL" if g < 0 else "equal"))
+        return out
+
+    gap_15 = _gap_table(15)
+    gap_30 = _gap_table(30)
     crossover = _sweep_table("per SOCIAL gate", es_pts, "es")
     if ea_pts:
         crossover += _sweep_table("per AI gate", ea_pts, "ea")
@@ -364,7 +398,7 @@ def main(argv=None):
                 r = per_cell[(cond, arm, ea, es, nr)]
                 sdr = (r["sd_op_b"] / r["sd_tw_b"]
                        if r["sd_tw_b"] > 0 else float("nan"))
-                pt = f"{ea:g}/{es:g}@{nr}"
+                pt = f"{_g(ea)}/{es:g}@{nr}"
                 print(f"{cond:<9} {pt:>11} {arm:>3} "
                       f"{r['signed_b']:>+9.4f} "
                       f"{r['abs_b']:>8.4f} {r['w1_b']:>8.4f} "
@@ -403,6 +437,8 @@ def main(argv=None):
              "rounds": k[3], **direct_final[k]}
             for k in sorted(direct_final, key=str)],
         "horizon_consistency": (verdict_hz if ea_pts else None),
+        "routing_gap_round15": gap_15,
+        "routing_gap_round30": gap_30,
         "contrasts_direct_transmission": direct_verdict,
         "contrasts_platform_vs_twin": verdicts,
         "primary_frame": "direct_transmission (mae_b_paired)",
