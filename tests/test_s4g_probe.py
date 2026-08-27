@@ -818,3 +818,64 @@ def test_submit_script_knows_the_pilot():
     for k in ("section4_gate_anch2_pilot_g1) TARGETS=",
               "section4_gate_anch2_pilot_g1_smoke) TARGETS="):
         assert k in src
+
+
+def build_pilot(root, skip=(), cfg_mut_on=None, cfg_mut=None, smoke=False):
+    p = PILOT
+    ess = (p["smoke_es"],) if smoke else p["ess"]
+    pre = p["smoke_prefix"] if smoke else p["prefix"]
+    nr = p["smoke_rounds"] if smoke else p["rounds"]
+    for cond in CONDS:
+        for arm in ARMS:
+            for es in ess:
+                cell = (arm, cond, es)
+                if cell in skip:
+                    continue
+                build_run(root, arm, cond, es,
+                          cfg_mut=cfg_mut if cell == cfg_mut_on else None,
+                          prefix=pre, rounds=nr, slug=p["slug"],
+                          base_model="Qwen/Qwen3-8B", thinking=False,
+                          ea="open", w=p["w"], lam=p["lam"])
+    return root
+
+
+@pytest.mark.slow
+def test_pilot_g1_checker_runs_end_to_end(tmp_path):
+    """The FULL checker binary, production and smoke -- not just
+    parse_tag. main() touches is_witness/coverage/twin paths that a
+    grammar-only test never reaches, and an all_open gate must not be
+    coerced to a float in any of them."""
+    root = build_pilot(tmp_path / "runs")
+    r = run_checker(root, wave="pilot_g1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PASS" in r.stdout and "20/20 cells present" in r.stdout
+
+    sroot = build_pilot(tmp_path / "smk", smoke=True)
+    r = run_checker(sroot, wave="pilot_g1", extra=("--smoke",))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "4/4 cells present" in r.stdout
+
+
+@pytest.mark.slow
+def test_pilot_g1_threshold_gate_in_the_config_fails(tmp_path):
+    """A cell whose config records a numeric gate is not an all_open
+    cell, however perfect the rest of it looks."""
+    def mut(c):
+        c["ai_gate_mode"] = "threshold"
+    root = build_pilot(tmp_path / "runs", cfg_mut_on=("d8", "fixed", 0.2),
+                       cfg_mut=mut)
+    r = run_checker(root, wave="pilot_g1")
+    assert r.returncode == 1
+    assert "all_open" in r.stdout
+
+
+@pytest.mark.slow
+def test_pilot_g1_wrong_anchor_in_the_config_fails(tmp_path):
+    """k=1 is this wave's defining departure; a 0.2 anchor must fail."""
+    def mut(c):
+        c["innate_lambda"] = 0.2
+    root = build_pilot(tmp_path / "runs", cfg_mut_on=("b0", "evolving", 1.0),
+                       cfg_mut=mut)
+    r = run_checker(root, wave="pilot_g1")
+    assert r.returncode == 1
+    assert "innate_lambda" in r.stdout

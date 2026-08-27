@@ -399,7 +399,14 @@ DAYS_PREFIX = ("This user's own opinion of {target} movies over the most "
 # ------------------------------------------------------------- grammar
 def _num(v):
     """float -> the tag's number grammar. Mirrors gen_pofd_sweep._num:
-    0.2 -> '0p2', 1.0 -> '1', 0.0 -> '0'."""
+    0.2 -> '0p2', 1.0 -> '1', 0.0 -> '0'.
+
+    A gate MODE token ("open", i.e. AI_GATE_MODE=all_open) is not a
+    number and passes through unchanged, so every caller that formats a
+    cell -- tags, coverage lines, pair names -- prints it as itself
+    instead of crashing on float("open")."""
+    if isinstance(v, str):
+        return v
     return f"{float(v):g}".replace(".", "p")
 
 
@@ -660,6 +667,11 @@ class Wave:
         return None
 
     def is_witness(self, arm, cond, ea, es, seed):
+        # a WITNESS is a NUMERIC eps_AI = 0 cell (the strict gate never
+        # opens). An all_open gate is the opposite extreme and is never
+        # a witness, so it must not be coerced to a float here.
+        if ea == "open":
+            return False
         return float(ea) == 0.0 and (arm, cond, float(es), int(seed)) \
             in self.witness
 
