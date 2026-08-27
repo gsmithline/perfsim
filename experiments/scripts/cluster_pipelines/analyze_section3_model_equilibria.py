@@ -81,6 +81,37 @@ def _find(tag, roots):
     return None
 
 
+def _stochastic_stats(op, late_window):
+    """Statistics that DO NOT presume a flat trajectory, for sampled
+    serving. A sampled process fluctuates round to round, so the honest
+    summary is the final value AND a windowed mean with the temporal
+    variability that window actually shows -- never a single number
+    presented as an equilibrium.
+
+      round30_mean        the last round's post-peer population mean
+      late_mean           mean of the last `late_window` round means
+      temporal_sd         SD ACROSS those round means (round-to-round
+                          fluctuation of the population mean)
+      late_drift          second half minus first half of the window
+      pop_sd_final        SD ACROSS AGENTS in the last round
+      pop_sd_late         mean across the window of the per-round agent SD
+    """
+    op = np.asarray(op, dtype=float)
+    means = op.mean(axis=1)
+    tail = means[-late_window:]
+    half = late_window // 2
+    return {
+        "round30_mean": float(means[-1]),
+        "late_mean": float(tail.mean()),
+        "temporal_sd": float(tail.std(ddof=1)) if len(tail) > 1 else 0.0,
+        "late_min": float(tail.min()), "late_max": float(tail.max()),
+        "late_drift": float(tail[-half:].mean() - tail[:half].mean()),
+        "pop_sd_final": float(op[-1].std()),
+        "pop_sd_late": float(np.mean(op[-late_window:].std(axis=1))),
+        "late_window": int(late_window),
+    }
+
+
 def _cell_stats(op, pred, window):
     op = np.asarray(op, dtype=float)
     pred = np.asarray(pred, dtype=float)
@@ -147,14 +178,25 @@ class WaveCfg:
     three-seed interval are defined once -- and differ only in which
     tags/constants they resolve."""
 
-    def __init__(self, name, g):
+    def __init__(self, name, g, arm="greedy"):
         self.name = name
+        self.decode = arm
+        # SAMPLED SERVING IS A FLUCTUATING PROCESS. A sampled trajectory
+        # need not be flat, so this analysis does NOT apply the settling
+        # gate to it and does not call it an equilibrium: it reports the
+        # round-30 value AND a final-ten-round mean with its temporal
+        # variability beside it. Greedy keeps the original convergence
+        # treatment.
+        self.stochastic = (name == "icl" and arm == "sample_t1")
         if name == "icl":
             self.models, self.seeds = g.S3I_MODELS, g.S3I_SEEDS
             self.rounds = g.S3I_ROUNDS
-            self.cell_tag = g.s3i_cell_tag
-            self.key = g.S3I_KEY
-            self.arm_label = "personal-history ICL"
+            self.cell_tag = (lambda m, sd, _a=arm:
+                             g.s3i_cell_tag(m, sd, _a))
+            self.key = g.s3i_arm_key(arm)
+            self.arm_label = (
+                "personal-history ICL (greedy)" if arm == "greedy"
+                else "personal-history ICL (sampled, $T{=}1$)")
         else:
             self.models, self.seeds = g.S3M_MODELS, g.S3M_SEEDS
             self.rounds = g.S3M_ROUNDS
@@ -192,6 +234,15 @@ def main():
                     help="sft = the reference-regularized wave (the "
                          "published Figure 3(a); DEFAULT); icl = the "
                          "frozen personal-history analogue")
+    ap.add_argument("--decode", default="greedy",
+                    choices=("greedy", "sample_t1"),
+                    help="icl only: which decoding arm. greedy is the "
+                         "main-paper result; sample_t1 is the robustness "
+                         "arm and is reported WITHOUT a settling "
+                         "requirement (a sampled process fluctuates).")
+    ap.add_argument("--late-window", type=int, default=10,
+                    help="sampled arm: rounds averaged for the "
+                         "final-window mean and its temporal variability")
     ap.add_argument("--run-root", action="append", default=None)
     ap.add_argument("--gate-json", required=True)
     ap.add_argument("--out-dir", default=None)
@@ -221,10 +272,10 @@ def main():
 
     roots = [Path(r) for r in (args.run_root or DEFAULT_RUN_ROOTS)]
     g = _load_gen()
-    w = WaveCfg(args.wave, g)
+    w = WaveCfg(args.wave, g, args.decode)
     out = Path(args.out_dir) if args.out_dir else (
         DEFAULT_OUT if args.wave == "sft"
-        else REPO / "notes" / "pofd" / "section3_model_icl")
+        else REPO / "notes" / "pofd" / f"section3_model_icl_{args.decode}")
     out.mkdir(parents=True, exist_ok=True)
     why = gate_binds_wave(verdict, g, w)
     if why:
@@ -252,6 +303,7 @@ def main():
                                f"{pred.shape[0]} != {w.rounds})")
                 continue
             stats = _cell_stats(op, pred, args.window)
+            sto = _stochastic_stats(op, args.late_window)
             innate = torch.as_tensor(d["innate"]).float().numpy()
             innate_means.append(float(innate.mean()))
             rows.append({
@@ -272,6 +324,17 @@ def main():
                 "parse_mode": (d.get("config", {}) or {}).get("parse_mode",
                                                               "legacy"),
                 "consensus": stats["final_sd"] <= args.consensus_sd_tol,
+                # sampled-serving columns: always computed, so the greedy
+                # and sampled CSVs are directly comparable
+                "round30_mean": f"{sto['round30_mean']:.8f}",
+                "late_mean": f"{sto['late_mean']:.8f}",
+                "temporal_sd": f"{sto['temporal_sd']:.8f}",
+                "late_drift": f"{sto['late_drift']:.8f}",
+                "late_min": f"{sto['late_min']:.8f}",
+                "late_max": f"{sto['late_max']:.8f}",
+                "pop_sd_final": f"{sto['pop_sd_final']:.8f}",
+                "pop_sd_late": f"{sto['pop_sd_late']:.8f}",
+                "late_window": sto["late_window"],
                 "git_sha": (d.get("config", {}) or {}).get("git_sha"),
                 "path": str(path),
                 "served_distinct": stats["served_distinct"],
@@ -323,13 +386,28 @@ def main():
         writer.writeheader()
         writer.writerows(model_rows)
 
-    unsettled = [r for r in rows if not r["converged"]
-                 and not r["accepted_limit_cycle"]]
-    cyclic_rows = [r for r in rows if r["cyclic"]
-                   and not r["accepted_limit_cycle"]]
+    # A SAMPLED process is not required to settle. Reporting it as
+    # "unsettled" would be true but useless, and refusing to write it
+    # would silently drop the robustness arm; instead the settling
+    # verdicts are recorded per cell and excluded from the refusal.
+    if w.stochastic:
+        unsettled, cyclic_rows = [], []
+    else:
+        unsettled = [r for r in rows if not r["converged"]
+                     and not r["accepted_limit_cycle"]]
+        cyclic_rows = [r for r in rows if r["cyclic"]
+                       and not r["accepted_limit_cycle"]]
     nonconsensus = [r for r in rows if not r["consensus"]]
     summary = {
         "gated": True,
+        "decode": w.decode,
+        "stochastic_arm": w.stochastic,
+        "settling_required": not w.stochastic,
+        "sampled_note": (
+            "sampled serving fluctuates: the settling gate is NOT applied "
+            "and no single number here is called an equilibrium; read "
+            "late_mean with temporal_sd beside it"
+            if w.stochastic else None),
         "gate_json": str(gate_path),
         "gate_n_cells": verdict.get("n_cells"),
         "git_sha": gate_shas,

@@ -34,8 +34,15 @@ PIPE = os.path.join(REPO, "experiments", "scripts", "cluster_pipelines")
 CHECKER = os.path.join(PIPE, "check_section3_model_icl.py")
 
 # ------------------------------------------------- contract (restated)
-KEY = "section3_model_icl"
-SMOKE_KEY = "section3_model_icl_smoke"
+ARMS = ("greedy", "sample_t1")
+DECODE = {"greedy": {"do_sample": "0", "temp": None},
+          "sample_t1": {"do_sample": "1", "temp": "1"}}
+KEY = "section3_model_icl_greedy"
+SMOKE_KEY = "section3_model_icl_greedy_smoke"
+
+
+def key_for(arm, smoke=False):
+    return f"section3_model_icl_{arm}" + ("_smoke" if smoke else "")
 PREFIX, SMOKE_PREFIX = "pofds3i", "pofds3ismk"
 MODELS = ("qwen7b", "qwen3_8b", "olmo7b", "olmo3_7b",
           "mistral7b", "ministral8b")
@@ -57,9 +64,9 @@ _G = torch.Generator().manual_seed(20260827)
 INNATE = torch.rand(N, generator=_G)
 
 
-def tag_for(model, seed, rounds=ROUNDS, smoke=False):
+def tag_for(model, seed, arm="greedy", rounds=ROUNDS, smoke=False):
     pre = SMOKE_PREFIX if smoke else PREFIX
-    return (f"{pre}_{model}_d8_sw{SWEEPS}_eaopen_w1_k1_esopen_anch2"
+    return (f"{pre}_{model}_d8_{arm}_sw{SWEEPS}_eaopen_w1_k1_esopen_anch2"
             f"_s{seed}_r{rounds}")
 
 
@@ -77,9 +84,10 @@ def _cols(key):
 
 
 # ------------------------------------------------ emitted artifacts
-def test_production_grid_is_six_models_by_three_seeds():
-    cols, sub = _cols(KEY)
-    rows = _rows(KEY)
+@pytest.mark.parametrize("arm", ARMS)
+def test_production_grid_is_six_models_by_three_seeds(arm):
+    cols, sub = _cols(key_for(arm))
+    rows = _rows(key_for(arm))
     assert len(rows) == 18
     got = set()
     for r in rows:
@@ -94,13 +102,14 @@ def test_production_grid_is_six_models_by_three_seeds():
         assert d["nrounds"] == str(ROUNDS)
         assert d["pop"] == "ab" and d["mode"] == "loop"
         model = next(m for m in MODELS if d["basemodel"] == BASE[m])
-        assert d["tag"] == tag_for(model, int(d["seed"]))
+        assert d["tag"] == tag_for(model, int(d["seed"]), arm)
         got.add((model, int(d["seed"])))
     assert got == {(m, s) for m in MODELS for s in SEEDS}
 
 
-def test_environment_is_the_icl_arm():
-    _, sub = _cols(KEY)
+@pytest.mark.parametrize("arm", ARMS)
+def test_environment_is_the_icl_arm(arm):
+    _, sub = _cols(key_for(arm))
     env = next(l for l in sub.splitlines() if l.startswith("environment"))
     for tok in ("ICL_DAYS=8 ", "SFT_EPOCHS=0 ", "PARSE_MODE=strict",
                 "AI_GATE_MODE=all_open", "PEER_GATE_MODE=all_open",
@@ -112,15 +121,20 @@ def test_environment_is_the_icl_arm():
     # the SFT wave's optimizer settings must NOT survive into this one
     assert "SFT_EPOCHS=1" not in env
     assert "ICL_DAYS=0" not in env
-    assert "check_section3_model_icl.py" in sub
+    # THE DECODING ARM, pinned explicitly rather than left to a default
+    assert f"DO_SAMPLE={DECODE[arm]['do_sample']}" in env
+    assert ("GEN_TEMPERATURE=1" in env) == (arm == "sample_t1")
+    assert f"check_section3_model_icl.py --arm {arm}" in sub \
+        or f"--smoke --arm {arm}" in sub
 
 
-def test_smoke_is_one_three_round_mistral_cell():
-    rows = _rows(SMOKE_KEY)
+@pytest.mark.parametrize("arm", ARMS)
+def test_smoke_is_one_three_round_mistral_cell(arm):
+    rows = _rows(key_for(arm, True))
     assert len(rows) == 1
-    cols, _ = _cols(SMOKE_KEY)
+    cols, _ = _cols(key_for(arm, True))
     d = dict(zip(cols, [x.strip() for x in rows[0].split(",")]))
-    assert d["tag"] == tag_for(SMOKE_MODEL, SMOKE_SEED, SMOKE_ROUNDS,
+    assert d["tag"] == tag_for(SMOKE_MODEL, SMOKE_SEED, arm, SMOKE_ROUNDS,
                                smoke=True)
     assert d["nrounds"] == str(SMOKE_ROUNDS)
     assert d["basemodel"] == BASE[SMOKE_MODEL]
@@ -128,8 +142,15 @@ def test_smoke_is_one_three_round_mistral_cell():
 
 
 def test_tags_never_collide_with_the_sft_wave():
-    mine = {r.split(",")[0].strip() for r in _rows(KEY)}
-    mine |= {r.split(",")[0].strip() for r in _rows(SMOKE_KEY)}
+    mine = set()
+    for arm in ARMS:
+        for sm in (False, True):
+            mine |= {r.split(",")[0].strip()
+                     for r in _rows(key_for(arm, sm))}
+    assert len(mine) == 38, "18 x 2 production + 2 smokes"
+    greedy = {t for t in mine if "_greedy_" in t}
+    samp = {t for t in mine if "_sample_t1_" in t}
+    assert len(greedy) == 19 and len(samp) == 19 and not (greedy & samp)
     others = set()
     for f in os.listdir(CONDOR):
         if f.startswith("configs_pofd_") and "model_icl" not in f:
@@ -143,9 +164,11 @@ def test_tags_never_collide_with_the_sft_wave():
                for t in mine)
 
 
-def test_submit_script_knows_the_wave():
+def test_submit_script_knows_both_arms():
     src = open(os.path.join(CONDOR, "submit_pofd_sweep.sh")).read()
-    assert "section3_model_icl|section3_model_icl_smoke) TARGETS=" in src
+    for arm in ARMS:
+        assert (f"section3_model_icl_{arm}|section3_model_icl_{arm}"
+                f"_smoke) TARGETS=") in src
 
 
 # -------------------------------------------------- synthetic runs
@@ -155,10 +178,10 @@ def render_days(vals):
             + ", ".join(f"{v:.2f}" for v in vals) + ".")
 
 
-def build_run(root, model, seed, rounds=ROUNDS, smoke=False, cfg_mut=None,
-              days_mut=None, raw_mut=None, extra_files=(),
-              traj_mut=None):
-    tag = tag_for(model, seed, rounds, smoke)
+def build_run(root, model, seed, arm="greedy", rounds=ROUNDS, smoke=False,
+              cfg_mut=None, days_mut=None, raw_mut=None, extra_files=(),
+              traj_mut=None, pred_jitter=0.0):
+    tag = tag_for(model, seed, arm, rounds, smoke)
     d = os.path.join(str(root), tag)
     os.makedirs(d, exist_ok=True)
     op, pred = [], []
@@ -166,7 +189,10 @@ def build_run(root, model, seed, rounds=ROUNDS, smoke=False, cfg_mut=None,
     for t in range(rounds):
         x = x + 0.05 * ((0.5 + 0.0001 * seed) - x)
         op.append(x.clone())
-        pred.append(torch.full((N,), 0.55))
+        # a sampled arm's served vector must depend on the seed; a
+        # greedy arm's round-0 vector must not
+        pred.append(torch.full((N,), 0.55)
+                    + (pred_jitter * seed * (t + 1)))
     op_t, pred_t = torch.stack(op), torch.stack(pred)
     cfg = {
         "run_tag": tag, "base_model": BASE[model], "dataset": "movielens",
@@ -178,11 +204,13 @@ def build_run(root, model, seed, rounds=ROUNDS, smoke=False, cfg_mut=None,
         "population_update": "nested_ai_anchored_then_social_v2",
         "pop_model": "ab", "train_cap": N, "n_labeled": N,
         "seed_base_data": True, "save_raw_gen": True,
-        "serve_eval_mode": True, "do_sample": False,
+        "serve_eval_mode": True,
+        "do_sample": arm == "sample_t1",
         "training_style": "frozen", "kl_beta": 0.0, "use_lora": False,
         "fresh_each_round": False, "sft_epochs": 0,
         "icl_k": 0, "icl_days": ICL_DAYS, "parse_mode": "strict",
         "git_sha": "0123456789abcdef0123456789abcdef01234567",
+        **({"gen_temperature": 1.0} if arm == "sample_t1" else {}),
         "chat_thinking": False if model == "qwen3_8b" else None,
     }
     if cfg_mut:
@@ -232,35 +260,39 @@ def build_run(root, model, seed, rounds=ROUNDS, smoke=False, cfg_mut=None,
     return d
 
 
-def build_wave(root, **kw):
+def build_wave(root, arm="greedy", **kw):
+    # the sampled arm's served vectors must differ across seeds
+    kw.setdefault("pred_jitter", 1e-4 if arm == "sample_t1" else 0.0)
     for m in MODELS:
         for s in SEEDS:
-            build_run(root, m, s, **kw)
+            build_run(root, m, s, arm, **kw)
     return root
 
 
-def run_checker(root, extra=()):
+def run_checker(root, extra=(), arm="greedy"):
     env = dict(os.environ, USE_TF="0")
     return subprocess.run(
-        [sys.executable, CHECKER, "--run-root", str(root)] + list(extra),
-        capture_output=True, text=True, env=env, cwd=REPO)
+        [sys.executable, CHECKER, "--run-root", str(root), "--arm", arm]
+        + list(extra), capture_output=True, text=True, env=env, cwd=REPO)
 
 
 # ------------------------------------------------------------ healthy
 @pytest.mark.slow
-def test_full_wave_passes(tmp_path):
-    root = build_wave(tmp_path / "runs")
-    r = run_checker(root)
+@pytest.mark.parametrize("arm", ARMS)
+def test_full_wave_passes(tmp_path, arm):
+    root = build_wave(tmp_path / "runs", arm)
+    r = run_checker(root, arm=arm)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "18/18 cells PASS" in r.stdout
     assert "byte-exact" in r.stdout
 
 
 @pytest.mark.slow
-def test_smoke_passes(tmp_path):
+@pytest.mark.parametrize("arm", ARMS)
+def test_smoke_passes(tmp_path, arm):
     root = tmp_path / "smk"
-    build_run(root, SMOKE_MODEL, SMOKE_SEED, SMOKE_ROUNDS, smoke=True)
-    r = run_checker(root, extra=("--smoke",))
+    build_run(root, SMOKE_MODEL, SMOKE_SEED, arm, SMOKE_ROUNDS, smoke=True)
+    r = run_checker(root, extra=("--smoke",), arm=arm)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "1/1 cells PASS" in r.stdout
 
@@ -429,3 +461,65 @@ def test_two_git_shas_across_the_wave_fails(tmp_path):
     r = run_checker(root)
     assert r.returncode == 1
     assert "distinct git_sha" in r.stdout
+
+
+# --------------------------------------------- the decoding evidence
+@pytest.mark.slow
+def test_sampled_seeds_sharing_a_served_vector_fails(tmp_path):
+    """If the seed never reached the sampler, the three 'replicates' are
+    one observation. pred_jitter=0 makes every seed serve the same
+    vector, which is exactly that failure."""
+    root = build_wave(tmp_path / "runs", "sample_t1", pred_jitter=0.0)
+    r = run_checker(root, arm="sample_t1")
+    assert r.returncode == 1
+    assert "DECODE" in r.stdout and "did not reach the sampler" in r.stdout
+
+
+@pytest.mark.slow
+def test_greedy_seeds_disagreeing_at_round_zero_fails(tmp_path):
+    """Greedy decoding on frozen weights with innate-only round-0
+    prompts must be seed-invariant at round 0."""
+    root = build_wave(tmp_path / "runs", "greedy", pred_jitter=1e-3)
+    r = run_checker(root, arm="greedy")
+    assert r.returncode == 1
+    assert "disagree at ROUND 0" in r.stdout
+
+
+@pytest.mark.slow
+def test_wrong_decoder_in_the_config_fails(tmp_path):
+    """A greedy cell whose config says it sampled -- and the reverse --
+    is not the arm its tag claims."""
+    def mut(c):
+        c["do_sample"] = True
+    root = tmp_path / "a"
+    build_run(root, "qwen7b", 0, "greedy", cfg_mut=mut)
+    r = run_checker(root, arm="greedy")
+    assert r.returncode == 1 and "do_sample" in r.stdout
+
+    def mut2(c):
+        c["do_sample"] = False
+    root2 = tmp_path / "b"
+    build_run(root2, "qwen7b", 0, "sample_t1", cfg_mut=mut2)
+    r = run_checker(root2, arm="sample_t1")
+    assert r.returncode == 1 and "do_sample" in r.stdout
+
+
+@pytest.mark.slow
+def test_wrong_sampling_temperature_fails(tmp_path):
+    def mut(c):
+        c["gen_temperature"] = 0.7
+    root = tmp_path / "runs"
+    build_run(root, "qwen7b", 0, "sample_t1", cfg_mut=mut)
+    r = run_checker(root, arm="sample_t1")
+    assert r.returncode == 1
+    assert "gen_temperature" in r.stdout
+
+
+@pytest.mark.slow
+def test_arm_tags_are_not_interchangeable(tmp_path):
+    """A greedy run dir cannot satisfy a sampled cell: the tags differ,
+    so the sampled gate reports its own cells absent."""
+    root = build_wave(tmp_path / "runs", "greedy")
+    r = run_checker(root, arm="sample_t1")
+    assert r.returncode == 1
+    assert "absent" in r.stdout.lower()

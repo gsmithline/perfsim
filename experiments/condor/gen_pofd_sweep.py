@@ -9195,7 +9195,32 @@ queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, ga
 # informative screen for a wave whose whole parsing story is "strict, no
 # exceptions" -- and 3 rounds is enough to exercise the personal-history
 # window filling up (innate, then two post-peer rounds).
-S3I_KEY = "section3_model_icl"
+#
+# TWO DECODING ARMS (2026-08-27, user). The wave ships greedy and
+# sampled serving as SEPARATE keys with EXPLICIT tag tokens, because
+# they are different experiments and a tag that does not say which one
+# it is cannot be audited:
+#   greedy     DO_SAMPLE=0  -- the MAIN-PAPER arm. Deterministic given
+#              the prompt, so with frozen weights round 0 is identical
+#              across seeds and the three-seed interval measures the
+#              PEER SWEEP's stochasticity alone.
+#   sample_t1  DO_SAMPLE=1, GEN_TEMPERATURE=1.0 -- ROBUSTNESS. One draw
+#              per agent per round from the model's own label
+#              distribution (run_pokec_gated_lm: "DO_SAMPLE=1 draws ONE
+#              sample per agent"), so seeds differ from round 0 onward.
+# SEED CONTROLS SAMPLING. run_pokec_gated_lm calls torch.manual_seed(seed)
+# before the loop and the Deffuant sweep draws from its OWN generator
+# (seed + 424243), so on the frozen arm the global stream is consumed by
+# generation alone: same seed -> same draws, different seed -> different
+# draws. The checker turns that into evidence rather than trusting it --
+# it requires the three sampled seeds to differ in pred_raw and the three
+# greedy seeds to AGREE at round 0.
+S3I_ARMS = ("greedy", "sample_t1")
+S3I_DECODE = {
+    "greedy":    dict(tok="greedy", do_sample=0, temperature=None),
+    "sample_t1": dict(tok="sample_t1", do_sample=1, temperature=1.0),
+}
+S3I_KEY = "section3_model_icl"          # the umbrella name; per-arm keys below
 S3I_SMOKE_KEY = "section3_model_icl_smoke"
 S3I_PREFIX = "pofds3i"
 S3I_SMOKE_PREFIX = "pofds3ismk"
@@ -9215,19 +9240,28 @@ S3I_ARM = "d8"
 S3I_N_TOTAL = 18                 # 6 models x 3 seeds
 
 
-def s3i_tag(model, seed, rounds=S3I_ROUNDS, smoke=False):
+def s3i_arm_key(arm, smoke=False):
+    return f"{S3I_KEY}_{arm}" + ("_smoke" if smoke else "")
+
+
+def s3i_tag(model, seed, arm="greedy", rounds=S3I_ROUNDS, smoke=False):
+    """pofds3i_{model}_d8_{greedy|sample_t1}_sw100_eaopen_w1_k1_esopen
+    _anch2_s{seed}_r{rounds}. The decoding arm is IN THE TAG: a greedy
+    and a sampled cell of the same model/seed are different objects."""
+    assert arm in S3I_ARMS, arm
     pre = S3I_SMOKE_PREFIX if smoke else S3I_PREFIX
-    return (f"{pre}_{model}_{S3I_ARM}_sw{S3I_SWEEPS}_eaopen_w1_k1"
+    return (f"{pre}_{model}_{S3I_ARM}_{S3I_DECODE[arm]['tok']}"
+            f"_sw{S3I_SWEEPS}_eaopen_w1_k1"
             f"_esopen_{S3_OP_TOKEN}_s{seed}_r{rounds}")
 
 
-def s3i_cell_tag(model, seed):
+def s3i_cell_tag(model, seed, arm="greedy"):
     """The tag the checker/analyzer resolve for a production cell. No
     rerun/exemption machinery exists on this wave by design."""
-    return s3i_tag(model, seed)
+    return s3i_tag(model, seed, arm)
 
 
-def s3i_row(model, seed, rounds=S3I_ROUNDS, smoke=False):
+def s3i_row(model, seed, arm="greedy", rounds=S3I_ROUNDS, smoke=False):
     """One row. The ARM columns come from REACH_ARM_COLS["d8"] -- the
     same frozen personal-history envelope Section 4 uses -- so the arm
     is defined in exactly one place."""
@@ -9236,7 +9270,7 @@ def s3i_row(model, seed, rounds=S3I_ROUNDS, smoke=False):
     assert a["style"] == "frozen" and a["uselora"] == 0 and \
         a["iclk"] == 0 and a["fresh"] == 0, a
     return ROW_PS.format(
-        tag=s3i_tag(model, seed, rounds, smoke), style=a["style"],
+        tag=s3i_tag(model, seed, arm, rounds, smoke), style=a["style"],
         beta=a["beta"], seed=seed,
         es=f"{S3_EPS_SOCIAL:g}", wplat=f"{S3I_BETA:g}",
         lam=f"{S3I_GAMMA:g}", kldir="forward", sweeps=S3I_SWEEPS,
@@ -9246,30 +9280,42 @@ def s3i_row(model, seed, rounds=S3I_ROUNDS, smoke=False):
         mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
 
 
-def s3i_rows():
-    return [s3i_row(model, seed) for model in S3I_MODELS
-            for seed in S3I_SEEDS if (model, seed) not in S3I_REUSED]
+def s3i_rows(arm="greedy"):
+    return [s3i_row(model, seed, arm) for model in S3I_MODELS
+            for seed in S3I_SEEDS
+            if (model, seed, arm) not in S3I_REUSED]
 
 
-def s3i_smoke_rows():
-    return [s3i_row(S3I_SMOKE_MODEL, S3I_SMOKE_SEED,
+def s3i_smoke_rows(arm="greedy"):
+    return [s3i_row(S3I_SMOKE_MODEL, S3I_SMOKE_SEED, arm,
                     rounds=S3I_SMOKE_ROUNDS, smoke=True)]
 
 
-def s3i_sub(smoke=False):
+def s3i_sub(arm="greedy", smoke=False):
     """The S3M sub with the ICL arm's environment. Rendered from the
     SAME template so the two waves cannot drift apart on any field the
     comparison depends on; every ICL-specific substitution is asserted,
     so a template change that silently drops one is a build error."""
-    key = S3I_SMOKE_KEY if smoke else S3I_KEY
-    rows = s3i_smoke_rows() if smoke else s3i_rows()
-    kind = ("3-ROUND MISTRAL-7B SMOKE (personal-history ICL)" if smoke
-            else "OPEN-GATE CROSS-MODEL EQUILIBRIA, PERSONAL-HISTORY ICL")
+    dec = S3I_DECODE[arm]
+    key = s3i_arm_key(arm, smoke)
+    rows = s3i_smoke_rows(arm) if smoke else s3i_rows(arm)
+    what = ("GREEDY (main paper)" if arm == "greedy"
+            else "SAMPLED T=1.0 (robustness)")
+    kind = (f"3-ROUND MISTRAL-7B SMOKE, {what}" if smoke
+            else f"OPEN-GATE CROSS-MODEL EQUILIBRIA, PERSONAL-HISTORY "
+                 f"ICL -- {what}")
+    # DO_SAMPLE is pinned EXPLICITLY on both arms rather than left to the
+    # runner default, because "which decoder ran" is the whole point of
+    # the split and a default is not a record.
+    dec_env = f" DO_SAMPLE={dec['do_sample']}"
+    if dec["temperature"] is not None:
+        dec_env += f" GEN_TEMPERATURE={dec['temperature']:g}"
     sub = S3M_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
         rounds=S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS,
-        kind=kind, gateflag=(" --smoke" if smoke else ""),
-        extra_env=" PARSE_MODE=strict")
+        kind=kind, gateflag=(" --smoke" if smoke else "")
+        + f" --arm {arm}",
+        extra_env=" PARSE_MODE=strict" + dec_env)
     for old, new in (
             # the arm: own history, no optimizer, no cross-user exemplars
             ("ICL_DAYS=0 ", f"ICL_DAYS={S3I_ICL_DAYS} "),
@@ -9287,6 +9333,8 @@ def s3i_sub(smoke=False):
         assert sub.count(old) == 1, ("S3I sub substitution missing", old)
         sub = sub.replace(old, new)
     assert "ICL_K=$(iclk)" in sub and "USE_LORA=$(uselora)" in sub
+    assert f"DO_SAMPLE={dec['do_sample']}" in sub
+    assert ("GEN_TEMPERATURE=1" in sub) == (arm == "sample_t1")
     return sub
 
 
@@ -14328,49 +14376,58 @@ def main():
         _s3mrs_sub
 
     # ---- Section-3 PERSONAL-HISTORY ICL analogue of Figure 3(a) --------
+    # ---- two decoding arms: greedy (main paper) + sampled T=1 (robust) --
     _s3i_prior = {r.split(",")[0].strip()
                   for rows in files.values() for r in rows}
-    rows_s3i = s3i_rows()
-    assert len(rows_s3i) == S3I_N_TOTAL == 18, len(rows_s3i)
-    assert not S3I_REUSED, "reuse must be evidenced by an audit"
-    _s3i_seen = set()
-    for _r in rows_s3i + s3i_smoke_rows():
-        _c = [x.strip() for x in _r.split(",")]
-        # the ARM: frozen, no LoRA, no cross-user exemplars
-        assert _c[1] == "frozen" and _c[2] == "0", ("frozen, no KL", _r)
-        assert _c[19] == "0", ("USE_LORA must be 0", _r)
-        assert _c[17] == "0", ("ICL_K must be 0 -- no cross-agent "
-                               "exemplars", _r)
-        assert _c[20] == "0", ("FRESH_EACH_ROUND is meaningless with no "
-                               "adapter", _r)
-        # the SURFACE: byte-matched to S3M
-        assert _c[11] == f"{S3I_BETA:g}" and _c[14] == f"{S3I_GAMMA:g}", _r
-        assert _c[16] == str(S3I_SWEEPS) and _c[10] == "0.0", _r
-        assert _c[0].startswith((S3I_PREFIX + "_", S3I_SMOKE_PREFIX + "_"))
-        assert f"_{S3I_ARM}_" in _c[0] and "_eaopen_" in _c[0] \
-            and "_esopen_" in _c[0] and f"_{S3_OP_TOKEN}_" in _c[0], _c[0]
-        assert _c[0] not in _s3i_prior, ("S3I tag collides", _c[0])
-        _s3i_seen.add(_c[0])
-    assert len(_s3i_seen) == S3I_N_TOTAL + 1
-    # every S3M tag stays distinct: the two waves are compared, never merged
+    _s3i_all = set()
+    for _arm in S3I_ARMS:
+        _dec = S3I_DECODE[_arm]
+        _rows = s3i_rows(_arm)
+        assert len(_rows) == S3I_N_TOTAL == 18, (_arm, len(_rows))
+        for _r in _rows + s3i_smoke_rows(_arm):
+            _c = [x.strip() for x in _r.split(",")]
+            # the ARM: frozen, no optimizer, no cross-user exemplars
+            assert _c[1] == "frozen" and _c[2] == "0", ("frozen, no KL", _r)
+            assert _c[19] == "0" and _c[20] == "0", ("no LoRA", _r)
+            assert _c[17] == "0", ("ICL_K must be 0", _r)
+            # the SURFACE: byte-matched to S3M
+            assert _c[11] == f"{S3I_BETA:g}" and _c[14] == f"{S3I_GAMMA:g}"
+            assert _c[16] == str(S3I_SWEEPS) and _c[10] == "0.0", _r
+            # the DECODING ARM is in the tag
+            assert f"_{S3I_ARM}_{_dec['tok']}_" in _c[0], (_arm, _c[0])
+            assert _c[0].startswith((S3I_PREFIX + "_",
+                                     S3I_SMOKE_PREFIX + "_"))
+            assert "_eaopen_" in _c[0] and "_esopen_" in _c[0] \
+                and f"_{S3_OP_TOKEN}_" in _c[0], _c[0]
+            assert _c[0] not in _s3i_prior, ("S3I tag collides", _c[0])
+            _s3i_all.add(_c[0])
+        for _smoke in (False, True):
+            _key = s3i_arm_key(_arm, _smoke)
+            _sub = s3i_sub(_arm, smoke=_smoke)
+            _env = next(l for l in _sub.splitlines()
+                        if l.startswith("environment"))
+            assert "ICL_DAYS=8" in _env and "SFT_EPOCHS=0" in _env \
+                and "PARSE_MODE=strict" in _env \
+                and "AI_GATE_MODE=all_open" in _env \
+                and "PEER_GATE_MODE=all_open" in _env \
+                and "AI_GATE_REFERENCE=anchor" in _env \
+                and "DEFFUANT_ALPHA=0.5" in _env, _key
+            assert f"DO_SAMPLE={_dec['do_sample']}" in _env, _key
+            assert ("GEN_TEMPERATURE=1" in _env) == (_arm == "sample_t1")
+            p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
+            files[p] = s3i_smoke_rows(_arm) if _smoke else s3i_rows(_arm)
+            expected[p] = len(files[p])
+            cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    # 6 models x 3 seeds x 2 arms = 36 production + 2 smokes
+    assert len(_s3i_all) == S3I_N_TOTAL * 2 + 2 == 38, len(_s3i_all)
+    # the two arms never share a tag, and neither touches the SFT wave
+    _greedy = {t for t in _s3i_all if "_greedy_" in t}
+    _samp = {t for t in _s3i_all if "_sample_t1_" in t}
+    assert len(_greedy) == 19 and len(_samp) == 19
+    assert not (_greedy & _samp)
     _s3m_all = {s3m_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
     _s3m_all |= {s3m_cell_tag(m, s) for m in S3M_MODELS for s in S3M_SEEDS}
-    assert not (_s3i_seen & _s3m_all)
-    for _key, _rows, _smoke in ((S3I_KEY, rows_s3i, False),
-                                (S3I_SMOKE_KEY, s3i_smoke_rows(), True)):
-        p = os.path.join(HERE, f"configs_pofd_{_key}.txt")
-        files[p] = _rows
-        expected[p] = len(_rows)
-        _sub = s3i_sub(smoke=_smoke)
-        _env = next(l for l in _sub.splitlines()
-                    if l.startswith("environment"))
-        assert "ICL_DAYS=8" in _env and "SFT_EPOCHS=0" in _env \
-            and "PARSE_MODE=strict" in _env \
-            and "AI_GATE_MODE=all_open" in _env \
-            and "PEER_GATE_MODE=all_open" in _env \
-            and "AI_GATE_REFERENCE=anchor" in _env \
-            and "DEFFUANT_ALPHA=0.5" in _env, _key
-        cube_subs[os.path.join(HERE, f"at_pofd_{_key}.sub")] = _sub
+    assert not (_s3i_all & _s3m_all)
 
     # ---- recursive update-dose test (UD) --------------------------------
     rows_ud = ud_rows()

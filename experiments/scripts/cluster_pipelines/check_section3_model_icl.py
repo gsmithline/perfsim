@@ -216,7 +216,7 @@ def check_arrays(d, rounds, errs):
                     "not a counterfactual")
 
 
-def check_cell(tag, model, seed, rounds, g, roots):
+def check_cell(tag, model, seed, rounds, g, roots, arm="greedy"):
     errs, notes = [], []
     path = _resolve(tag, roots)
     if path is None:
@@ -249,7 +249,11 @@ def check_cell(tag, model, seed, rounds, g, roots):
         "seed_base_data": True,
         "save_raw_gen": True,
         "serve_eval_mode": True,
-        "do_sample": False,
+        # (7) THE DECODING ARM. do_sample is pinned explicitly on both
+        # arms: "which decoder ran" is the difference between the
+        # main-paper result and the robustness check, and a runner
+        # default is not a record.
+        "do_sample": g.S3I_DECODE[arm]["do_sample"] == 1,
         # (2) the ARM: frozen personal history
         "training_style": "frozen",
         "kl_beta": 0.0,
@@ -263,6 +267,13 @@ def check_cell(tag, model, seed, rounds, g, roots):
     }
     for key, want in expected.items():
         S3M._eq(cfg, key, want, errs)
+    dec = g.S3I_DECODE[arm]
+    if dec["temperature"] is not None:
+        S3M._eq(cfg, "gen_temperature", float(dec["temperature"]), errs)
+    if dec["tok"] not in tag:
+        errs.append(f"DECODE tag does not carry the '{dec['tok']}' token "
+                    f"-- a cell that does not say which decoder ran "
+                    f"cannot be audited")
     if not isinstance(cfg.get("git_sha"), str) or not cfg["git_sha"].strip():
         errs.append("CONFIG git_sha absent or empty")
     hg = cfg.get("homophily_gamma", cfg.get("gamma_bias", 0.0))
@@ -285,6 +296,11 @@ def check_cell(tag, model, seed, rounds, g, roots):
         gen_stats = S3M.check_raw_generations(run_dir, rounds, errs)
 
     op = torch.as_tensor(d.get("op_raw", torch.empty(0))).float()
+    pr = torch.as_tensor(d.get("pred_raw", torch.empty(0))).float()
+    # fingerprints for the wave-level DECODING evidence below
+    rec["pred_sha"] = _sha_t(pr) if pr.numel() else None
+    rec["pred0_sha"] = _sha_t(pr[0]) if pr.ndim == 2 and pr.shape[0] else None
+    rec["arm"] = arm
     rec.update({
         "status": "PASS" if not errs else "FAIL",
         "errors": errs, "notes": notes,
@@ -305,8 +321,12 @@ def main():
     ap = argparse.ArgumentParser(
         description="gate the Section-3 personal-history ICL wave")
     ap.add_argument("--run-root", action="append", default=None)
+    ap.add_argument("--arm", default="greedy",
+                    choices=("greedy", "sample_t1"),
+                    help="greedy = DO_SAMPLE=0 (main paper); sample_t1 = "
+                         "DO_SAMPLE=1 at GEN_TEMPERATURE=1.0 (robustness)")
     ap.add_argument("--smoke", action="store_true",
-                    help="the 3-round Mistral-7B smoke")
+                    help="the 3-round Mistral-7B smoke of the chosen arm")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
@@ -314,14 +334,15 @@ def main():
     g = _load_gen()
     if args.smoke:
         cells = [(g.S3I_SMOKE_MODEL, g.S3I_SMOKE_SEED,
-                  g.s3i_tag(g.S3I_SMOKE_MODEL, g.S3I_SMOKE_SEED,
+                  g.s3i_tag(g.S3I_SMOKE_MODEL, g.S3I_SMOKE_SEED, args.arm,
                             rounds=g.S3I_SMOKE_ROUNDS, smoke=True),
                   g.S3I_SMOKE_ROUNDS)]
     else:
-        cells = [(m, s, g.s3i_cell_tag(m, s), g.S3I_ROUNDS)
+        cells = [(m, s, g.s3i_cell_tag(m, s, args.arm), g.S3I_ROUNDS)
                  for m in g.S3I_MODELS for s in g.S3I_SEEDS]
 
-    recs = [check_cell(tag, m, s, r, g, roots) for m, s, tag, r in cells]
+    recs = [check_cell(tag, m, s, r, g, roots, args.arm)
+            for m, s, tag, r in cells]
 
     # wave-level: one innate vector, and (production) distinct seeds
     inn = {r["innate_sha"] for r in recs if r.get("innate_sha")}
@@ -331,6 +352,40 @@ def main():
                          f"movielens innate is a pure function of "
                          f"(dataset, target), so the cells are not one "
                          f"population")
+    # (7b) THE SEED CONTROLS SAMPLING -- as evidence, not assertion.
+    # run_pokec_gated_lm seeds the global torch stream once and the
+    # Deffuant sweep draws from its OWN generator, so on this frozen arm
+    # generation is the only global-RNG consumer.
+    #   sampled: the three seeds must produce DIFFERENT pred_raw, or the
+    #            seed never reached the sampler and the three "replicates"
+    #            are one observation.
+    #   greedy : decoding is deterministic and every agent's round-0
+    #            prompt is innate-only, so the three seeds must AGREE at
+    #            round 0. Disagreement there means something other than
+    #            the decoder moved.
+    if not args.smoke:
+        by_cell = {}
+        for r in recs:
+            if r.get("pred_sha"):
+                by_cell.setdefault(r["model"], []).append(r)
+        for model, rs in sorted(by_cell.items()):
+            if len(rs) < 2:
+                continue
+            if args.arm == "sample_t1":
+                shas_p = {r["pred_sha"] for r in rs}
+                if len(shas_p) < len(rs):
+                    wave_errs.append(
+                        f"DECODE {model}: {len(rs)} sampled seeds share a "
+                        f"pred_raw fingerprint -- the seed did not reach "
+                        f"the sampler, so these are not replicates")
+            else:
+                z = {r["pred0_sha"] for r in rs if r.get("pred0_sha")}
+                if len(z) > 1:
+                    wave_errs.append(
+                        f"DECODE {model}: greedy seeds disagree at ROUND 0 "
+                        f"({len(z)} distinct pred_raw[0]) -- with frozen "
+                        f"weights and identical innate-only prompts, "
+                        f"greedy decoding must be seed-invariant there")
     shas = sorted({r["git_sha"] for r in recs if r.get("git_sha")})
     if len(shas) > 1:
         wave_errs.append(f"WAVE {len(shas)} distinct git_sha across the "
@@ -341,7 +396,7 @@ def main():
            f"{'parse':>7} {'history':>11}")
     print("=" * len(hdr))
     n_pass = sum(1 for r in recs if r["status"] == "PASS")
-    print(f"SECTION-3 PERSONAL-HISTORY ICL -- "
+    print(f"SECTION-3 PERSONAL-HISTORY ICL [{args.arm}] -- "
           f"{'SMOKE' if args.smoke else 'PRODUCTION'} grid, "
           f"{n_pass}/{len(recs)} cells PASS")
     print("=" * len(hdr))
@@ -361,7 +416,9 @@ def main():
 
     ok = n_pass == len(recs) and not wave_errs
     verdict = {
-        "wave": g.S3I_KEY, "smoke": bool(args.smoke),
+        "wave": g.s3i_arm_key(args.arm, args.smoke), "arm": args.arm,
+        "decoding": dict(g.S3I_DECODE[args.arm]),
+        "smoke": bool(args.smoke),
         "n_cells": len(recs), "n_pass": n_pass,
         # "ok" is the key analyze_section3_model_equilibria.gate_binds_wave
         # reads; "pass" mirrors the Section-4 gates' spelling
@@ -381,7 +438,9 @@ def main():
               f"personal histories complete and byte-exact; no cross-agent "
               f"context; trajectories complete with both gates open every "
               f"round; zero parse failures and zero malformed generations "
-              f"under PARSE_MODE=strict on every model, Mistral included.")
+              f"under PARSE_MODE=strict on every model, Mistral included; "
+              f"decoding is {args.arm} and the seed demonstrably controls "
+              f"it.")
         return 0
     print(f"{LOG} FAILED -- {len(recs) - n_pass} of {len(recs)} cell(s) "
           f"failed, {len(wave_errs)} wave-level violation(s).")
