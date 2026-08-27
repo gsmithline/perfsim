@@ -35,8 +35,11 @@ CHECKER = os.path.join(PIPE, "check_section3_model_icl.py")
 
 # ------------------------------------------------- contract (restated)
 ARMS = ("greedy", "sample_t1")
-DECODE = {"greedy": {"do_sample": "0", "temp": None},
-          "sample_t1": {"do_sample": "1", "temp": "1"}}
+DECODE = {"greedy": {"do_sample": "0", "temp": None,
+                     "parse_mode": "strict", "max_new_tokens": None},
+          "sample_t1": {"do_sample": "1", "temp": "1",
+                        "parse_mode": "prose", "max_new_tokens": 32}}
+SMOKE_REV = {"sample_t1": "_p2"}      # the revised sampled smoke
 KEY = "section3_model_icl_greedy"
 SMOKE_KEY = "section3_model_icl_greedy_smoke"
 
@@ -66,8 +69,9 @@ INNATE = torch.rand(N, generator=_G)
 
 def tag_for(model, seed, arm="greedy", rounds=ROUNDS, smoke=False):
     pre = SMOKE_PREFIX if smoke else PREFIX
-    return (f"{pre}_{model}_d8_{arm}_sw{SWEEPS}_eaopen_w1_k1_esopen_anch2"
-            f"_s{seed}_r{rounds}")
+    rev = SMOKE_REV.get(arm, "") if smoke else ""
+    return (f"{pre}_{model}_d8_{arm}{rev}_sw{SWEEPS}_eaopen_w1_k1"
+            f"_esopen_anch2_s{seed}_r{rounds}")
 
 
 def _rows(key):
@@ -111,7 +115,8 @@ def test_production_grid_is_six_models_by_three_seeds(arm):
 def test_environment_is_the_icl_arm(arm):
     _, sub = _cols(key_for(arm))
     env = next(l for l in sub.splitlines() if l.startswith("environment"))
-    for tok in ("ICL_DAYS=8 ", "SFT_EPOCHS=0 ", "PARSE_MODE=strict",
+    for tok in ("ICL_DAYS=8 ", "SFT_EPOCHS=0 ",
+                f"PARSE_MODE={DECODE[arm]['parse_mode']}",
                 "AI_GATE_MODE=all_open", "PEER_GATE_MODE=all_open",
                 "AI_GATE_REFERENCE=anchor", "DEFFUANT_ALPHA=0.5",
                 "AB_SWEEPS=$(sweeps)", "ICL_K=$(iclk)",
@@ -124,6 +129,8 @@ def test_environment_is_the_icl_arm(arm):
     # THE DECODING ARM, pinned explicitly rather than left to a default
     assert f"DO_SAMPLE={DECODE[arm]['do_sample']}" in env
     assert ("GEN_TEMPERATURE=1" in env) == (arm == "sample_t1")
+    mnt = DECODE[arm]["max_new_tokens"]
+    assert (f"MAX_NEW_TOKENS={mnt}" in env) == (mnt is not None)
     assert f"check_section3_model_icl.py --arm {arm}" in sub \
         or f"--smoke --arm {arm}" in sub
 
@@ -218,7 +225,10 @@ def build_run(root, model, seed, arm="greedy", rounds=ROUNDS, smoke=False,
            if arm == "sample_t1" else {}),
         "training_style": "frozen", "kl_beta": 0.0, "use_lora": False,
         "fresh_each_round": False, "sft_epochs": 0,
-        "icl_k": 0, "icl_days": ICL_DAYS, "parse_mode": "strict",
+        "icl_k": 0, "icl_days": ICL_DAYS,
+        "parse_mode": DECODE[arm]["parse_mode"],
+        **({"max_new_tokens": DECODE[arm]["max_new_tokens"]}
+           if DECODE[arm]["max_new_tokens"] is not None else {}),
         "git_sha": "0123456789abcdef0123456789abcdef01234567",
         **({"gen_temperature": 1.0} if arm == "sample_t1" else {}),
         "chat_thinking": False if model == "qwen3_8b" else None,
@@ -702,3 +712,123 @@ def test_d8_history_wording_starts_at_innate():
     assert "INNATE opinion" in block and "post-peer states" in block
     chk = open(CHECKER).read()
     assert "STARTS with the" in chk and "innate opinion" in chk.lower()
+
+
+# ===== PROSE PARSER + GENERATION BUDGET (2026-08-27 audit) ============
+def _prose_parser():
+    """Load _parse_prose without importing the torch-heavy module."""
+    import ast, re as _re
+    src = open(os.path.join(REPO, "perfsim", "models",
+                            "hf_causal_lm.py")).read()
+    tree = ast.parse(src)
+    cls = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
+    ns = {"re": _re}
+    for n in cls.body:
+        if isinstance(n, ast.Assign) and getattr(
+                n.targets[0], "id", "").startswith("_"):
+            exec(compile(ast.Module([n], []), "<x>", "exec"), ns)
+        if isinstance(n, ast.FunctionDef) and n.name == "_parse_prose":
+            exec(compile(ast.Module([n], []), "<x>", "exec"), ns)
+
+    class C:
+        pass
+    for k in ("_STRICT_RE", "_STANDALONE_NUM", "_SCALE_PHRASE",
+              "_LABELLED"):
+        setattr(C, k, ns[k])
+    C._parse_prose = classmethod(ns["_parse_prose"])
+    return C
+
+
+@pytest.mark.parametrize("text,value,ok,why", [
+    ("0.58 (", 0.58, True, "leading number: identical to strict"),
+    ("0.7", 0.7, True, "bare number"),
+    ("Based on the provided data, the estimated rating is 0.72",
+     0.72, True, "explicitly labelled final value"),
+    ("Based on the data, I would predict 0.65 for this user",
+     0.65, True, "exactly one standalone value"),
+    ("On a scale between 0 and 1, the answer is 0.4",
+     0.4, True, "scale phrase is not a candidate"),
+    ("The user rated 3 movies; the estimate is 0.8",
+     0.8, True, "out-of-range int ignored, label wins"),
+    ("The estimate is 0.6, though it could be 0.9",
+     0.6, True, "the LABELLED value wins over an unlabelled hedge"),
+    ("The estimate is 0.6; the final answer is 0.9",
+     0.9, True, "with two labels, the FINAL one wins"),
+    # --- rejections: the default is never a prediction ---
+    ("It could be 0.3 or 0.7", None, False, "two values: AMBIGUOUS"),
+    ("Based on the provided data,", None, False, "no number at all"),
+    ("To estimate the user's", None, False, "truncated preamble"),
+    ("58 (58", None, False, "leading number out of range"),
+    ("The scale is 0 to 1", None, False, "only a scale description"),
+    ("", None, False, "empty"),
+])
+def test_prose_parser_decision_rules(text, value, ok, why):
+    C = _prose_parser()
+    got_v, got_ok = C._parse_prose(text)
+    assert got_ok is ok, f"{why}: {text!r} -> ok={got_ok}"
+    if ok:
+        assert abs(got_v - value) < 1e-9, why
+    else:
+        # a rejection must NOT be presented as a prediction; the caller
+        # counts it as a parse failure
+        assert got_v == 0.5
+
+
+def test_prose_never_takes_the_first_number_anywhere():
+    """The explicit warning: explanatory prose can carry unrelated
+    numbers, so 'first number found' is wrong."""
+    C = _prose_parser()
+    # 0.2 appears first but is not the stated answer
+    v, ok = C._parse_prose("Similar users scored 0.2; the estimate is 0.9")
+    assert ok and abs(v - 0.9) < 1e-9
+    # two bare values with no label must be REJECTED, not first-wins
+    v, ok = C._parse_prose("Maybe 0.2, maybe 0.9")
+    assert not ok
+
+
+def test_prose_mode_is_accepted_by_the_runner():
+    src = open(os.path.join(PIPE, "run_pokec_gated_lm.py")).read()
+    assert '("legacy", "strict", "prose")' in src
+    # and the generation budget is now RECORDED (it was not before)
+    assert '"max_new_tokens": max_new_tokens,' in src
+
+
+def test_sampled_arm_pins_budget_and_prose_parser():
+    _, sub = _cols(key_for("sample_t1"))
+    env = next(l for l in sub.splitlines() if l.startswith("environment"))
+    assert "MAX_NEW_TOKENS=32" in env and "PARSE_MODE=prose" in env
+    _, gsub = _cols(key_for("greedy"))
+    genv = next(l for l in gsub.splitlines() if l.startswith("environment"))
+    # greedy keeps strict and the runner default budget: it emits the
+    # number first (max 2 words) and must stay comparable to the SFT wave
+    assert "PARSE_MODE=strict" in genv and "MAX_NEW_TOKENS" not in genv
+
+
+@pytest.mark.slow
+def test_wrong_budget_or_parse_mode_fails(tmp_path):
+    for field, value, needle in (("max_new_tokens", 6, "max_new_tokens"),
+                                 ("parse_mode", "strict", "parse_mode")):
+        def mut(c, _f=field, _v=value):
+            c[_f] = _v
+        root = tmp_path / f"runs_{field}"
+        build_run(root, "qwen7b", 0, "sample_t1", cfg_mut=mut)
+        r = run_checker(root, arm="sample_t1")
+        assert r.returncode == 1, field
+        assert needle in r.stdout, field
+
+
+def test_revised_sampled_smoke_cannot_reuse_the_contaminated_run():
+    """The first sampled smoke served 0.5 to 210 agents under the old
+    policy. The idempotent wrapper skips a tag whose run dir exists, so
+    the revised smoke must be a DIFFERENT tag."""
+    old = ("pofds3ismk_mistral7b_d8_sample_t1_sw100_eaopen_w1_k1"
+           "_esopen_anch2_s991_r3")
+    new = tag_for(SMOKE_MODEL, SMOKE_SEED, "sample_t1", SMOKE_ROUNDS,
+                  smoke=True)
+    assert new != old and "_p2_" in new
+    emitted = {r.split(",")[0].strip()
+               for r in _rows(key_for("sample_t1", True))}
+    assert emitted == {new}
+    # greedy is UNrevised: its smoke passed under the policy it still runs
+    g = tag_for(SMOKE_MODEL, SMOKE_SEED, "greedy", SMOKE_ROUNDS, smoke=True)
+    assert "_p2_" not in g

@@ -320,12 +320,25 @@ def check_cell(tag, model, seed, rounds, g, roots, arm="greedy"):
         "sft_epochs": 0,
         "icl_k": 0,
         "icl_days": ICL_DAYS,
-        # (6) strict parsing, wave-wide, no exemption
-        "parse_mode": "strict",
+        # (6) PARSING POLICY, per arm and pinned. greedy = strict (a
+        # leading number, nothing else). sampled = prose: a leading
+        # number, else an explicitly LABELLED final value, else the
+        # single distinct standalone value in [0,1] -- and a REJECTION
+        # for zero or multiple candidates. Neither mode ever makes the
+        # default a prediction; the gate still requires zero failures.
+        "parse_mode": g.S3I_DECODE[arm]["parse_mode"],
     }
     for key, want in expected.items():
         S3M._eq(cfg, key, want, errs)
     dec = g.S3I_DECODE[arm]
+    # (9) THE GENERATION BUDGET. At 6 tokens a sampled preamble is
+    # truncated before the model reaches a number, which the strict
+    # parser reads as a failure and the runner serves as a default --
+    # the exact contamination the first sampled smoke showed (210/2169,
+    # zero digits among them). The sampled arm therefore pins a budget
+    # and the gate refuses a run that did not use it.
+    if dec["max_new_tokens"] is not None:
+        S3M._eq(cfg, "max_new_tokens", int(dec["max_new_tokens"]), errs)
     if dec["temperature"] is not None:
         S3M._eq(cfg, "gen_temperature", float(dec["temperature"]), errs)
     # (7c) THE SAMPLING POLICY IS PINNED, NOT INHERITED. top_p/top_k/

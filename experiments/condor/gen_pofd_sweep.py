@@ -9231,11 +9231,32 @@ S3I_ARMS = ("greedy", "sample_t1")
 #   top_k, and repetition_penalty must match the reference-regularized
 #   SFT wave this arm is paired against (which inherits it). The runner
 #   records the EFFECTIVE value either way, so both arms are auditable.
+# THE GENERATION BUDGET IS PART OF THE POLICY (2026-08-27). The 3-round
+# sampled smoke showed 210/2169 = 9.7% "malformed" generations -- and an
+# audit of all 210 found ZERO digits in any of them: every one was a
+# truncated preamble ("Based on the provided data,") that hit the
+# 6-token default before the model reached a number. Greedy never does
+# this (max 2 words), so the budget only binds under sampling. The fix
+# is therefore a BIGGER BUDGET plus a parser that can read a value out
+# of prose -- neither works alone:
+#   budget alone  -> the number exists but is not at the start, so the
+#                    strict parser still rejects it
+#   parser alone  -> there is no number to find
+# PARSE_MODE=prose accepts a leading number (identical to strict, so
+# well-formed generations are unchanged), else an explicitly LABELLED
+# final value, else the single distinct standalone value in [0,1] after
+# scale phrases are removed -- and REJECTS zero or multiple candidates
+# rather than defaulting. Greedy keeps strict: it has no prose to read
+# and must stay byte-comparable with the SFT wave.
+S3I_SAMPLE_MAX_NEW_TOKENS = 32
 S3I_DECODE = {
     "greedy":    dict(tok="greedy", do_sample=0, temperature=None,
-                      top_p=None, top_k=None, repetition_penalty=None),
+                      top_p=None, top_k=None, repetition_penalty=None,
+                      max_new_tokens=None, parse_mode="strict"),
     "sample_t1": dict(tok="sample_t1", do_sample=1, temperature=1.0,
-                      top_p=1.0, top_k=0, repetition_penalty=1.0),
+                      top_p=1.0, top_k=0, repetition_penalty=1.0,
+                      max_new_tokens=S3I_SAMPLE_MAX_NEW_TOKENS,
+                      parse_mode="prose"),
 }
 S3I_KEY = "section3_model_icl"          # the umbrella name; per-arm keys below
 S3I_SMOKE_KEY = "section3_model_icl_smoke"
@@ -9252,6 +9273,14 @@ S3I_ROUNDS = S3M_ROUNDS          # 30
 S3I_SMOKE_ROUNDS = S3M_SMOKE_ROUNDS
 S3I_SMOKE_SEED = S3M_SMOKE_SEED
 S3I_SMOKE_MODEL = "mistral7b"
+# POLICY REVISION (2026-08-27). The first sampled smoke ran the 6-token
+# budget with strict parsing and served the 0.5 default to 210 agents;
+# that trajectory is CONTAMINATED and must never satisfy a cell of the
+# revised arm. The idempotent wrapper skips a tag whose run dir already
+# holds a trajectory.pt, so the revised smoke carries a revision token
+# and is a different cell by construction. Greedy is unrevised: its
+# smoke passed under the policy it still runs.
+S3I_SMOKE_REV = {"sample_t1": "p2"}
 S3I_ICL_DAYS = 8
 S3I_ARM = "d8"
 S3I_N_TOTAL = 18                 # 6 models x 3 seeds
@@ -9261,13 +9290,19 @@ def s3i_arm_key(arm, smoke=False):
     return f"{S3I_KEY}_{arm}" + ("_smoke" if smoke else "")
 
 
+def s3i_smoke_rev_tok(arm):
+    r = S3I_SMOKE_REV.get(arm)
+    return f"_{r}" if r else ""
+
+
 def s3i_tag(model, seed, arm="greedy", rounds=S3I_ROUNDS, smoke=False):
     """pofds3i_{model}_d8_{greedy|sample_t1}_sw100_eaopen_w1_k1_esopen
     _anch2_s{seed}_r{rounds}. The decoding arm is IN THE TAG: a greedy
     and a sampled cell of the same model/seed are different objects."""
     assert arm in S3I_ARMS, arm
     pre = S3I_SMOKE_PREFIX if smoke else S3I_PREFIX
-    return (f"{pre}_{model}_{S3I_ARM}_{S3I_DECODE[arm]['tok']}"
+    rev = s3i_smoke_rev_tok(arm) if smoke else ""
+    return (f"{pre}_{model}_{S3I_ARM}_{S3I_DECODE[arm]['tok']}{rev}"
             f"_sw{S3I_SWEEPS}_eaopen_w1_k1"
             f"_esopen_{S3_OP_TOKEN}_s{seed}_r{rounds}")
 
@@ -9334,12 +9369,14 @@ def s3i_sub(arm="greedy", smoke=False):
     if dec["repetition_penalty"] is not None:
         dec_env += (f" GEN_REPETITION_PENALTY="
                     f"{dec['repetition_penalty']:g}")
+    if dec["max_new_tokens"] is not None:
+        dec_env += f" MAX_NEW_TOKENS={dec['max_new_tokens']:d}"
     sub = S3M_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=S3M_H100, bad=BAD_NODE_REQ,
         rounds=S3I_SMOKE_ROUNDS if smoke else S3I_ROUNDS,
         kind=kind, gateflag=(" --smoke" if smoke else "")
         + f" --arm {arm}",
-        extra_env=" PARSE_MODE=strict" + dec_env)
+        extra_env=f" PARSE_MODE={dec['parse_mode']}" + dec_env)
     for old, new in (
             # the arm: own history, no optimizer, no cross-user exemplars
             ("ICL_DAYS=0 ", f"ICL_DAYS={S3I_ICL_DAYS} "),
@@ -9351,7 +9388,7 @@ def s3i_sub(arm="greedy", smoke=False):
              "FROZEN personal-history ICL\n# (ICL_K=0, ICL_DAYS=8; no "
              "LoRA, no optimizer, no KL), Deffuant alpha=0.5"),
             ("fresh r512 LoRA each round",
-             "frozen weights, PARSE_MODE=strict"),
+             f"frozen weights, PARSE_MODE={dec['parse_mode']}"),
             ("check_section3_model_equilibria.py",
              "check_section3_model_icl.py")):
         assert sub.count(old) == 1, ("S3I sub substitution missing", old)
@@ -14436,11 +14473,15 @@ def main():
             _env = next(l for l in _sub.splitlines()
                         if l.startswith("environment"))
             assert "ICL_DAYS=8" in _env and "SFT_EPOCHS=0" in _env \
-                and "PARSE_MODE=strict" in _env \
+                and f"PARSE_MODE={_dec['parse_mode']}" in _env \
                 and "AI_GATE_MODE=all_open" in _env \
                 and "PEER_GATE_MODE=all_open" in _env \
                 and "AI_GATE_REFERENCE=anchor" in _env \
                 and "DEFFUANT_ALPHA=0.5" in _env, _key
+            # the generation BUDGET rides the same policy: pinned on the
+            # sampled arm, inherited (runner default 6) on greedy
+            assert (f"MAX_NEW_TOKENS={_dec['max_new_tokens']}" in _env) \
+                == (_dec["max_new_tokens"] is not None), _key
             assert f"DO_SAMPLE={_dec['do_sample']}" in _env, _key
             assert ("GEN_TEMPERATURE=1" in _env) == (_arm == "sample_t1")
             p = os.path.join(HERE, f"configs_pofd_{_key}.txt")

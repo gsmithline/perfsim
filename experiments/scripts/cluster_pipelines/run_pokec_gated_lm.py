@@ -827,8 +827,9 @@ def main() -> int:
     # the generation, leading-dot accepted, anything else a COUNTED parse
     # failure). Recorded in the config only when the env carries it.
     parse_mode = os.environ.get("PARSE_MODE", "legacy")
-    if parse_mode not in ("legacy", "strict"):
-        raise ValueError("PARSE_MODE must be 'legacy' or 'strict'")
+    if parse_mode not in ("legacy", "strict", "prose"):
+        raise ValueError("PARSE_MODE must be 'legacy', 'strict' or "
+                         "'prose'")
     # TRAIN_WITNESS (2026-08-25, Figure-4 anchor-tradeoff wave): per-round
     # proof that the finite-lambda update happened -- optimizer steps taken
     # vs requested, rows consumed, LoRA B / BA norms after training, the
@@ -1792,6 +1793,12 @@ def main() -> int:
         "ml_target": os.environ.get("ML_TARGET", "Action"),
         "log_ppl_dist": log_ppl_dist, "ppl_dist_cap": ppl_dist_cap,
         "do_sample": do_sample, "gen_temperature": gen_temperature,
+        # the generation BUDGET is part of the decoding policy: at 6
+        # tokens a sampled preamble ("Based on the provided data,") is
+        # truncated before the model ever emits a number, which reads as
+        # a parse failure and gets served as a default. Recorded so a run
+        # can be audited for it.
+        "max_new_tokens": max_new_tokens,
         # the PINS (None = inherited from the checkpoint)
         "gen_top_p": gen_top_p, "gen_top_k": gen_top_k,
         "gen_repetition_penalty": gen_repetition_penalty,

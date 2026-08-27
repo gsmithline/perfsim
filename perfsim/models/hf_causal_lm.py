@@ -485,12 +485,88 @@ class HFCausalLMModel(Model):
             return default, False
         return v, True
 
+    # ---- PROSE parsing (2026-08-27) ----------------------------------
+    # A number that is NOT part of a longer numeric literal.
+    _STANDALONE_NUM = re.compile(r"(?<![\d.])(\d*\.\d+|\d+(?:\.\d*)?)"
+                                 r"(?![\d.])")
+    # Scale descriptions echoed back from the prompt ("between 0 and 1",
+    # "on a 0-1 scale"). Their 0 and 1 are NOT predictions, and leaving
+    # them in would make almost every prose answer look ambiguous.
+    _SCALE_PHRASE = re.compile(
+        r"(?:between|from)?\s*0(?:\.0+)?\s*(?:and|to|-|–)\s*1(?:\.0+)?"
+        r"(?:\s*scale)?", re.I)
+    # An explicitly labelled value: "the estimate is 0.72", "answer: 0.8",
+    # "predicted rating = 0.65". The LAST such match wins -- prose states
+    # its conclusion at the end.
+    _LABELLED = re.compile(
+        r"(?:answer|estimate[ds]?|estimation|prediction|predicted|rating|"
+        r"score|value|opinion)\b[^0-9\n]{0,24}?"
+        r"(?<![\d.])(\d*\.\d+|\d+(?:\.\d*)?)(?![\d.])", re.I)
+
+    @classmethod
+    def _parse_prose(cls, text, default: float = 0.5):
+        """PROSE: (value, ok). Accepts a prediction stated inside prose,
+        but ONLY when it is unambiguous.
+
+        Order of decision:
+          1. a well-formed number at the START -- identical to strict, so
+             every already-well-formed generation parses to the same
+             value it did before;
+          2. else an explicitly LABELLED final value ("the estimate is
+             0.72") -- the last such match;
+          3. else, among standalone numbers in [0, 1] with scale
+             descriptions removed, EXACTLY ONE distinct value;
+          4. else FAILURE.
+        Zero candidates and multiple distinct candidates are both
+        failures: the default is never a prediction. Never takes "the
+        first number anywhere" -- explanatory prose can mention unrelated
+        numbers, and two different plausible values mean the generation
+        did not state one answer."""
+        t = text or ""
+        m = cls._STRICT_RE.match(t)
+        if m is not None:
+            try:
+                v = float(m.group(1))
+            except ValueError:
+                v = None
+            if v is not None and 0.0 <= v <= 1.0:
+                return v, True
+            # a leading number OUT of range is a failure, as in strict:
+            # falling through to prose recovery would let "58 (58" become
+            # something else entirely
+            return default, False
+        lab = cls._LABELLED.findall(t)
+        for cand in reversed(lab):
+            try:
+                v = float(cand)
+            except ValueError:
+                continue
+            if 0.0 <= v <= 1.0:
+                return v, True
+        stripped = cls._SCALE_PHRASE.sub(" ", t)
+        vals = []
+        for cand in cls._STANDALONE_NUM.findall(stripped):
+            try:
+                v = float(cand)
+            except ValueError:
+                continue
+            if 0.0 <= v <= 1.0:
+                vals.append(v)
+        uniq = sorted(set(vals))
+        if len(uniq) == 1:
+            return uniq[0], True
+        return default, False
+
     def parse(self, text: str) -> float:
+        if self.parse_mode == "prose":
+            return self._parse_prose(text)[0]
         if self.parse_mode == "strict":
             return self._parse_strict(text)[0]
         return self._parse(text)
 
     def parse_ok(self, text: str) -> bool:
+        if self.parse_mode == "prose":
+            return self._parse_prose(text)[1]
         if self.parse_mode == "strict":
             return self._parse_strict(text)[1]
         return re.search(r"\d", text or "") is not None
