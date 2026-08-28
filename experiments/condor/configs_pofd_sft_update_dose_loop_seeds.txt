@@ -1,0 +1,6 @@
+pofdud_qwen3_8b_sft_u1_sw100_eaopen_w1_k1_esopen_anch2_s42_r10, sft, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 181, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdud_qwen3_8b_sft_u5_sw100_eaopen_w1_k1_esopen_anch2_s42_r10, sft, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 37, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdud_qwen3_8b_sft_u181_sw100_eaopen_w1_k1_esopen_anch2_s42_r10, sft, 0, 42, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 1, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdud_qwen3_8b_sft_u1_sw100_eaopen_w1_k1_esopen_anch2_s43_r10, sft, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 181, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdud_qwen3_8b_sft_u5_sw100_eaopen_w1_k1_esopen_anch2_s43_r10, sft, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 37, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64
+pofdud_qwen3_8b_sft_u181_sw100_eaopen_w1_k1_esopen_anch2_s43_r10, sft, 0, 43, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 1, loop, 0.0, 1, forward, 100, 1, 0, -1, 1, 1, 16, 0, 10, Qwen/Qwen3-8B, 0, 128G, 40G, 64

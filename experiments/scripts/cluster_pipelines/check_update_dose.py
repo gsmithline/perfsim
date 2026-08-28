@@ -20,6 +20,18 @@ frequency differs.  So the checks are exactly those:
 
 --smoke gates the 2-round u1 cell: 723 consumed exactly once per round
 and global_step == 1 each round, exactly as specified.
+
+--seeds 42,43 gates the SEED REPLICATION (2026-08-28): U in {1, 5, 181}
+at each named seed, ten rounds, everything else byte-identical to the
+seed-0 cells.  Two checks are stricter here than on the original wave,
+because these cells carry no archived-reuse excuse:
+  * raw_gen_log.json.gz is MANDATORY.  The parser stores a finite 0.5 on
+    failure, so an absent log means the malformed rate cannot be
+    established at all -- absence is a FAILURE, not a pass.
+  * every logged `parsed` vector must equal pred_raw for that round,
+    agent by agent.  A well-formed log proves internal consistency; only
+    this proves the log describes THIS trajectory.
+The cross-arm sampler-order check runs WITHIN each seed.
 """
 from __future__ import annotations
 
@@ -46,7 +58,9 @@ DEFAULT_RUN_ROOTS = (
     REPO / "notes" / "pofd" / "cluster",
 )
 N = 723
-ARMS = {1: 181, 5: 37, 19: 10}     # u -> accum
+ARMS = {1: 181, 5: 37, 19: 10}     # u -> accum, the seed-0 ladder
+EXT_ARMS = {1: 181, 5: 37, 181: 1}  # u -> accum, the replicated ladder
+EXT_SEEDS = (42, 43)
 
 
 def _find(tag, roots):
@@ -57,7 +71,7 @@ def _find(tag, roots):
     return None
 
 
-def check_cell(tag, u, accum, rounds, roots):
+def check_cell(tag, u, accum, rounds, roots, seed=0, strict_raw=False):
     errs = []
     p = _find(tag, roots)
     if p is None:
@@ -65,14 +79,19 @@ def check_cell(tag, u, accum, rounds, roots):
                 "errors": ["no trajectory.pt"]}
     d = torch.load(p, map_location="cpu", weights_only=False)
     cfg = d.get("config", {}) or {}
-    for key, want in (("sft_grad_accum", accum) if accum > 1 else (None, None),):
-        pass
-    if accum > 1 and cfg.get("sft_grad_accum") != accum:
+    # config records sft_grad_accum unconditionally, so gate it at accum 1
+    # too -- accum 1 is the legacy path, not an absent dial.
+    if cfg.get("sft_grad_accum") != accum:
         errs.append(f"CONFIG sft_grad_accum={cfg.get('sft_grad_accum')!r} "
                     f"(want {accum})")
     for key, want in (("w_plat", 1.0), ("innate_lambda", 1.0),
                       ("kl_beta", 0.0), ("ab_sweeps", 100),
-                      ("n_rounds", rounds), ("seed", 0),
+                      ("n_rounds", rounds), ("seed", seed),
+                      ("training_style", "sft"), ("run_mode", "loop"),
+                      ("data_regime", "replace"), ("train_cap", 723),
+                      ("save_sft_order", True), ("save_raw_gen", True),
+                      ("chat_thinking", False), ("do_sample", False),
+                      ("ai_gate_reference", "anchor"),
                       ("ai_gate_mode", "all_open"),
                       ("peer_gate_mode", "all_open"),
                       ("sft_lr", 5e-5), ("lora_r", 512),
@@ -119,37 +138,112 @@ def check_cell(tag, u, accum, rounds, roots):
             if not torch.allclose(y[t], src[row.long()], atol=1e-6):
                 errs.append(f"ORDER round {t}: labels are not the live "
                             f"post-peer opinions (no replay allowed)")
-    # 5. zero parse failures
+    # 5. zero parse failures + (strict) the log must describe THIS run
     raw = p.parent / "raw_gen_log.json.gz"
-    if raw.exists():
-        with gzip.open(raw, "rt") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                pf = rec.get("parse_fail_frac")
-                if pf and float(pf) > 0:
-                    errs.append(f"PARSE round {rec.get('round')} "
-                                f"parse_fail_frac={pf}")
-                    break
+    worst_pvp = None
+    if not raw.exists():
+        if strict_raw:
+            errs.append("PARSE raw_gen_log.json.gz ABSENT -- the parser "
+                        "stores a finite 0.5 on failure, so the malformed "
+                        "rate cannot be established anywhere else "
+                        "(SAVE_RAW_GEN=1 is mandatory for this wave)")
+    else:
+        rows = []
+        try:
+            with gzip.open(raw, "rt") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        rows.append(json.loads(line))
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            errs.append(f"PARSE raw_gen_log.json.gz unreadable: {e}")
+            rows = []
+        for rec in rows:
+            pf = rec.get("parse_fail_frac")
+            if pf is None or float(pf) > 0:
+                errs.append(f"PARSE round {rec.get('round')} "
+                            f"parse_fail_frac={pf!r} (want exactly 0)")
+                break
+        if strict_raw and rows:
+            got = [r.get("round") for r in rows]
+            if got != list(range(rounds)):
+                errs.append(f"PARSE raw_gen_log must carry rounds "
+                            f"0..{rounds - 1} once, in order; got "
+                            f"{got[:6]}{'...' if len(got) > 6 else ''}")
+            pred = d.get("pred_raw")
+            by_round = {r.get("round"): r.get("parsed") for r in rows}
+            if torch.is_tensor(pred):
+                pred = pred.float()
+                bad, worst_pvp = [], 0.0
+                for t in range(min(rounds, pred.shape[0])):
+                    vals = by_round.get(t)
+                    if not isinstance(vals, list) or len(vals) != N:
+                        bad.append((t, "missing/short parsed vector"))
+                        continue
+                    pv = torch.tensor([float(v) for v in vals],
+                                      dtype=torch.float32)
+                    diff = (pv.clamp(0, 1) - pred[t].clamp(0, 1)).abs()
+                    worst_pvp = max(worst_pvp, float(diff.max()))
+                    if float(diff.max()) > 1e-6:
+                        i = int(diff.argmax())
+                        bad.append((t, f"agent {i}: parsed "
+                                       f"{float(pv[i]):.6f} != pred_raw "
+                                       f"{float(pred[t][i]):.6f}"))
+                if bad:
+                    errs.append(f"PARSE-VS-SERVED parsed != pred_raw in "
+                                f"{len(bad)} round(s) (max |diff| "
+                                f"{worst_pvp:.3e}), e.g. round {bad[0][0]} "
+                                f"{bad[0][1]} -- the raw log does not "
+                                f"describe this trajectory")
     op = torch.as_tensor(d["op_raw"]).float()
-    return {"tag": tag, "status": "PASS" if not errs else "FAIL",
-            "errors": errs, "trainer_seeds": sorted(seeds),
-            "mean": float(op[min(rounds, op.shape[0]) - 1].mean()),
-            "sd": float(op[min(rounds, op.shape[0]) - 1].std())}
+    if op.shape[0] < rounds:
+        errs.append(f"TRAJECTORY only {op.shape[0]} of {rounds} rounds")
+    if not torch.isfinite(op).all():
+        errs.append("TRAJECTORY non-finite opinions")
+    out = {"tag": tag, "status": "PASS" if not errs else "FAIL",
+           "errors": errs, "trainer_seeds": sorted(seeds), "seed": seed,
+           "u": u, "accum": accum,
+           "mean": float(op[min(rounds, op.shape[0]) - 1].mean()),
+           "sd": float(op[min(rounds, op.shape[0]) - 1].std())}
+    if worst_pvp is not None:
+        out["parsed_vs_pred_max_abs"] = worst_pvp
+    return out
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-root", action="append", default=None)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--seeds", default=None,
+                    help="comma-separated seeds for the replication wave "
+                         "(e.g. 42,43); gates U in {1,5,181} at each")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     roots = [Path(r) for r in (args.run_root or DEFAULT_RUN_ROOTS)]
 
     recs = []
-    if args.smoke:
+    if args.seeds:
+        want = [int(s) for s in args.seeds.split(",") if s.strip()]
+        if set(want) - set(EXT_SEEDS):
+            print(f"[check_ud] NOTE: gating seeds {want}; the generated "
+                  f"replication covers {list(EXT_SEEDS)}")
+        for sd in want:
+            for u, acc in EXT_ARMS.items():
+                recs.append(check_cell(
+                    f"pofdud_qwen3_8b_sft_u{u}_sw100_eaopen_w1_k1_esopen"
+                    f"_anch2_s{sd}_r10", u, acc, 10, roots, seed=sd,
+                    strict_raw=True))
+        # cross-arm sampler order, WITHIN each seed
+        for sd in want:
+            ss = {tuple(r.get("trainer_seeds", [])) for r in recs
+                  if r.get("seed") == sd and r["status"] != "ABSENT"}
+            if len(ss) > 1:
+                recs.append({"tag": f"<cross-arm sampler order s{sd}>",
+                             "status": "FAIL", "errors":
+                             [f"seed {sd} arms record different trainer "
+                              f"seeds {ss} -- the minibatch order must "
+                              f"be shared across U at a fixed seed"]})
+    elif args.smoke:
         recs.append(check_cell(
             "pofdudsmk_qwen3_8b_sft_u1_sw100_eaopen_w1_k1_esopen_anch2"
             "_s0_r2", 1, 181, 2, roots))

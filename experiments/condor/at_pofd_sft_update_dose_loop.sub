@@ -7,8 +7,8 @@
 # 723 live labels exactly once per round (SFT_EPOCHS=1) in the same
 # recorded sampler order (SAVE_SFT_ORDER=1); LR, rank, batch and data
 # exposure are FIXED. Realized steps = ceil(181/accum), asserted by the
-# checker against trajectory.pt's sft_dose records; u181 (accum 1) is
-# NOT queued -- the archived pofdps_ SFT cell serves it.
+# checker against trajectory.pt's sft_dose records.
+# u181 (accum 1) is NOT queued -- the archived pofdps_ SFT cell serves it.
 # Gate: python experiments/scripts/cluster_pipelines/check_update_dose.py
 # Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> sft_update_dose_loop
 universe          = vanilla
