@@ -79,11 +79,16 @@ def check_cell(tag, u, accum, rounds, roots, seed=0, strict_raw=False):
                 "errors": ["no trajectory.pt"]}
     d = torch.load(p, map_location="cpu", weights_only=False)
     cfg = d.get("config", {}) or {}
-    # config records sft_grad_accum unconditionally, so gate it at accum 1
-    # too -- accum 1 is the legacy path, not an absent dial.
-    if cfg.get("sft_grad_accum") != accum:
-        errs.append(f"CONFIG sft_grad_accum={cfg.get('sft_grad_accum')!r} "
-                    f"(want {accum})")
+    # run_pokec_gated_lm.py:1882 writes sft_grad_accum into config ONLY
+    # when it exceeds 1, so at accum 1 the key is legitimately ABSENT and
+    # means the default. Read it with that default rather than skipping
+    # the gate entirely (the old behaviour): an expected accum > 1 that
+    # is missing still fails, so a mislabelled cell cannot slip through.
+    # The binding evidence either way is the DOSE check below -- realized
+    # global_step must equal the tag's u -- which no config value can fake.
+    got_accum = cfg.get("sft_grad_accum", 1)
+    if got_accum != accum:
+        errs.append(f"CONFIG sft_grad_accum={got_accum!r} (want {accum})")
     for key, want in (("w_plat", 1.0), ("innate_lambda", 1.0),
                       ("kl_beta", 0.0), ("ab_sweeps", 100),
                       ("n_rounds", rounds), ("seed", seed),

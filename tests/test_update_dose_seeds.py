@@ -246,6 +246,32 @@ def test_accum_one_is_gated_not_skipped(tmp_path):
     assert "sft_grad_accum" in _run(root, "42").stdout
 
 
+def test_absent_accum_key_means_one(tmp_path):
+    """run_pokec_gated_lm writes sft_grad_accum only when it exceeds 1,
+    so at accum 1 the key is legitimately ABSENT and must read as 1.
+    The real seed-42/43 u181 cells have no such key."""
+    root = str(tmp_path)
+    d = _cell(root, 181, 1, 42)
+    p = os.path.join(d, "trajectory.pt")
+    t = torch.load(p, weights_only=False)
+    t["config"].pop("sft_grad_accum")
+    torch.save(t, p)
+    r = _run(root, "42")
+    assert "sft_grad_accum" not in r.stdout, r.stdout
+
+
+def test_absent_accum_key_still_fails_when_more_than_one_expected(tmp_path):
+    """Absence means 1, so a u5 cell (accum 37) with no key must FAIL --
+    the default must not become a blanket escape hatch."""
+    root = str(tmp_path)
+    d = _cell(root, 5, 37, 42)
+    p = os.path.join(d, "trajectory.pt")
+    t = torch.load(p, weights_only=False)
+    t["config"].pop("sft_grad_accum")
+    torch.save(t, p)
+    assert "sft_grad_accum" in _run(root, "42").stdout
+
+
 def test_seed_gate_uses_the_cell_seed(tmp_path):
     root = str(tmp_path)
     _cell(root, 1, 181, 42, cfg={"seed": 0})
