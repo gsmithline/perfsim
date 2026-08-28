@@ -97,6 +97,16 @@ def test_new_tags_cannot_collide_with_the_figure():
     assert not (new & old)
 
 
+def test_rank_rows_request_more_memory_than_the_default_tier():
+    """The first r=16 lambda=2 smoke was held at 128G having used
+    146485 MB -- environment drift, not rank. The rank rows carry their
+    own memory request; the figure's rows must be untouched."""
+    for r in rows(CFG) + rows(SMOKE_CFG):
+        assert cols(r)[26] == "200G", cols(r)[26]
+    for r in rows(os.path.join(CONDOR, "configs_pofd_fig3_full_loop.txt")):
+        assert cols(r)[26] == "128G"
+
+
 def test_sub_differs_from_the_figure_only_by_lora_r():
     def env(p):
         return next(l for l in open(p) if l.startswith("environment"))

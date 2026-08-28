@@ -8784,6 +8784,17 @@ F3R_BETA = 1.0                 # W_PLAT
 F3R_GAMMA = 1.0                # INNATE_LAMBDA (inert at beta = 1)
 F3R_SMOKE_LAM = 2.0
 F3R_N_NEW = len(F3R_LAMS)
+# MEMORY. The first r=16 lambda=2 smoke was HELD at 128G having used
+# 146485 MB. That is NOT a rank effect -- a smaller adapter cannot cost
+# more -- it is environment drift: the archived r=512 lambda=2 cell ran
+# under an older TRL whose completion-only collator existed, and the
+# current stack falls back to the {prompt, completion} dataset format
+# ("DataCollatorForCompletionOnlyLM not found in TRL" in the job log).
+# The KL arm holds a reference model alongside the policy, so the
+# headroom is real. 200G is an existing tier in this repo (120 rows
+# already use it). Applied to the rank rows ONLY -- the F3 wave's own
+# queue rows are untouched.
+F3R_MEM = "200G"
 F3R_REUSED = {
     0.0: "pofdps_qwen3_8b_sft_sw100_eaopen_w1_k1_esopen_anch2_s0_r60",
     2.0: "pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_s0_r30",
@@ -8956,11 +8967,15 @@ def f3x_rows():
 def f3r_rows(smoke=False):
     """The rank-robustness cells: the same beta=gamma=1 corner, the same
     horizon, every dial the same -- except LORA_R."""
+    def _mem(row):
+        c = [x.strip() for x in row.split(",")]
+        c[26] = F3R_MEM          # request_memory column
+        return ", ".join(c)
     if smoke:
-        return [f3_row(F3R_BETA, F3R_GAMMA, F3R_SMOKE_LAM,
-                       rounds=F3_SMOKE_ROUNDS, smoke=True,
-                       lora_r=F3R_RANK)]
-    return [f3_row(F3R_BETA, F3R_GAMMA, lam, lora_r=F3R_RANK)
+        return [_mem(f3_row(F3R_BETA, F3R_GAMMA, F3R_SMOKE_LAM,
+                            rounds=F3_SMOKE_ROUNDS, smoke=True,
+                            lora_r=F3R_RANK))]
+    return [_mem(f3_row(F3R_BETA, F3R_GAMMA, lam, lora_r=F3R_RANK))
             for lam in F3R_LAMS]
 
 
