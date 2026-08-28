@@ -1704,7 +1704,14 @@ def main() -> int:
         "deploy_every": deploy_every, "data_regime": data_regime, "seed": seed,
         "n_labeled": n_labeled, "max_steps": max_steps, "sft_epochs": sft_epochs,
         "sft_batch_size": sft_batch_size,
-        "lora_r": lora_r, "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
+        "lora_r": lora_r,
+        # RECORDED, not merely coded: alpha is derived (2r) rather than
+        # dialled, so a rank comparison that claims a constant
+        # LORA_ALPHA/r ratio can be checked against the artifact instead
+        # of against a line of source. Older runs predate this key; the
+        # checker treats absence as the older schema, not a mismatch.
+        "lora_alpha": 2 * lora_r,
+        "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
         "seed_base_data": seed_base_data, "train_cap": train_cap,
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
         "pop_model": pop_model, "eps": eps, "eps_ai": eps_ai, "gamma_bias": gamma_bias,
