@@ -305,7 +305,7 @@ def main() -> int:
     plt.rcParams.update({"font.size": 8.5, "axes.linewidth": .8,
                          "xtick.major.width": .8, "ytick.major.width": .8,
                          "text.color": INK, "axes.labelcolor": INK})
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.7))
+    fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.8))
     xs = [0, 1, 2]
     xl = ["$\\lambda=0$", "$\\lambda=2$", "$\\lambda=\\infty$"]
     ax = axes[0]
@@ -336,8 +336,8 @@ def main() -> int:
     ax.set_xticks(xs)
     ax.set_xticklabels(xl)
     ax.set_xlim(-.35, 2.35)
-    ax.set_ylabel("served map: mean $|$pred $-$ entering map$|$\n"
-                  "final five rounds", labelpad=3)
+    ax.set_ylabel("served map distance from\n"
+                  "the entering map (final five rounds)", labelpad=3)
     ax.spines[["top", "right"]].set_visible(False)
     fig.legend(handles=[
         Line2D([], [], color=R16_C, marker="o", ms=4.8, lw=1.2,
