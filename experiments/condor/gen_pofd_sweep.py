@@ -8741,6 +8741,53 @@ F3_N_FROZEN = 13
 F3_N_NEW_CPU = 9
 F3_N_REUSED_CPU = 4
 F3_N_TWIN = 4
+F3_RANK = 512                  # the figure's own LoRA rank
+
+# fig3_rank16[_smoke] (2026-08-28, user). LoRA-RANK ROBUSTNESS.
+#
+# THE QUESTION, narrow on purpose: does the QUALITATIVE reference pull
+# survive at a conventional LoRA rank?  This is NOT a claim that the
+# transition in lambda is rank-invariant -- the exact means, the
+# transition location and the amount of displacement may all differ, and
+# the analysis deliberately does not test for monotone placement between
+# the endpoints.
+#
+# Two new trained cells only, at the beta = gamma = 1 corner the figure
+# already spells w1_k1:  r = 16, lambda in {0, 2}.
+#
+# LORA_ALPHA NEEDS NO DIAL: run_pokec_gated_lm.py:2178 sets
+# lora_alpha = 2 * lora_r unconditionally, so r=16 -> alpha 32 while the
+# main configuration's r=512 -> alpha 1024. The constant ratio
+# LORA_ALPHA/r = 2 is preserved BY CONSTRUCTION rather than by a
+# matching pair of hand-set numbers. Targets (q_proj, v_proj) and
+# dropout 0.05 are the HFCausalLMModel defaults and are overridden
+# nowhere, so they already match the rank-512 cells.
+#
+# REUSED, NEVER RERUN:
+#   r=512 lambda=0   pofdps_qwen3_8b_sft_sw100_..._w1_k1_..._s0_r60
+#                    (60 rounds, truncated to the common 30)
+#   r=512 lambda=2   pofdlam_qwen3_8b_fwdlam2_sw100_..._w1_k1_..._s0_r30
+#   lambda=inf       the frozen endpoint, RANK-INDEPENDENT: a frozen
+#                    model instantiates no adapter at all, so there is
+#                    exactly ONE lambda=inf point and both ranks share
+#                    it. It must never retrain.
+# => 2 new GPU jobs + 1 three-round smoke. Nothing else.
+#
+# SMOKE FIRST at (r=16, lambda=2): the KL path is the one whose small-
+# rank behaviour is genuinely unknown, and it exercises both new dials
+# at once.
+F3R_KEY = "fig3_rank16"
+F3R_SMOKE_KEY = "fig3_rank16_smoke"
+F3R_RANK = 16
+F3R_LAMS = (0.0, 2.0)
+F3R_BETA = 1.0                 # W_PLAT
+F3R_GAMMA = 1.0                # INNATE_LAMBDA (inert at beta = 1)
+F3R_SMOKE_LAM = 2.0
+F3R_N_NEW = len(F3R_LAMS)
+F3R_REUSED = {
+    0.0: "pofdps_qwen3_8b_sft_sw100_eaopen_w1_k1_esopen_anch2_s0_r60",
+    2.0: "pofdlam_qwen3_8b_fwdlam2_sw100_eaopen_w1_k1_esopen_anch2_s0_r30",
+}
 
 # Archived cells that already sit at this exact surface. Audited on the
 # cluster tag by tag (2026-08-24): every one has a trajectory.pt. Keyed
@@ -8784,20 +8831,28 @@ def f3_arm(lam):
     return "sft" if lam == 0.0 else f"fwdlam{_num(lam)}"
 
 
-def f3_tag(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False):
+def f3_tag(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False,
+           lora_r=F3_RANK):
+    """The rank token is EMPTY at the figure's own rank (512), so every
+    archived and already-queued tag stays byte-identical to what it was
+    before the rank-robustness wave existed. Any other rank inserts
+    `_rank<r>` before the seed token -- deliberately NOT `_r<r>`, which
+    already means ROUNDS at the end of every tag in this repo."""
     pre = "pofdf3smk" if smoke else "pofdf3"
+    rk = "" if int(lora_r) == F3_RANK else f"_rank{int(lora_r)}"
     return (f"{pre}_{F3_MODEL}_{f3_arm(lam)}_sw{F3_SWEEPS}_eaopen"
-            f"_w{_num(beta)}_k{_num(gamma)}_esopen_{S3_OP_TOKEN}"
+            f"_w{_num(beta)}_k{_num(gamma)}_esopen_{S3_OP_TOKEN}{rk}"
             f"_s{F3_SEED}_r{rounds}")
 
 
-def f3_row(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False):
+def f3_row(beta, gamma, lam, rounds=F3_ROUNDS, smoke=False,
+           lora_r=F3_RANK):
     assert lam != F3_INF, "lambda = inf is a CPU replay, never a GPU job"
     assert beta > 0.0, "beta = 0 is the twin, never a GPU job"
     a = REACH_ARM_COLS["b1"]
     m = FAM_MODELS[F3_MODEL]
     return ROW_PS.format(
-        tag=f3_tag(beta, gamma, lam, rounds, smoke),
+        tag=f3_tag(beta, gamma, lam, rounds, smoke, lora_r),
         style=("sft" if lam == 0.0 else "sft_kl"), beta=f"{lam:g}",
         seed=F3_SEED, es=f"{F3_EPS_SOCIAL:g}", wplat=f"{beta:g}",
         lam=f"{gamma:g}", kldir="forward", sweeps=F3_SWEEPS,
@@ -8898,6 +8953,28 @@ def f3x_rows():
             for (b, g, l, r) in sorted(f3x_requests())]
 
 
+def f3r_rows(smoke=False):
+    """The rank-robustness cells: the same beta=gamma=1 corner, the same
+    horizon, every dial the same -- except LORA_R."""
+    if smoke:
+        return [f3_row(F3R_BETA, F3R_GAMMA, F3R_SMOKE_LAM,
+                       rounds=F3_SMOKE_ROUNDS, smoke=True,
+                       lora_r=F3R_RANK)]
+    return [f3_row(F3R_BETA, F3R_GAMMA, lam, lora_r=F3R_RANK)
+            for lam in F3R_LAMS]
+
+
+def f3r_sub(smoke=False):
+    rows = f3r_rows(smoke)
+    return F3_SUB_TEMPLATE.format(
+        key=(F3R_SMOKE_KEY if smoke else F3R_KEY), n_jobs=len(rows),
+        gpu=F3_H100, bad=BAD_NODE_REQ, lora_r=F3R_RANK,
+        rounds=str(F3_SMOKE_ROUNDS if smoke else F3_ROUNDS),
+        kind=("3-ROUND r=16 lambda=2 RANK SMOKE" if smoke else
+              "LoRA-RANK ROBUSTNESS r=16, lambda in 0 and 2"),
+        gateflag=(" --wave rank16" + (" --smoke" if smoke else "")))
+
+
 def f3_sub(kind="main"):
     """kind: 'main' | 'smoke' | 'ext'."""
     key = {"main": F3_KEY, "smoke": F3_SMOKE_KEY, "ext": F3X_KEY}[kind]
@@ -8910,7 +8987,7 @@ def f3_sub(kind="main"):
               "ext": "60/100 (per-row nrounds)"}[kind]
     return F3_SUB_TEMPLATE.format(
         key=key, n_jobs=len(rows), gpu=F3_H100, bad=BAD_NODE_REQ,
-        rounds=rounds, kind=what,
+        rounds=rounds, kind=what, lora_r=F3_RANK,
         gateflag=(" --smoke" if kind == "smoke" else ""))
 
 
@@ -8918,7 +8995,7 @@ F3_SUB_TEMPLATE = """\
 # HTCondor: REDESIGNED FIGURE 3 FULL-LOOP CELLS -- {kind}, {n_jobs} jobs.
 # GENERATED by gen_pofd_sweep.py from the F3 block. Never edit by hand:
 # rerun the script.
-# THE FULL RECURSIVE LOOP, every row: retrain a FRESH r512 LoRA on the
+# THE FULL RECURSIVE LOOP, every row: retrain a FRESH r{lora_r} LoRA on the
 # current population labels, serve, mix the served vector into the
 # population at W_PLAT, run S = 100 complete Deffuant sweeps, and feed
 # the resulting post-peer opinions into the next round's training pool.
@@ -8958,7 +9035,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig3fullloop"
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open AI_GATE_REFERENCE=anchor EPS_AI=1 INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R={lora_r} SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_fig3fullloop"
 
 output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
 error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
@@ -14390,6 +14467,63 @@ def main():
     files[p] = rows_f3s
     expected[p] = 1
     cube_subs[os.path.join(HERE, f"at_pofd_{F3_SMOKE_KEY}.sub")] = _f3s_sub
+    # ---- LoRA-rank robustness (F3R): r=16, lambda in {0, 2} ------------
+    rows_f3r = f3r_rows()
+    assert len(rows_f3r) == F3R_N_NEW == 2, len(rows_f3r)
+    _f3r_tags = [r.split(",")[0].strip() for r in rows_f3r]
+    assert len(set(_f3r_tags)) == 2
+    # cannot collide with the 108-cell figure or ANY other queued row
+    assert not (set(_f3r_tags) & set(_f3_tags))
+    assert not (set(_f3r_tags) & {r.split(",")[0]
+                                  for rows in files.values() for r in rows})
+    _seen_lam = set()
+    for _r in rows_f3r:
+        _c = [x.strip() for x in _r.split(",")]
+        assert len(_c) == 29, (len(_c), _r)
+        assert f"_rank{F3R_RANK}_" in _c[0], _r      # rank is IN the tag
+        assert f"_{S3_OP_TOKEN}_" in _c[0], _r       # corrected operator
+        assert _c[0].endswith(f"_s{F3_SEED}_r{F3_ROUNDS}"), _r
+        _lam = float(_c[2])
+        assert _lam in F3R_LAMS, _r
+        assert _c[1] == ("sft" if _lam == 0.0 else "sft_kl"), _r
+        assert _c[11] == f"{F3R_BETA:g}", _r         # beta = W_PLAT = 1
+        assert _c[14] == f"{F3R_GAMMA:g}", _r        # gamma = 1
+        assert _c[10] == "0.0", _r                   # homophily gamma
+        assert _c[15] == "forward", _r
+        assert int(_c[16]) == F3_SWEEPS, _r          # S = 100
+        assert int(_c[17]) == 0, _r                  # ICL_K = 0: no context
+        assert _c[19] == "1" and _c[20] == "1", _r   # LoRA on, fresh each round
+        assert _c[23] == str(F3_ROUNDS), _r
+        assert _c[25] == "0", _r                     # Qwen3 thinking OFF
+        _seen_lam.add(_lam)
+    assert _seen_lam == set(F3R_LAMS)
+    # the rank cells must reuse the figure's environment EXCEPT the rank
+    _f3r_env = next(l for l in f3r_sub().splitlines()
+                    if l.startswith("environment"))
+    assert _f3r_env == _f3_env.replace(f"LORA_R={F3_RANK}",
+                                       f"LORA_R={F3R_RANK}").replace(
+        "WANDB_RUN_SUFFIX=_fig3fullloop", "WANDB_RUN_SUFFIX=_fig3fullloop"), \
+        "the rank wave must differ from Figure 3 ONLY by LORA_R"
+    assert f"LORA_R={F3R_RANK} " in _f3r_env
+    assert "check_fig3_full_loop.py --wave rank16" in f3r_sub()
+    p_ = os.path.join(HERE, f"configs_pofd_{F3R_KEY}.txt")
+    files[p_] = rows_f3r
+    expected[p_] = F3R_N_NEW
+    cube_subs[os.path.join(HERE, f"at_pofd_{F3R_KEY}.sub")] = f3r_sub()
+    rows_f3rs = f3r_rows(smoke=True)
+    assert len(rows_f3rs) == 1
+    _frs = [x.strip() for x in rows_f3rs[0].split(",")]
+    assert _frs[0].startswith("pofdf3smk_") and f"_rank{F3R_RANK}_" in _frs[0]
+    assert _frs[0].endswith(f"_r{F3_SMOKE_ROUNDS}")
+    assert float(_frs[2]) == F3R_SMOKE_LAM and _frs[1] == "sft_kl"
+    assert _frs[23] == str(F3_SMOKE_ROUNDS)
+    assert _frs[0] not in set(_f3r_tags) and _frs[0] != _fs[0]
+    assert "check_fig3_full_loop.py --wave rank16 --smoke" in f3r_sub(True)
+    p_ = os.path.join(HERE, f"configs_pofd_{F3R_SMOKE_KEY}.txt")
+    files[p_] = rows_f3rs
+    expected[p_] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{F3R_SMOKE_KEY}.sub")] = \
+        f3r_sub(smoke=True)
     # ---- targeted horizon extensions (F3X), request-file driven ---------
     rows_f3x = f3x_rows()
     if rows_f3x:

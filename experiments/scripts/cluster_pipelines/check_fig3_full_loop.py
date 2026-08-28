@@ -61,6 +61,8 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import argparse
 import gzip
+import math
+import re
 import hashlib
 import importlib.util
 import json
@@ -119,6 +121,22 @@ def _finite(t):
     return bool(torch.isfinite(torch.as_tensor(t)).all())
 
 
+_STRICT_NUM = re.compile(r"^\s*(\d*\.\d+|\d+(?:\.\d*)?)\s*$")
+
+
+def _read_jsonl_gz(path):
+    out = []
+    with gzip.open(path, "rt") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return out
+
+
 def _read_jsonl(path):
     rows = []
     for line in Path(path).read_text().splitlines():
@@ -132,7 +150,8 @@ def _read_jsonl(path):
 
 
 # --------------------------------------------------------------- 1. config
-def check_config(cfg, beta, gamma, lam, rounds, sweeps, model_id, errs):
+def check_config(cfg, beta, gamma, lam, rounds, sweeps, model_id, errs,
+                 lora_r=512):
     """Every dial the figure's caption asserts, checked against the CELL,
     not against whatever the run happened to record."""
     def eq(key, want, label=None):
@@ -159,7 +178,14 @@ def check_config(cfg, beta, gamma, lam, rounds, sweeps, model_id, errs):
     eq("icl_k", 0)
     eq("train_cap", N_AGENTS)
     eq("n_labeled", N_AGENTS)
-    eq("lora_r", 512)
+    eq("lora_r", int(lora_r))
+    # LORA_ALPHA is not an env dial: run_pokec_gated_lm sets
+    # lora_alpha = 2*lora_r unconditionally, so the scaling ratio is
+    # constant across ranks BY CONSTRUCTION. Gate it if the run records
+    # it; its absence is the older schema, not a mismatch.
+    if "lora_alpha" in cfg and int(cfg["lora_alpha"]) != 2 * int(lora_r):
+        errs.append(f"CONFIG lora_alpha={cfg['lora_alpha']!r} "
+                    f"(want {2 * int(lora_r)} = 2r)")
     # the corrected operator -- the anch2 token in the tag must be true
     if cfg.get("population_update") != "nested_ai_anchored_then_social_v2":
         errs.append(
@@ -276,6 +302,124 @@ def check_full_loop(d, run_dir, lam, rounds, errs, notes):
                      "can do this; telemetry above is the witness)")
 
 
+def check_training_dose(d, run_dir, lam, rounds, errs, rec):
+    """The stricter witnesses the rank wave needs on top of the figure's
+    per-round telemetry.
+
+    (a) ALL 723 LIVE EXAMPLES EVERY ROUND. The figure's gate only asks
+        n_train > 0; at a small rank the interesting failure is a short
+        or truncated training set, so require exactly 723.
+    (b) REQUESTED OPTIMIZER STEPS COMPLETED. sft_dose records the steps
+        that ACTUALLY ran. With 723 rows at microbatch 4 and no
+        accumulation that is ceil(723/4) = 181 per round; asking for a
+        step count is not the same as taking it.
+    (c) NONZERO LoRA B AND BA MOVEMENT. PEFT initialises lora_B at
+        exactly zero, so ||theta|| (w_norm) is nonzero before any update
+        and cannot witness training. b_norm and ba_norm can, and at a
+        small rank that is exactly the thing in doubt.
+    (d) NO KL TERM AT lambda = 0. The figure gates that a KL cell HAS an
+        anchor gradient; the mirror -- that an SFT cell has none -- was
+        never checked, and a leaked anchor would silently manufacture
+        the very reference pull this wave is testing for."""
+    expect_steps = -(-N_AGENTS // 4)          # ceil(723/4) = 181
+    rows = _read_jsonl(Path(run_dir) / "telemetry.json")
+    short = [(int(r["round"]), int(r.get("n_train", 0) or 0)) for r in rows
+             if "l_init" in r and int(r.get("n_train", 0) or 0) != N_AGENTS]
+    if short:
+        errs.append(f"DOSE {len(short)} round(s) did not train all "
+                    f"{N_AGENTS} live examples, e.g. {short[:4]}")
+    dose = d.get("sft_dose") or []
+    if len(dose) < rounds:
+        errs.append(f"DOSE only {len(dose)} sft_dose record(s) for "
+                    f"{rounds} round(s) -- the realized optimizer-step "
+                    f"count is unrecorded")
+    bad_steps = [(int(x.get("round", -1)), x.get("global_step"))
+                 for x in dose[:rounds]
+                 if int(x.get("global_step", -1)) != expect_steps]
+    if bad_steps:
+        errs.append(f"DOSE realized global_step != {expect_steps} in "
+                    f"{len(bad_steps)} round(s), e.g. {bad_steps[:4]}")
+    bad_rows = [(int(x.get("round", -1)), x.get("n_rows"))
+                for x in dose[:rounds]
+                if int(x.get("n_rows", -1)) != N_AGENTS]
+    if bad_rows:
+        errs.append(f"DOSE sft_dose n_rows != {N_AGENTS} in "
+                    f"{len(bad_rows)} round(s), e.g. {bad_rows[:4]}")
+    bn = [(int(r["round"]), float(r["b_norm"]), float(r.get("ba_norm", 0.0)))
+          for r in rows if "b_norm" in r]
+    if not bn:
+        errs.append("DOSE no b_norm telemetry -- ||B|| is the only "
+                    "witness that the optimizer moved the adapter "
+                    "(w_norm is nonzero even with B identically zero)")
+    else:
+        dead = [(t, b, ba) for t, b, ba in bn if b <= 0.0 or ba <= 0.0]
+        if dead:
+            errs.append(f"DOSE LoRA B or BA is identically zero in "
+                        f"{len(dead)} round(s), e.g. {dead[:3]} -- the "
+                        f"adapter never moved, so nothing was learned")
+        rec["b_norm_min"] = min(b for _, b, _ in bn)
+        rec["ba_norm_min"] = min(ba for _, _, ba in bn)
+        rec["ba_norm_mean"] = sum(ba for _, _, ba in bn) / len(bn)
+    gk = [float(r["grad_kl_norm0"]) for r in rows
+          if r.get("grad_kl_norm0") is not None]
+    if lam == 0.0:
+        live = [v for v in gk if abs(v) > 0.0]
+        if live:
+            errs.append(f"DOSE lambda=0 but a KL anchor gradient is "
+                        f"nonzero in {len(live)} round(s) (max "
+                        f"{max(live):.4g}) -- an SFT cell must carry NO "
+                        f"KL term")
+    else:
+        finite = [v for v in gk if math.isfinite(v)]
+        if len(finite) != len(gk):
+            errs.append(f"DOSE {len(gk) - len(finite)} non-finite KL "
+                        f"gradient norm(s)")
+        if finite:
+            rec["grad_kl_norm0_mean"] = sum(finite) / len(finite)
+            rec["grad_kl_norm0_min"] = min(finite)
+
+
+def check_generations_wellformed(run_dir, pred, rounds, errs, rec):
+    """Zero MALFORMED generations, not merely zero parse failures. Every
+    raw string must be a well-formed number in [0,1] at the start, and
+    the logged `parsed` vector must equal what was actually served."""
+    gz = Path(run_dir) / "raw_gen_log.json.gz"
+    if not gz.exists():
+        errs.append("GENERATIONS raw_gen_log.json.gz ABSENT -- the parser "
+                    "stores a finite default on failure, so the malformed "
+                    "rate cannot be established anywhere else")
+        return
+    rows = _read_jsonl_gz(gz)
+    got = [r.get("round") for r in rows]
+    if got != list(range(rounds)):
+        errs.append(f"GENERATIONS raw log must carry rounds 0..{rounds - 1} "
+                    f"once, in order; got {got[:6]}")
+    malformed, mismatch, total = [], [], 0
+    for r in rows:
+        t = r.get("round")
+        raws, parsed = r.get("raw") or [], r.get("parsed") or []
+        for i, txt in enumerate(raws):
+            total += 1
+            m = _STRICT_NUM.match(str(txt).strip())
+            if not m or not (0.0 <= float(m.group(1)) <= 1.0):
+                malformed.append((t, i, str(txt)[:14]))
+        if isinstance(t, int) and 0 <= t < pred.shape[0] \
+                and len(parsed) == N_AGENTS:
+            pv = torch.tensor([float(v) for v in parsed])
+            diff = (pv.clamp(0, 1) - pred[t].clamp(0, 1)).abs()
+            if float(diff.max()) > 1e-6:
+                mismatch.append((t, float(diff.max())))
+    if malformed:
+        errs.append(f"GENERATIONS {len(malformed)}/{total} malformed, "
+                    f"e.g. {malformed[:3]}")
+    if mismatch:
+        errs.append(f"GENERATIONS the logged `parsed` vector != pred_raw "
+                    f"in {len(mismatch)} round(s), e.g. {mismatch[:3]} -- "
+                    f"the raw log does not describe this trajectory")
+    rec["n_generations"] = total
+    rec["n_malformed"] = len(malformed)
+
+
 # ---------------------------------------------------- 5. zero parse failures
 def check_parse(run_dir, pred, rounds, errs):
     """parse_fail_frac lives ONLY in raw_gen_log.json.gz (gzipped JSONL)
@@ -309,8 +453,9 @@ def check_parse(run_dir, pred, rounds, errs):
 
 # ============================================================ per-cell check
 def check_gpu_cell(tag, beta, gamma, lam, rounds, sweeps, model_id, roots,
-                   common_rounds=None):
+                   common_rounds=None, lora_r=512, strict_dose=False):
     errs, notes = [], []
+    extra = {}
     common_rounds = rounds if common_rounds is None else common_rounds
     path = _resolve(tag, roots)
     if path is None:
@@ -318,12 +463,17 @@ def check_gpu_cell(tag, beta, gamma, lam, rounds, sweeps, model_id, roots,
                 ["no trajectory.pt under any run root"], "notes": []}
     d = torch.load(path, map_location="cpu", weights_only=False)
     cfg = d.get("config", {}) or {}
-    check_config(cfg, beta, gamma, lam, rounds, sweeps, model_id, errs)
+    check_config(cfg, beta, gamma, lam, rounds, sweeps, model_id, errs,
+                 lora_r=lora_r)
     check_arrays(d, rounds, errs)
     if all(not e.startswith("ARTIFACT") for e in errs):
         check_full_loop(d, path.parent, lam, rounds, errs, notes)
-        src = check_parse(path.parent, torch.as_tensor(d["pred_raw"]).float(),
-                          rounds, errs)
+        pred = torch.as_tensor(d["pred_raw"]).float()
+        src = check_parse(path.parent, pred, rounds, errs)
+        if strict_dose:
+            check_training_dose(d, path.parent, lam, rounds, errs, extra)
+            check_generations_wellformed(path.parent, pred, rounds, errs,
+                                         extra)
     else:
         src = "n/a"
     op = torch.as_tensor(d["op_raw"]).float()[:rounds]
@@ -338,7 +488,7 @@ def check_gpu_cell(tag, beta, gamma, lam, rounds, sweeps, model_id, roots,
                                [:common_rounds])
             if "twin_raw" in d else None,
             "innate_sha": _sha_t(torch.as_tensor(d["innate"]).float())
-            if "innate" in d else None}
+            if "innate" in d else None, "lora_r": int(lora_r), **extra}
 
 
 def check_frozen_cell(beta, gamma, sweeps, rounds, frozen_dir, model_id):
@@ -406,6 +556,9 @@ def main():
     ap.add_argument("--frozen-dir", default=str(DEFAULT_FROZEN_DIR))
     ap.add_argument("--smoke", action="store_true",
                     help="gate the 3-round smoke cell instead of the grid")
+    ap.add_argument("--wave", default="fig3", choices=("fig3", "rank16"),
+                    help="fig3 = the 108-cell figure; rank16 = the LoRA-"
+                         "rank robustness cells (r=16, lambda in {0,2})")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
@@ -414,7 +567,49 @@ def main():
     model_id = g.FAM_MODELS[g.F3_MODEL]["base_model"]
 
     records, ok = [], True
-    if args.smoke:
+    if args.wave == "rank16":
+        # The rank wave is TWO trained cells plus the shared frozen
+        # endpoint. It gets the figure's gates AND the stricter dose /
+        # generation witnesses, because at a small rank the failure that
+        # matters is "the adapter could not fit", which a merely valid
+        # loop still passes.
+        rows = g.f3r_rows(smoke=args.smoke)
+        for row in rows:
+            c = [x.strip() for x in row.split(",")]
+            rec = check_gpu_cell(
+                c[0], float(c[11]), float(c[14]), float(c[2]),
+                g.F3_SMOKE_ROUNDS if args.smoke else g.F3_ROUNDS,
+                g.F3_SWEEPS, model_id, roots, lora_r=g.F3R_RANK,
+                strict_dose=True)
+            rec["kind"] = "gpu"
+            records.append(rec)
+        if not args.smoke:
+            # the rank-512 comparators must exist and still gate, or the
+            # comparison has nothing to stand on
+            for lam, tag in sorted(g.F3R_REUSED.items()):
+                rounds = 60 if tag.endswith("_r60") else g.F3_ROUNDS
+                rec = check_gpu_cell(tag, g.F3R_BETA, g.F3R_GAMMA, lam,
+                                     rounds, g.F3_SWEEPS, model_id, roots,
+                                     common_rounds=g.F3_ROUNDS,
+                                     lora_r=g.F3_RANK)
+                rec["kind"] = "gpu-reused-r512"
+                records.append(rec)
+            # lambda = inf: rank-independent, and must NEVER have trained
+            fr = check_frozen_cell(g.F3R_BETA, g.F3R_GAMMA, g.F3_SWEEPS,
+                                   g.F3_ROUNDS, Path(args.frozen_dir),
+                                   model_id)
+            fr["kind"] = "frozen-shared"
+            fr.setdefault("errors", [])
+            src = Path(args.frozen_dir) / g.F3_FROZEN_SOURCE
+            for probe in ("round0_adapter", "adapter_r1", "trl"):
+                if (src / probe).exists():
+                    fr["errors"].append(
+                        f"FROZEN endpoint has {probe}/ -- lambda=inf must "
+                        f"instantiate no adapter and never retrain")
+            if fr["errors"]:
+                fr["status"] = "FAIL"
+            records.append(fr)
+    elif args.smoke:
         row = g.f3_smoke_rows()[0]
         c = [x.strip() for x in row.split(",")]
         rec = check_gpu_cell(c[0], float(c[11]), float(c[14]), float(c[2]),

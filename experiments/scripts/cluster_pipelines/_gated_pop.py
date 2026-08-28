@@ -556,6 +556,37 @@ def adapter_step(cur, prev=None):
     return total ** 0.5
 
 
+def lora_ab_norms(cur):
+    """(||B||, ||BA||) over a LoRA adapter snapshot.
+
+    WHY THIS EXISTS SEPARATELY FROM adapter_step. PEFT initialises
+    lora_A at random and lora_B at EXACTLY ZERO, so ||theta|| is
+    nonzero from the very first forward pass and can never witness that
+    an optimizer actually moved the adapter. ||B|| can: it is 0 before
+    any update and > 0 after one. ||BA|| is the Frobenius norm of the
+    effective weight delta the model actually applies, which is the
+    quantity that has to be nonzero for training to have changed any
+    prediction at all. Pure telemetry -- reads parameters, consumes no
+    RNG, and changes nothing about training.
+
+    A key without a matching lora_A partner contributes to ||B|| only;
+    the pairing is by name, so a rename in PEFT shows up as a zero
+    ||BA|| rather than a silently wrong number."""
+    b_sq = 0.0
+    ba_sq = 0.0
+    for k, v in cur.items():
+        if ".lora_B." not in k:
+            continue
+        b = v.detach().float()
+        b_sq += float((b * b).sum())
+        a = cur.get(k.replace(".lora_B.", ".lora_A."))
+        if a is not None and a.ndim == 2 and b.ndim == 2 \
+                and b.shape[1] == a.shape[0]:
+            ba = b @ a.detach().float()
+            ba_sq += float((ba * ba).sum())
+    return b_sq ** 0.5, ba_sq ** 0.5
+
+
 def _example_ids(lm, agent_i, y_i, fmt):
     """(input_ids, labels) for one prompt+completion example, prompt masked."""
     prompt = lm.build_prompt(lm.profile_at(int(agent_i)))

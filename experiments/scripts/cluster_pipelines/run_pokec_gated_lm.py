@@ -3032,6 +3032,12 @@ def main() -> int:
             if use_lora and training_style != "frozen":
                 cur_adapter = gp.snapshot_trainable(lm.inner_model)
                 loss_block["w_norm"] = gp.adapter_step(cur_adapter)
+                # ||B|| and ||BA||: w_norm mixes the random-initialised A
+                # with the zero-initialised B, so it is nonzero even if
+                # the optimizer never moved anything. These two are the
+                # witness that it did (2026-08-28, rank-robustness wave).
+                loss_block["b_norm"], loss_block["ba_norm"] = \
+                    gp.lora_ab_norms(cur_adapter)
                 if prev_adapter is not None:
                     loss_block["w_step"] = gp.adapter_step(cur_adapter, prev_adapter)
                 prev_adapter = cur_adapter
