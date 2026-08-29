@@ -88,6 +88,15 @@ def test_surface_is_the_fec_one():
         assert c[23] == str(ROUNDS)
 
 
+def test_rows_request_the_larger_memory_tier():
+    """The first smoke was held at 128G having used 146485 MB; the KL arm
+    holds a reference model alongside the policy under the current stack.
+    Both arms carry the same request so they differ only in
+    FRESH_EACH_ROUND."""
+    for r in rows(CFG) + rows(SMOKE_CFG):
+        assert cols(r)[26] == "200G", cols(r)[26]
+
+
 def test_gate_is_never_all_open():
     """THE load-bearing check. _gated_pop.ai_gate returns an all-ones
     mask under all_open BEFORE reading the gate reference, so anch2 and

@@ -5626,6 +5626,16 @@ CAC_INNATE_LAMBDA = 0.2
 CAC_SWEEPS = 1
 CAC_H100 = S3_H100
 CAC_N_NEW = len(CAC_LAMS) * len(CAC_ARMS) * len(CAC_SEEDS)   # 12
+# MEMORY. The first smoke was HELD at the 128G tier having used 146485 MB
+# (2026-08-29). The rank-16 wave hit the SAME ceiling on a different model
+# (Qwen3-8B there, Qwen2.5-7B here), so this is the KL arm's footprint --
+# a reference model held alongside the policy -- under the current TRL /
+# transformers stack, not a model-specific quirk. The archived fec cells
+# fit in 128G in August under a lighter stack. 200G is an existing tier
+# here. Applied uniformly to both arms so the two differ in nothing but
+# FRESH_EACH_ROUND, and via the per-row queue column so no other wave's
+# rows move.
+CAC_MEM = "200G"
 
 
 def cac_tag(lam, arm, seed, rounds=CAC_ROUNDS, smoke=False):
@@ -5653,10 +5663,14 @@ def cac_row(lam, arm, fresh, seed, rounds=CAC_ROUNDS, smoke=False):
 def cac_rows(smoke=False):
     """Smoke: the continual lambda=2 cell at seed 0 -- carried weights
     against the strongest anchor is the combination this wave adds."""
+    def _mem(row):
+        c = [x.strip() for x in row.split(",")]
+        c[26] = CAC_MEM                  # request_memory column
+        return ", ".join(c)
     if smoke:
-        return [cac_row(2.0, "adcont", 0, 0, rounds=CAC_SMOKE_ROUNDS,
-                        smoke=True)]
-    return [cac_row(lam, arm, fresh, seed)
+        return [_mem(cac_row(2.0, "adcont", 0, 0,
+                             rounds=CAC_SMOKE_ROUNDS, smoke=True))]
+    return [_mem(cac_row(lam, arm, fresh, seed))
             for lam in CAC_LAMS
             for arm, fresh in CAC_ARMS
             for seed in CAC_SEEDS]
