@@ -141,21 +141,26 @@ def beta_eff(k, w):
 
 
 def artifact_name(cfg):
-    """Filename encoding k, W, BOTH gate modes, the social threshold, the
-    seed and the horizon -- every dial that changes the trajectory. Two
-    cells that differ in any of them cannot land on the same file."""
+    """Filename encoding every dial that changes the trajectory.
+
+    Legacy midpoint cells retain their canonical names; nondefault Deffuant
+    alpha values receive an explicit ``_a`` token.
+    """
     ea = ("eaopen" if cfg["ai_gate_mode"] == "all_open"
           else f"ea{_num(cfg['eps_ai'])}")
     es = ("esopen" if cfg["peer_gate_mode"] == "all_open"
           else f"es{_num(cfg['eps_social'])}")
+    alpha = float(cfg.get("deffuant_alpha", 0.5))
+    alpha_token = "" if alpha == 0.5 else f"_a{_num(alpha)}"
     return (f"pp_k{_num(cfg['innate_k'])}_w{_num(cfg['w_plat'])}"
             f"_{ea}_{es}_sw{cfg['ab_sweeps']}"
-            f"_s{cfg['seed']}_r{cfg['rounds']}.pt")
+            f"{alpha_token}_s{cfg['seed']}_r{cfg['rounds']}.pt")
 
 
 def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
              ai_gate_mode="threshold", peer_gate_mode="threshold",
-             ab_sweeps=1, gamma=0.0, dtype=torch.float32,
+             ab_sweeps=1, gamma=0.0, deffuant_alpha=0.5,
+             dtype=torch.float32, gate_on="anchor",
              served_fn=None, require_open_gate=None, accepted_out=None):
     """Population trajectory under a served signal + its matched twin.
 
@@ -220,9 +225,16 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
         # ever read at :209), but the provenance was wrong, and an oracle
         # that misreports which operator it ran is worse than useless.
         # Named here so a future default change cannot move it again.
+        # gate_on is now a PARAMETER (2026-08-29) rather than a literal:
+        # replaying a PRE-CORRECTION trajectory needs gate_on="x0", and
+        # forcing "anchor" onto a v1 source silently replays different
+        # dynamics. It is inert wherever the AI gate is all_open (the
+        # mask is all-ones before the reference is read) and wherever
+        # k = 0 (x' == x0), which is why this went unnoticed. The default
+        # stays "anchor", so every existing caller is unchanged.
         x_pp, gate = gp.nested_presocial_update(
             x_pp, served, innate, innate_k, w_agent, eps_ai,
-            gate_mode=ai_gate_mode, gate_on="anchor")
+            gate_mode=ai_gate_mode, gate_on=gate_on)
         if require_open_gate and not bool(gate.all()):
             raise AssertionError(
                 "perfect prediction must open every AI gate (|m - x| = 0); "
@@ -231,7 +243,8 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
         acc = 0
         for _ in range(ab_sweeps):
             acc += gp.ab_sweep(x_pp, adj, eps_social, gamma, gen=gen_pp,
-                               gate_mode=peer_gate_mode)
+                               gate_mode=peer_gate_mode,
+                               alpha=deffuant_alpha)
         if accepted_out is not None:
             accepted_out.append(int(acc))
         pp_raw.append(x_pp.detach().clone())
@@ -240,7 +253,8 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
         x_cf = innate_k * innate + (1.0 - innate_k) * x_cf
         for _ in range(ab_sweeps):
             gp.ab_sweep(x_cf, adj, eps_social, gamma, gen=gen_cf,
-                        gate_mode=peer_gate_mode)
+                        gate_mode=peer_gate_mode,
+                        alpha=deffuant_alpha)
         twin_raw.append(x_cf.detach().clone())
     return (torch.stack(pp_raw), torch.stack(twin_raw),
             torch.stack(served_raw))
@@ -266,6 +280,7 @@ def build_config(args, setup):
         "ai_gate_mode": args.ai_gate_mode,
         "peer_gate_mode": args.peer_gate_mode,
         "ab_sweeps": int(args.sweeps),
+        "deffuant_alpha": float(args.alpha),
         "gamma_bias": float(args.gamma),
         "rounds": int(args.rounds),
         "seed": int(args.seed),
@@ -276,7 +291,7 @@ def build_config(args, setup):
         "innate_sha256": _sha(setup["innate"]),
         "adj_sha256": _sha((setup["adj"] > 0).to(torch.uint8)),
         "platform_sus_sha256": _sha(setup["platform_sus"]),
-        "sim_version": "sim_perfect_predictor/2026-08-20",
+        "sim_version": "sim_perfect_predictor/2026-08-24-alpha",
     }
 
 
@@ -303,6 +318,8 @@ def main():
     ap.add_argument("--peer-gate-mode", default="threshold",
                     choices=("threshold", "all_open"))
     ap.add_argument("--sweeps", type=int, default=1)
+    ap.add_argument("--alpha", type=float, default=0.5,
+                    help="symmetric Deffuant compromise rate in [0, 0.5]")
     ap.add_argument("--gamma", type=float, default=0.0,
                     help="gamma_bias; the project pins it at 0")
     ap.add_argument("--rounds", type=int, default=30)
@@ -330,6 +347,8 @@ def main():
     if args.peer_gate_mode == "all_open" and args.eps_social <= 0:
         ap.error("--peer-gate-mode all_open with --eps-social 0 is "
                  "contradictory (eps_social=0 is the NO-PEER condition)")
+    if not 0.0 <= args.alpha <= 0.5:
+        ap.error("--alpha must lie in [0, 0.5]")
 
     setup = extract_loader()(
         REPO / "experiments/data/movielens/ml-100k", "Action")
@@ -359,7 +378,8 @@ def main():
         rounds=cfg["rounds"], seed=cfg["seed"],
         ai_gate_mode=cfg["ai_gate_mode"],
         peer_gate_mode=cfg["peer_gate_mode"],
-        ab_sweeps=cfg["ab_sweeps"], gamma=cfg["gamma_bias"])
+        ab_sweeps=cfg["ab_sweeps"], gamma=cfg["gamma_bias"],
+        deffuant_alpha=cfg["deffuant_alpha"])
 
     payload = {"config": cfg, "op_raw": pp_raw, "twin_raw": twin_raw,
                "pred_raw": served_raw, "innate": setup["innate"].clone()}
@@ -370,6 +390,7 @@ def main():
         print(f"[pp] k={cfg['innate_k']:g} W={cfg['w_plat']:g} "
               f"beta_eff={cfg['beta_eff']:.4g} "
               f"ai={cfg['ai_gate_mode']} peer={cfg['peer_gate_mode']} "
+              f"alpha={cfg['deffuant_alpha']:g} "
               f"eps_social={cfg['eps_social']:g} rounds={cfg['rounds']} "
               f"seed={cfg['seed']}")
         print(f"[pp]   innate mean {float(ini.mean()):.6f} "

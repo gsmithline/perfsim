@@ -77,13 +77,27 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent.parent
 
 SEEDS = (0, 42, 43)
-LAMBDAS = (("b0", 0.0), ("b0p5", 0.5), ("b1", 1.0))
-BODY = "qwen7b_{lam}_ea0p4_w0p5_l0p2_es0p2_s{seed}_fresh_data"
-CONT_PREFIX = "pofdws2fc_"
-# lambda=0 seed 0 has no forward-family twin: the direction-free ws2 cell
-# is the matched fresh run (see the module docstring).
-FRESH_PREFIX_OVERRIDE = {("b0", 0): "pofdws2_"}
-FRESH_PREFIX = "pofdws2f_"
+# --wave fec    the archived PRE-CORRECTION pair (v1 operator)
+# --wave anch2  the 2026-08-29 corrected repeat, both arms newly run
+WAVES = {
+    "fec": dict(
+        lambdas=(("b0", 0.0), ("b0p5", 0.5), ("b1", 1.0)),
+        body="qwen7b_{lam}_ea0p4_w0p5_l0p2_es0p2_s{seed}_fresh_data",
+        cont_prefix="pofdws2fc_", fresh_prefix="pofdws2f_",
+        # lambda=0 seed 0 has no forward-family twin: the direction-free
+        # ws2 cell is the matched fresh run (see the docstring)
+        fresh_override={("b0", 0): "pofdws2_"},
+        operator="nested_ai_then_social_v1",
+        raw_gen=False),
+    "anch2": dict(
+        lambdas=(("b0", 0.0), ("b2", 2.0)),
+        body=("qwen7b_{lam}_ea0p4_w0p5_l0p2_es0p2_anch2_{arm}"
+              "_s{seed}_r30"),
+        cont_prefix="pofdcac_", fresh_prefix="pofdcac_",
+        fresh_override={}, arm_tokens=("adfresh", "adcont"),
+        operator="nested_ai_anchored_then_social_v2",
+        raw_gen=True),
+}
 
 LATE = 5                     # final-five-round window (repo convention)
 T95_DF2 = 4.302652729911275  # two-sided 95% Student-t, 2 dof
@@ -106,8 +120,13 @@ FRESH_C = "#4c72b0"
 INK = "#202328"
 
 
-def run_dir(root: Path, prefix: str, lam: str, seed: int) -> Path:
-    return root / (prefix + BODY.format(lam=lam, seed=seed))
+def run_dir(root: Path, w: dict, arm: str, lam: str, seed: int) -> Path:
+    pre = (w["cont_prefix"] if arm == "continual" else
+           w["fresh_override"].get((lam, seed), w["fresh_prefix"]))
+    kw = {"lam": lam, "seed": seed}
+    if "{arm}" in w["body"]:
+        kw["arm"] = w["arm_tokens"][0 if arm == "fresh" else 1]
+    return root / (pre + w["body"].format(**kw))
 
 
 def load(d: Path):
@@ -160,12 +179,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--runs-root",
                     default=str(REPO / "notes" / "pofd" / "cluster"))
-    ap.add_argument("--out-dir",
-                    default=str(REPO / "notes" / "pofd"
-                               / "continual_adapter_control"))
+    ap.add_argument("--wave", default="fec", choices=tuple(WAVES),
+                    help="fec = the archived pre-correction pair; "
+                         "anch2 = the corrected repeat")
+    ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
+    W = WAVES[args.wave]
+    LAMBDAS = W["lambdas"]
     root = Path(args.runs_root)
-    out = Path(args.out_dir)
+    out = Path(args.out_dir) if args.out_dir else (
+        REPO / "notes" / "pofd" / f"continual_adapter_control_{args.wave}"
+        if args.wave != "fec" else
+        REPO / "notes" / "pofd" / "continual_adapter_control")
     out.mkdir(parents=True, exist_ok=True)
 
     cells, gate_errs, gate_warns = [], [], []
@@ -175,10 +200,7 @@ def main() -> int:
     for lam_tok, lam in LAMBDAS:
         for seed in SEEDS:
             for arm in ("fresh", "continual"):
-                pre = (CONT_PREFIX if arm == "continual" else
-                       FRESH_PREFIX_OVERRIDE.get((lam_tok, seed),
-                                                 FRESH_PREFIX))
-                d = run_dir(root, pre, lam_tok, seed)
+                d = run_dir(root, W, arm, lam_tok, seed)
                 if not (d / "trajectory.pt").exists():
                     gate_errs.append(f"MISSING {arm} lam={lam} s={seed}: {d}")
                     continue
@@ -222,11 +244,18 @@ def main() -> int:
                 if lam > 0 and cfg.get("kl_direction") != "forward":
                     gate_errs.append(f"{d.name}: kl_direction="
                                      f"{cfg.get('kl_direction')!r}")
-                if cfg.get("population_update") != CORRECTED_OPERATOR:
-                    gate_warns.append(
-                        f"{d.name}: population_update="
-                        f"{cfg.get('population_update')!r} (NOT the "
-                        f"corrected {CORRECTED_OPERATOR})")
+                if cfg.get("population_update") != W["operator"]:
+                    msg = (f"{d.name}: population_update="
+                           f"{cfg.get('population_update')!r} (want "
+                           f"{W['operator']!r})")
+                    (gate_errs if args.wave == "anch2"
+                     else gate_warns).append(msg)
+                if args.wave == "anch2" \
+                        and cfg.get("ai_gate_mode") == "all_open":
+                    gate_errs.append(
+                        f"{d.name}: ai_gate_mode=all_open -- anch2 is "
+                        f"numerically identical to the legacy operator "
+                        f"there, so the corrected control is void")
                 if default_frac > 0.0:
                     gate_warns.append(f"{d.name}: {default_frac:.4%} of "
                                       f"served values are exactly 0.5")
@@ -258,6 +287,11 @@ def main() -> int:
             if lam > 0 and a.get("kl_direction") != b.get("kl_direction"):
                 gate_errs.append(f"lam={lam} s={seed}: kl_direction differs")
 
+    if not cells:
+        print(f"[cac] no cells loaded for --wave {args.wave}; expected:")
+        for e in gate_errs:
+            print("   -", e)
+        return 1
     cells_p = out / "continual_adapter_control_cells.csv"
     with cells_p.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(cells[0]))
