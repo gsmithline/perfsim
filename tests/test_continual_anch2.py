@@ -126,6 +126,16 @@ def test_both_arms_ride_one_sub_via_a_queue_column():
     assert "FRESH_EACH_ROUND=$(fresh)" in env
 
 
+def test_retry_cannot_land_on_the_node_that_just_failed():
+    """A node can advertise an H100 and still fail CUDA init (i205,
+    2026-08-29). periodic_release retries, but without this clause the
+    retry can land on the same broken node and burn a start."""
+    for p in (SUB, SMOKE_SUB):
+        req = next(l for l in open(p) if l.startswith("requirements"))
+        assert "(TARGET.Machine =!= MY.LastRemoteHost)" in req
+        assert "periodic_release" in open(p).read()
+
+
 def test_raw_generations_are_saved():
     """The archived fec wave omitted SAVE_RAW_GEN, which is why its
     malformed rate could only be bounded, not counted."""
