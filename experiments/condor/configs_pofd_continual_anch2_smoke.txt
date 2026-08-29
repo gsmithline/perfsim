@@ -1,0 +1,1 @@
+pofdcacsmk_qwen7b_b2_ea0p4_w0p5_l0p2_es0p2_anch2_adcont_s0_r3, sft_kl, 2, 0, 1, replace, 1.0, fixed, ab, 0.2, 0.0, 0.5, loop, 0.0, 0.2, forward, 1, 0, -1, 1, 0, 16, 0, 3, Qwen/Qwen2.5-7B-Instruct, default, 128G, 40G, 64

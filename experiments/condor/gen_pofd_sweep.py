@@ -5572,6 +5572,154 @@ ROW_PS = ("{tag}, {style}, {beta}, {seed}, 1, replace, 1.0, fixed, "
           "{iclk}, {snap}, {uselora}, {fresh}, {ansk}, {gg}, {nrounds}, "
           "{basemodel}, {chatthink}, {mem}, {disk}, {pplbatch}")
 
+# continual_anch2[_smoke] (2026-08-29, user). CORRECTED CONTINUAL-
+# ADAPTATION CONTROL: fresh vs carried adapter weights, under anch2.
+#
+# WHY THIS CANNOT REUSE ANYTHING, and why it is 12 jobs rather than 6.
+# The archived fresh-vs-continual pair (qwen7b_fec, 2026-08-01) runs the
+# PRE-CORRECTION operator nested_ai_then_social_v1 on BOTH sides, so it
+# is internally matched but not a corrected-operator result. Redoing it
+# under anch2 needs a surface where anch2 actually differs from v1, and
+# that is exactly a NUMERIC AI gate with k > 0: _gated_pop.ai_gate
+# returns an all-ones mask under all_open BEFORE the gate reference is
+# ever read, so at an open-gate surface v1 and v2 are numerically
+# IDENTICAL and a "corrected" control there would be a tautology.
+# The only 3-seed anch2 fresh cells in the archive (pofds3m_, W=1, k=1,
+# both gates open) are therefore unusable here on two counts: open gates
+# make the correction inert, and they exist only at lambda=2.
+# A cluster-wide audit (2026-08-29) finds ZERO anch2 cells at the fec
+# surface (w0p5, l0p2, es0p2). Nothing is reusable, so both arms are
+# queued: 2 lambdas x 2 weight protocols x 3 seeds = 12 jobs.
+#
+# THE SURFACE is the fec wave's, unchanged except the operator:
+# Qwen2.5-7B, movielens/Action 723, 30 rounds, W = 0.5, k = 0.2,
+# eps_AI = 0.4 (THRESHOLD, not all_open), eps_social = 0.2, S = 1,
+# replace/723, fresh data every round, forward KL, LoRA r512, seed
+# {0,42,43}. Dispersion is preserved here, which matters: the archived
+# contrast's headline was a population-SD effect at strong anchoring,
+# and at W=1 with S=100 the population is at consensus (SD ~3e-4) so
+# that effect could not be seen at all.
+#
+# WHAT THE ARMS MEAN, precisely. FRESH_EACH_ROUND=1 restores the LoRA
+# adapter to its pristine snapshot before every round; =0 lets the
+# adapter persist and keep training. THE OPTIMIZER IS RECREATED EACH
+# ROUND IN BOTH ARMS -- SFTLearner.train() builds a new SFTTrainer per
+# call and passes no optimizers=, so AdamW and its schedule start from
+# zero every round. This is WEIGHT carryover, never optimizer-moment
+# carryover.
+#
+# SAVE_RAW_GEN=1 is set, which the archived fec wave did NOT do: that
+# omission is why its malformed-generation rate could only be bounded
+# from the served values rather than counted.
+CAC_KEY = "continual_anch2"
+CAC_SMOKE_KEY = "continual_anch2_smoke"
+CAC_MODEL = "qwen7b"
+CAC_LAMS = (0.0, 2.0)                 # kl_beta
+CAC_SEEDS = (0, 42, 43)
+CAC_ARMS = (("adfresh", 1), ("adcont", 0))   # tag token -> FRESH_EACH_ROUND
+CAC_ROUNDS = 30
+CAC_SMOKE_ROUNDS = 3
+CAC_EPS_AI = 0.4
+CAC_EPS_SOCIAL = 0.2
+CAC_W_PLAT = 0.5
+CAC_INNATE_LAMBDA = 0.2
+CAC_SWEEPS = 1
+CAC_H100 = S3_H100
+CAC_N_NEW = len(CAC_LAMS) * len(CAC_ARMS) * len(CAC_SEEDS)   # 12
+
+
+def cac_tag(lam, arm, seed, rounds=CAC_ROUNDS, smoke=False):
+    pre = "pofdcacsmk" if smoke else "pofdcac"
+    return (f"{pre}_{CAC_MODEL}_b{_num(lam)}_ea{_num(CAC_EPS_AI)}"
+            f"_w{_num(CAC_W_PLAT)}_l{_num(CAC_INNATE_LAMBDA)}"
+            f"_es{_num(CAC_EPS_SOCIAL)}_{S3_OP_TOKEN}_{arm}"
+            f"_s{seed}_r{rounds}")
+
+
+def cac_row(lam, arm, fresh, seed, rounds=CAC_ROUNDS, smoke=False):
+    a = REACH_ARM_COLS["b1"]
+    m = FAM_MODELS[CAC_MODEL]
+    return ROW_PS.format(
+        tag=cac_tag(lam, arm, seed, rounds, smoke),
+        style=("sft" if lam == 0.0 else "sft_kl"), beta=f"{lam:g}",
+        seed=seed, es=f"{CAC_EPS_SOCIAL:g}", wplat=f"{CAC_W_PLAT:g}",
+        lam=f"{CAC_INNATE_LAMBDA:g}", kldir="forward", sweeps=CAC_SWEEPS,
+        iclk=a["iclk"], snap=a["snap"], uselora=a["uselora"],
+        fresh=fresh, ansk=a["ansk"], gg=a["gg"], nrounds=rounds,
+        basemodel=m["base_model"], chatthink=m["chatthink"],
+        mem=m["mem"], disk=m["disk"], pplbatch=m["pplbatch"])
+
+
+def cac_rows(smoke=False):
+    """Smoke: the continual lambda=2 cell at seed 0 -- carried weights
+    against the strongest anchor is the combination this wave adds."""
+    if smoke:
+        return [cac_row(2.0, "adcont", 0, 0, rounds=CAC_SMOKE_ROUNDS,
+                        smoke=True)]
+    return [cac_row(lam, arm, fresh, seed)
+            for lam in CAC_LAMS
+            for arm, fresh in CAC_ARMS
+            for seed in CAC_SEEDS]
+
+
+def cac_sub(smoke=False):
+    rows = cac_rows(smoke)
+    return CAC_SUB_TEMPLATE.format(
+        key=(CAC_SMOKE_KEY if smoke else CAC_KEY), n_jobs=len(rows),
+        gpu=CAC_H100, bad=BAD_NODE_REQ, eps_ai=f"{CAC_EPS_AI:g}",
+        rounds=(CAC_SMOKE_ROUNDS if smoke else CAC_ROUNDS),
+        kind=("3-ROUND CONTINUAL lambda=2 SMOKE" if smoke else
+              "CORRECTED CONTINUAL CONTROL, fresh vs carried weights"),
+        gateflag=(" --smoke" if smoke else ""))
+
+
+CAC_SUB_TEMPLATE = """\
+# HTCondor: CORRECTED CONTINUAL-ADAPTATION CONTROL -- {kind}, {n_jobs} jobs.
+# GENERATED by gen_pofd_sweep.py from the CAC block. Never edit by hand.
+# Fresh vs CARRIED LoRA weights under the CORRECTED anch2 operator.
+# The only dial that differs between the two arms is FRESH_EACH_ROUND
+# (queue col fresh): 1 restores the pristine adapter before every round,
+# 0 lets it persist and keep training. THE OPTIMIZER IS REBUILT EVERY
+# ROUND IN BOTH ARMS, so this is weight carryover and NOT
+# optimizer-moment carryover.
+# Surface: Qwen2.5-7B, movielens/Action 723, {rounds} rounds, W = 0.5,
+# k = 0.2, eps_AI = {eps_ai} on a THRESHOLD gate (never all_open -- under
+# all_open the AI gate returns all-ones before the gate reference is
+# read, so anch2 and the legacy operator are numerically identical and
+# the whole control would be a tautology), eps_social = 0.2, S = 1,
+# replace/723, forward KL, LoRA r512, SAVE_RAW_GEN=1.
+# AI_GATE_REFERENCE=anchor is pinned EXPLICITLY so config
+# population_update == "nested_ai_anchored_then_social_v2" by
+# construction rather than inherited from a default that could flip.
+# Gate: python experiments/scripts/cluster_pipelines/check_continual_anch2.py{gateflag}
+# Submit: bash experiments/condor/submit_pofd_sweep.sh <BID> {key}
+universe          = vanilla
+executable        = /home/gsmithline/perfsim/experiments/condor/run_one_pokec_gated_idempotent.sh
+arguments         = $(tag) $(style) $(beta) $(seed) $(deploy_every) $(regime) $(pscale) $(anchor) $(pop) $(eps) $(gamma) $(wplat) $(mode) $(canary)
+
+request_cpus      = 4
+request_memory    = $(mem)
+request_disk      = $(disk)
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 80000) && (TARGET.CUDADeviceName == "{gpu}"){bad}
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key WANDB_PROJECT=perfsim-gated-lm DATASET=movielens ML_TARGET=Action HF_HOME=/lustre/fast/fast/gsmithline/hf_cache HF_HUB_OFFLINE=1 EPS_AI={eps_ai} AI_GATE_MODE=threshold PEER_GATE_MODE=threshold AI_GATE_REFERENCE=anchor INNATE_LAMBDA=$(lam) AB_SWEEPS=$(sweeps) ICL_K=$(iclk) ICL_SNAPSHOT_ROUND=$(snap) ICL_DAYS=0 ICL_SELECT=random ICL_CTX_SOURCE=live USE_LORA=$(uselora) FRESH_EACH_ROUND=$(fresh) ANS_SAMPLE_K=$(ansk) ANS_SAMPLE_N=64 ANS_SAMPLE_T=1.0 LOG_GENDER_GAPS=$(gg) KL_DIRECTION=$(kldir) WITH_TWIN=1 SAVE_RAW_GEN=1 CHAT_THINKING=$(chatthink) BASE_MODEL=$(basemodel) TRAIN_CAP=723 N_ROUNDS=$(nrounds) EPOCH_SIZE=100 SFT_EPOCHS=1 SFT_BATCH_SIZE=4 GEN_BATCH_SIZE=32 LORA_R=512 SFT_LR=5e-5 N_LABELED=723 HIST_BINS=50 LOG_PERPLEXITY=1 N_PERPLEXITY=64 LOG_PPL_DIST=1 PPL_DIST_CAP=0 PPL_BATCH=$(pplbatch) SEED_BASE_DATA=1 WANDB_RUN_SUFFIX=_continual_anch2"
+
+output            = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).out
+error             = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).err
+log               = /home/gsmithline/perfsim/experiments/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+on_exit_hold      = (ExitCode =!= 0)
+periodic_release  = (NumJobStarts < 5) && ((time() - EnteredCurrentStatus) > 180)
+periodic_remove   = (JobStatus == 5) && (NumJobStarts >= 5) && ((time() - EnteredCurrentStatus) > 600)
+
+queue tag, style, beta, seed, deploy_every, regime, pscale, anchor, pop, eps, gamma, wplat, mode, canary, lam, kldir, sweeps, iclk, snap, uselora, fresh, ansk, gg, nrounds, basemodel, chatthink, mem, disk, pplbatch from experiments/condor/configs_pofd_{key}.txt
+"""
+
+
 
 def ps_tag(arm, sweeps, rounds=PS_ROUNDS, smoke=False):
     """pofdps_qwen3_8b_fwdlam8_sw100_eaopen_w1_k1_esopen_anch2_s0_r60.
@@ -14860,6 +15008,74 @@ def main():
     files[p] = rows_udx
     expected[p] = UD_N_EXT
     cube_subs[os.path.join(HERE, f"at_pofd_{UD_SEEDS_KEY}.sub")] = _udx_sub
+    # ---- corrected continual-adaptation control (CAC) -------------------
+    rows_cac = cac_rows()
+    assert len(rows_cac) == CAC_N_NEW == 12, len(rows_cac)
+    _cac_tags = [r.split(",")[0].strip() for r in rows_cac]
+    assert len(set(_cac_tags)) == CAC_N_NEW
+    assert not (set(_cac_tags) & {r.split(",")[0]
+                                  for rows in files.values() for r in rows})
+    _seen_cac = set()
+    for _r in rows_cac:
+        _c = [x.strip() for x in _r.split(",")]
+        assert len(_c) == 29, (len(_c), _r)
+        assert _c[0].startswith("pofdcac_"), _r
+        assert f"_{S3_OP_TOKEN}_" in _c[0], _r
+        assert _c[0].endswith(f"_r{CAC_ROUNDS}"), _r
+        _lam = float(_c[2])
+        assert _lam in CAC_LAMS, _r
+        assert _c[1] == ("sft" if _lam == 0.0 else "sft_kl"), _r
+        assert _c[5] == "replace", _r
+        assert _c[9] == f"{CAC_EPS_SOCIAL:g}", _r     # eps_social
+        assert _c[10] == "0.0", _r                    # homophily gamma
+        assert _c[11] == f"{CAC_W_PLAT:g}", _r        # W = 0.5
+        assert _c[14] == f"{CAC_INNATE_LAMBDA:g}", _r  # k = 0.2
+        assert _c[15] == "forward", _r
+        assert int(_c[16]) == CAC_SWEEPS, _r          # S = 1
+        assert int(_c[17]) == 0, _r                   # ICL_K = 0
+        assert _c[19] == "1", _r                      # LoRA on
+        _fresh = _c[20]
+        assert _fresh in ("0", "1"), _r
+        # the tag's arm token and the FRESH_EACH_ROUND column must agree,
+        # or a continual cell could be filed as a fresh one
+        _arm = "adfresh" if _fresh == "1" else "adcont"
+        assert f"_{_arm}_" in _c[0], (_arm, _r)
+        assert _c[23] == str(CAC_ROUNDS), _r
+        _seen_cac.add((_lam, _arm, int(_c[3])))
+    assert _seen_cac == {(l, a, sd) for l in CAC_LAMS
+                         for a, _f in CAC_ARMS for sd in CAC_SEEDS}
+    _cac_sub = cac_sub()
+    _cac_env = next(l for l in _cac_sub.splitlines()
+                    if l.startswith("environment"))
+    # the whole point of the wave: a NUMERIC gate, the anchored operator,
+    # and raw generations the archived fec wave never saved
+    assert "AI_GATE_MODE=threshold" in _cac_env
+    assert "all_open" not in _cac_env, \
+        "an open gate makes anch2 numerically identical to the legacy " \
+        "operator, so the corrected control would be a tautology"
+    assert "AI_GATE_REFERENCE=anchor" in _cac_env
+    assert f"EPS_AI={CAC_EPS_AI:g}" in _cac_env
+    assert "FRESH_EACH_ROUND=$(fresh)" in _cac_env, \
+        "both arms ride ONE sub; the protocol must be a queue column"
+    assert "SAVE_RAW_GEN=1" in _cac_env
+    assert "LORA_R=512" in _cac_env and "KL_DIRECTION=$(kldir)" in _cac_env
+    p_ = os.path.join(HERE, f"configs_pofd_{CAC_KEY}.txt")
+    files[p_] = rows_cac
+    expected[p_] = CAC_N_NEW
+    cube_subs[os.path.join(HERE, f"at_pofd_{CAC_KEY}.sub")] = _cac_sub
+    rows_cacs = cac_rows(smoke=True)
+    assert len(rows_cacs) == 1
+    _cs = [x.strip() for x in rows_cacs[0].split(",")]
+    assert _cs[0].startswith("pofdcacsmk_") and "_adcont_" in _cs[0]
+    assert _cs[0].endswith(f"_r{CAC_SMOKE_ROUNDS}")
+    assert float(_cs[2]) == 2.0 and _cs[20] == "0"   # continual, lambda=2
+    assert _cs[0] not in set(_cac_tags)
+    assert "check_continual_anch2.py --smoke" in cac_sub(smoke=True)
+    p_ = os.path.join(HERE, f"configs_pofd_{CAC_SMOKE_KEY}.txt")
+    files[p_] = rows_cacs
+    expected[p_] = 1
+    cube_subs[os.path.join(HERE, f"at_pofd_{CAC_SMOKE_KEY}.sub")] = \
+        cac_sub(smoke=True)
 
     # H100 PIN (2026-08-26): the Section-4 corrected-gate templates only
     # required >= 80 GB; B200 nodes (sm_100, undriveable by the opdyn torch)
