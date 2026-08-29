@@ -302,7 +302,8 @@ def main() -> int:
         .get("confounded", True))
 
     # ---- figure --------------------------------------------------------
-    plt.rcParams.update({"font.size": 8.5, "axes.linewidth": .8,
+    plt.rcParams.update({"pdf.fonttype": 42, "ps.fonttype": 42,
+                         "font.size": 8.5, "axes.linewidth": .8,
                          "xtick.major.width": .8, "ytick.major.width": .8,
                          "text.color": INK, "axes.labelcolor": INK})
     fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.8))
