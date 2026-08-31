@@ -1,0 +1,24 @@
+# WORKER-NODE EGRESS TEST for the OpenRouter backend. ONE CPU job, no GPU,
+# no API key, no cost. It answers the one question the login node cannot:
+# do EXECUTE nodes have outbound HTTPS at all? Many pools firewall the
+# workers while leaving the submit host open, and a 21,690-request wave
+# that discovers this on job 1 wastes a queue slot per cell.
+#
+# It hits only the PUBLIC models endpoint -- no key is read, sent, or
+# needed, so this file is safe to submit before any secret exists.
+universe           = vanilla
+executable         = /usr/bin/curl
+arguments          = "-sS --max-time 30 -o /dev/null -w host=$$([TARGET.Machine])_http=%{http_code}\n https://openrouter.ai/api/v1/models"
+should_transfer_files = NO
+getenv             = False
+
+request_cpus       = 1
+request_memory     = 1G
+request_disk       = 1G
+
+output             = logs/frontier_egress.out
+error              = logs/frontier_egress.err
+log                = logs/frontier_egress.log
+
+# no on_exit_hold: a non-zero curl exit IS the answer we want recorded
+queue 1

@@ -457,7 +457,17 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
     adj = nx.to_numpy_array(h, nodelist=range(len(Pl)))
     n = len(Pl)
 
-    def build_prompt(profile, tokenizer, context_block=None):
+    def build_user_message(profile, context_block=None):
+        """THE SEMANTIC PROMPT, provider-neutral.
+
+        Split out (2026-08-30) so exactly one definition of the question
+        feeds both serving paths: the Hugging Face path renders THIS
+        string through the checkpoint's chat template, and the OpenRouter
+        path sends THIS string as a standard chat `user` message. The
+        body below is character-for-character the pre-split builder, so
+        every archived HF prompt is unchanged -- tests/test_openrouter_
+        backend.py::test_hf_prompt_is_byte_identical pins that.
+        """
         lines = []
         age = profile.get("age")
         if age is not None and not pd.isna(age) and int(age) > 0:
@@ -481,6 +491,21 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
             f"Output a single number in [0, 1] (1 = loves {target}, 0 = dislikes {target}). "
             "Respond with only the number, e.g. 0.42."
         )
+        return user_msg
+
+    def build_messages(profile, context_block=None):
+        """Standard chat messages for a provider-neutral API backend.
+
+        NOTE what is NOT here: no chat template, no BOS, no control
+        tokens. Sending a Hugging Face template render as an OpenRouter
+        `user` message would be a DIFFERENT PROMPT wearing the same tag.
+        """
+        return [{"role": "user",
+                 "content": build_user_message(profile,
+                                               context_block=context_block)}]
+
+    def build_prompt(profile, tokenizer, context_block=None):
+        user_msg = build_user_message(profile, context_block=context_block)
         if getattr(tokenizer, "chat_template", None):
             messages = [{"role": "user", "content": user_msg}]
             # CHAT_THINKING (2026-08-17, zero-shot prior screen): unset
@@ -504,6 +529,9 @@ def load_movielens_setup(ml_dir: Path, target: str = "Action", knn: int = 10):
         "platform_sus": torch.ones(n, dtype=torch.float32),
         "n": n,
         "build_prompt": build_prompt,
+        # the provider-neutral pair; only the OpenRouter backend uses them
+        "build_user_message": build_user_message,
+        "build_messages": build_messages,
     }
 
 
@@ -2176,25 +2204,125 @@ def main() -> int:
 
     print(f"[run] loading LM: {base_model} on {device}", flush=True)
     t0 = time.time()
-    lm = HFCausalLMModel(
-        base_model_name=base_model,
-        profiles=setup["profiles"],
-        prompt_builder=build_prompt,
-        use_lora=use_lora,
-        lora_r=lora_r,
-        lora_alpha=2 * lora_r,
-        device=device,
-        dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-        max_new_tokens=max_new_tokens,
-        gen_batch_size=gen_batch_size,
-        do_sample=do_sample,
-        temperature=gen_temperature,
-        top_p=gen_top_p,
-        top_k=gen_top_k,
-        repetition_penalty=gen_repetition_penalty,
-        load_now=True,
-    )
-    lm.parse_mode = parse_mode
+    # ================= SERVING BACKEND =====================================
+    # MODEL_BACKEND=hf (default) is the historical path and is untouched.
+    # "openrouter" serves a FROZEN frontier model over the API. Every
+    # adaptation knob is refused HERE, before a single paid request, because
+    # a run that silently ignored them would produce a trajectory
+    # indistinguishable from a trained one.
+    model_backend = os.environ.get("MODEL_BACKEND", "hf").strip().lower()
+    if model_backend not in ("hf", "openrouter"):
+        raise ValueError(f"MODEL_BACKEND={model_backend!r}; want hf|openrouter")
+    config["model_backend"] = model_backend
+
+    if model_backend == "openrouter":
+        from perfsim.models.openrouter_lm import OpenRouterModel
+        from perfsim.models.openrouter_client import (
+            Budget, DecodingPolicy, ProviderPin, ResponseCache)
+
+        refused = []
+        if training_style != "frozen":
+            refused.append(f"TRAINING_STYLE={training_style!r} (want frozen)")
+        if sft_epochs != 0:
+            refused.append(f"SFT_EPOCHS={sft_epochs} (want 0)")
+        if use_lora:
+            refused.append("USE_LORA=1")
+        if kl_beta != 0.0:
+            refused.append(f"KL_BETA={kl_beta}")
+        if os.environ.get("DPO_BETA"):
+            refused.append("DPO_BETA")
+        if log_ppl:
+            refused.append("LOG_PERPLEXITY=1 (needs logits; the API returns none)")
+        if log_answer_dist:
+            refused.append("LOG_ANSWER_DIST=1 (needs logits)")
+        if ans_sample_k:
+            refused.append(f"ANS_SAMPLE_K={ans_sample_k} (sampling; serving is deterministic)")
+        if fresh_each_round:
+            refused.append("FRESH_EACH_ROUND=1 (there is no adapter to refresh)")
+        if _env_int("SAVE_ADAPTER", 0):
+            refused.append("SAVE_ADAPTER=1 (there are no weights to snapshot)")
+        if _env_int("TRAIN_WITNESS", 0):
+            refused.append("TRAIN_WITNESS=1 (there is no optimizer)")
+        if refused:
+            raise ValueError(
+                "MODEL_BACKEND=openrouter is FROZEN-ONLY and refuses: "
+                + "; ".join(refused)
+                + ". These are not silently ignored, because a run that "
+                  "ignored them would look exactly like a trained wave.")
+        if setup.get("build_messages") is None:
+            raise ValueError(
+                f"DATASET={dataset!r} has no provider-neutral message "
+                f"builder; the OpenRouter backend needs build_messages so a "
+                f"chat-template render is never sent as a user message.")
+
+        provider_name = os.environ.get("OR_PROVIDER", "").strip()
+        if not provider_name:
+            raise ValueError("OR_PROVIDER must name exactly one pinned provider")
+        slug = os.environ.get("OR_MODEL", "").strip()
+        if not slug:
+            raise ValueError("OR_MODEL must be an exact model slug")
+        if slug.endswith((":auto", "/auto")) or "latest" in slug:
+            raise ValueError(
+                f"OR_MODEL={slug!r} is a moving alias. A paper run must pin "
+                f"an exact, dated slug or its numbers cannot be reproduced.")
+        or_seed = os.environ.get("OR_SEED", "").strip()
+        policy = DecodingPolicy(
+            temperature=float(os.environ.get("OR_TEMPERATURE", "0")),
+            top_p=float(os.environ.get("OR_TOP_P", "1")),
+            max_tokens=_env_int("OR_MAX_TOKENS", 16),
+            seed=int(or_seed) if or_seed else None,
+            reasoning_disabled=_env_int("OR_REASONING_DISABLED", 1) == 1)
+        pin = ProviderPin(
+            order=(provider_name,), allow_fallbacks=False,
+            require_parameters=True, data_collection="deny", zdr=True)
+        budget = Budget(
+            max_requests=_env_int("OR_MAX_REQUESTS", 100),
+            max_estimated_cost_usd=float(os.environ.get("OR_MAX_EST_COST", "1.0")),
+            max_realized_cost_usd=float(os.environ.get("OR_MAX_COST", "1.0")),
+            max_concurrency=_env_int("OR_CONCURRENCY", 8),
+            requests_per_second=float(os.environ.get("OR_RPS", "4")),
+            timeout_s=float(os.environ.get("OR_TIMEOUT", "120")),
+            max_retries=_env_int("OR_MAX_RETRIES", 5),
+            dry_run=_env_int("OR_DRY_RUN", 0) == 1)
+        cache = ResponseCache(
+            os.environ.get("OR_CACHE", str(out_dir / "or_cache.sqlite")))
+        lm = OpenRouterModel(
+            model_slug=slug, profiles=setup["profiles"],
+            message_builder=setup["build_messages"],
+            provider=pin, policy=policy, budget=budget, cache=cache,
+            parse_mode="strict")
+        config["openrouter"] = {
+            "model_slug": slug, "provider": pin.to_body(),
+            "policy": policy.to_body(),
+            "budget": {"max_requests": budget.max_requests,
+                       "max_realized_cost_usd": budget.max_realized_cost_usd,
+                       "max_concurrency": budget.max_concurrency,
+                       "requests_per_second": budget.requests_per_second,
+                       "dry_run": budget.dry_run},
+        }
+        print(f"[run] OpenRouter backend: {slug} via {provider_name} "
+              f"(frozen, T={policy.temperature}, cap {budget.max_requests} "
+              f"requests / ${budget.max_realized_cost_usd})", flush=True)
+    else:
+        lm = HFCausalLMModel(
+            base_model_name=base_model,
+            profiles=setup["profiles"],
+            prompt_builder=build_prompt,
+            use_lora=use_lora,
+            lora_r=lora_r,
+            lora_alpha=2 * lora_r,
+            device=device,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            max_new_tokens=max_new_tokens,
+            gen_batch_size=gen_batch_size,
+            do_sample=do_sample,
+            temperature=gen_temperature,
+            top_p=gen_top_p,
+            top_k=gen_top_k,
+            repetition_penalty=gen_repetition_penalty,
+            load_now=True,
+        )
+        lm.parse_mode = parse_mode
     # RECORD WHAT GENERATION ACTUALLY USED, knob by knob, marking each as
     # pinned or inherited from the checkpoint. Without this a run cannot
     # be audited for its decoding policy without re-loading the model.
@@ -2206,6 +2334,21 @@ def main() -> int:
         config["gen_policy_effective"] = {"error": repr(_e)}
     print(f"[run] LM loaded in {time.time() - t0:.1f}s "
           f"(parse_mode={parse_mode})", flush=True)
+
+    # THE SERVING PROMPT, once, for both backends. The HF path renders the
+    # semantic message through the checkpoint's chat template exactly as
+    # every archived run did. The OpenRouter path returns the SEMANTIC
+    # message and lets the client send it as a standard chat message --
+    # lm.tokenizer is None there, so calling build_prompt() directly would
+    # silently take the base-model "\nAnswer: " branch and change the
+    # prompt without changing anything anyone reads.
+    if model_backend == "openrouter":
+        def _serve_prompt(profile, context_block=None):
+            return lm.build_prompt(profile, context_block=context_block)
+    else:
+        def _serve_prompt(profile, context_block=None):
+            return build_prompt(profile, lm.tokenizer,
+                                context_block=context_block)
 
     # Fixed reference set for perplexity: prompt + true-answer for the first
     # n_ppl agents. Stable across rounds, so perplexity tracks model drift.
@@ -2662,6 +2805,8 @@ def main() -> int:
                           # agents in an ACCEPTED fixed-responsive pair
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
+    or_prov_rows = []    # MODEL_BACKEND=openrouter: per-round provenance
+                         # for every served agent -> or_provenance.json.gz
     icl_days_texts = []  # ICL_DAYS>0: (round, [n] FULL context_block strings
                          # as passed to build_prompt) -> icl_days_log.json.gz.
                          # For a days-only run (ICL_K=0) each string IS the
@@ -3237,8 +3382,8 @@ def main() -> int:
                     ctx_i = "\n\n".join(parts)
                     if icl_days > 0:
                         days_txt_t.append(ctx_i)
-                    prompts.append(build_prompt(prof_lookup.iloc[i], lm.tokenizer,
-                                                context_block=ctx_i))
+                    prompts.append(_serve_prompt(prof_lookup.iloc[i],
+                                                  context_block=ctx_i))
                 if icl_days > 0:
                     icl_days_texts.append((t, days_txt_t))
                 if icl_k > 0 and train_data is not None:
@@ -3275,6 +3420,16 @@ def main() -> int:
             else:
                 preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
+            if model_backend == "openrouter" and _mr_r0 is None:
+                # PROVENANCE IS PART OF THE MEASUREMENT. One record per
+                # served agent per round: resolved model and provider,
+                # generation id, finish reason, usage, cost, latency,
+                # retries, cache status, and the request hash. Without it
+                # a served value cannot be audited or re-priced.
+                or_prov_rows.append({
+                    "round": t,
+                    "records": lm.provenance_records(),
+                })
             if save_raw_gen and _mr_r0 is None:
                 # raw provenance for the served vector: lm._last_raw is
                 # refreshed by both serving paths (forward and
@@ -3794,6 +3949,18 @@ def main() -> int:
         with gzip.open(out_dir / "icl_ctx_log.json.gz", "wt") as fh:
             for t_ctx, ctxs in icl_ctx_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
+    if or_prov_rows:
+        # The permanent record. OpenRouter's own response cache is
+        # temporary and is NOT relied on; this file plus or_cache.sqlite
+        # are what the run is auditable from.
+        with gzip.open(out_dir / "or_provenance.json.gz", "wt") as fh:
+            for row in or_prov_rows:
+                fh.write(json.dumps(row) + "\n")
+        _tot = sum(r.get("cost_usd") or 0.0
+                   for row in or_prov_rows for r in row["records"])
+        print(f"[run] wrote or_provenance.json.gz "
+              f"({sum(len(r['records']) for r in or_prov_rows)} responses, "
+              f"realized ${_tot:.4f})", flush=True)
     if icl_days_texts:
         # the ACTUAL full context_block each agent's prompt carried, one
         # JSON line per round -- for a days-only run this is the exact

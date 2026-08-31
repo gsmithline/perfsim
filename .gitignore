@@ -80,3 +80,16 @@ notes/
 
 paper/*
 paper/
+# Secrets -- never commit an API key
+.env
+.env.local
+*.key
+.openrouter_key
+openrouter_key*
+
+# OpenRouter response cache (paid responses; large, and re-derivable from
+# the run dir's or_provenance.json.gz)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+or_cache*

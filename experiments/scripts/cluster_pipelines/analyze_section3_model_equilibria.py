@@ -188,7 +188,34 @@ class WaveCfg:
         # variability beside it. Greedy keeps the original convergence
         # treatment.
         self.stochastic = (name == "icl" and arm == "sample_t1")
-        if name == "icl":
+        if name == "frontier":
+            # FRONTIER API MODELS. Same surface, same analysis, but the
+            # model list is not a constant in the sweep generator: it is
+            # whichever exact slug@provider pairs the wave was actually
+            # run with, so it is read from the wave manifest the Condor
+            # generator wrote. Serving is deterministic-as-requested
+            # (temperature 0), so this is NOT treated as stochastic --
+            # but see the run config's determinism_caveat: T=0 is not a
+            # bitwise guarantee, and a repeat that differs is a finding
+            # to report, not an error to smooth over.
+            import json as _json
+            man = Path(getattr(g, "__file__", ".")).parent / \
+                "manifest_section3_frontier_icl.json"
+            if not man.is_file():
+                raise SystemExit(
+                    f"--wave frontier needs {man.name}; run "
+                    f"gen_frontier_icl.py --write first")
+            m = _json.loads(man.read_text())
+            self._cells = {(c["model"] + "@" + c["provider"], c["seed"]):
+                           c["tag"] for c in m["cells"]}
+            self.models = sorted({k[0] for k in self._cells})
+            self.seeds = sorted({k[1] for k in self._cells})
+            self.rounds = m["rounds"]
+            self.horizons = (m["rounds"],)
+            self.cell_tag = lambda mm, sd: self._cells[(mm, sd)]
+            self.key = "section3_frontier_icl"
+            self.arm_label = "personal-history ICL (frozen frontier API)"
+        elif name == "icl":
             self.models, self.seeds = g.S3I_MODELS, g.S3I_SEEDS
             self.rounds = g.S3I_ROUNDS
             self._g, self._arm = g, arm
@@ -233,10 +260,13 @@ def gate_binds_wave(verdict, g, w=None):
 def main():
     ap = argparse.ArgumentParser(
         description="analyze the Section 3 model-specific equilibrium wave")
-    ap.add_argument("--wave", default="sft", choices=("sft", "icl"),
+    ap.add_argument("--wave", default="sft",
+                    choices=("sft", "icl", "frontier"),
                     help="sft = the reference-regularized wave (the "
                          "published Figure 3(a); DEFAULT); icl = the "
-                         "frozen personal-history analogue")
+                         "frozen personal-history analogue; frontier = "
+                         "the same ICL surface served by a frozen "
+                         "frontier API model")
     ap.add_argument("--decode", default="greedy",
                     choices=("greedy", "sample_t1"),
                     help="icl only: which decoding arm. greedy is the "
