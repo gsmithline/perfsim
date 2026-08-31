@@ -2214,6 +2214,14 @@ def main() -> int:
     if model_backend not in ("hf", "openrouter"):
         raise ValueError(f"MODEL_BACKEND={model_backend!r}; want hf|openrouter")
     config["model_backend"] = model_backend
+    # CAN WE SCORE LOGITS AT ALL? The SFT telemetry below (l_init, the
+    # 2x2 adapter x batch losses) needs a local differentiable model. It
+    # is TELEMETRY, not dynamics -- no served value depends on it -- but
+    # it is guarded on `train_data is not None` rather than on the
+    # training style, so a FROZEN run still computes it. On the HF path
+    # that is merely a wasted forward pass; with an API model there is no
+    # inner_model and it raised AttributeError deep in sft_batch_loss.
+    can_score_logits = (model_backend == "hf")
 
     if model_backend == "openrouter":
         from perfsim.models.openrouter_lm import OpenRouterModel
@@ -2334,6 +2342,15 @@ def main() -> int:
         config["gen_policy_effective"] = {"error": repr(_e)}
     print(f"[run] LM loaded in {time.time() - t0:.1f}s "
           f"(parse_mode={parse_mode})", flush=True)
+    # PERSIST THE DECODING POLICY. config.json is written before the model
+    # exists, and the only later rewrites are conditional (fj population,
+    # train_witness) -- so on the ab path gen_policy_effective was computed,
+    # printed, and then dropped. Every archived ab run is missing it.
+    # Re-written here, unconditionally, so a run's decoding policy and (for
+    # the API backend) its model/provider pin are auditable from the
+    # artifact instead of from a log line.
+    (out_dir / "config.json").write_text(
+        json.dumps(config, indent=2, default=str))
 
     # THE SERVING PROMPT, once, for both backends. The HF path renders the
     # semantic message through the checkpoint's chat template exactly as
@@ -3059,7 +3076,7 @@ def main() -> int:
                         f"to be exactly the observed set O in order; got "
                         f"{_ti.numel()} ids that differ from O")
             loss_block = {}
-            if train_data is not None:
+            if train_data is not None and can_score_logits:
                 # platform-seat pre-train telemetry: current adapter on the
                 # incoming batch, before this round's gradient steps
                 y_flat = train_data["y"].squeeze(-1)
@@ -3170,8 +3187,12 @@ def main() -> int:
                               flush=True)
             cur_dep += 1
             if t == 0:
-                # round-0 adapter + batch, kept on disk for the 2x2 evals
-                round0_snap = gp.snapshot_trainable(lm.inner_model)
+                # round-0 adapter + batch, kept on disk for the 2x2 evals.
+                # The PARAMETER snapshot needs a local model; the BATCH is
+                # just tensors and is saved either way, so an API-served
+                # run still records the labels it was scored against.
+                if can_score_logits:
+                    round0_snap = gp.snapshot_trainable(lm.inner_model)
                 round0_batch = train_data
                 if use_lora:
                     lm.inner_model.save_pretrained(str(out_dir / "round0_adapter"))
@@ -3194,7 +3215,8 @@ def main() -> int:
                     loss_block["w_step"] = gp.adapter_step(cur_adapter, prev_adapter)
                 prev_adapter = cur_adapter
             # the 2x2: {current, round-0} adapter x {current, round-0} batch
-            if round0_snap is not None and train_data is not None:
+            if round0_snap is not None and train_data is not None \
+                    and can_score_logits:
                 loss_block["l_cc"] = gp.sft_batch_loss(lm, train_data, format_number,
                                                        tel_eval_cap)
                 loss_block["l_c0"] = gp.sft_batch_loss(lm, round0_batch, format_number,
