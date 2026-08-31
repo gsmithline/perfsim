@@ -172,7 +172,8 @@ def main():
         raise SystemExit(f"[frozen] vector length {vec.shape[0]} != "
                          f"{setup['n']} agents")
 
-    cfg = PP.build_config(args, setup)
+    # the frozen replay runs the same corrected operator PP does
+    cfg = PP.build_config(args, setup, gate_on="anchor")
     cfg.update({
         "platform": "frozen_offline_replay",
         "expected_gpu": args.expect_gpu or H100_MARKER,

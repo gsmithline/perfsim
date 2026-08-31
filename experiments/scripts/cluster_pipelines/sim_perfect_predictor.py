@@ -260,18 +260,41 @@ def simulate(setup, *, innate_k, w_plat, eps_social, eps_ai, rounds, seed,
             torch.stack(served_raw))
 
 
-def build_config(args, setup):
+# The ONE mapping from the executed gate reference to the operator name
+# recorded in the artifact. gate_on became a PARAMETER on 2026-08-29 (so
+# a pre-correction trajectory can be replayed exactly), which means a
+# hardcoded marker here would label an x0 run as anch2 -- precisely the
+# mislabelling test_section3_checker was written to catch. Derive it.
+OPERATOR_FOR_GATE_ON = {
+    "anchor": "nested_ai_anchored_then_social_v2",
+    "x0": "nested_ai_then_social_v1",
+}
+
+
+def operator_marker(gate_on: str) -> str:
+    """The population_update string for the reference actually executed."""
+    try:
+        return OPERATOR_FOR_GATE_ON[gate_on]
+    except KeyError:
+        raise ValueError(
+            f"gate_on={gate_on!r} has no operator marker; refusing to "
+            f"label an artifact with an operator it did not run") from None
+
+
+def build_config(args, setup, gate_on):
+    """gate_on is REQUIRED, not defaulted: a default here is how a
+    run silently labels itself with an operator it did not execute."""
     return {
         "platform": "perfect_prediction",
-        # Matches what simulate() now EXECUTES (gate_on="anchor", passed
-        # explicitly above), not what this oracle used to claim. Artifacts
-        # written before 2026-08-22 carry the v1 string and were produced
-        # by the same operator on this surface -- both gates all_open makes
-        # v1 and v2 numerically identical -- so old artifacts stay valid
-        # and are NOT rewritten. A consumer that needs to tell them apart
-        # should validate the expected marker PER SOURCE rather than treat
-        # the two strings as freely interchangeable.
-        "population_update": "nested_ai_anchored_then_social_v2",
+        # DERIVED from what simulate() actually executed, never asserted.
+        # Artifacts written before 2026-08-22 carry the v1 string and were
+        # produced by the same operator on this surface -- both gates
+        # all_open makes v1 and v2 numerically identical -- so old
+        # artifacts stay valid and are NOT rewritten. A consumer that needs
+        # to tell them apart should validate the expected marker PER
+        # SOURCE rather than treat the two strings as interchangeable.
+        "population_update": operator_marker(gate_on),
+        "gate_on": gate_on,
         "innate_k": float(args.innate_k),
         "w_plat": float(args.w_plat),
         "beta_eff": beta_eff(float(args.innate_k), float(args.w_plat)),
@@ -352,7 +375,10 @@ def main():
 
     setup = extract_loader()(
         REPO / "experiments/data/movielens/ml-100k", "Action")
-    cfg = build_config(args, setup)
+    # PP always serves the corrected operator; the marker is derived
+    # from this same value rather than restated as a constant.
+    pp_gate_on = "anchor"
+    cfg = build_config(args, setup, gate_on=pp_gate_on)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out = args.out_dir / artifact_name(cfg)

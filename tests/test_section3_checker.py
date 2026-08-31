@@ -1000,34 +1000,50 @@ def test_perfect_predictor_records_the_operator_it_actually_executed():
     """It used to hard-code the v1 string in build_config while
     simulate() called nested_presocial_update with NO gate_on=, whose
     default flipped to "anchor" on 2026-08-22 -- so the artifact
-    mislabelled its own round operator. The label and the call must
-    agree, and the call must be EXPLICIT: a marker that is correct only
-    because a default happens to point the right way is one edit away
-    from lying again."""
+    mislabelled its own round operator.
+
+    gate_on became a PARAMETER on 2026-08-29 so a pre-correction
+    trajectory can be replayed exactly, which means the old form of this
+    test (one literal gate, one marker string) no longer applies. The
+    REQUIREMENT is unchanged and is now checked more strongly:
+
+      1. the call never falls through to the library default;
+      2. build_config does not hard-code a marker at all; and
+      3. the mapping from executed gate reference to recorded marker is
+         correct -- verified by CALLING it, not by reading the source.
+
+    A hard-coded marker would now be worse than before, because a
+    gate_on="x0" replay would execute v1 and label itself v2.
+    """
     import re
     src = open(PP).read()
     calls = re.findall(r"nested_presocial_update\((?:[^()]|\([^()]*\))*\)",
                        src, re.S)
     calls = [c for c in calls if "def " not in c]
     assert calls, "no nested_presocial_update call found"
-    gates = set()
     for c in calls:
-        m = re.search(r'gate_on\s*=\s*["\'](\w+)["\']', c)
-        assert m, (
+        # a literal OR a named parameter; anything but an omission
+        assert re.search(r"gate_on\s*=\s*[\"']?\w+", c), (
             "nested_presocial_update is called without an EXPLICIT "
-            f"gate_on=; the artifact's marker then depends on a library "
-            f"default that has already flipped once:\n{c[:300]}")
-        gates.add(m.group(1))
-    assert len(gates) == 1, f"mixed gate references in one simulator: {gates}"
-    gate_on = gates.pop()
-    markers = set(re.findall(r'"(nested_ai_[a-z0-9_]*)"', src))
-    markers |= set(re.findall(r"'(nested_ai_[a-z0-9_]*)'", src))
-    assert markers, "the simulator records no population_update marker"
-    want = POP_V2 if gate_on == "anchor" else POP_V1
-    assert markers == {want}, (
-        f"simulate() executes gate_on={gate_on!r} but the artifact "
-        f"records {sorted(markers)}; it must record {want!r}")
+            f"gate_on=; the artifact's marker would then depend on a "
+            f"library default that has already flipped once:\n{c[:300]}")
 
+    # 2. THE MARKER MUST BE DERIVED. A literal assignment to
+    #    population_update is exactly the old bug.
+    assert not re.search(r'"population_update"\s*:\s*["\']nested_ai_',
+                         src), (
+        "build_config hard-codes population_update; with gate_on now a "
+        "parameter that labels an x0 replay as anch2")
+
+    # 3. THE MAPPING IS CORRECT, checked by calling it.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_pp_marker", PP)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.operator_marker("anchor") == POP_V2
+    assert mod.operator_marker("x0") == POP_V1
+    with pytest.raises(ValueError):
+        mod.operator_marker("not_a_reference")
 
 # ------------------------------- the audit's manifest must be readable
 AUDIT_MF = os.path.join(ROOT, "notes", "pofd", "section3",
