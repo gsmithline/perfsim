@@ -40,6 +40,18 @@ if [[ -z "${OPENROUTER_API_KEY:-}" && -z "${OPENROUTER_API_KEY_FILE:-}" ]]; then
   exit 2
 fi
 
+# PREFLIGHT. Resolve the (possibly canonical-slug) model to a routable id
+# and derive the decoding policy from LIVE endpoint metadata, so a knob the
+# endpoint does not expose is never sent -- with require_parameters=true
+# that would make the pinned endpoint ineligible and the route fail. Free:
+# public metadata, no key. Fails hard on a non-ZDR provider.
+PF="$(python "${REPO}/experiments/scripts/cluster_pipelines/or_preflight.py" \
+        --model "$MODEL" --provider "$PROVIDER" --seed "$SEED")" || {
+  echo "[local] preflight failed; not spending anything" >&2; exit 2; }
+echo "$PF" | grep '^#' || true
+eval "$(echo "$PF" | grep '^export ')"
+MODEL="$OR_MODEL"
+
 # the model token must match gen_frontier_icl.model_token exactly, or the
 # local run and the Condor manifest would disagree about which cell this is
 MTOK="$(python - "$MODEL" "$PROVIDER" <<'PY'
@@ -67,7 +79,8 @@ cd "$REPO"
 RUN_TAG="$TAG" OUT_DIR="$OUT" \
 DATASET=movielens ML_TARGET=Action \
 MODEL_BACKEND=openrouter OR_MODEL="$MODEL" OR_PROVIDER="$PROVIDER" \
-OR_MAX_TOKENS=16 OR_TEMPERATURE=0 OR_TOP_P=1 OR_REASONING_DISABLED=1 \
+OR_MAX_TOKENS=16 OR_TEMPERATURE="$OR_TEMPERATURE" OR_SEED="$OR_SEED" \
+OR_TOP_P=1 OR_REASONING_DISABLED=1 \
 OR_CONCURRENCY="$CONC" OR_RPS="$RPS" OR_MAX_REQUESTS="$MAXREQ" \
 OR_MAX_COST="$MAXCOST" OR_CACHE="${OUT}/or_cache.sqlite" \
 TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 \

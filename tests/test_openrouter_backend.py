@@ -301,3 +301,61 @@ def test_headers_carry_bearer_but_body_never_does():
     _client(t).complete_many_sync(MSGS[:1])
     assert t.seen_headers[0]["Authorization"].startswith("Bearer ")
     assert "TESTKEY" not in json.dumps(seen)
+
+
+# ---- omitted temperature + cell-coordinate cache keys -------------------
+def test_temperature_can_be_omitted_for_endpoints_that_lack_it():
+    """The GPT-5.x reasoning family exposes no temperature. With
+    require_parameters=true, sending it makes the pinned endpoint
+    ineligible, so it must be OMITTED -- not defaulted, not sent as 1.0."""
+    seen = {}
+
+    def handler(body):
+        seen.update(body)
+        return _resp("0.42")
+
+    pol = DecodingPolicy(temperature=None, max_tokens=16, seed=7)
+    c = OpenRouterClient(
+        model="google/gemini-3.7-flash", provider=PIN, policy=pol,
+        budget=Budget(max_requests=5, max_realized_cost_usd=1.0),
+        api_key="sk-or-TEST", transport=FakeTransport([handler]))
+    c.complete_many_sync(MSGS[:1])
+    assert "temperature" not in seen
+    assert "top_p" not in seen, "top_p rides with temperature or not at all"
+    assert seen["max_tokens"] == 16
+    assert seen["seed"] == 7
+
+
+def test_cache_key_separates_seeds_rounds_and_agents():
+    """At round 0 every population seed renders an IDENTICAL prompt. Without
+    the coordinates the three cells of one model would share one paid
+    response and stop being independent."""
+    base = dict(model="m", pin=PIN, messages=MSGS[0], policy=POLICY)
+    h = lambda **ctx: request_hash(base["model"], base["pin"],
+                                   base["messages"], base["policy"],
+                                   context=ctx)
+    assert h(seed=0, round=0, agent=1) != h(seed=42, round=0, agent=1)
+    assert h(seed=0, round=0, agent=1) != h(seed=0, round=7, agent=1)
+    assert h(seed=0, round=0, agent=1) != h(seed=0, round=0, agent=2)
+    assert h(seed=0, round=0, agent=1) == h(seed=0, round=0, agent=1)
+
+
+def test_client_folds_round_and_agent_into_the_key(tmp_path):
+    cache = ResponseCache(tmp_path / "c.sqlite")
+    t = FakeTransport([_resp("0.42")])
+    c = OpenRouterClient(
+        model="google/gemini-3.7-flash", provider=PIN, policy=POLICY,
+        budget=Budget(max_requests=50, max_realized_cost_usd=10.0,
+                      requests_per_second=0),
+        cache=cache, api_key="sk-or-TEST", transport=t,
+        cache_context={"seed": 0, "round": 0})
+    c.complete_many_sync(MSGS[:2])
+    assert t.calls == 2, "two agents, two distinct keys"
+    # same agents, later round -> not a hit
+    c.cache_context = {"seed": 0, "round": 1}
+    c.complete_many_sync(MSGS[:2])
+    assert t.calls == 4
+    # back to round 0 -> both hits, nothing paid
+    c.cache_context = {"seed": 0, "round": 0}
+    c.complete_many_sync(MSGS[:2])
+    assert t.calls == 4

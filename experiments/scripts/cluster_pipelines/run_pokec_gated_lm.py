@@ -2274,8 +2274,13 @@ def main() -> int:
                 f"OR_MODEL={slug!r} is a moving alias. A paper run must pin "
                 f"an exact, dated slug or its numbers cannot be reproduced.")
         or_seed = os.environ.get("OR_SEED", "").strip()
+        # OR_TEMPERATURE="" OMITS the knob entirely, for endpoints that do
+        # not expose it (the GPT-5.x reasoning family). With
+        # require_parameters=true, sending an unsupported knob makes the
+        # pinned endpoint ineligible and the route fails.
+        _t = os.environ.get("OR_TEMPERATURE", "0").strip()
         policy = DecodingPolicy(
-            temperature=float(os.environ.get("OR_TEMPERATURE", "0")),
+            temperature=(float(_t) if _t else None),
             top_p=float(os.environ.get("OR_TOP_P", "1")),
             max_tokens=_env_int("OR_MAX_TOKENS", 16),
             seed=int(or_seed) if or_seed else None,
@@ -2298,7 +2303,7 @@ def main() -> int:
             model_slug=slug, profiles=setup["profiles"],
             message_builder=setup["build_messages"],
             provider=pin, policy=policy, budget=budget, cache=cache,
-            parse_mode="strict")
+            parse_mode="strict", run_seed=seed)
         config["openrouter"] = {
             "model_slug": slug, "provider": pin.to_body(),
             "policy": policy.to_body(),
@@ -2916,6 +2921,11 @@ def main() -> int:
           f"mode={run_mode} eps={eps} eps_ai={eps_ai} gamma={gamma_bias} w={w_plat}", flush=True)
     t_loop = time.time()
     for t in range(n_rounds):
+        if model_backend == "openrouter":
+            # the round is part of every cache key; without it a resumed
+            # run could serve round 0's cached answers in round 7, where
+            # the prompt differs only in the history block
+            lm.current_round = t
         is_deploy = (t % deploy_every == 0)
         if is_deploy:
             if t == 0:

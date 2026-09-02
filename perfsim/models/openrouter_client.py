@@ -129,8 +129,15 @@ class DecodingPolicy:
     `seed` is None unless the endpoint genuinely advertises `seed` in its
     supported_parameters -- sending one that is ignored would put a
     reproducibility claim in the record that the provider never honoured.
+
+    `temperature` is None when the endpoint does not support it (the
+    GPT-5.x reasoning family exposes no temperature at all). With
+    require_parameters=true, sending an unsupported knob makes the
+    endpoint ineligible and the pinned route fails -- so the knob is
+    OMITTED, and its absence is recorded rather than papered over with a
+    default that was never sent.
     """
-    temperature: float = 0.0
+    temperature: float | None = 0.0
     top_p: float = 1.0
     max_tokens: int = 16
     seed: int | None = None
@@ -138,11 +145,10 @@ class DecodingPolicy:
     stop: tuple[str, ...] = ()
 
     def to_body(self) -> dict:
-        body: dict[str, Any] = {
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-            "max_tokens": self.max_tokens,
-        }
+        body: dict[str, Any] = {"max_tokens": self.max_tokens}
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+            body["top_p"] = self.top_p
         if self.seed is not None:
             body["seed"] = self.seed
         if self.stop:
@@ -234,15 +240,27 @@ class Provenance:
 
 
 def request_hash(model: str, pin: ProviderPin, messages: Sequence[dict],
-                 policy: DecodingPolicy) -> str:
+                 policy: DecodingPolicy, context: dict | None = None) -> str:
     """Content address over EXACTLY what determines the answer: model,
-    provider pin, messages, decoding parameters. Authorization is not an
-    input -- a key rotation must not invalidate a paid-for cache."""
+    provider pin, messages, decoding parameters -- plus the CELL COORDINATES
+    (seed, round, agent) when given.
+
+    The coordinates are redundant in principle: the prompt already encodes
+    the agent (its profile) and the round (its history). They are in the key
+    anyway because at ROUND 0 every population seed renders an IDENTICAL
+    prompt, so without the seed the three cells of a model would silently
+    share one paid response. That is defensible for a deterministic
+    endpoint and indefensible as a default: it couples cells that the
+    analysis then treats as independent.
+
+    Authorization is NEVER an input -- a key rotation must not invalidate a
+    cache that has already been paid for."""
     payload = json.dumps({
         "model": model,
         "provider": pin.to_body(),
         "messages": list(messages),
         "policy": policy.to_body(),
+        "context": dict(context or {}),
     }, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -334,6 +352,7 @@ class OpenRouterClient:
         transport: Any = None,      # tests inject; None = real network
         referer: str = "https://github.com/perfsim",
         title: str = "perfsim",
+        cache_context: dict | None = None,
     ) -> None:
         self.model = model
         self.provider = provider
@@ -344,6 +363,8 @@ class OpenRouterClient:
         self._transport = transport
         self._referer = referer
         self._title = title
+        # cell coordinates folded into every cache key; see request_hash
+        self.cache_context = dict(cache_context or {})
         self._key = api_key if api_key is not None else (
             load_api_key(required=not budget.dry_run))
         self._limiter = _RateLimiter(budget.requests_per_second)
@@ -421,7 +442,10 @@ class OpenRouterClient:
     # ---- one request, with retries --------------------------------------
     async def _one(self, client: Any, messages: Sequence[dict],
                    idx: int) -> Provenance:
-        h = request_hash(self.model, self.provider, messages, self.policy)
+        ctx = dict(self.cache_context)
+        ctx["agent"] = idx
+        h = request_hash(self.model, self.provider, messages, self.policy,
+                         context=ctx)
 
         if self.cache is not None:
             hit = self.cache.get(h)

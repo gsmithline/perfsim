@@ -70,6 +70,7 @@ class OpenRouterModel(Model):
         api_key: str | None = None,
         transport: Any = None,
         parse_mode: str = "strict",
+        run_seed: int | None = None,
     ) -> None:
         super().__init__()
         self._model_slug = model_slug
@@ -91,9 +92,17 @@ class OpenRouterModel(Model):
             raise TypeError("profiles must have a defined len()")
         self._n = int(length)
 
+        # CELL COORDINATES in every cache key. current_round is advanced by
+        # the runner; agent index is added per request by the client. At
+        # round 0 every population seed renders an identical prompt, so
+        # without run_seed the three cells of one model would share one
+        # paid response and stop being independent.
+        self.current_round = 0
+        self._run_seed = run_seed
         self.client = OpenRouterClient(
             model=model_slug, provider=provider, policy=policy,
-            budget=budget, cache=cache, api_key=api_key, transport=transport)
+            budget=budget, cache=cache, api_key=api_key, transport=transport,
+            cache_context={"seed": run_seed, "round": 0})
 
         # the same telemetry surface HFCausalLMModel exposes
         self._last_raw: list[str] = []
@@ -181,6 +190,8 @@ class OpenRouterModel(Model):
                     "chat-template render as an OpenRouter user message "
                     f"(found a template control token in: {p[:80]!r}). Build "
                     "provider-neutral messages instead.")
+        self.client.cache_context = {"seed": self._run_seed,
+                                     "round": int(self.current_round)}
         batch = [[{"role": "user", "content": p}] for p in prompts]
         provs = self.client.complete_many_sync(batch)
         self._last_provenance = provs
@@ -232,9 +243,16 @@ class OpenRouterModel(Model):
             "model_slug": {"value": self._model_slug, "source": "pinned"},
             "provider": {"value": self._provider.to_body(),
                          "source": "pinned"},
-            "temperature": {"value": self._policy.temperature,
-                            "source": "pinned"},
-            "top_p": {"value": self._policy.top_p, "source": "pinned"},
+            "temperature": {
+                "value": self._policy.temperature,
+                "source": ("pinned" if self._policy.temperature is not None
+                           else "omitted_unsupported_by_endpoint")},
+            "top_p": {"value": (self._policy.top_p
+                                if self._policy.temperature is not None
+                                else None),
+                      "source": ("pinned" if self._policy.temperature is not None
+                                 else "omitted_with_temperature")},
+            "run_seed": {"value": self._run_seed, "source": "population"},
             "max_tokens": {"value": self._policy.max_tokens,
                            "source": "pinned"},
             "seed": {"value": self._policy.seed,
