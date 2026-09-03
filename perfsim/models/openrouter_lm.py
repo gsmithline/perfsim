@@ -32,7 +32,7 @@ from torch import Tensor
 from perfsim.core.model import Model
 from perfsim.models.openrouter_client import (
     Budget, DecodingPolicy, OpenRouterClient, ProviderPin, Provenance,
-    OpenRouterError,
+    OpenRouterError, assert_canonical,
 )
 
 MessageBuilder = Callable[..., list]
@@ -71,6 +71,7 @@ class OpenRouterModel(Model):
         transport: Any = None,
         parse_mode: str = "strict",
         run_seed: int | None = None,
+        expected_canonical: str | None = None,
     ) -> None:
         super().__init__()
         self._model_slug = model_slug
@@ -99,6 +100,14 @@ class OpenRouterModel(Model):
         # paid response and stop being independent.
         self.current_round = 0
         self._run_seed = run_seed
+        # The DATED build this wave is pinned to. A provider can re-point a
+        # routable id at a new dated version mid-wave and the completion
+        # response would not show it, so this is verified against the live
+        # catalog before the first request and again every round.
+        self._expected_canonical = expected_canonical
+        if expected_canonical:
+            assert_canonical(model_slug, expected_canonical,
+                             when="at construction")
         self.client = OpenRouterClient(
             model=model_slug, provider=provider, policy=policy,
             budget=budget, cache=cache, api_key=api_key, transport=transport,
@@ -190,6 +199,9 @@ class OpenRouterModel(Model):
                     "chat-template render as an OpenRouter user message "
                     f"(found a template control token in: {p[:80]!r}). Build "
                     "provider-neutral messages instead.")
+        if self._expected_canonical:
+            assert_canonical(self._model_slug, self._expected_canonical,
+                             when=f"before round {self.current_round}")
         self.client.cache_context = {"seed": self._run_seed,
                                      "round": int(self.current_round)}
         batch = [[{"role": "user", "content": p}] for p in prompts]
@@ -253,6 +265,8 @@ class OpenRouterModel(Model):
                       "source": ("pinned" if self._policy.temperature is not None
                                  else "omitted_with_temperature")},
             "run_seed": {"value": self._run_seed, "source": "population"},
+            "expected_canonical_slug": {"value": self._expected_canonical,
+                                        "source": "pinned"},
             "max_tokens": {"value": self._policy.max_tokens,
                            "source": "pinned"},
             "seed": {"value": self._policy.seed,

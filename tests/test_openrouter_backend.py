@@ -359,3 +359,45 @@ def test_client_folds_round_and_agent_into_the_key(tmp_path):
     c.cache_context = {"seed": 0, "round": 0}
     c.complete_many_sync(MSGS[:2])
     assert t.calls == 4
+
+
+# ---- canonical-slug drift ----------------------------------------------
+def _catalog(model_id, slug):
+    return lambda url: {"data": [{"id": model_id, "canonical_slug": slug}]}
+
+
+def test_canonical_drift_is_a_hard_failure():
+    """A provider can re-point a routable id at a new dated build mid-wave.
+    The completion response would not show it -- `model` comes back as the
+    same routable id -- so the wave would silently become two models."""
+    import perfsim.models.openrouter_client as orc
+    from perfsim.models.openrouter_client import (
+        CanonicalDriftError, assert_canonical)
+    orc._CANON_CACHE.clear()
+    assert_canonical("openai/gpt-5.6-sol", "openai/gpt-5.6-sol-20260709",
+                     fetch=_catalog("openai/gpt-5.6-sol",
+                                    "openai/gpt-5.6-sol-20260709"))
+    orc._CANON_CACHE.clear()
+    with pytest.raises(CanonicalDriftError, match="CANONICAL DRIFT"):
+        assert_canonical("openai/gpt-5.6-sol", "openai/gpt-5.6-sol-20260709",
+                         fetch=_catalog("openai/gpt-5.6-sol",
+                                        "openai/gpt-5.6-sol-20261101"))
+    orc._CANON_CACHE.clear()
+    with pytest.raises(CanonicalDriftError):
+        assert_canonical("openai/gpt-5.6-sol", "openai/gpt-5.6-sol-20260709",
+                         fetch=lambda url: {"data": []})
+
+
+def test_canonical_check_is_cached_so_it_is_cheap_per_round():
+    import perfsim.models.openrouter_client as orc
+    from perfsim.models.openrouter_client import canonical_slug_of
+    orc._CANON_CACHE.clear()
+    calls = {"n": 0}
+
+    def fetch(url):
+        calls["n"] += 1
+        return {"data": [{"id": "m", "canonical_slug": "m-2026"}]}
+
+    for _ in range(30):
+        assert canonical_slug_of("m", fetch=fetch) == "m-2026"
+    assert calls["n"] == 1, "30 rounds must not mean 30 catalog fetches"

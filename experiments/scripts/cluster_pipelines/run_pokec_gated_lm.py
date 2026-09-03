@@ -2303,7 +2303,9 @@ def main() -> int:
             model_slug=slug, profiles=setup["profiles"],
             message_builder=setup["build_messages"],
             provider=pin, policy=policy, budget=budget, cache=cache,
-            parse_mode="strict", run_seed=seed)
+            parse_mode="strict", run_seed=seed,
+            expected_canonical=os.environ.get(
+                "OR_EXPECTED_CANONICAL", "").strip() or None)
         config["openrouter"] = {
             "model_slug": slug, "provider": pin.to_body(),
             "policy": policy.to_body(),

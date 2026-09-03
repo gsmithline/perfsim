@@ -75,12 +75,66 @@ class ProvenanceError(OpenRouterError):
     """Resolved model/provider, finish reason, or usage failed the gate."""
 
 
+class CanonicalDriftError(OpenRouterError):
+    """The routable id no longer points at the dated version we pinned.
+
+    A provider can re-point a rolling id at a new dated build mid-wave.
+    Nothing in the completion response reveals that -- `model` still comes
+    back as the same routable id -- so a wave could silently become two
+    different models stitched together. This is checked against the live
+    catalog before the run and again during it."""
+
+
 class BudgetError(OpenRouterError):
     """A request, estimated-cost, or realized-cost cap would be exceeded."""
 
 
 class RetryExhaustedError(OpenRouterError):
     pass
+
+
+_CANON_CACHE: dict[str, tuple[float, str | None]] = {}
+
+
+def canonical_slug_of(model_id: str, *, ttl_s: float = 300.0,
+                      fetch=None) -> str | None:
+    """The dated canonical_slug the routable id currently resolves to.
+
+    Public metadata, no key, no cost. Cached for ttl_s so a per-round check
+    across a 30-round wave costs a handful of requests, not one per agent.
+    """
+    now = time.monotonic()
+    hit = _CANON_CACHE.get(model_id)
+    if hit is not None and (now - hit[0]) < ttl_s:
+        return hit[1]
+    if fetch is None:
+        import urllib.request
+        def fetch(url):
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "perfsim"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read().decode())
+    data = fetch(MODELS_URL)
+    slug = None
+    for m in data.get("data", []):
+        if m.get("id") == model_id:
+            slug = m.get("canonical_slug")
+            break
+    _CANON_CACHE[model_id] = (now, slug)
+    return slug
+
+
+def assert_canonical(model_id: str, expected: str, *, when: str = "",
+                     fetch=None) -> None:
+    """Hard-fail if the routable id no longer carries the pinned dated slug."""
+    got = canonical_slug_of(model_id, fetch=fetch)
+    if got != expected:
+        raise CanonicalDriftError(
+            f"CANONICAL DRIFT{(' ' + when) if when else ''}: {model_id!r} now "
+            f"resolves to canonical_slug {got!r}, but this wave is pinned to "
+            f"{expected!r}. The routable id has been re-pointed at a "
+            f"different dated build; continuing would stitch two models "
+            f"into one trajectory.")
 
 
 def _redact(text: str) -> str:

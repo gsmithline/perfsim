@@ -57,6 +57,20 @@ def main() -> int:
             return 2
         mid = cands[0]
 
+    # THE PIN. Whatever the user named, the wave is pinned to the DATED
+    # canonical slug the routable id carries right now, and every round
+    # re-checks it. A provider that re-points the id at a new build mid-wave
+    # would otherwise stitch two models into one trajectory.
+    canon = next((m.get("canonical_slug") for m in models
+                  if m["id"] == mid), None)
+    if canon is None:
+        print(f"# FATAL: {mid} carries no canonical_slug", file=sys.stderr)
+        return 2
+    if args.model != mid and args.model != canon:
+        print(f"# FATAL: requested {args.model!r} but {mid} carries "
+              f"canonical_slug {canon!r}", file=sys.stderr)
+        return 2
+
     eps = get(f"{BASE}/models/{mid}/endpoints")["data"]["endpoints"]
     zdr = {e["provider_name"] for e in
            get(f"{BASE}/models/{mid}/endpoints?zdr=true")["data"]["endpoints"]}
@@ -85,6 +99,7 @@ def main() -> int:
     price = e.get("pricing") or {}
     info = {
         "requested": args.model, "resolved_model": mid,
+        "canonical_slug": canon,
         "provider": args.provider, "zdr": True,
         "supports_temperature": "temperature" in sp,
         "supports_seed": "seed" in sp,
@@ -101,6 +116,7 @@ def main() -> int:
     print(f"export OR_PROVIDER={json.dumps(args.provider)}")
     print(f"export OR_TEMPERATURE={json.dumps(temp)}")
     print(f"export OR_SEED={json.dumps(seed)}")
+    print(f"export OR_EXPECTED_CANONICAL={canon}")
     print(f"export OR_PRICE_IN={info['price_in_per_mtok']:.4f}")
     print(f"export OR_PRICE_OUT={info['price_out_per_mtok']:.4f}")
     print(f"# resolved {args.model} -> {mid} via {args.provider}: "
