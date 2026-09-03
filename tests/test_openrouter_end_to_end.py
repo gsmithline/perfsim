@@ -170,7 +170,10 @@ def test_openrouter_backend_runs_end_to_end(runner_env, monkeypatch):
             gzip.open(out / "or_provenance.json.gz", "rt") if l.strip()]
     assert [r["round"] for r in rows] == [0, 1]
     for r in rows:
-        assert len(r["records"]) == 723
+        # EVERY paid request: 723 agent serves plus the 64-prompt telemetry
+        # probe. Recording only the serving call left 8% of spend invisible.
+        assert r["n_agents"] == 723
+        assert len(r["records"]) == 787, "agent serves + telemetry probe"
         rec = r["records"][0]
         assert rec["resolved_model"] == "google/gemini-3.7-flash"
         assert rec["resolved_provider"] == "Google AI Studio"
@@ -178,7 +181,7 @@ def test_openrouter_backend_runs_end_to_end(runner_env, monkeypatch):
         assert rec["prompt_tokens"] == 250
         assert rec["generation_id"] and rec["request_hash"]
     # the served vector IS what the API returned, in agent order
-    got = [float(x["text"]) for x in rows[0]["records"]]
+    got = [float(x["text"]) for x in rows[0]["records"][:723]]
     assert torch.allclose(torch.tensor(got),
                           traj["pred_raw"][0].float(), atol=1e-6)
 

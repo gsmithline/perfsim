@@ -202,3 +202,26 @@ def test_unparseable_response_never_serves_the_half_default():
     assert m.parse_ok("I think it is moderate") is False
     with pytest.raises(ParseFailure):
         m.parse("I think it is moderate")
+
+
+def test_drain_provenance_covers_every_call_site():
+    """provenance_records() reports only the last _generate. The runner
+    serves agents AND a 64-prompt telemetry probe each round, so capturing
+    the last call alone left ~8% of paid requests unrecorded while the gate
+    claimed complete cost accounting. drain_provenance cannot miss one."""
+    from perfsim.models.openrouter_client import Provenance
+    m = _mk()
+    fake = [Provenance(requested_model="m", resolved_model="m",
+                       requested_provider="p", resolved_provider="p",
+                       generation_id=f"g{i}", system_fingerprint=None,
+                       finish_reason="stop", prompt_tokens=1,
+                       completion_tokens=1, total_tokens=2, cost_usd=0.001,
+                       latency_s=0.1, retries=0, cache_status="miss",
+                       reasoning_fallback=False, request_hash="h",
+                       raw_response=None, text="0.4") for i in range(3)]
+    m.client.provenances = list(fake)
+    m._last_provenance = fake[-1:]           # what the old path would report
+    assert len(m.provenance_records()) == 1
+    drained = m.drain_provenance()
+    assert len(drained) == 3, "every request in the round must be captured"
+    assert m.drain_provenance() == [], "a drain must not double-count"

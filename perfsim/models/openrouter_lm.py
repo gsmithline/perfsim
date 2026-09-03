@@ -282,7 +282,21 @@ class OpenRouterModel(Model):
         }
 
     def provenance_records(self) -> list[dict]:
+        """Provenance of the MOST RECENT _generate call only."""
         return [p.to_dict() for p in self._last_provenance]
+
+    def drain_provenance(self) -> list[dict]:
+        """EVERY request since the last drain, whatever call site issued it.
+
+        provenance_records() reports only the last _generate, which silently
+        omitted the 64-prompt telemetry probe served each round: 787 paid
+        requests, 723 recorded, ~8% of spend invisible to a gate that claims
+        complete cost accounting. Draining the client's cumulative list
+        cannot miss a call site, present or future.
+        """
+        out = [p.to_dict() for p in self.client.provenances]
+        self.client.provenances = []
+        return out
 
 
 # Chat-template renders are recognisable by their control tokens. This is

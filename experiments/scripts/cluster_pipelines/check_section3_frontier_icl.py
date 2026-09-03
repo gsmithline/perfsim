@@ -183,12 +183,26 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
         want_prov = ((cfg.get("openrouter") or {}).get("provider") or
                      {}).get("order", [None])[0]
         for row in rows:
-            recs = row["records"]
             t = row["round"]
-            if len(recs) != N_AGENTS:
-                errs.append(f"{d.name} round {t}: {len(recs)} responses for "
-                            f"{N_AGENTS} agents")
+            # the serving call comes first, in agent order; the remainder is
+            # telemetry (the 64-prompt probe), which is PAID FOR and so must
+            # be recorded too -- 8% of spend was invisible until 2026-08-31
+            n_ag = int(row.get("n_agents", N_AGENTS))
+            all_recs = row["records"]
+            recs = all_recs[:n_ag]
+            if n_ag != N_AGENTS:
+                errs.append(f"{d.name} round {t}: n_agents={n_ag}, want "
+                            f"{N_AGENTS}")
                 continue
+            if len(all_recs) < n_ag:
+                errs.append(f"{d.name} round {t}: {len(all_recs)} responses "
+                            f"recorded for {n_ag} served agents")
+                continue
+            stats["telemetry_records"] = stats.get("telemetry_records", 0) + \
+                len(all_recs) - n_ag
+            for r in all_recs[n_ag:]:
+                stats["records"] += 1
+                stats["cost_usd"] += float(r.get("cost_usd") or 0.0)
             for i, r in enumerate(recs):
                 stats["records"] += 1
                 stats["cost_usd"] += float(r.get("cost_usd") or 0.0)

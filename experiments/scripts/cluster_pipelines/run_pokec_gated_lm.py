@@ -3515,16 +3515,6 @@ def main() -> int:
             else:
                 preds = lm(innate.unsqueeze(-1)).detach().squeeze(-1).float()
             last_preds = preds
-            if model_backend == "openrouter" and _mr_r0 is None:
-                # PROVENANCE IS PART OF THE MEASUREMENT. One record per
-                # served agent per round: resolved model and provider,
-                # generation id, finish reason, usage, cost, latency,
-                # retries, cache status, and the request hash. Without it
-                # a served value cannot be audited or re-priced.
-                or_prov_rows.append({
-                    "round": t,
-                    "records": lm.provenance_records(),
-                })
             if save_raw_gen and _mr_r0 is None:
                 # raw provenance for the served vector: lm._last_raw is
                 # refreshed by both serving paths (forward and
@@ -3989,6 +3979,21 @@ def main() -> int:
         tel_row["probe_pred"] = gp.probe_predictions(lm, probe_prompts)
         if pop_model == "ab" and run_mode != "direct":
             tel_row["contact"] = contact
+        if model_backend == "openrouter":
+            # PROVENANCE IS PART OF THE MEASUREMENT, and it must cover
+            # EVERY paid request -- the serving call AND the 64-prompt
+            # telemetry probe above. Capturing only the serving call left
+            # 64 requests per round (~8% of spend) unrecorded while the
+            # gate claimed complete cost accounting. Drained here, at the
+            # end of the round, so no call site can be missed.
+            _drained = lm.drain_provenance()
+            # The FIRST n records are the per-agent serving call, in agent
+            # order; anything after is telemetry (the 64-prompt probe).
+            # Recorded explicitly so the gate can check agent alignment
+            # without having to guess where the serving call ends.
+            or_prov_rows.append({"round": t, "n_agents": int(n),
+                                 "n_records": len(_drained),
+                                 "records": _drained})
         gp.append_telemetry(tel_path, tel_row)
         if wandb is not None:
             payload = dict(row)
