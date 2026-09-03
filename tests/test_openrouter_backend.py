@@ -401,3 +401,29 @@ def test_canonical_check_is_cached_so_it_is_cheap_per_round():
     for _ in range(30):
         assert canonical_slug_of("m", fetch=fetch) == "m-2026"
     assert calls["n"] == 1, "30 rounds must not mean 30 catalog fetches"
+
+
+def test_validate_key_never_returns_key_material():
+    """OpenRouter's `label` is built from the key's own prefix and suffix
+    ('sk-or-v1-b82...f03'), so returning it would leak key material into
+    every log line that prints this dict."""
+    from perfsim.models.openrouter_client import validate_key
+
+    class R:
+        status_code = 200
+        def json(self):
+            return {"data": {"label": "sk-or-v1-b82...f03",
+                             "is_free_tier": True, "usage": 0,
+                             "limit": None, "limit_remaining": None,
+                             "rate_limit": {"requests": -1}}}
+
+    class T:
+        def get(self, url, headers=None, timeout=None):
+            assert headers["Authorization"].startswith("Bearer ")
+            return R()
+
+    meta = validate_key(api_key="sk-or-TESTKEY", transport=T())
+    blob = json.dumps(meta)
+    assert "label" not in meta
+    assert "sk-or" not in blob and "b82" not in blob and "f03" not in blob
+    assert meta["is_free_tier"] is True

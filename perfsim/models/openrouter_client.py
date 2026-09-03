@@ -635,7 +635,9 @@ def validate_key(api_key: str | None = None, *, transport: Any = None) -> dict:
         raise OpenRouterError(_redact(f"HTTP {r.status_code} from /key"))
     d = (r.json() or {}).get("data", {})
     return {                       # non-secret fields ONLY
-        "label": d.get("label"),
+        # NOT the label: OpenRouter builds it from the key's own prefix and
+        # suffix ("sk-or-v1-b82...f03"), so returning it would leak key
+        # material into every log that prints this dict.
         "is_free_tier": d.get("is_free_tier"),
         "limit": d.get("limit"),
         "limit_remaining": d.get("limit_remaining"),
