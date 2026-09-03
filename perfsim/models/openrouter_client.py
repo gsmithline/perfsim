@@ -443,8 +443,14 @@ class OpenRouterClient:
         self.cache_context = dict(cache_context or {})
         self._key = api_key if api_key is not None else (
             load_api_key(required=not budget.dry_run))
-        self._limiter = _RateLimiter(budget.requests_per_second)
-        self._sem = asyncio.Semaphore(budget.max_concurrency)
+        # NOT created here. asyncio primitives bind to the event loop that
+        # is running when they are constructed, and complete_many_sync calls
+        # asyncio.run() -- a NEW loop every round. A semaphore built in
+        # __init__ works for round 0 and then raises "bound to a different
+        # event loop" on round 1, after that round's requests have already
+        # been paid for. Built per-call instead, in the loop that uses them.
+        self._limiter: "_RateLimiter | None" = None
+        self._sem: "asyncio.Semaphore | None" = None
         self.provenances: list[Provenance] = []
 
     # ---- header construction -------------------------------------------
@@ -623,6 +629,9 @@ class OpenRouterClient:
         """Run `batch` concurrently, return provenances IN INPUT ORDER."""
         if httpx is None and self._transport is None:
             raise OpenRouterError("httpx is required for live requests")
+        # bind the concurrency primitives to THIS loop
+        self._sem = asyncio.Semaphore(self.budget.max_concurrency)
+        self._limiter = _RateLimiter(self.budget.requests_per_second)
         results: list[Provenance | None] = [None] * len(batch)
 
         async def worker(i: int, msgs: Sequence[dict], client: Any) -> None:

@@ -476,3 +476,19 @@ def test_reasoning_modes_render_correctly():
     assert DecodingPolicy(reasoning_mode="minimal").to_body()["reasoning"] \
         == {"effort": "minimal", "exclude": True}
     assert "reasoning" not in DecodingPolicy(reasoning_mode="none").to_body()
+
+
+def test_client_survives_repeated_calls_new_event_loop_each_time():
+    """complete_many_sync uses asyncio.run(), i.e. a NEW event loop every
+    call. asyncio primitives bind to the loop alive when they are built, so
+    a semaphore created in __init__ works for round 0 and then raises
+    'bound to a different event loop' on round 1 -- AFTER that round's
+    requests have been paid for. Found live on the 2026-08-31 GPT-5.6 Sol
+    smoke, which completed all 723 requests and then died before writing a
+    trajectory."""
+    c = _client(FakeTransport([_resp("0.42")]),
+                budget=Budget(max_requests=50, max_realized_cost_usd=10.0,
+                              max_concurrency=4, requests_per_second=0))
+    for round_i in range(4):
+        out = c.complete_many_sync(MSGS[:2])
+        assert [o.text for o in out] == ["0.42", "0.42"], f"round {round_i}"
