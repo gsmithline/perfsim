@@ -195,7 +195,13 @@ class DecodingPolicy:
     top_p: float = 1.0
     max_tokens: int = 16
     seed: int | None = None
-    reasoning_disabled: bool = True
+    # "disabled"  ask the provider to turn reasoning off entirely
+    # "minimal"   smallest reasoning budget the provider offers -- required
+    #             by endpoints that reject disabling outright (Gemini 3.1
+    #             Pro: "Reasoning is mandatory for this endpoint and cannot
+    #             be disabled", HTTP 400)
+    # "none"      send no reasoning directive at all
+    reasoning_mode: str = "disabled"
     stop: tuple[str, ...] = ()
 
     def to_body(self) -> dict:
@@ -207,12 +213,20 @@ class DecodingPolicy:
             body["seed"] = self.seed
         if self.stop:
             body["stop"] = list(self.stop)
-        if self.reasoning_disabled:
-            # OpenRouter's normalized switch. Providers that cannot turn
-            # reasoning off entirely take the minimal budget instead; both
-            # forms are recorded so the run states what it asked for.
+        if self.reasoning_mode == "disabled":
             body["reasoning"] = {"enabled": False, "exclude": True}
+        elif self.reasoning_mode == "minimal":
+            body["reasoning"] = {"effort": "minimal", "exclude": True}
+        elif self.reasoning_mode != "none":
+            raise ValueError(f"reasoning_mode={self.reasoning_mode!r}")
         return body
+
+    def minimized(self) -> "DecodingPolicy":
+        """The same policy with reasoning MINIMIZED rather than disabled."""
+        return DecodingPolicy(
+            temperature=self.temperature, top_p=self.top_p,
+            max_tokens=self.max_tokens, seed=self.seed,
+            reasoning_mode="minimal", stop=self.stop)
 
 
 @dataclass(frozen=True)
@@ -285,6 +299,7 @@ class Provenance:
     latency_s: float
     retries: int
     cache_status: str            # "miss" | "hit" | "dry_run"
+    reasoning_fallback: bool     # asked to disable, endpoint required minimal
     request_hash: str
     raw_response: dict | None
     text: str | None
@@ -515,14 +530,15 @@ class OpenRouterClient:
                 generation_id=f"dryrun-{idx}", system_fingerprint=None,
                 finish_reason="stop", prompt_tokens=0, completion_tokens=0,
                 total_tokens=0, cost_usd=0.0, latency_s=0.0, retries=0,
-                cache_status="dry_run", request_hash=h,
-                raw_response=None, text=None)
+                cache_status="dry_run", reasoning_fallback=False,
+                request_hash=h, raw_response=None, text=None)
             self.provenances.append(prov)
             return prov
 
         self.budget.charge_request()
         body = self._body(messages)
         delay, last_err = 1.0, None
+        reasoning_fallback = False
 
         for attempt in range(self.budget.max_retries + 1):
             await self._limiter.acquire()
@@ -540,6 +556,15 @@ class OpenRouterClient:
                         else delay * (1.0 + random.random())
                     await asyncio.sleep(min(sleep_s, 60.0))
                     delay = min(delay * 2, 32.0)
+                    continue
+                if status == 400 and "reasoning is mandatory" in \
+                        (r.text or "").lower() and not reasoning_fallback:
+                    # "Disable or minimize reasoning": disabling is refused
+                    # by this endpoint, so MINIMIZE instead -- once, and
+                    # recorded on every affected response, never silently.
+                    reasoning_fallback = True
+                    self.policy = self.policy.minimized()
+                    body = self._body(messages)
                     continue
                 if status >= 400:
                     raise OpenRouterError(_redact(
@@ -574,8 +599,8 @@ class OpenRouterClient:
                 total_tokens=usage.get("total_tokens"),
                 cost_usd=usage.get("cost"),
                 latency_s=latency, retries=attempt,
-                cache_status="miss", request_hash=h,
-                raw_response=data, text=text)
+                cache_status="miss", reasoning_fallback=reasoning_fallback,
+                request_hash=h, raw_response=data, text=text)
             self._check_provenance(prov)
             self.budget.charge_cost(prov.cost_usd or 0.0)
             if self.cache is not None:

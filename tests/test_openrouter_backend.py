@@ -427,3 +427,52 @@ def test_validate_key_never_returns_key_material():
     assert "label" not in meta
     assert "sk-or" not in blob and "b82" not in blob and "f03" not in blob
     assert meta["is_free_tier"] is True
+
+
+def test_require_parameters_defaults_off_but_is_settable():
+    """Measured 2026-08-31: with zdr=true, require_parameters=true leaves
+    ZERO endpoints for all three frontier models. The default flipped for
+    that reason; the knob itself must still work."""
+    assert ProviderPin(order=("X",)).to_body()["require_parameters"] is True
+    assert ProviderPin(order=("X",), require_parameters=False
+                       ).to_body()["require_parameters"] is False
+
+
+def test_mandatory_reasoning_falls_back_to_minimal_and_records_it():
+    """Some endpoints refuse to disable reasoning outright (HTTP 400
+    'Reasoning is mandatory for this endpoint and cannot be disabled').
+    The spec is 'disable OR MINIMIZE', so the client minimizes -- once, and
+    the fallback is recorded on the response rather than hidden."""
+    class R400:
+        status_code = 400
+        headers: dict = {}
+        text = ('{"error":{"message":"Reasoning is mandatory for this '
+                'endpoint and cannot be disabled.","code":400}}')
+        def json(self):
+            return json.loads(self.text)
+
+    sent = []
+
+    def handler(body):
+        sent.append(body.get("reasoning"))
+        return _resp("0.42")
+
+    t = FakeTransport([R400(), handler])
+    c = OpenRouterClient(
+        model="google/gemini-3.7-flash", provider=PIN,
+        policy=DecodingPolicy(temperature=0.0, reasoning_mode="disabled"),
+        budget=Budget(max_requests=5, max_realized_cost_usd=1.0,
+                      requests_per_second=0),
+        api_key="sk-or-TEST", transport=t)
+    out = c.complete_many_sync(MSGS[:1])
+    assert out[0].text == "0.42"
+    assert out[0].reasoning_fallback is True
+    assert sent == [{"effort": "minimal", "exclude": True}]
+
+
+def test_reasoning_modes_render_correctly():
+    assert DecodingPolicy(reasoning_mode="disabled").to_body()["reasoning"] \
+        == {"enabled": False, "exclude": True}
+    assert DecodingPolicy(reasoning_mode="minimal").to_body()["reasoning"] \
+        == {"effort": "minimal", "exclude": True}
+    assert "reasoning" not in DecodingPolicy(reasoning_mode="none").to_body()

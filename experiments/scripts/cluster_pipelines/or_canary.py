@@ -110,13 +110,13 @@ def main() -> int:
     assert_canonical(model_id, canonical, when="at canary start")
 
     pin = ProviderPin(order=(args.provider,), allow_fallbacks=False,
-                      require_parameters=True, data_collection="deny",
+                      require_parameters=False, data_collection="deny",
                       zdr=True)
     policy = DecodingPolicy(
         temperature=(0.0 if info["supports_temperature"] else None),
         top_p=1.0, max_tokens=args.max_tokens,
         seed=(args.seed if info["supports_seed"] else None),
-        reasoning_disabled=True)
+        reasoning_mode=os.environ.get("OR_REASONING_MODE", "disabled"))
     budget = Budget(max_requests=MAX_REQUESTS, max_estimated_cost_usd=0.50,
                     max_realized_cost_usd=0.50, max_concurrency=1,
                     requests_per_second=1.0)

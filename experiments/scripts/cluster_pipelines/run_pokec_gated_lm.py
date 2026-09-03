@@ -2284,10 +2284,17 @@ def main() -> int:
             top_p=float(os.environ.get("OR_TOP_P", "1")),
             max_tokens=_env_int("OR_MAX_TOKENS", 16),
             seed=int(or_seed) if or_seed else None,
-            reasoning_disabled=_env_int("OR_REASONING_DISABLED", 1) == 1)
+            reasoning_mode=os.environ.get("OR_REASONING_MODE", "disabled"))
+        # require_parameters defaults OFF (2026-08-31): with zdr=true it
+        # eliminates every ZDR endpoint for all three frontier models --
+        # measured, not assumed. Its intent is preserved anyway, because
+        # or_preflight restricts the request to the parameters the pinned
+        # endpoint advertises and the provenance gate verifies what served.
         pin = ProviderPin(
             order=(provider_name,), allow_fallbacks=False,
-            require_parameters=True, data_collection="deny", zdr=True)
+            require_parameters=_env_int("OR_REQUIRE_PARAMETERS", 0) == 1,
+            data_collection="deny",
+            zdr=_env_int("OR_ZDR", 1) == 1)
         budget = Budget(
             max_requests=_env_int("OR_MAX_REQUESTS", 100),
             max_estimated_cost_usd=float(os.environ.get("OR_MAX_EST_COST", "1.0")),

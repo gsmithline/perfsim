@@ -116,7 +116,19 @@ def main() -> int:
     print(f"export OR_PROVIDER={json.dumps(args.provider)}")
     print(f"export OR_TEMPERATURE={json.dumps(temp)}")
     print(f"export OR_SEED={json.dumps(seed)}")
+    # REASONING. Some endpoints refuse to disable it (Gemini 3.1 Pro:
+    # "Reasoning is mandatory ... cannot be disabled", HTTP 400). The client
+    # falls back from disabled to minimal on that error and records it, but
+    # starting in the right mode avoids a wasted round-trip per request.
+    reasoning_mode = "disabled"
+    # COMPLETION BUDGET. A reasoning endpoint spends most of the budget on
+    # reasoning tokens before emitting the number: Gemini 3.1 Pro used 301
+    # reasoning tokens for a 4-character answer, so a 16-token budget
+    # returns finish_reason=length and no content at all.
+    max_tokens = 16 if "reasoning" not in sp else 2048
     print(f"export OR_EXPECTED_CANONICAL={canon}")
+    print(f"export OR_REASONING_MODE={reasoning_mode}")
+    print(f"export OR_MAX_TOKENS={max_tokens}")
     print(f"export OR_PRICE_IN={info['price_in_per_mtok']:.4f}")
     print(f"export OR_PRICE_OUT={info['price_out_per_mtok']:.4f}")
     print(f"# resolved {args.model} -> {mid} via {args.provider}: "

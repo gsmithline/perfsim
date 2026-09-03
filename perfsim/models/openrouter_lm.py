@@ -272,8 +272,8 @@ class OpenRouterModel(Model):
             "seed": {"value": self._policy.seed,
                      "source": "pinned" if self._policy.seed is not None
                      else "unsupported_by_endpoint"},
-            "reasoning_disabled": {"value": self._policy.reasoning_disabled,
-                                   "source": "pinned"},
+            "reasoning_mode": {"value": self._policy.reasoning_mode,
+                               "source": "pinned"},
             "determinism_caveat": (
                 "temperature=0 removes SAMPLING noise only. It does not pin "
                 "the provider's kernels, batching, hardware or serving "

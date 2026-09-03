@@ -28,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --concurrency) CONC="$2"; shift 2 ;;
     --rps)        RPS="$2"; shift 2 ;;
     --production) ROUNDS=30; TAGPRE="pofds3f"; shift ;;
+    --rounds)     ROUNDS="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -79,9 +80,11 @@ cd "$REPO"
 RUN_TAG="$TAG" OUT_DIR="$OUT" \
 DATASET=movielens ML_TARGET=Action \
 MODEL_BACKEND=openrouter OR_MODEL="$MODEL" OR_PROVIDER="$PROVIDER" \
-OR_MAX_TOKENS=16 OR_TEMPERATURE="$OR_TEMPERATURE" OR_SEED="$OR_SEED" \
+OR_MAX_TOKENS="$OR_MAX_TOKENS" OR_TEMPERATURE="$OR_TEMPERATURE" \
+OR_SEED="$OR_SEED" OR_REASONING_MODE="$OR_REASONING_MODE" \
+OR_REQUIRE_PARAMETERS=0 OR_ZDR=1 \
 OR_EXPECTED_CANONICAL="$OR_EXPECTED_CANONICAL" \
-OR_TOP_P=1 OR_REASONING_DISABLED=1 \
+OR_TOP_P=1 \
 OR_CONCURRENCY="$CONC" OR_RPS="$RPS" OR_MAX_REQUESTS="$MAXREQ" \
 OR_MAX_COST="$MAXCOST" OR_CACHE="${OUT}/or_cache.sqlite" \
 TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 \

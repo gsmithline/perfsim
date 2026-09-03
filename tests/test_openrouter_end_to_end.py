@@ -95,6 +95,8 @@ def runner_env(tmp_path, monkeypatch):
     monkeypatch.setenv("OR_RPS", "0")
     monkeypatch.setenv("OR_CONCURRENCY", "16")
     monkeypatch.setenv("OR_CACHE", str(tmp_path / "cache.sqlite"))
+    monkeypatch.setenv("OR_REQUIRE_PARAMETERS", "1")
+    monkeypatch.setenv("OR_ZDR", "1")
     # the frozen ICL surface
     monkeypatch.setenv("TRAINING_STYLE", "frozen")
     monkeypatch.setenv("SFT_EPOCHS", "0")
@@ -146,7 +148,13 @@ def test_openrouter_backend_runs_end_to_end(runner_env, monkeypatch):
     assert cfg["openrouter"]["model_slug"] == "google/gemini-3.7-flash"
     p = cfg["openrouter"]["provider"]
     assert p["allow_fallbacks"] is False and p["zdr"] is True
-    assert p["data_collection"] == "deny" and p["require_parameters"] is True
+    # require_parameters now defaults OFF: measured 2026-08-31, with
+    # zdr=true it eliminates every ZDR endpoint for all three frontier
+    # models. Its intent survives via preflight (only advertised params are
+    # sent) plus the provenance gate. The knob still works, and the env
+    # sets it explicitly here so both states stay covered.
+    assert p["data_collection"] == "deny"
+    assert p["require_parameters"] is True, "OR_REQUIRE_PARAMETERS=1 honoured"
     # the determinism caveat must survive into the artifact
     assert "does not pin" in json.dumps(cfg.get("gen_policy_effective", {}))
 
