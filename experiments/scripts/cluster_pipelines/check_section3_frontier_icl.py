@@ -60,15 +60,27 @@ import torch
 REPO = Path(__file__).resolve().parents[3]
 RUNS = REPO / "notes" / "pofd" / "cluster"
 
+# THE APPROVED SECTION-3 SURFACE, compared field by field against an
+# ARCHIVED GATED RUN rather than against a hand-copied dict. A hand-copied
+# expectation drifts from the wave it is supposed to match; the archive
+# cannot. The single definition of "scientifically relevant" lives in
+# audit_frontier_config.SURFACE and is imported here, so the gate and the
+# pre-run audit can never disagree about what matters.
+REFERENCE = (REPO / "notes" / "pofd" / "cluster" /
+             "pofds3i_mistral7b_d8_greedy_sw100_eaopen_w1_k1_esopen_anch2_s0_r30")
+
+def _surface():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_aud", str(Path(__file__).with_name("audit_frontier_config.py")))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m.SURFACE
+
+# fields that must hold regardless of the archive (API-backend specific)
 EXPECT = {
-    "dataset": "movielens", "ml_target": "Action",
-    "training_style": "frozen", "sft_epochs": 0, "use_lora": False,
-    "kl_beta": 0.0, "icl_k": 0, "icl_days": 8,
-    "ab_sweeps": 100, "w_plat": 1.0, "innate_lambda": 1.0,
-    "deffuant_alpha": 0.5, "ai_gate_mode": "all_open",
-    "peer_gate_mode": "all_open",
-    "population_update": "nested_ai_anchored_then_social_v2",
     "model_backend": "openrouter", "parse_mode": "strict",
+    "ai_gate_reference": "anchor",
 }
 N_AGENTS = 723
 FORBIDDEN_ARTIFACTS = ("round0_adapter", "trl")
@@ -83,7 +95,25 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
     errs: list[str] = []
     cfg = json.loads((d / "config.json").read_text())
 
-    # 1. environment
+    # 1a. EVERY scientifically relevant field, against the gated archive
+    if REFERENCE.is_file() or (REFERENCE / "config.json").is_file():
+        ref = json.loads((REFERENCE / "config.json").read_text())
+        for f in _surface():
+            want, got = ref.get(f), cfg.get(f)
+            if isinstance(want, float) or isinstance(got, float):
+                same = (want is not None and got is not None
+                        and abs(float(want) - float(got)) < 1e-9)
+            else:
+                same = want == got
+            if not same:
+                errs.append(f"{d.name}: {f}={got!r} but the gated Section-3 "
+                            f"reference has {want!r} -- the frontier cells "
+                            f"cannot be placed beside the local ones")
+    else:
+        errs.append(f"{d.name}: reference {REFERENCE.name} is missing; "
+                    f"cannot verify the surface")
+
+    # 1b. API-backend specifics
     for k, want in EXPECT.items():
         got = cfg.get(k)
         if isinstance(want, bool):
@@ -94,6 +124,27 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
             got = int(got)
         if got != want:
             errs.append(f"{d.name}: {k}={got!r}, want {want!r}")
+
+    # 1c. the tag must be reconstructable from the effective config: a
+    # correctly named run must not contain the wrong dynamics
+    for tok, ok in (
+            ("eaopen", cfg.get("ai_gate_mode") == "all_open"),
+            ("esopen", cfg.get("peer_gate_mode") == "all_open"),
+            ("anch2", cfg.get("population_update")
+             == "nested_ai_anchored_then_social_v2"),
+            ("_d8_", int(cfg.get("icl_days", -1)) == 8),
+            ("sw100", int(cfg.get("ab_sweeps", -1)) == 100),
+            ("w1", float(cfg.get("w_plat", -1)) == 1.0),
+            ("k1", float(cfg.get("innate_lambda", -1)) == 1.0)):
+        if tok in d.name and not ok:
+            errs.append(f"{d.name}: tag claims {tok} but the effective "
+                        f"config contradicts it")
+
+    # 1d. the answer limit must be an explicit number, never unset
+    _pol = (cfg.get("openrouter") or {}).get("policy") or {}
+    if _pol.get("max_tokens") is None:
+        errs.append(f"{d.name}: max_tokens is unset; an explicit completion "
+                    f"limit is required and must be recorded")
 
     # 2. frozen: no artifact an optimizer would leave
     for a in FORBIDDEN_ARTIFACTS:

@@ -17,7 +17,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MODEL=""; PROVIDER=""; SEED=0; ROUNDS=3; MAXCOST=2.0; TAGPRE="pofds3fsmk"
-CONC=8; RPS=4
+CONC=8; RPS=4; RMODE=""; ALLOWNOMAX=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +29,8 @@ while [[ $# -gt 0 ]]; do
     --rps)        RPS="$2"; shift 2 ;;
     --production) ROUNDS=30; TAGPRE="pofds3f"; shift ;;
     --rounds)     ROUNDS="$2"; shift 2 ;;
+    --reasoning-mode) RMODE="$2"; shift 2 ;;
+    --allow-no-max-tokens) ALLOWNOMAX=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -47,7 +49,9 @@ fi
 # that would make the pinned endpoint ineligible and the route fail. Free:
 # public metadata, no key. Fails hard on a non-ZDR provider.
 PF="$(python "${REPO}/experiments/scripts/cluster_pipelines/or_preflight.py" \
-        --model "$MODEL" --provider "$PROVIDER" --seed "$SEED")" || {
+        --model "$MODEL" --provider "$PROVIDER" --seed "$SEED" \
+        $([[ -n "$RMODE" ]] && echo --reasoning-mode "$RMODE") \
+        $([[ "$ALLOWNOMAX" == 1 ]] && echo --allow-no-max-tokens))" || {
   echo "[local] preflight failed; not spending anything" >&2; exit 2; }
 echo "$PF" | grep '^#' || true
 eval "$(echo "$PF" | grep '^export ')"
@@ -89,10 +93,11 @@ OR_CONCURRENCY="$CONC" OR_RPS="$RPS" OR_MAX_REQUESTS="$MAXREQ" \
 OR_MAX_COST="$MAXCOST" OR_CACHE="${OUT}/or_cache.sqlite" \
 TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 \
 FRESH_EACH_ROUND=0 LOG_PERPLEXITY=0 LOG_ANSWER_DIST=0 ANS_SAMPLE_K=0 \
-PARSE_MODE=strict SAVE_RAW_GEN=1 \
+PARSE_MODE=strict SAVE_RAW_GEN=1 LOG_GENDER_GAPS=1 \
 ICL_K=0 ICL_DAYS=8 ICL_SELECT=random ICL_CTX_SOURCE=live \
 POP_MODEL=ab AI_GATE_MODE=all_open PEER_GATE_MODE=all_open \
-EPS_AI=1.0 EPS_SOCIAL=0.2 W_PLAT=1 INNATE_LAMBDA=1 DEFFUANT_ALPHA=0.5 \
+AI_GATE_REFERENCE=anchor \
+EPS_AI=1.0 EPS=0.2 GAMMA_BIAS=0.0 W_PLAT=1 INNATE_LAMBDA=1 DEFFUANT_ALPHA=0.5 \
 AB_SWEEPS=100 N_ROUNDS="$ROUNDS" WITH_TWIN=1 \
 TRAIN_CAP=723 N_LABELED=723 SEED="$SEED" SEED_BASE_DATA=1 \
 WANDB_MODE=disabled WANDB_DISABLED=true USE_TF=0 \

@@ -162,6 +162,7 @@ import importlib.util
 import json
 import os
 import pickle
+import re
 import sys
 import time
 import traceback
@@ -1738,7 +1739,10 @@ def main() -> int:
         # LORA_ALPHA/r ratio can be checked against the artifact instead
         # of against a line of source. Older runs predate this key; the
         # checker treats absence as the older schema, not a mismatch.
-        "lora_alpha": 2 * lora_r,
+        # NO ADAPTER, NO ALPHA. Recording a computed alpha on a run
+        # with use_lora=False states a hyper-parameter that never
+        # existed; the archived frozen runs correctly carry None.
+        "lora_alpha": (2 * lora_r) if use_lora else None,
         "use_lora": use_lora, "sft_lr": sft_lr, "hist_bins": n_bins,
         "seed_base_data": seed_base_data, "train_cap": train_cap,
         "platform_sus_scale": platform_scale, "anchor_mode": anchor_mode,
@@ -2282,7 +2286,9 @@ def main() -> int:
         policy = DecodingPolicy(
             temperature=(float(_t) if _t else None),
             top_p=float(os.environ.get("OR_TOP_P", "1")),
-            max_tokens=_env_int("OR_MAX_TOKENS", 16),
+            max_tokens=(int(os.environ["OR_MAX_TOKENS"])
+                        if os.environ.get("OR_MAX_TOKENS", "").strip()
+                        else None),
             seed=int(or_seed) if or_seed else None,
             reasoning_mode=os.environ.get("OR_REASONING_MODE", "disabled"))
         # require_parameters defaults OFF (2026-08-31): with zdr=true it
@@ -2356,6 +2362,7 @@ def main() -> int:
         config["gen_policy_effective"] = {"error": repr(_e)}
     print(f"[run] LM loaded in {time.time() - t0:.1f}s "
           f"(parse_mode={parse_mode})", flush=True)
+
     # PERSIST THE DECODING POLICY. config.json is written before the model
     # exists, and the only later rewrites are conditional (fj population,
     # train_witness) -- so on the ab path gen_policy_effective was computed,
@@ -2365,6 +2372,53 @@ def main() -> int:
     # artifact instead of from a log line.
     (out_dir / "config.json").write_text(
         json.dumps(config, indent=2, default=str))
+
+    # A CORRECTLY NAMED RUN MUST NOT CONTAIN THE WRONG DYNAMICS. The tag
+    # encodes the surface; if the effective config disagrees with it, the
+    # artifact is mislabelled in the only way a downstream reader would
+    # never think to check. Verified here, before anything is served.
+    if model_backend == "openrouter":
+        _tag_claims = {
+            "sw": ("ab_sweeps", int(config.get("ab_sweeps", -1))),
+            "w":  ("w_plat", float(config.get("w_plat", -1))),
+            "k":  ("innate_lambda", float(config.get("innate_lambda", -1))),
+            "s":  ("seed", int(config.get("seed", -1))),
+            "r":  ("n_rounds", int(config.get("n_rounds", -1))),
+        }
+        _mismatch = []
+        for _tok, (_field, _val) in _tag_claims.items():
+            _m = re.search(rf"_{_tok}(\d+(?:p\d+)?)(?:_|$)", run_tag)
+            if _m:
+                _claim = float(_m.group(1).replace("p", "."))
+                if abs(_claim - float(_val)) > 1e-9:
+                    _mismatch.append(f"tag says {_tok}={_claim:g} but "
+                                     f"{_field}={_val}")
+        if "eaopen" in run_tag and config.get("ai_gate_mode") != "all_open":
+            _mismatch.append(f"tag says eaopen but ai_gate_mode="
+                             f"{config.get('ai_gate_mode')!r}")
+        if "esopen" in run_tag and config.get("peer_gate_mode") != "all_open":
+            _mismatch.append(f"tag says esopen but peer_gate_mode="
+                             f"{config.get('peer_gate_mode')!r}")
+        if "anch2" in run_tag and config.get("population_update") != \
+                "nested_ai_anchored_then_social_v2":
+            _mismatch.append(f"tag says anch2 but population_update="
+                             f"{config.get('population_update')!r}")
+        if "_d8_" in run_tag and int(config.get("icl_days", -1)) != 8:
+            _mismatch.append(f"tag says d8 but icl_days="
+                             f"{config.get('icl_days')}")
+        if _mismatch:
+            raise ValueError(
+                "TAG/CONFIG MISMATCH -- a correctly named run would carry "
+                "the wrong dynamics:\n  " + "\n  ".join(_mismatch))
+        print(f"[run] tag <-> effective config: consistent", flush=True)
+
+    # DRY-RUN CONFIG CHECK. Builds and records the EFFECTIVE configuration,
+    # validates the model pin against the live catalog, and exits without
+    # serving a single agent. No model request, no cost.
+    if _env_int("DRY_RUN_CONFIG", 0) == 1:
+        print("[run] DRY_RUN_CONFIG=1: effective config written, no "
+              "request made", flush=True)
+        return 0
 
     # THE SERVING PROMPT, once, for both backends. The HF path renders the
     # semantic message through the checkpoint's chat template exactly as

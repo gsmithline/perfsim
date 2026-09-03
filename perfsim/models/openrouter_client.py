@@ -193,7 +193,12 @@ class DecodingPolicy:
     """
     temperature: float | None = 0.0
     top_p: float = 1.0
-    max_tokens: int = 16
+    # None OMITS the completion limit, for endpoints that do not expose it
+    # (openai/gpt-5.6-sol via Azure -- the only ZDR-routable endpoint for
+    # that model). Approved explicitly 2026-08-31; the in-process cost cap
+    # is then the only bound on a runaway generation, and the omission is
+    # recorded rather than reported as a limit that was never sent.
+    max_tokens: int | None = 16
     seed: int | None = None
     # "disabled"  ask the provider to turn reasoning off entirely
     # "minimal"   smallest reasoning budget the provider offers -- required
@@ -205,7 +210,9 @@ class DecodingPolicy:
     stop: tuple[str, ...] = ()
 
     def to_body(self) -> dict:
-        body: dict[str, Any] = {"max_tokens": self.max_tokens}
+        body: dict[str, Any] = {}
+        if self.max_tokens is not None:
+            body["max_tokens"] = self.max_tokens
         if self.temperature is not None:
             body["temperature"] = self.temperature
             body["top_p"] = self.top_p

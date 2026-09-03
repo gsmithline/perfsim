@@ -113,7 +113,7 @@ request_cpus       = 2
 request_memory     = 8G
 request_disk       = 8G
 
-environment        = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn DATASET=movielens ML_TARGET=Action MODEL_BACKEND=openrouter OPENROUTER_API_KEY_FILE=/home/gsmithline/.openrouter_key OR_MODEL=$(orModel) OR_PROVIDER=$(orProvider) OR_MAX_TOKENS={or_max_tokens} OR_TEMPERATURE=0 OR_TOP_P=1 OR_REASONING_DISABLED=1 OR_CONCURRENCY={concurrency} OR_RPS={rps} OR_MAX_REQUESTS=$(orMaxRequests) OR_MAX_COST=$(orMaxCost) OR_CACHE=/home/gsmithline/perfsim/runs/pokec_gated_lm/$(tag)/or_cache.sqlite TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 FRESH_EACH_ROUND=0 LOG_PERPLEXITY=0 LOG_ANSWER_DIST=0 ANS_SAMPLE_K=0 PARSE_MODE=strict SAVE_RAW_GEN=1 EPS_AI=1.0 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS_SOCIAL={eps_social} ICL_K=0 ICL_DAYS={icl_days} ICL_SELECT=random ICL_CTX_SOURCE=live W_PLAT={wplat} INNATE_LAMBDA={lam} DEFFUANT_ALPHA={alpha} AB_SWEEPS={sweeps} POPULATION_UPDATE={op} WITH_TWIN=1 TRAIN_CAP={n} N_LABELED={n} N_ROUNDS=$(nrounds) SEED=$(seed) SEED_BASE_DATA=1"
+environment        = "REPO=/home/gsmithline/perfsim CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn DATASET=movielens ML_TARGET=Action MODEL_BACKEND=openrouter OPENROUTER_API_KEY_FILE=/home/gsmithline/.openrouter_key OR_MODEL=$(orModel) OR_PROVIDER=$(orProvider) OR_MAX_TOKENS={or_max_tokens} OR_TEMPERATURE=0 OR_TOP_P=1 OR_REASONING_MODE={reasoning_mode} OR_CONCURRENCY={concurrency} OR_RPS={rps} OR_MAX_REQUESTS=$(orMaxRequests) OR_MAX_COST=$(orMaxCost) OR_CACHE=/home/gsmithline/perfsim/runs/pokec_gated_lm/$(tag)/or_cache.sqlite TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 FRESH_EACH_ROUND=0 LOG_PERPLEXITY=0 LOG_ANSWER_DIST=0 ANS_SAMPLE_K=0 PARSE_MODE=strict SAVE_RAW_GEN=1 LOG_GENDER_GAPS=1 EPS_AI=1.0 AI_GATE_MODE=all_open PEER_GATE_MODE=all_open EPS={eps_social} GAMMA_BIAS=0.0 ICL_K=0 ICL_DAYS={icl_days} ICL_SELECT=random ICL_CTX_SOURCE=live W_PLAT={wplat} INNATE_LAMBDA={lam} DEFFUANT_ALPHA={alpha} AB_SWEEPS={sweeps} AI_GATE_REFERENCE=anchor WITH_TWIN=1 TRAIN_CAP={n} N_LABELED={n} N_ROUNDS=$(nrounds) SEED=$(seed) SEED_BASE_DATA=1"
 
 arguments          = "$(tag) frozen"
 output             = logs/$(tag).out
@@ -235,6 +235,7 @@ def main() -> int:
               else "PRODUCTION: open-gate cross-model equilibria, "
                    "personal-history ICL, frozen frontier API model"),
         key=key, or_max_tokens=16, concurrency=8, rps=4,
+        reasoning_mode="disabled",
         eps_social=f"{S3_EPS_SOCIAL:g}", icl_days=S3I_ICL_DAYS,
         wplat=f"{S3I_BETA:g}", lam=f"{S3I_GAMMA:g}",
         alpha=f"{S3I_ALPHA:g}", sweeps=S3I_SWEEPS, op=S3_OP_TOKEN, n=N_AGENTS)

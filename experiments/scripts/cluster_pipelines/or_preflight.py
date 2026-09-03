@@ -40,6 +40,11 @@ def main() -> int:
     ap.add_argument("--provider", required=True)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--allow-no-max-tokens", action="store_true",
+                    help="proceed on an endpoint with no completion limit")
+    ap.add_argument("--reasoning-mode", default=None,
+                    choices=("disabled", "minimal", "none"),
+                    help="override; Google endpoints refuse 'disabled'")
     args = ap.parse_args()
 
     models = get(f"{BASE}/models")["data"]
@@ -88,15 +93,39 @@ def main() -> int:
               f"zero-data-retention routing; refusing to relax zdr",
               file=sys.stderr)
         return 2
-    if "max_tokens" not in sp:
-        print(f"# FATAL: {mid} via {args.provider} does not expose "
-              f"max_tokens; an explicit completion limit is required",
-              file=sys.stderr)
-        return 2
+
 
     temp = "0" if "temperature" in sp else ""     # "" => omit the knob
     seed = str(args.seed) if ("seed" in sp and args.seed is not None) else ""
     price = e.get("pricing") or {}
+    reasoning_mode = args.reasoning_mode or "disabled"
+    # COMPLETION BUDGET. A reasoning endpoint spends most of the budget on
+    # reasoning tokens before emitting the number: Gemini 3.1 Pro used 301
+    # reasoning tokens for a 4-character answer, so a 16-token budget
+    # returns finish_reason=length and no content at all.
+    # UNIFORM EXPLICIT OUTPUT LIMIT (32 tokens), pinned for every model so
+    # the completion budget is one number across the wave rather than a
+    # per-endpoint accident. Reasoning endpoints need headroom for the
+    # reasoning tokens on top -- Gemini 3.1 Pro spends ~301 before emitting
+    # the answer -- so they get the answer budget PLUS a reasoning budget,
+    # and both are recorded. max_tokens is NEVER left unset.
+    ANSWER_TOKENS = 32
+    # The budget follows the REASONING MODE, not the endpoint's feature
+    # list. Where reasoning is disabled, 32 is the whole budget. Where the
+    # endpoint refuses to disable it, reasoning tokens are billed against
+    # the same budget (Gemini 3.1 Pro: 301 reasoning tokens before a
+    # 4-character answer; at 32 it returns finish_reason=length and NO
+    # content), so those get 32 PLUS a reasoning allowance. answer_token_
+    # limit stays 32 across the wave and is recorded either way.
+    REASONING_HEADROOM = 2048
+    max_tokens = (ANSWER_TOKENS if reasoning_mode == "disabled"
+                  else ANSWER_TOKENS + REASONING_HEADROOM)
+    if "max_tokens" not in sp:
+        print(f"# NOTE: {args.provider} does not advertise max_tokens; "
+              f"sending {ANSWER_TOKENS} anyway (require_parameters is off, "
+              f"so an unadvertised knob is ignored rather than rejected) "
+              f"and recording it", file=sys.stderr)
+
     info = {
         "requested": args.model, "resolved_model": mid,
         "canonical_slug": canon,
@@ -106,6 +135,9 @@ def main() -> int:
         "supports_reasoning_control": "reasoning" in sp,
         "context_length": e.get("context_length"),
         "max_completion_tokens": e.get("max_completion_tokens"),
+        "advertises_max_tokens": "max_tokens" in sp,
+        "answer_token_limit": ANSWER_TOKENS,
+        "reasoning_mode": reasoning_mode,
         "price_in_per_mtok": float(price.get("prompt", 0)) * 1e6,
         "price_out_per_mtok": float(price.get("completion", 0)) * 1e6,
     }
@@ -120,15 +152,10 @@ def main() -> int:
     # "Reasoning is mandatory ... cannot be disabled", HTTP 400). The client
     # falls back from disabled to minimal on that error and records it, but
     # starting in the right mode avoids a wasted round-trip per request.
-    reasoning_mode = "disabled"
-    # COMPLETION BUDGET. A reasoning endpoint spends most of the budget on
-    # reasoning tokens before emitting the number: Gemini 3.1 Pro used 301
-    # reasoning tokens for a 4-character answer, so a 16-token budget
-    # returns finish_reason=length and no content at all.
-    max_tokens = 16 if "reasoning" not in sp else 2048
     print(f"export OR_EXPECTED_CANONICAL={canon}")
     print(f"export OR_REASONING_MODE={reasoning_mode}")
     print(f"export OR_MAX_TOKENS={max_tokens}")
+    print(f"export OR_ANSWER_TOKEN_LIMIT={ANSWER_TOKENS}")
     print(f"export OR_PRICE_IN={info['price_in_per_mtok']:.4f}")
     print(f"export OR_PRICE_OUT={info['price_out_per_mtok']:.4f}")
     print(f"# resolved {args.model} -> {mid} via {args.provider}: "
