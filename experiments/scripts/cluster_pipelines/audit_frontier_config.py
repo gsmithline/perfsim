@@ -94,7 +94,8 @@ ALLOWED = {
 }
 
 
-def effective_config(model, provider, seed, rounds, reasoning_mode, out_dir):
+def effective_config(model, provider, seed, rounds, reasoning_mode, out_dir,
+                     icl_days=8):
     """Drive the REAL runner in DRY_RUN_CONFIG mode. No model request."""
     pf = subprocess.run(
         [sys.executable, str(PREFLIGHT), "--model", model,
@@ -104,8 +105,8 @@ def effective_config(model, provider, seed, rounds, reasoning_mode, out_dir):
     if pf.returncode != 0:
         raise SystemExit(f"preflight failed for {model}: {pf.stderr}")
     info = json.loads(pf.stdout)
-    tag = (f"pofds3fsmk_dryrun_d8_greedy_sw100_eaopen_w1_k1_esopen_anch2"
-           f"_s{seed}_r{rounds}")
+    tag = (f"pofds3fsmk_dryrun_d{icl_days}_greedy_sw100_eaopen_w1_k1"
+           f"_esopen_anch2_s{seed}_r{rounds}")
     env = dict(os.environ)
     env.update({
         "RUN_TAG": tag, "OUT_DIR": str(out_dir), "DRY_RUN_CONFIG": "1",
@@ -126,7 +127,7 @@ def effective_config(model, provider, seed, rounds, reasoning_mode, out_dir):
         "LOG_ANSWER_DIST": "0", "ANS_SAMPLE_K": "0",
         "PARSE_MODE": "strict", "SAVE_RAW_GEN": "1",
         "LOG_GENDER_GAPS": "1",
-        "ICL_K": "0", "ICL_DAYS": "8", "ICL_SELECT": "random",
+        "ICL_K": "0", "ICL_DAYS": str(icl_days), "ICL_SELECT": "random",
         "ICL_CTX_SOURCE": "live", "POP_MODEL": "ab",
         "AI_GATE_MODE": "all_open", "PEER_GATE_MODE": "all_open",
         "AI_GATE_REFERENCE": "anchor", "EPS_AI": "1.0", "EPS": "0.2",
@@ -149,6 +150,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--reference", default=str(DEFAULT_REF))
     ap.add_argument("--rounds", type=int, default=1)
+    ap.add_argument("--depths", default="8",
+                    help="comma-separated ICL_DAYS values to dry-run")
+    ap.add_argument("--providers", default="",
+                    help="override slug=Provider,... ")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
@@ -161,11 +166,19 @@ def main() -> int:
         ("anthropic/claude-opus-5-20260723", "Amazon Bedrock", None),
         ("google/gemini-3.1-pro-preview-20260219", "Google", "minimal"),
     ]
+    if args.providers:
+        override = dict(kv.split("=", 1) for kv in args.providers.split(","))
+        MODELS = [(s_, override.get(s_, p_), r_) for s_, p_, r_ in MODELS]
+    depths = [int(d) for d in args.depths.split(",") if d.strip() != ""]
+    for d_ in depths:
+        if d_ < 0:
+            raise SystemExit(f"negative history depth {d_} is meaningless")
+    MODELS = [(s_, p_, r_, d_) for (s_, p_, r_) in MODELS for d_ in depths]
     results, ok = [], True
-    for slug, prov, rmode in MODELS:
+    for slug, prov, rmode, depth in MODELS:
         with tempfile.TemporaryDirectory() as td:
             cfg, info, log = effective_config(slug, prov, 0, args.rounds,
-                                              rmode, td)
+                                              rmode, td, icl_days=depth)
         # COMPLETE field-by-field: the union of both configs, not just the
         # surface list. A field present in one and absent in the other is a
         # difference too, and is classified the same way.
@@ -204,12 +217,19 @@ def main() -> int:
         # a field outside the scientific surface AND outside the allowlist
         # is reported as UNCLASSIFIED: it is not a failure of the surface,
         # but it has not been justified either, so it must be looked at.
-        bad_diffs = [d for d in diffs if d[0] in SURFACE and d[0] not in ALLOWED]
+        bad_diffs = [d for d in diffs if d[0] in SURFACE and d[0] not in ALLOWED
+                     and not (d[0] == "icl_days" and depth != 8)]
         unclassified = [d for d in diffs
                         if d[0] not in SURFACE and d[0] not in ALLOWED]
         failed = [k for k, v in checks.items() if not v]
         ok &= not bad_diffs and not failed
-        print(f"=== {slug} via {prov} ===")
+        checks["icl_days == requested depth"] = \
+            int(cfg.get("icl_days", -1)) == depth
+        checks["icl_k == 0 (no cross-agent context)"] = \
+            int(cfg.get("icl_k", -1)) == 0
+        failed = [k for k, v in checks.items() if not v]
+        ok &= not bad_diffs and not failed
+        print(f"=== {slug} via {prov}  D={depth} ===")
         print(f"  resolved {info['resolved_model']} | canonical "
               f"{info['canonical_slug']}")
         for k, v in checks.items():
@@ -232,7 +252,7 @@ def main() -> int:
             for f, w, g in unclassified:
                 print(f"     {f}: reference={w!r} effective={g!r}")
         print()
-        results.append({"model": slug, "provider": prov,
+        results.append({"model": slug, "provider": prov, "icl_days": depth,
                         "resolved": info["resolved_model"],
                         "canonical": info["canonical_slug"],
                         "checks": checks,

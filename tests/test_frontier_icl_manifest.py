@@ -59,9 +59,9 @@ def test_tags_cannot_collide_with_local_model_runs(gen):
 
 def test_sub_requests_no_gpu_and_carries_no_key(gen):
     sub = gen.SUB.format(
-        kind="test", key="k", or_max_tokens=16, concurrency=8, rps=4,
-        eps_social="0.2", icl_days=8, wplat="1", lam="1", alpha="0.5",
-        sweeps=100, op="anch2", n=723)
+        kind="test", key="k", or_max_tokens=32, concurrency=8, rps=4,
+        reasoning_mode="disabled", eps_social="0.2", icl_days=8, wplat="1",
+        lam="1", alpha="0.5", sweeps=100, op="anch2", n=723)
     assert "request_gpus" not in sub
     assert "OPENROUTER_API_KEY=" not in sub
     assert "sk-or-" not in sub
@@ -69,7 +69,7 @@ def test_sub_requests_no_gpu_and_carries_no_key(gen):
     assert "OPENROUTER_API_KEY_FILE=" in sub
     # and the frozen contract is pinned in the environment itself
     for pin in ("TRAINING_STYLE=frozen", "SFT_EPOCHS=0", "USE_LORA=0",
-                "KL_BETA=0", "ICL_K=0", "ICL_DAYS=8", "PARSE_MODE=strict",
+                "KL_BETA=0", "ICL_K=0", "PARSE_MODE=strict",
                 "OR_TEMPERATURE=0", "AI_GATE_MODE=all_open",
                 "PEER_GATE_MODE=all_open"):
         assert pin in sub, pin

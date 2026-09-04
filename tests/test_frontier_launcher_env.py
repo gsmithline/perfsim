@@ -78,8 +78,15 @@ def test_the_section3a_surface_is_pinned():
     for knob in ("EPS=0.2", "W_PLAT=1", "INNATE_LAMBDA=1",
                  "DEFFUANT_ALPHA=0.5", "AB_SWEEPS=100",
                  "AI_GATE_REFERENCE=anchor", "AI_GATE_MODE=all_open",
-                 "PEER_GATE_MODE=all_open", "ICL_K=0", "ICL_DAYS=8"):
+                 "PEER_GATE_MODE=all_open", "ICL_K=0"):
         assert knob in body, f"local launcher must pin {knob}"
+    # ICL_DAYS is the SWEPT variable, so it is a parameter rather than a
+    # pin -- but it must be validated and must reach the runner, and it
+    # must be part of the TAG so two depths cannot share a response cache.
+    assert 'ICL_DAYS="$DAYS"' in body
+    assert '--icl-days' in body
+    assert '"$DAYS" -lt 0' in body, "negative history depth must be rejected"
+    assert '_d${DAYS}_' in body, "depth must be part of the cell tag"
 
 
 # ---- the audit itself must stay honest ---------------------------------

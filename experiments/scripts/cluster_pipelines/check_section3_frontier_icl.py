@@ -262,7 +262,7 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
         for row in rows:
             t = row["round"]
             hist = np.concatenate([innate[None, :], op[:t]], axis=0)[-8:]
-            for i, txt in enumerate(row["contexts"]):
+            for i, txt in enumerate(row["ctx"]):
                 seq = ", ".join(f"{v:.2f}" for v in hist[:, i])
                 want = (f"This user's own opinion of {target} movies over "
                         f"the most recent days (oldest to newest): {seq}.")
@@ -290,13 +290,19 @@ def _parse_or_nan(text):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--rounds", type=int, default=None,
+                    help="expected rounds; default 3 for --smoke, else 30")
     ap.add_argument("--runs-root", default=str(RUNS))
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     root = Path(args.runs_root)
     pre = "pofds3fsmk_" if args.smoke else "pofds3f_"
-    rounds = 3 if args.smoke else 30
+    rounds = args.rounds if args.rounds else (3 if args.smoke else 30)
     cells = sorted(d for d in root.glob(f"{pre}*") if (d / "config.json").exists())
+    # a cell still running has no trajectory yet; report it as INCOMPLETE
+    # rather than crashing the gate on the other cells' behalf
+    incomplete = [d for d in cells if not (d / "trajectory.pt").is_file()]
+    cells = [d for d in cells if (d / "trajectory.pt").is_file()]
     if not cells:
         print(f"[check_s3f] no {pre}* cells under {root}")
         return 1
@@ -318,6 +324,11 @@ def main() -> int:
                     "final_mean": float(fin.mean()),
                     "final_sd": float(fin.std())})
 
+    for d in incomplete:
+        print(f"{d.name[:57]:<58}{'INCOMPLETE':<9}{'(no trajectory yet)':>41}")
+    if incomplete:
+        all_errs.append(f"{len(incomplete)} cell(s) have no trajectory: "
+                        + ", ".join(d.name for d in incomplete))
     if all_errs:
         print(f"\n[check_s3f] FAIL -- {len(all_errs)} problem(s):")
         for e in all_errs[:40]:

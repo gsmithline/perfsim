@@ -17,7 +17,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MODEL=""; PROVIDER=""; SEED=0; ROUNDS=3; MAXCOST=2.0; TAGPRE="pofds3fsmk"
-CONC=8; RPS=4; RMODE=""; ALLOWNOMAX=0
+CONC=8; RPS=4; RMODE=""; ALLOWNOMAX=0; DAYS=8
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -30,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --production) ROUNDS=30; TAGPRE="pofds3f"; shift ;;
     --rounds)     ROUNDS="$2"; shift 2 ;;
     --reasoning-mode) RMODE="$2"; shift 2 ;;
+    --icl-days)   DAYS="$2"; shift 2 ;;
     --allow-no-max-tokens) ALLOWNOMAX=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -66,7 +67,11 @@ print(f"{re.sub(r'[^a-z0-9]+','',slug.split('/')[-1].lower())}-"
       f"{re.sub(r'[^a-z0-9]+','',prov.lower())}")
 PY
 )"
-TAG="${TAGPRE}_${MTOK}_d8_greedy_sw100_eaopen_w1_k1_esopen_anch2_s${SEED}_r${ROUNDS}"
+if [[ "$DAYS" -lt 0 ]]; then echo "--icl-days must be >= 0" >&2; exit 2; fi
+# The DEPTH IS PART OF THE CELL IDENTITY: it changes the prompt, so it must
+# change the tag, the run directory, and therefore the response cache. A
+# shared cache across depths would let a D=1 answer populate a D=8 cell.
+TAG="${TAGPRE}_${MTOK}_d${DAYS}_greedy_sw100_eaopen_w1_k1_esopen_anch2_s${SEED}_r${ROUNDS}"
 OUT="${REPO}/runs/pokec_gated_lm/${TAG}"
 
 # +2% head-room on the request cap; the COST cap is the real control
@@ -94,7 +99,7 @@ OR_MAX_COST="$MAXCOST" OR_CACHE="${OUT}/or_cache.sqlite" \
 TRAINING_STYLE=frozen SFT_EPOCHS=0 USE_LORA=0 KL_BETA=0 \
 FRESH_EACH_ROUND=0 LOG_PERPLEXITY=0 LOG_ANSWER_DIST=0 ANS_SAMPLE_K=0 \
 PARSE_MODE=strict SAVE_RAW_GEN=1 LOG_GENDER_GAPS=1 \
-ICL_K=0 ICL_DAYS=8 ICL_SELECT=random ICL_CTX_SOURCE=live \
+ICL_K=0 ICL_DAYS="$DAYS" ICL_SELECT=random ICL_CTX_SOURCE=live \
 POP_MODEL=ab AI_GATE_MODE=all_open PEER_GATE_MODE=all_open \
 AI_GATE_REFERENCE=anchor \
 EPS_AI=1.0 EPS=0.2 GAMMA_BIAS=0.0 W_PLAT=1 INNATE_LAMBDA=1 DEFFUANT_ALPHA=0.5 \

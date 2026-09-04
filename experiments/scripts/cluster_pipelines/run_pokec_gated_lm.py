@@ -1067,6 +1067,11 @@ def main() -> int:
     #   compact profiles -> current opinions from the round's buffer) --
     #   the social-context variant, for contrast with personal memory.
     icl_days = _env_int("ICL_DAYS", 0)
+    if icl_days < 0:
+        raise ValueError(
+            f"ICL_DAYS={icl_days}: a negative history depth has no meaning. "
+            f"0 is profile-only prompting (no history sentence, no history "
+            f"log); D>0 shows the agent's most recent min(D, t+1) own values.")
     icl_k = _env_int("ICL_K", 0)
     # ICL_SELECT: how the K exemplars are chosen from the round's buffer.
     #   random = uniform draw (broadcast: same evidence distribution for all)
