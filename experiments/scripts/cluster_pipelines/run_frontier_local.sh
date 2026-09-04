@@ -14,6 +14,9 @@
 #   ./run_frontier_local.sh --model google/gemini-3.7-flash \
 #       --provider "Google AI Studio" --seed 0 [--production] [--max-cost 5]
 set -euo pipefail
+# PIPEFAIL MATTERS HERE: the runner's output is piped to grep in the
+# callers, and without it an OS-killed python exits 137 while the pipeline
+# reports grep's 0. A killed cell then looks like a successful one.
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MODEL=""; PROVIDER=""; SEED=0; ROUNDS=3; MAXCOST=2.0; TAGPRE="pofds3fsmk"
@@ -81,7 +84,7 @@ echo "[local] cell   : ${TAG}"
 echo "[local] rounds : ${ROUNDS}  agents: 723  requests: $((723*ROUNDS))"
 echo "[local] caps   : ${MAXREQ} requests / \$${MAXCOST} realized"
 echo "[local] out    : ${OUT}"
-if [[ -f "${OUT}/trajectory.pt" ]]; then
+if [[ -f "${OUT}/trajectory.pt" && "${CACHE_ONLY:-0}" != "1" ]]; then
   echo "[local] already complete; delete the dir to re-run." ; exit 0
 fi
 
@@ -92,13 +95,15 @@ cd "$REPO"
 # idle sleep only, so the display may still sleep.
 CAFFEINATE=""
 command -v caffeinate >/dev/null 2>&1 && CAFFEINATE="caffeinate -i"
+# the runner's own exit status must survive the pipe
+set -o pipefail
 $CAFFEINATE env \
 RUN_TAG="$TAG" OUT_DIR="$OUT" \
 DATASET=movielens ML_TARGET=Action \
 MODEL_BACKEND=openrouter OR_MODEL="$MODEL" OR_PROVIDER="$PROVIDER" \
 OR_MAX_TOKENS="$OR_MAX_TOKENS" OR_TEMPERATURE="$OR_TEMPERATURE" \
 OR_SEED="$OR_SEED" OR_REASONING_MODE="$OR_REASONING_MODE" \
-OR_REQUIRE_PARAMETERS=0 OR_ZDR=1 \
+OR_REQUIRE_PARAMETERS=0 OR_ZDR=1 OR_CACHE_ONLY="${CACHE_ONLY:-0}" \
 OR_EXPECTED_CANONICAL="$OR_EXPECTED_CANONICAL" \
 OR_TOP_P=1 \
 OR_CONCURRENCY="$CONC" OR_RPS="$RPS" OR_MAX_REQUESTS="$MAXREQ" \

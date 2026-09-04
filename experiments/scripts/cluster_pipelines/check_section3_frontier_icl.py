@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -94,11 +95,25 @@ def _load_jsonl_gz(p: Path):
 def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
     errs: list[str] = []
     cfg = json.loads((d / "config.json").read_text())
+    # THE DEPTH IS PART OF THE CELL IDENTITY and is read from the TAG, then
+    # required to match the effective config. Comparing it to the archive's
+    # depth 8 would reject every other cell of a depth sweep.
+    _m = re.search(r"_d(\d+)_", d.name)
+    if not _m:
+        errs.append(f"{d.name}: tag carries no _d<depth>_ token")
+        depth = -1
+    else:
+        depth = int(_m.group(1))
+        if int(cfg.get("icl_days", -1)) != depth:
+            errs.append(f"{d.name}: tag says d{depth} but icl_days="
+                        f"{cfg.get('icl_days')}")
 
     # 1a. EVERY scientifically relevant field, against the gated archive
     if REFERENCE.is_file() or (REFERENCE / "config.json").is_file():
         ref = json.loads((REFERENCE / "config.json").read_text())
         for f in _surface():
+            if f == "icl_days":
+                continue        # swept; checked against the tag above
             want, got = ref.get(f), cfg.get(f)
             if isinstance(want, float) or isinstance(got, float):
                 same = (want is not None and got is not None
@@ -253,15 +268,29 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
         errs.append(f"{d.name}: icl_ctx_log.json.gz exists -- that is the "
                     f"CROSS-USER exemplar log and ICL_K must be 0")
     dl = d / "icl_days_log.json.gz"
-    if not dl.exists():
-        errs.append(f"{d.name}: icl_days_log.json.gz MISSING")
+    if depth == 0:
+        # PROFILE-ONLY. There must be no history sentence and no history
+        # log at all -- an empty log would still mean the prompt carried a
+        # context slot, which is a different prompt.
+        if dl.exists():
+            errs.append(f"{d.name}: D=0 is profile-only but "
+                        f"icl_days_log.json.gz EXISTS -- the prompt carried "
+                        f"a history block it should not have")
+        rg0 = d / "raw_gen_log.json.gz"
+        if rg0.exists():
+            pass          # raw generations are checked for parse failures below
+    elif not dl.exists():
+        errs.append(f"{d.name}: D={depth} but icl_days_log.json.gz MISSING")
     else:
         innate = traj["innate"].float().numpy()
         target = cfg.get("ml_target", "Action")
         rows = _load_jsonl_gz(dl)
         for row in rows:
             t = row["round"]
-            hist = np.concatenate([innate[None, :], op[:t]], axis=0)[-8:]
+            # the agent's most recent min(D, t+1) OWN values, oldest to
+            # newest: [innate, post-peer states...] truncated to depth
+            hist = np.concatenate([innate[None, :], op[:t]],
+                                  axis=0)[-depth:]
             for i, txt in enumerate(row["ctx"]):
                 seq = ", ".join(f"{v:.2f}" for v in hist[:, i])
                 want = (f"This user's own opinion of {target} movies over "

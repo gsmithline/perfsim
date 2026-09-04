@@ -24,6 +24,7 @@ to see what happened.
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Callable, Sequence
 
 import torch
@@ -73,6 +74,7 @@ class OpenRouterModel(Model):
         run_seed: int | None = None,
         expected_canonical: str | None = None,
     ) -> None:
+        # a cached hit also returns a FULL record; keep RAM lean there too
         super().__init__()
         self._model_slug = model_slug
         self._profiles = profiles
@@ -284,6 +286,41 @@ class OpenRouterModel(Model):
     def provenance_records(self) -> list[dict]:
         """Provenance of the MOST RECENT _generate call only."""
         return [p.to_dict() for p in self._last_provenance]
+
+    def resource_snapshot(self) -> dict:
+        """RSS, swap and cache size, recorded per round.
+
+        The 2026-08-31 runs were killed repeatedly by the OS under memory
+        pressure, and every kill billed the requests in flight. Without
+        these numbers in the telemetry there is no way to tell afterwards
+        whether a cell died from memory or from the provider."""
+        out: dict = {}
+        try:
+            import resource
+            ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # macOS reports BYTES, Linux KILOBYTES. Decide by platform, not
+            # by magnitude: a 645MB process is under 2^32 bytes, so a
+            # magnitude test silently reported it as 660,304 MB.
+            out["rss_mb"] = round(
+                ru / (1024 * 1024) if sys.platform == "darwin" else ru / 1024,
+                1)
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            import subprocess, re as _re
+            sw = subprocess.run(["sysctl", "-n", "vm.swapusage"],
+                                capture_output=True, text=True, timeout=5).stdout
+            m = _re.search(r"free\s*=\s*([\d.]+)M", sw)
+            if m:
+                out["swap_free_mb"] = float(m.group(1))
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            out["cache_rows"] = len(self.client.cache) if self.client.cache \
+                else 0
+        except Exception:                                   # noqa: BLE001
+            pass
+        return out
 
     def drain_provenance(self) -> list[dict]:
         """EVERY request since the last drain, whatever call site issued it.

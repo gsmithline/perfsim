@@ -93,6 +93,14 @@ class RetryExhaustedError(OpenRouterError):
     pass
 
 
+class CacheMissError(OpenRouterError):
+    """Cache-only replay hit a request that was never paid for.
+
+    Replaying a completed cell must be free AND exact. A miss means the
+    replay is not the run it claims to reproduce, so it fails rather than
+    quietly buying the missing response."""
+
+
 _CANON_CACHE: dict[str, tuple[float, str | None]] = {}
 
 
@@ -277,6 +285,8 @@ class Budget:
     timeout_s: float = 120.0
     max_retries: int = 5
     dry_run: bool = False
+    # CACHE-ONLY REPLAY: never touch the network; a miss is a hard failure.
+    cache_only: bool = False
 
     n_requests: int = field(default=0, init=False)
     realized_cost_usd: float = field(default=0.0, init=False)
@@ -322,6 +332,17 @@ class Provenance:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def lean(self) -> "Provenance":
+        """The same record WITHOUT the raw response body.
+
+        A 20-round cell holds 14,460 records; carrying each provider
+        payload in RAM is tens of MB of dict churn for data already
+        committed to SQLite. The cache keeps the complete raw response;
+        memory keeps only what the gate reads."""
+        d = asdict(self)
+        d["raw_response"] = None
+        return Provenance(**d)
 
 
 def request_hash(model: str, pin: ProviderPin, messages: Sequence[dict],
@@ -541,8 +562,15 @@ class OpenRouterClient:
         if self.cache is not None:
             hit = self.cache.get(h)
             if hit is not None:
+                hit = hit.lean()     # the full body stays in SQLite
                 self.provenances.append(hit)
                 return hit
+
+        if self.budget.cache_only:
+            raise CacheMissError(
+                f"cache-only replay: request {idx} is not in the cache "
+                f"(hash {h[:16]}...). The replay is not the run it claims "
+                f"to reproduce; refusing to buy the missing response.")
 
         if self.budget.dry_run:
             prov = Provenance(
@@ -626,7 +654,9 @@ class OpenRouterClient:
             self._check_provenance(prov)
             self.budget.charge_cost(prov.cost_usd or 0.0)
             if self.cache is not None:
-                self.cache.put(h, prov)
+                self.cache.put(h, prov)      # FULL record, raw body included
+            # ... but keep only the lean form in RAM
+            prov = prov.lean()
             self.provenances.append(prov)
             return prov
 
@@ -638,23 +668,37 @@ class OpenRouterClient:
         """Run `batch` concurrently, return provenances IN INPUT ORDER."""
         if httpx is None and self._transport is None:
             raise OpenRouterError("httpx is required for live requests")
-        # bind the concurrency primitives to THIS loop
-        self._sem = asyncio.Semaphore(self.budget.max_concurrency)
+        # A FIXED WORKER POOL, not one task per agent. gather() over 723
+        # coroutines allocates 723 tasks, 723 futures and 723 semaphore
+        # waiters up front; under memory pressure that is what the OS
+        # kills, and every in-flight request it kills has already been
+        # billed. N workers pull from a shared index queue instead, so
+        # memory is O(concurrency) rather than O(agents).
         self._limiter = _RateLimiter(self.budget.requests_per_second)
         results: list[Provenance | None] = [None] * len(batch)
+        queue: asyncio.Queue = asyncio.Queue()
+        for i in range(len(batch)):
+            queue.put_nowait(i)
 
-        async def worker(i: int, msgs: Sequence[dict], client: Any) -> None:
-            async with self._sem:
-                results[i] = await self._one(client, msgs, i)
+        async def worker(client: Any) -> None:
+            while True:
+                try:
+                    i = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    results[i] = await self._one(client, batch[i], i)
+                finally:
+                    queue.task_done()
 
+        n_workers = max(1, min(self.budget.max_concurrency, len(batch)))
         if self._transport is not None:
             client = self._transport
-            await asyncio.gather(*(worker(i, m, client)
-                                   for i, m in enumerate(batch)))
+            await asyncio.gather(*(worker(client) for _ in range(n_workers)))
         else:
             async with httpx.AsyncClient() as client:
-                await asyncio.gather(*(worker(i, m, client)
-                                       for i, m in enumerate(batch)))
+                await asyncio.gather(*(worker(client)
+                                       for _ in range(n_workers)))
         out = [r for r in results if r is not None]
         if len(out) != len(batch):
             raise OpenRouterError(

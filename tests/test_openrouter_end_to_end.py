@@ -170,10 +170,13 @@ def test_openrouter_backend_runs_end_to_end(runner_env, monkeypatch):
             gzip.open(out / "or_provenance.json.gz", "rt") if l.strip()]
     assert [r["round"] for r in rows] == [0, 1]
     for r in rows:
-        # EVERY paid request: 723 agent serves plus the 64-prompt telemetry
-        # probe. Recording only the serving call left 8% of spend invisible.
+        # EVERY paid request, and now that is exactly the 723 agent serves:
+        # the 64-prompt telemetry probe was REMOVED (2026-08-31) and its
+        # statistics derived from the already-served predictions, so the
+        # cell no longer buys 64 answers per round it already had.
         assert r["n_agents"] == 723
-        assert len(r["records"]) == 787, "agent serves + telemetry probe"
+        assert len(r["records"]) == 723, "agent serves only; probe derived"
+        assert r["resources"]["rss_mb"] > 0, "per-round RSS is recorded"
         rec = r["records"][0]
         assert rec["resolved_model"] == "google/gemini-3.7-flash"
         assert rec["resolved_provider"] == "Google AI Studio"

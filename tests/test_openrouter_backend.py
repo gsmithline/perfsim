@@ -505,3 +505,56 @@ def test_reasoning_fallback_also_widens_the_completion_budget():
     assert mini.max_tokens == 32 + DecodingPolicy.REASONING_HEADROOM
     # an omitted limit stays omitted
     assert DecodingPolicy(max_tokens=None).minimized().max_tokens is None
+
+
+def test_cache_only_mode_hard_fails_on_a_miss(tmp_path):
+    """A cache-only replay must be free AND exact. A miss means the replay
+    is not the run it claims to reproduce, so it fails rather than quietly
+    buying the missing response."""
+    from perfsim.models.openrouter_client import CacheMissError
+    cache = ResponseCache(tmp_path / "c.sqlite")
+    t = FakeTransport([_resp("0.42")])
+    _client(t, cache=cache).complete_many_sync(MSGS[:1])   # pay for one
+    assert t.calls == 1
+
+    t2 = FakeTransport([_resp("SHOULD-NOT-BE-CALLED")])
+    b = Budget(max_requests=50, max_realized_cost_usd=10.0, cache_only=True)
+    c2 = _client(t2, budget=b, cache=cache)
+    assert c2.complete_many_sync(MSGS[:1])[0].text == "0.42"   # hit is fine
+    assert t2.calls == 0
+    with pytest.raises(CacheMissError):                        # miss is fatal
+        c2.complete_many_sync(MSGS[1:2])
+    assert t2.calls == 0, "a cache-only miss must never reach the network"
+
+
+def test_provenance_kept_in_ram_is_lean(tmp_path):
+    """The cache keeps the complete raw response; RAM keeps only what the
+    gate reads. A 20-round cell holds 14,460 records."""
+    cache = ResponseCache(tmp_path / "c.sqlite")
+    out = _client(FakeTransport([_resp("0.42")]), cache=cache
+                  ).complete_many_sync(MSGS[:1])
+    assert out[0].raw_response is None, "no provider body retained in RAM"
+    assert out[0].text == "0.42" and out[0].cost_usd is not None
+    stored = cache.get(out[0].request_hash)
+    assert stored.raw_response is not None, "the CACHE keeps the full body"
+
+
+def test_worker_pool_is_bounded_not_one_task_per_agent():
+    """gather() over 723 coroutines allocates 723 tasks up front; under
+    memory pressure that is what the OS kills, and every in-flight request
+    it kills has already been billed."""
+    live = {"now": 0, "peak": 0}
+
+    def handler(body):
+        live["now"] += 1
+        live["peak"] = max(live["peak"], live["now"])
+        live["now"] -= 1
+        return _resp("0.42")
+
+    big = [[{"role": "user", "content": f"a{i}"}] for i in range(50)]
+    c = _client(FakeTransport([handler], delay=0.001),
+                budget=Budget(max_requests=100, max_realized_cost_usd=10.0,
+                              max_concurrency=4, requests_per_second=0))
+    out = c.complete_many_sync(big)
+    assert len(out) == 50
+    assert live["peak"] <= 4, f"peak in-flight {live['peak']} exceeds pool of 4"

@@ -2314,7 +2314,11 @@ def main() -> int:
             requests_per_second=float(os.environ.get("OR_RPS", "4")),
             timeout_s=float(os.environ.get("OR_TIMEOUT", "120")),
             max_retries=_env_int("OR_MAX_RETRIES", 5),
-            dry_run=_env_int("OR_DRY_RUN", 0) == 1)
+            dry_run=_env_int("OR_DRY_RUN", 0) == 1,
+            # CACHE-ONLY REPLAY: reproduce a completed cell from paid
+            # responses only. Any miss is a hard failure, so a replay can
+            # never quietly become a purchase.
+            cache_only=_env_int("OR_CACHE_ONLY", 0) == 1)
         cache = ResponseCache(
             os.environ.get("OR_CACHE", str(out_dir / "or_cache.sqlite")))
         lm = OpenRouterModel(
@@ -2895,6 +2899,7 @@ def main() -> int:
                           # agents in an ACCEPTED fixed-responsive pair
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
+    or_prov_rounds_written = 0   # rounds already fsynced to or_provenance
     or_prov_rows = []    # MODEL_BACKEND=openrouter: per-round provenance
                          # for every served agent -> or_provenance.json.gz
     icl_days_texts = []  # ICL_DAYS>0: (round, [n] FULL context_block strings
@@ -2989,6 +2994,19 @@ def main() -> int:
           f"mode={run_mode} eps={eps} eps_ai={eps_ai} gamma={gamma_bias} w={w_plat}", flush=True)
     t_loop = time.time()
     for t in range(n_rounds):
+        if model_backend == "openrouter" and _env_int("RESOURCE_GUARD", 1):
+            # THE GUARD IS A COST CONTROL. An OS kill bills every request
+            # in flight, so refusing to start a round the machine cannot
+            # finish is cheaper than discovering it mid-round.
+            _snap = lm.resource_snapshot()
+            _swap = _snap.get("swap_free_mb")
+            _min_swap = float(os.environ.get("MIN_SWAP_FREE_MB", "256"))
+            if _swap is not None and _swap < _min_swap:
+                raise RuntimeError(
+                    f"RESOURCE GUARD: swap free {_swap:.0f}MB is below the "
+                    f"{_min_swap:.0f}MB floor before round {t}. Stopping "
+                    f"BEFORE paid requests; rounds 0..{t-1} are on disk and "
+                    f"the cache is intact, so a resume costs nothing.")
         if model_backend == "openrouter":
             # the round is part of every cache key; without it a resumed
             # run could serve round 0's cached answers in round 7, where
@@ -3981,7 +3999,16 @@ def main() -> int:
         (out_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
         tel_row = {"round": t, "deployment": cur_dep, "is_deploy": int(is_deploy)}
         tel_row.update(loss_block)
-        tel_row["probe_pred"] = gp.probe_predictions(lm, probe_prompts)
+        if model_backend == "openrouter":
+            # DERIVED, NOT RE-SERVED. Re-prompting the probe set cost 64
+            # PAID requests per round (~8% of a cell) to recompute numbers
+            # the round had already served. The probe indices are a subset
+            # of the agents, so read them off the served vector instead.
+            tel_row["probe_pred"] = [float(last_preds[int(i)])
+                                     for i in probe_idx]
+            tel_row["probe_pred_source"] = "derived_from_served"
+        else:
+            tel_row["probe_pred"] = gp.probe_predictions(lm, probe_prompts)
         if pop_model == "ab" and run_mode != "direct":
             tel_row["contact"] = contact
         if model_backend == "openrouter":
@@ -3992,13 +4019,38 @@ def main() -> int:
             # gate claimed complete cost accounting. Drained here, at the
             # end of the round, so no call site can be missed.
             _drained = lm.drain_provenance()
-            # The FIRST n records are the per-agent serving call, in agent
-            # order; anything after is telemetry (the 64-prompt probe).
-            # Recorded explicitly so the gate can check agent alignment
-            # without having to guess where the serving call ends.
-            or_prov_rows.append({"round": t, "n_agents": int(n),
-                                 "n_records": len(_drained),
-                                 "records": _drained})
+            # WRITTEN NOW, NOT AT THE END. Holding 20 rounds x 723 records
+            # in RAM is what the OS killed; and a kill lost the whole
+            # file. Each round is appended atomically (write to .part,
+            # fsync, rename) and then dropped from memory, so a kill costs
+            # at most the round in flight and never corrupts what is
+            # already on disk.
+            _row = {"round": t, "n_agents": int(n),
+                    "n_records": len(_drained),
+                    "resources": lm.resource_snapshot(),
+                    "records": _drained}
+            # COPY-THEN-APPEND-THEN-RENAME. Copy the existing file FIRST
+            # (an earlier version created .part first, so the "does .part
+            # exist" test was always true and every round overwrote the
+            # last -- the file kept only the final round). os.replace is
+            # atomic, so a kill leaves either the old file or the new one,
+            # never a truncated one.
+            _pp = out_dir / "or_provenance.json.gz"
+            _tmp = out_dir / "or_provenance.json.gz.part"
+            if _pp.exists():
+                import shutil as _sh
+                _sh.copyfile(_pp, _tmp)
+            elif _tmp.exists():
+                _tmp.unlink()
+            with gzip.open(_tmp, "at") as _fh:
+                _fh.write(json.dumps(_row) + "\n")
+                _fh.flush()
+                os.fsync(_fh.fileno())
+            os.replace(_tmp, _pp)
+            or_prov_rounds_written += 1
+            tel_row.update({f"res_{k}": v
+                            for k, v in (_row["resources"] or {}).items()})
+            del _drained, _row
         gp.append_telemetry(tel_path, tel_row)
         if wandb is not None:
             payload = dict(row)
@@ -4054,6 +4106,10 @@ def main() -> int:
         with gzip.open(out_dir / "icl_ctx_log.json.gz", "wt") as fh:
             for t_ctx, ctxs in icl_ctx_texts:
                 fh.write(json.dumps({"round": t_ctx, "ctx": ctxs}) + "\n")
+    if or_prov_rounds_written:
+        print(f"[run] or_provenance.json.gz holds "
+              f"{or_prov_rounds_written} round(s), written atomically per "
+              f"round", flush=True)
     if or_prov_rows:
         # The permanent record. OpenRouter's own response cache is
         # temporary and is NOT relied on; this file plus or_cache.sqlite
