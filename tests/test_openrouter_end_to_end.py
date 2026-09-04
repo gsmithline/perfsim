@@ -195,3 +195,22 @@ def test_training_knobs_are_refused_by_the_runner(runner_env, monkeypatch):
     mod = _load_runner()
     with pytest.raises(ValueError, match="FROZEN-ONLY"):
         mod.main()
+
+
+def test_provenance_has_no_duplicate_rounds_after_restart(runner_env,
+                                                          monkeypatch):
+    """The runner always replays from round 0, so a second attempt on a
+    partially-complete cell must REPLACE the provenance, not append to it.
+    Appending wrote round 0 twice and the gate then compared the wrong
+    round's records against pred_raw (found on the chunked Kimi cells)."""
+    import gzip
+    import perfsim.models.openrouter_client as orc
+    monkeypatch.setattr(orc, "httpx", _FakeHttpx)
+    mod = _load_runner()
+    mod.main()
+    mod.main()                    # a restart, exactly as a resumed chunk does
+    rows = [json.loads(l) for l in
+            gzip.open(runner_env / "or_provenance.json.gz", "rt") if l.strip()]
+    rounds = [r["round"] for r in rows]
+    assert rounds == sorted(set(rounds)), f"duplicate rounds: {rounds}"
+    assert rounds == [0, 1]

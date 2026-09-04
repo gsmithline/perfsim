@@ -2900,6 +2900,20 @@ def main() -> int:
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
     or_prov_rounds_written = 0   # rounds already fsynced to or_provenance
+    if model_backend == "openrouter":
+        # TRUNCATE ON START. The runner has no mid-run resume: it always
+        # replays from round 0, serving cached responses for rounds it has
+        # already paid for. Appending to a file left by an interrupted
+        # attempt therefore writes round 0 twice, and the gate then
+        # compares the WRONG round's records against pred_raw. Found by
+        # the gate on the chunked Kimi cells, whose provenance read
+        # [0, 0, 0, 1, 1, ...].
+        _pp0 = out_dir / "or_provenance.json.gz"
+        if _pp0.exists():
+            _pp0.unlink()
+        _tmp0 = out_dir / "or_provenance.json.gz.part"
+        if _tmp0.exists():
+            _tmp0.unlink()
     or_prov_rows = []    # MODEL_BACKEND=openrouter: per-round provenance
                          # for every served agent -> or_provenance.json.gz
     icl_days_texts = []  # ICL_DAYS>0: (round, [n] FULL context_block strings
