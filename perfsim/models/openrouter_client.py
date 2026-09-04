@@ -562,9 +562,7 @@ class OpenRouterClient:
         if self.cache is not None:
             hit = self.cache.get(h)
             if hit is not None:
-                hit = hit.lean()     # the full body stays in SQLite
-                self.provenances.append(hit)
-                return hit
+                return hit.lean()    # the full body stays in SQLite
 
         if self.budget.cache_only:
             raise CacheMissError(
@@ -582,7 +580,6 @@ class OpenRouterClient:
                 total_tokens=0, cost_usd=0.0, latency_s=0.0, retries=0,
                 cache_status="dry_run", reasoning_fallback=False,
                 request_hash=h, raw_response=None, text=None)
-            self.provenances.append(prov)
             return prov
 
         self.budget.charge_request()
@@ -632,6 +629,16 @@ class OpenRouterClient:
 
             latency = time.monotonic() - t0
             if isinstance(data, dict) and data.get("error"):
+                # AN ERROR CAN ARRIVE INSIDE A 200. OpenRouter returns
+                # upstream rate limits as {"error": {"code": 429}} in the
+                # body, so retry logic keyed only on HTTP status never saw
+                # them and a transient limit became a hard failure.
+                _code = (data["error"] or {}).get("code")
+                if _code in RETRYABLE_STATUS and attempt < self.budget.max_retries:
+                    last_err = f"in-body {_code}"
+                    await asyncio.sleep(min(delay * (1.0 + random.random()), 60.0))
+                    delay = min(delay * 2, 32.0)
+                    continue
                 raise OpenRouterError(_redact(
                     f"OpenRouter error payload: {json.dumps(data['error'])[:400]}"))
             text, choice = self._extract(data)
@@ -655,10 +662,11 @@ class OpenRouterClient:
             self.budget.charge_cost(prov.cost_usd or 0.0)
             if self.cache is not None:
                 self.cache.put(h, prov)      # FULL record, raw body included
-            # ... but keep only the lean form in RAM
-            prov = prov.lean()
-            self.provenances.append(prov)
-            return prov
+            # ... but keep only the lean form in RAM. NOT appended here:
+            # workers finish out of order, so appending on completion put
+            # one agent's record where another's belonged. complete_many
+            # appends in INDEX order instead.
+            return prov.lean()
 
         raise RetryExhaustedError(_redact(
             f"gave up after {self.budget.max_retries + 1} attempts; "
@@ -703,6 +711,10 @@ class OpenRouterClient:
         if len(out) != len(batch):
             raise OpenRouterError(
                 f"internal: {len(out)} results for {len(batch)} prompts")
+        # PROVENANCE MUST BE IN AGENT ORDER: the gate checks that record i
+        # is agent i. Caught by the gate on a Terra cell run at concurrency
+        # 16, where agent 546's record carried another agent's value.
+        self.provenances.extend(out)
         return out
 
     def complete_many_sync(self, batch: Sequence[Sequence[dict]]) -> list[Provenance]:

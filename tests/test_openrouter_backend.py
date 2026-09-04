@@ -558,3 +558,59 @@ def test_worker_pool_is_bounded_not_one_task_per_agent():
     out = c.complete_many_sync(big)
     assert len(out) == 50
     assert live["peak"] <= 4, f"peak in-flight {live['peak']} exceeds pool of 4"
+
+
+def test_in_body_429_is_retried_like_an_http_429():
+    """OpenRouter returns upstream rate limits as {"error":{"code":429}}
+    inside a 200 response. Retry logic keyed only on HTTP status never saw
+    them, so a transient limit became a hard failure (found live on
+    openai/gpt-5.6-luna)."""
+    class RBody:
+        status_code = 200
+        headers: dict = {}
+        text = '{"error":{"code":429,"message":"temporarily rate-limited upstream"}}'
+        def json(self):
+            return json.loads(self.text)
+
+    t = FakeTransport([RBody(), _resp("0.42")])
+    b = Budget(max_requests=10, max_realized_cost_usd=1.0,
+               requests_per_second=0, max_retries=3)
+    out = _client(t, budget=b).complete_many_sync(MSGS[:1])
+    assert out[0].text == "0.42"
+    assert t.calls == 2, "the in-body 429 must be retried, not raised"
+
+
+def test_in_body_non_retryable_error_still_raises():
+    class RBody:
+        status_code = 200
+        headers: dict = {}
+        text = '{"error":{"code":400,"message":"bad request"}}'
+        def json(self):
+            return json.loads(self.text)
+    with pytest.raises(OpenRouterError):
+        _client(FakeTransport([RBody()])).complete_many_sync(MSGS[:1])
+
+
+def test_provenance_is_in_agent_order_not_completion_order():
+    """The gate checks that record i is agent i. Workers finish out of
+    order, so appending on completion silently breaks that at any
+    concurrency above 1 -- caught by the gate on a Terra cell run at
+    concurrency 16, where one agent's record held another's value."""
+    import random as _r
+
+    def handler(body):
+        return _resp(body["messages"][0]["content"])
+
+    class Jitter(FakeTransport):
+        async def post(self, url, headers=None, json=None, timeout=None):
+            await asyncio.sleep(_r.uniform(0, 0.01))   # scramble completion
+            return handler(json)
+
+    msgs = [[{"role": "user", "content": f"{i}"}] for i in range(40)]
+    c = _client(Jitter([]),
+                budget=Budget(max_requests=100, max_realized_cost_usd=10.0,
+                              max_concurrency=16, requests_per_second=0))
+    out = c.complete_many_sync(msgs)
+    assert [o.text for o in out] == [str(i) for i in range(40)]
+    assert [p.text for p in c.provenances] == [str(i) for i in range(40)], \
+        "client.provenances must be in agent order"
