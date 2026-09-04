@@ -492,3 +492,16 @@ def test_client_survives_repeated_calls_new_event_loop_each_time():
     for round_i in range(4):
         out = c.complete_many_sync(MSGS[:2])
         assert [o.text for o in out] == ["0.42", "0.42"], f"round {round_i}"
+
+
+def test_reasoning_fallback_also_widens_the_completion_budget():
+    """Reasoning tokens are billed against max_tokens. A fallback that
+    switches to 'minimal' while keeping a 32-token budget trades a clean
+    400 for a silent finish_reason=length with no content -- which reads
+    as an endpoint fault rather than our own budget."""
+    pol = DecodingPolicy(max_tokens=32, reasoning_mode="disabled")
+    mini = pol.minimized()
+    assert mini.reasoning_mode == "minimal"
+    assert mini.max_tokens == 32 + DecodingPolicy.REASONING_HEADROOM
+    # an omitted limit stays omitted
+    assert DecodingPolicy(max_tokens=None).minimized().max_tokens is None

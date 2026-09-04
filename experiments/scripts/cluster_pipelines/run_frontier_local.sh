@@ -86,6 +86,13 @@ if [[ -f "${OUT}/trajectory.pt" ]]; then
 fi
 
 cd "$REPO"
+# KEEP THE MAC AWAKE for the duration. A 20-round cell is tens of
+# minutes of network I/O with no user input; a sleep mid-cell would
+# drop in-flight requests that have already been paid for. -i blocks
+# idle sleep only, so the display may still sleep.
+CAFFEINATE=""
+command -v caffeinate >/dev/null 2>&1 && CAFFEINATE="caffeinate -i"
+$CAFFEINATE env \
 RUN_TAG="$TAG" OUT_DIR="$OUT" \
 DATASET=movielens ML_TARGET=Action \
 MODEL_BACKEND=openrouter OR_MODEL="$MODEL" OR_PROVIDER="$PROVIDER" \

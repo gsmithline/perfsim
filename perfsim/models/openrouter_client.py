@@ -228,12 +228,21 @@ class DecodingPolicy:
             raise ValueError(f"reasoning_mode={self.reasoning_mode!r}")
         return body
 
+    # Reasoning tokens are billed against max_tokens, so a policy that
+    # falls back from "disabled" to "minimal" MUST also gain the headroom
+    # to hold them. Without this the fallback trades a 400 for a silent
+    # finish_reason=length with no content -- which is worse, because it
+    # looks like an endpoint fault rather than our own budget.
+    REASONING_HEADROOM = 2048
+
     def minimized(self) -> "DecodingPolicy":
-        """The same policy with reasoning MINIMIZED rather than disabled."""
+        """The same policy with reasoning MINIMIZED rather than disabled,
+        and the completion budget widened to hold the reasoning tokens."""
         return DecodingPolicy(
             temperature=self.temperature, top_p=self.top_p,
-            max_tokens=self.max_tokens, seed=self.seed,
-            reasoning_mode="minimal", stop=self.stop)
+            max_tokens=(None if self.max_tokens is None
+                        else self.max_tokens + self.REASONING_HEADROOM),
+            seed=self.seed, reasoning_mode="minimal", stop=self.stop)
 
 
 @dataclass(frozen=True)

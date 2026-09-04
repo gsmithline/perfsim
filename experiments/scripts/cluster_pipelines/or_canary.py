@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -39,16 +40,25 @@ MAX_REQUESTS = 3
 
 # The real thing: a MovieLens/Action profile with an eight-day personal
 # history, exactly as the wave renders it.
-PROMPTS = [
-    ("Estimate how much this user likes Action movies based on their "
-     "profile.\nProfile:\n- age: 24\n- gender: male\n- occupation: "
-     "technician\n- average rating of Drama movies: 3.4 out of 5\n"
-     "- average rating of Comedy movies: 3.9 out of 5\n\n"
-     "This user's own opinion of Action movies over the most recent days "
-     "(oldest to newest): 0.50, 0.52, 0.55, 0.58, 0.60, 0.62, 0.63, 0.65."
-     "\n\nOutput a single number in [0, 1] (1 = loves Action, 0 = "
-     "dislikes Action). Respond with only the number, e.g. 0.42."),
-]
+_PROFILE = ("Estimate how much this user likes Action movies based on their "
+            "profile.\nProfile:\n- age: 24\n- gender: male\n- occupation: "
+            "technician\n- average rating of Drama movies: 3.4 out of 5\n"
+            "- average rating of Comedy movies: 3.9 out of 5\n")
+_TAIL = ("\nOutput a single number in [0, 1] (1 = loves Action, 0 = "
+         "dislikes Action). Respond with only the number, e.g. 0.42.")
+_HIST = ("This user's own opinion of Action movies over the most recent days "
+         "(oldest to newest): 0.50, 0.52, 0.55, 0.58, 0.60, 0.62, 0.63, 0.65.")
+
+
+def canary_prompt(depth: int) -> str:
+    """The REAL wave prompt at this history depth.
+
+    D=0 is profile-only: no history sentence at all, and the context slot
+    collapses exactly as the runner's empty context_block does, so the
+    canary measures the same token count the wave will pay for.
+    """
+    ctx = f"\n{_HIST}\n" if depth > 0 else ""
+    return _PROFILE + ctx + _TAIL
 
 
 def main() -> int:
@@ -57,8 +67,13 @@ def main() -> int:
     ap.add_argument("--provider", required=True)
     ap.add_argument("--n", type=int, default=3,
                     help=f"requests to send (hard max {MAX_REQUESTS})")
-    ap.add_argument("--max-tokens", type=int, default=16)
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="default: the AUDITED budget from or_preflight "
+                         "(32 answer tokens, plus reasoning headroom where "
+                         "the endpoint refuses to disable reasoning)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--history-depth", type=int, default=8,
+                    help="0 = profile-only; >0 includes the history block")
     ap.add_argument("--json", default=None)
     ap.add_argument("--i-understand-this-costs-money", action="store_true",
                     dest="confirmed")
@@ -112,11 +127,17 @@ def main() -> int:
     pin = ProviderPin(order=(args.provider,), allow_fallbacks=False,
                       require_parameters=False, data_collection="deny",
                       zdr=True)
+    # THE AUDITED TOKEN POLICY, not a canary-local default. Using 16 here
+    # made Gemini return finish_reason=length with no content -- a
+    # truncation the WAVE would never have hit, which would have been
+    # reported as an endpoint problem.
+    _budget = args.max_tokens if args.max_tokens is not None else (
+        32 if info["reasoning_mode"] == "disabled" else 32 + 2048)
     policy = DecodingPolicy(
         temperature=(0.0 if info["supports_temperature"] else None),
-        top_p=1.0, max_tokens=args.max_tokens,
+        top_p=1.0, max_tokens=_budget,
         seed=(args.seed if info["supports_seed"] else None),
-        reasoning_mode=os.environ.get("OR_REASONING_MODE", "disabled"))
+        reasoning_mode=info["reasoning_mode"])
     budget = Budget(max_requests=MAX_REQUESTS, max_estimated_cost_usd=0.50,
                     max_realized_cost_usd=0.50, max_concurrency=1,
                     requests_per_second=1.0)
@@ -125,7 +146,8 @@ def main() -> int:
 
     # the SAME prompt n times: repeat variance under temperature 0 is
     # exactly the reproducibility question, and it is free to ask here
-    batch = [[{"role": "user", "content": PROMPTS[0]}] for _ in range(n)]
+    prompt = canary_prompt(args.history_depth)
+    batch = [[{"role": "user", "content": prompt}] for _ in range(n)]
     print(f"[canary] sending {n} request(s) to {model_id} via "
           f"{args.provider} (allow_fallbacks=false, zdr=true, "
           f"data_collection=deny)...")
@@ -158,7 +180,8 @@ def main() -> int:
             {"requested": args.model, "model": model_id,
              "canonical_slug": canonical, "provider": args.provider,
              "policy": policy.to_body(),
-             "n": n, "texts": texts, "identical": identical,
+             "n": n, "history_depth": args.history_depth,
+             "texts": texts, "identical": identical,
              "mean_prompt_tokens": sum(pin_tok) / len(pin_tok),
              "mean_completion_tokens": sum(out_tok) / len(out_tok),
              "realized_cost_usd": cost,
