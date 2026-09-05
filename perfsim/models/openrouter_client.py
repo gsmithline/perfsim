@@ -641,6 +641,20 @@ class OpenRouterClient:
                     continue
                 raise OpenRouterError(_redact(
                     f"OpenRouter error payload: {json.dumps(data['error'])[:400]}"))
+            # finish_reason == "error" is an UPSTREAM FAILURE surfaced in a
+            # 200, not a scientific violation: the provider aborted mid
+            # generation and there is no content to judge. Retry it like an
+            # in-body 429. Only when the retry budget is gone does it become
+            # a provenance failure -- which is what killed the first wave at
+            # round 17 of cell 1 on 2026-09-05.
+            _ch0 = (data.get("choices") or [{}])[0]
+            if _ch0.get("finish_reason") == "error" and \
+                    attempt < self.budget.max_retries:
+                last_err = "finish_reason=error (upstream)"
+                await asyncio.sleep(min(delay * (1.0 + random.random()), 60.0))
+                delay = min(delay * 2, 32.0)
+                continue
+
             text, choice = self._extract(data)
             usage = data.get("usage") or {}
             prov = Provenance(

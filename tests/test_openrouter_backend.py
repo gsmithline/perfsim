@@ -614,3 +614,22 @@ def test_provenance_is_in_agent_order_not_completion_order():
     assert [o.text for o in out] == [str(i) for i in range(40)]
     assert [p.text for p in c.provenances] == [str(i) for i in range(40)], \
         "client.provenances must be in agent order"
+
+
+def test_finish_reason_error_is_retried_then_fails_the_gate():
+    """An upstream abort arrives as finish_reason='error' inside a 200. It
+    carries no content, so it is a transient failure to retry -- not a
+    scientific violation. It killed the first production wave at round 17
+    of cell 1 by aborting the whole run on a single bad generation."""
+    t = FakeTransport([_resp("", finish="error"), _resp("0.42")])
+    out = _client(t, budget=Budget(max_requests=10, max_realized_cost_usd=1.0,
+                                   requests_per_second=0, max_retries=3)
+                  ).complete_many_sync(MSGS[:1])
+    assert out[0].text == "0.42" and t.calls == 2
+
+    # exhausting the budget still fails, loudly
+    t2 = FakeTransport([_resp("", finish="error")])
+    with pytest.raises((ProvenanceError, RetryExhaustedError)):
+        _client(t2, budget=Budget(max_requests=10, max_realized_cost_usd=1.0,
+                                  requests_per_second=0, max_retries=1)
+                ).complete_many_sync(MSGS[:1])

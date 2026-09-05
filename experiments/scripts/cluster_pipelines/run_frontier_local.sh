@@ -30,7 +30,8 @@ while [[ $# -gt 0 ]]; do
     --max-cost)   MAXCOST="$2"; shift 2 ;;
     --concurrency) CONC="$2"; shift 2 ;;
     --rps)        RPS="$2"; shift 2 ;;
-    --production) ROUNDS=30; TAGPRE="pofds3f"; shift ;;
+    --production) TAGPRE="pofds3f"; shift ;;
+    --tag-prefix) TAGPRE="$2"; shift 2 ;;
     --rounds)     ROUNDS="$2"; shift 2 ;;
     --reasoning-mode) RMODE="$2"; shift 2 ;;
     --icl-days)   DAYS="$2"; shift 2 ;;
@@ -74,6 +75,11 @@ if [[ "$DAYS" -lt 0 ]]; then echo "--icl-days must be >= 0" >&2; exit 2; fi
 # The DEPTH IS PART OF THE CELL IDENTITY: it changes the prompt, so it must
 # change the tag, the run directory, and therefore the response cache. A
 # shared cache across depths would let a D=1 answer populate a D=8 cell.
+if [[ "$TAGPRE" == "pofds3fsmk" && "$ROUNDS" -gt 3 ]]; then
+  echo "refusing a SMOKE tag (${TAGPRE}) on a ${ROUNDS}-round run: pass" >&2
+  echo "--production for a production tag (pofds3f_)." >&2
+  exit 2
+fi
 TAG="${TAGPRE}_${MTOK}_d${DAYS}_greedy_sw100_eaopen_w1_k1_esopen_anch2_s${SEED}_r${ROUNDS}"
 OUT="${REPO}/runs/pokec_gated_lm/${TAG}"
 
