@@ -2899,6 +2899,13 @@ def main() -> int:
                           # agents in an ACCEPTED fixed-responsive pair
     icl_ctx_texts = []  # ICL_K>0: (round, [n] rendered exemplar blocks) --
                         # written to icl_ctx_log.json.gz next to trajectory.pt
+    # point-mass stop state; the window must be at least the history depth
+    _pm_stop_on = (model_backend == "openrouter"
+                   and _env_int("POINT_MASS_STOP", 1) == 1)
+    _pm_eps = float(os.environ.get("POINT_MASS_EPS", "0"))
+    _pm_need = max(8, int(icl_days))
+    _pm_run = 0
+    _pm_absorbed_at = -1
     or_prov_rounds_written = 0   # rounds already fsynced to or_provenance
     if model_backend == "openrouter":
         # TRUNCATE ON START. The runner has no mid-run resume: it always
@@ -4085,6 +4092,41 @@ def main() -> int:
 
         prev_op = op.clone()
         op_raw.append(op.detach().cpu().clone())
+
+        # ---- DOCUMENTED POINT-MASS STOP (2026-09-05) ------------------
+        # A population at SD 0 is NOT yet a fixed point of the dynamics at
+        # D>0: the prompt is the agent's last ICL_DAYS values, so the
+        # window still holds pre-collapse values -- including the innate
+        # opinion -- for ICL_DAYS more rounds, and the served map can
+        # still move. Only once the WHOLE window is one value is the
+        # prompt provably frozen and every later round identical by
+        # construction. So the rule is ICL_DAYS consecutive SD-0 rounds
+        # (minimum 8), never the first SD-0 round.
+        if _pm_stop_on:
+            _sd = float(op.detach().float().std())
+            _pm_run = _pm_run + 1 if _sd <= _pm_eps else 0
+            if _pm_run == 1:
+                _pm_absorbed_at = t
+            if _pm_run >= _pm_need:
+                config["point_mass_stop"] = {
+                    "stopped_after_round": int(t),
+                    "absorbed_at_round": int(_pm_absorbed_at),
+                    "consecutive_sd0_rounds": int(_pm_run),
+                    "sd_tolerance": _pm_eps,
+                    "window_required": int(_pm_need),
+                    "reason": (
+                        "population SD <= tolerance for the full history "
+                        "window, so the prompt is fixed and every later "
+                        "round is identical by construction"),
+                    "rounds_planned": int(n_rounds),
+                }
+                (out_dir / "config.json").write_text(
+                    json.dumps(config, indent=2, default=str))
+                print(f"[run] POINT-MASS STOP after round {t}: SD <= "
+                      f"{_pm_eps} since round {_pm_absorbed_at}, i.e. for "
+                      f"the whole {_pm_need}-round history window. Later "
+                      f"rounds are identical by construction.", flush=True)
+                break
         pred_raw.append(
             last_preds.detach().cpu().clone() if last_preds is not None
             else torch.full_like(op.cpu(), float("nan"))

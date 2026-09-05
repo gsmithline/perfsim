@@ -172,11 +172,32 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
     op = traj["op_raw"].float().numpy()
     pred = traj["pred_raw"].float().numpy()
 
-    # 8. trajectory shape and finiteness
+    # 8. trajectory shape and finiteness.
+    # A DOCUMENTED POINT-MASS STOP is a legitimate short cell: the
+    # population held SD <= tolerance for the whole history window, so the
+    # prompt was frozen and every later round is identical by
+    # construction. The claim is CHECKED here, not taken on trust.
+    pm = cfg.get("point_mass_stop")
+    exp_rounds = rounds
+    if pm:
+        exp_rounds = int(pm["stopped_after_round"]) + 1
+        need = int(pm.get("window_required", 8))
+        tol = float(pm.get("sd_tolerance", 0.0))
+        tail = op[-need:] if op.shape[0] >= need else op
+        if tail.shape[0] < need:
+            errs.append(f"{d.name}: point-mass stop claims {need} SD-0 "
+                        f"rounds but only {tail.shape[0]} exist")
+        elif float(tail.std(axis=1).max()) > tol:
+            errs.append(f"{d.name}: point-mass stop claimed, but the last "
+                        f"{need} rounds reach SD "
+                        f"{float(tail.std(axis=1).max()):.6g} > {tol}")
+        if exp_rounds > rounds:
+            errs.append(f"{d.name}: point-mass stop past the planned horizon")
     for name, arr in (("op_raw", op), ("pred_raw", pred)):
-        if arr.shape != (rounds, N_AGENTS):
-            errs.append(f"{d.name}: {name} shape {arr.shape}, want "
-                        f"{(rounds, N_AGENTS)}")
+        if arr.shape != (exp_rounds, N_AGENTS):
+            errs.append(f"{name} shape {arr.shape}, want "
+                        f"{(exp_rounds, N_AGENTS)}"
+                        + (" (documented point-mass stop)" if pm else ""))
         elif not np.isfinite(arr).all():
             errs.append(f"{d.name}: {name} has non-finite entries")
         elif arr.min() < -1e-6 or arr.max() > 1 + 1e-6:
@@ -191,7 +212,7 @@ def check_cell(d: Path, rounds: int) -> tuple[list[str], dict]:
                     f"API-served value without provenance is not a datum")
     else:
         rows = _load_jsonl_gz(pp)
-        if [r["round"] for r in rows] != list(range(rounds)):
+        if [r["round"] for r in rows] != list(range(exp_rounds)):
             errs.append(f"{d.name}: provenance rounds are "
                         f"{[r['round'] for r in rows][:5]}..., want 0..{rounds-1}")
         want_model = (cfg.get("openrouter") or {}).get("model_slug")
